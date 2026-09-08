@@ -53,7 +53,7 @@ try {
       await page.keyboard.press('Enter');
     });
     if (width === 390) await check('mobile menu: Enter, Escape, focus return', async () => {
-      const toggle = page.getByRole('button', { name: /選單/ });
+      const toggle = page.getByRole('button', { name: '選單', exact: true });
       await toggle.focus(); await page.keyboard.press('Enter');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
