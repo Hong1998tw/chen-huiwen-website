@@ -60,13 +60,3 @@
     dialog.addEventListener('click', event => {if (event.target === dialog) {const r = dialog.getBoundingClientRect();if(event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close();}});
   }
 })();
-
-// Facebook is optional and makes no request until the visitor chooses to load it.
-(() => {
- const button = document.getElementById('load-facebook');
- if (!button) return;
- button.addEventListener('click', () => {
-  document.getElementById('facebook-content').append(document.getElementById('facebook-template').content.cloneNode(true));
-  button.disabled = true; button.textContent = '已要求載入 Facebook';
- });
-})();

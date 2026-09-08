@@ -1,0 +1,21 @@
+/* Compact homepage: identity, donation account and live social updates. */
+.hero{padding-block:32px}.hero-intro{margin-bottom:0}
+.home-account{padding:24px;border:1px solid var(--line);border-radius:22px;background:#fff}
+.home-account h2{font-size:1.4rem;margin:0 0 16px}
+.home-account dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 18px;margin:0}
+.home-account dt{color:var(--muted);font-size:.9rem}
+.home-account dd{margin:0;overflow-wrap:anywhere}
+.home-account-number{font-size:1.7rem;font-weight:800;letter-spacing:.04em;color:var(--green)}
+.home-account p{font-size:.875rem;line-height:1.8;margin:16px 0 0}
+.home-facebook{max-width:720px;padding-block:32px}.home-facebook h2{font-size:1.4rem;margin-bottom:16px}
+.home-facebook .facebook-frame{display:flex;justify-content:center;padding:0;min-height:500px}
+.home-facebook iframe{display:block;border:0;max-width:100%}
+.home-facebook .source-note a{display:inline-block;min-height:44px;padding-block:10px}
+.home-footer{padding-block:20px;font-size:.85rem}
+@media(max-width:780px){
+ .hero{padding-block:22px}.hero-grid{grid-template-rows:auto auto auto}.hero-copy>.hero-intro{margin:14px 0 0}
+ .home-account{padding:18px;border-radius:18px}.home-account h2{font-size:1.2rem;margin-bottom:12px}
+ .home-account dl{grid-template-columns:1fr;gap:3px}.home-account dt{margin-top:5px;font-size:.75rem}
+ .home-account dd{font-size:.9rem}.home-account dd.home-account-number{font-size:1.65rem}
+ .home-account p{font-size:.8rem;margin-top:12px}.home-facebook{padding-block:26px}
+}

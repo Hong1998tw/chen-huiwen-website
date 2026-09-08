@@ -84,7 +84,7 @@ try {
           await page.goto(base + file);
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
-          assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
+          assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), file==='index.html'?0:1, file);
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
           if (core.includes(file)) {
             const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
@@ -100,7 +100,8 @@ try {
       });
       await check(`homepage CTA ${width}px and back navigation`, async () => {
         await page.goto(base + 'index.html');
-        await page.getByRole('link', { name: '查看政治獻金資訊' }).click();
+        if(width===390) await page.getByRole('button',{name:'選單',exact:true}).click();
+        await page.locator('#navigation a[href="political-donation.html"]').click();
         assert(page.url().endsWith('/political-donation.html'));
         await page.getByRole('link', { name: '先看捐贈須知', exact: true }).click();
         assert(page.url().endsWith('#eligibility'));
@@ -148,11 +149,12 @@ try {
           assert(box.x+box.width<=heading.x); assert(box.y<heading.y+heading.height);
           if(width===390){
             assert(box.width>=86&&box.width<=96,'portrait target width');
-            const intro=await page.locator('.hero-intro').boundingBox();const actions=await page.locator('.hero .actions').boundingBox();
-            assert(intro.width>350&&actions.width>350,'intro and actions span mobile width');
-            assert(actions.x<25,'CTA starts at content edge');
-            assert(await page.locator('.hero .button').evaluate(el=>el.getBoundingClientRect().width>350),'primary CTA full width');
-            for(const card of await page.locator('.quick-services>a').all()){const b=await card.boundingBox();assert(b.height>=145&&b.height<=165,'compact service card');}
+            const intro=await page.locator('.hero-intro').boundingBox();
+            assert(intro.width>350,'intro spans mobile width');
+            const account=await page.locator('.home-account-number').boundingBox();
+            assert(account.y+account.height<844,'homepage account visible in first screen');
+            assert.equal(await page.locator('.quick-services,.explore-grid,.news-grid,.hero .actions').count(),0);
+            assert.equal(await page.locator('main a[href="political-donation.html"]').count(),0,'page navigation stays in menu');
           }
           assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');
           assert((await img.evaluate(el=>el.currentSrc)).match(/\.(avif|webp)$/));
@@ -162,8 +164,9 @@ try {
         await page.goto(base+'vision.html');
         for(const year of [2005,2010,2014,2018,2022]) assert(await page.locator('#platform-'+year).isVisible());
         await page.locator('.platform-years a').first().click();assert(page.url().includes('#platform-2022'));
-        await page.goto(base);assert.equal(await page.locator('iframe').count(),0);
-        await page.getByRole('button',{name:'載入 Facebook 即時動態'}).click();assert.equal(await page.locator('iframe').count(),1);
+        await page.goto(base);assert.equal(await page.locator('iframe').count(),1);
+        assert.equal(await page.locator('iframe').getAttribute('loading'),'eager');
+        assert.equal(await page.locator('#load-facebook,template#facebook-template').count(),0);
         assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
         await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
         await page.goto(base+'gallery.html');
