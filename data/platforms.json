@@ -1,6 +1,6 @@
 {
-  "updated": "2026-09-08",
-  "editorialNote": "依公報政見欄完整轉錄，調整換行與編號呈現，不將當年主張視為現行政策或完成政績。",
+  "updated": "2026-09-09",
+  "editorialNote": "2005至2022年政見依中央選舉委員會選舉公報完整轉錄；2026年政見依本站收到的政見圖卡轉錄。內容僅呈現當屆／當次主張，不視為已完成政績。",
   "elections": [
     {
       "year": 2005,
@@ -205,6 +205,63 @@
           ]
         }
       ]
+    },
+    {
+      "year": 2026,
+      "election": "高雄市第5屆議員選舉",
+      "term": 5,
+      "candidateNumber": null,
+      "electionDate": null,
+      "sourceType": "campaign_material",
+      "sourceDate": null,
+      "sourceDateNote": "素材未標示發布日期；本站於2026-09-09依提供圖卡收錄。",
+      "sourceUrl": null,
+      "sourceTitle": "2026政見圖卡（提供素材）",
+      "pdfPage": null,
+      "verifiedAt": "2026-09-09",
+      "status": "已依提供圖卡轉錄；正式選舉公報尚未取得。",
+      "image": {
+        "path": "assets/platform-2026-huiwen.webp",
+        "alt": "陳慧文2026政見圖卡：慧文會武會做事",
+        "width": 800,
+        "height": 444,
+        "caption": "2026政見圖卡"
+      },
+      "sections": [
+        {
+          "heading": "韌性城市・人行、交通安全",
+          "items": [
+            "監督捷運黃線、聯開回饋在地",
+            "推動新一代交通改善、人行友善",
+            "推動極端氣候防災，積淹水熱點減少 + 高溫應對"
+          ]
+        },
+        {
+          "heading": "鳳山創生・商圈文史活力",
+          "items": [
+            "鳳山商圈與夜間經濟振興",
+            "傳統市場現代化、市場用地轉型新生",
+            "鳳山文史觀光廊帶",
+            "青年創業與扎根支援"
+          ]
+        },
+        {
+          "heading": "全齡共好・勞動與社福平權",
+          "items": [
+            "擴大延長托育",
+            "中高齡就業促進與「照顧不離職」",
+            "身障權益保障",
+            "推動寵物友善城市"
+          ]
+        },
+        {
+          "heading": "教育減壓・數位兒少守護",
+          "items": [
+            "校事會議改革、高中行政減壓",
+            "AI 深偽兒少保護"
+          ]
+        }
+      ]
     }
   ],
   "gaps": [
@@ -216,11 +273,6 @@
       "label": "2002｜高雄縣第15屆議員選舉",
       "status": "中選會資料庫確認第1選舉區、17號、當選；政見公報全文尚未取得。",
       "sourceUrl": "https://db.cec.gov.tw/ElecTable/Election/ElecTickets?areaCode=00&cityCode=012&dataLevel=A&dataType=tickets&deptCode=000&legisId=T1&liCode=0000&prvCode=01&subjectId=T2&themeId=8178fcf3d7aabd51203614f208b75031&typeId=ELC"
-    },
-    {
-      "label": "2026｜高雄市第5屆議員選舉",
-      "status": "已查得登記紀錄，尚未取得本屆正式選舉公報；不將2022年政見當作2026年政見。",
-      "sourceUrl": "https://web.cec.gov.tw/api/file/994b59c1-01a2-4d0f-bc8d-9a3d6b6aa77a.pdf"
     }
   ]
 }
