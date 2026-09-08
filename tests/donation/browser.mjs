@@ -150,7 +150,7 @@ try {
           if(width===390){
             assert(box.width>=86&&box.width<=96,'portrait target width');
             const intro=await page.locator('.hero-intro').boundingBox();
-            assert(intro.width>335,'intro spans inset mobile width');
+            assert(intro.width>325,'intro spans centered mobile width');
             assert(box.x>=28,'hero inset to the right');
             const account=await page.locator('.home-account-number').boundingBox();
             const contact=await page.locator('.home-contact').boundingBox();
@@ -174,6 +174,13 @@ try {
         await page.locator('.platform-years a').first().click();assert(page.url().includes('#platform-2022'));
         await page.goto(base);assert.equal(await page.locator('iframe').count(),1);
         assert.equal(await page.locator('iframe').getAttribute('loading'),'eager');
+        const frame=page.locator('.home-facebook iframe');
+        const frameBox=await frame.boundingBox();
+        assert(frameBox.width>=(width===390?350:499));
+        assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('small_header'),'false');
+        assert(await page.getByText('陳慧文 高雄市議員',{exact:true}).isVisible());
+        const hero=await page.locator('.hero-grid').boundingBox();
+        assert(Math.abs(hero.x+hero.width/2-width/2)<2,'hero centered');
         assert.equal(await page.locator('#load-facebook,template#facebook-template').count(),0);
         assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
         await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
