@@ -60,6 +60,12 @@ try {
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert(await toggle.evaluate(el => el === document.activeElement));
+      await toggle.click();
+      assert.equal(await page.locator('#navigation').evaluate(el=>getComputedStyle(el).position),'fixed');
+      assert.equal(await page.locator('#navigation').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),2);
+      await page.locator('.menu-backdrop').click({position:{x:4,y:4}});
+      assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+      assert(await toggle.evaluate(el=>el===document.activeElement));
     });
     await check(`donation ${width}px: axe WCAG2 A/AA`, async () => {
       // Open every FAQ to include hidden content in accessibility coverage.
@@ -140,6 +146,14 @@ try {
           assert(cls<0.1,'initial CLS threshold');
           assert(box.width<=max+1);assert(Math.abs(box.width/box.height-1348/1728)<0.01);
           assert(box.x+box.width<=heading.x); assert(box.y<heading.y+heading.height);
+          if(width===390){
+            assert(box.width>=86&&box.width<=96,'portrait target width');
+            const intro=await page.locator('.hero-intro').boundingBox();const actions=await page.locator('.hero .actions').boundingBox();
+            assert(intro.width>350&&actions.width>350,'intro and actions span mobile width');
+            assert(actions.x<25,'CTA starts at content edge');
+            assert(await page.locator('.hero .button').evaluate(el=>el.getBoundingClientRect().width>350),'primary CTA full width');
+            for(const card of await page.locator('.quick-services>a').all()){const b=await card.boundingBox();assert(b.height>=145&&b.height<=165,'compact service card');}
+          }
           assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');
           assert((await img.evaluate(el=>el.currentSrc)).match(/\.(avif|webp)$/));
         }
