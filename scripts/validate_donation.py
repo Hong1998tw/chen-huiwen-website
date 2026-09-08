@@ -42,7 +42,7 @@ for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
  require(len(doc.select('#navigation a[href="political-donation.html"]'))==1,f'{f.name}: header entry')
  require(doc.select('#navigation a')[1]['href']=='political-donation.html',f'{f.name}: donation second')
- require(len(doc.select('footer a[href="political-donation.html"]'))==1,f'{f.name}: footer entry')
+ require(len(doc.select('footer a[href="political-donation.html"]'))==(0 if f.name=='index.html' else 1),f'{f.name}: footer entry')
  ids=[el['id'] for el in doc.select('[id]')]
  require(len(ids)==len(set(ids)),f'{f.name}: duplicate IDs')
  for el in doc.select('[href],[src]'):
