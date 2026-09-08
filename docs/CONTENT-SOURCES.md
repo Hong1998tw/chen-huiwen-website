@@ -59,10 +59,21 @@
 
 最後更新：2026-09-08。
 
-## 2026-09-08 published source revision
+## 2026-09-08 v1 published source revision（歷史）
 
-歷屆政見唯一structured source為 data/platforms.json，官方CEC公報逐年URL與頁碼在各筆sourceUrl/pdfPage；由 build_platforms.py 獨立產生 vision.html。政績查核依 ACHIEVEMENT-EVIDENCE-AUDIT.md，本次待核驗資料不當作完成事實。Notion一般公開內容入口禁止，服務案件例外須完整URL確認及exact allowlist；本次allowlist為空。
+歷屆政見唯一 structured source 為 `data/platforms.json`，官方 CEC 公報逐年 URL 與頁碼在各筆 `sourceUrl`／`pdfPage`；由 `build_platforms.py` 獨立產生 `vision.html`。政績查核依 `ACHIEVEMENT-EVIDENCE-AUDIT.md`，待核驗資料不當作完成事實。v1 當時 Notion 一般公開內容入口禁止，服務案件例外尚未正式確認，因此 allowlist 為空。
 
 政治獻金的官方來源、查核日期、條文對照、時間效力及待確認事項集中於 `docs/POLITICAL-DONATION.md`；公開頁面由 `political-donation.html` 與 `political-donation.css` 維護。歷屆政見原始內容與逐年官方公報來源集中於 `data/platforms.json`，不得以 generated `vision.html` 取代 source。
 
-本版於 2026-09-08 由 PR #2 至 #8 完成發布；收尾前 main 為 `7a9f0b1c3777bc8e7bb416ea7450a37b9a0ada46`。發布追溯見 `docs/RELEASE-2026-09-08-V1.md`。
+v1 於 2026-09-08 由 PR #2 至 #8 完成主要功能發布；發布追溯見 `docs/RELEASE-2026-09-08-V1.md`。
+
+## 2026-09-08 v2 published source revision
+
+v2 延續 v1 的政治獻金、人物圖片、歷屆政見、SEO、Accessibility 與全站前端治理，並新增兩項正式變更：
+
+1. PR #9：移除 `vision.html` 頁首的編輯說明文字；`data/platforms.json` 的各屆正式選舉公報政見、來源 URL、頁碼與 `verifiedAt` 均未改動。政見仍不得被視為已完成政績。
+2. PR #11：正式確認「服務案件登記」為唯一允許公開導向 Notion 的例外。公開入口固定為 `https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d`，並由 `data/public-link-allowlist.json` 採 exact URL allowlist；其他 Notion URL 仍由 `scripts/validate_site.py` 阻擋。
+
+服務案件只公開入口 URL，不將 Notion 內案件內容、民眾個資、附件、workspace URL 或 credential 複製到 GitHub／Production。若 Notion publish/share 設定變更，需重新驗證未登入公開可達性。
+
+政治獻金 evidence 仍以 `docs/POLITICAL-DONATION.md` 為 canonical；本次未更改專戶、法規、限額或收受期間等公開事實。歷屆政見 evidence 仍以 `data/platforms.json` 為 canonical。完整 release 追溯見 `docs/RELEASE-2026-09-08-V2.md`。
