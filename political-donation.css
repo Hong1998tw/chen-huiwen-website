@@ -17,3 +17,19 @@
 
 .donation-hero-grid{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:40px;align-items:start}.donation-portrait{width:180px;justify-self:end}.donation-portrait img{width:100%;height:auto;aspect-ratio:1348/1728;object-fit:contain;object-position:right top;border-radius:20px}
 @media(max-width:600px){.donation-hero-grid{grid-template-columns:1fr;gap:20px}.donation-portrait{width:120px;justify-self:end}}
+/* The account is the first reading destination, without a portrait. */
+.donation-account-section{padding-block:26px}
+.donation-title h1{font-size:2rem;margin-bottom:18px}
+.donation-account-first{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px}
+.donation-account-first .donation-account{padding:24px}
+.donation-account h2{font-size:1.2rem;margin-bottom:12px}
+.donation-top-links{padding-block:16px}
+@media(max-width:780px){
+ .donation-account-first{grid-template-columns:1fr;gap:20px}
+ .donation-account-first .donation-account{padding:18px;border-radius:18px}
+ .donation-account dl{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px 12px;align-items:baseline}
+ .donation-account dt,.donation-account dd{margin:0;font-size:.92rem;line-height:1.6}
+ .donation-account .donation-account-number{font-size:1.5rem;letter-spacing:.03em}
+ .donation-account .source-note{font-size:.8rem;margin:14px 0 0}
+ .donation-period{margin-top:20px;padding-top:20px}
+}

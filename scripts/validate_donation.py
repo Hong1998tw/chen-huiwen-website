@@ -28,6 +28,8 @@ require(soup.select_one('meta[property="og:url"]')['content']==url,'og url')
 require(sum(e.text==url for e in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc'))==1,'sitemap exactly once')
 require(not soup.select('form,input,iframe'),'no donation data collection or embeds')
 require(len(soup.select('details'))==9,'FAQ count')
+require(not soup.select('.donation-portrait,picture'),'donation has no portrait')
+require(soup.main.find('section')['id']=='account','account first')
 require(all(d.find('summary') for d in soup.select('details')),'native FAQ summaries')
 require(soup.select_one('.donation-account-number').text=='752200636579','verified account')
 require('115年高雄市議員擬參選人陳慧文政治獻金專戶' in s,'verified account holder')
@@ -39,6 +41,7 @@ refs=0
 for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
  require(len(doc.select('#navigation a[href="political-donation.html"]'))==1,f'{f.name}: header entry')
+ require(doc.select('#navigation a')[1]['href']=='political-donation.html',f'{f.name}: donation second')
  require(len(doc.select('footer a[href="political-donation.html"]'))==1,f'{f.name}: footer entry')
  ids=[el['id'] for el in doc.select('[id]')]
  require(len(ids)==len(set(ids)),f'{f.name}: duplicate IDs')
