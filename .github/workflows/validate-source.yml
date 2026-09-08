@@ -29,12 +29,13 @@ jobs:
       - name: Ensure generated files are committed
         run: git diff --exit-code
 
-      - name: Reject deployment placeholders
+      - name: Reject deployment placeholders in deployable source
         shell: bash
         run: |
           if grep -RInE 'YOUR_GITHUB_USERNAME|YOUR_REPOSITORY_NAME' \
-            --include='*.html' --include='*.js' --include='*.json' --include='*.md' .; then
-            echo 'Deployment placeholder found.'
+            --include='*.html' --include='*.js' --include='*.json' \
+            --exclude-dir='.git' .; then
+            echo 'Deployment placeholder found in deployable source.'
             exit 1
           fi
 
