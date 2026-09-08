@@ -27,6 +27,10 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 960 }, deviceScaleFactor: 1 });
     // Exercise usable fallback when embeds and map tile providers are unreachable.
     await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    await context.addInitScript(() => {
+      window.layoutShifts=[];
+      new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.layoutShifts.push(entry.value)}).observe({type:'layout-shift',buffered:true});
+    });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -65,6 +69,7 @@ try {
       await page.screenshot({ path: fileURLToPath(new URL(`donation-top-${width}.png`, output)) });
       await check(`all pages ${width}px: navigation and layout`, async () => {
         for (const file of pages) {
+          await check(`${file} ${width}px: layout and accessibility`, async()=>{
           await page.goto(base + file);
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
@@ -79,6 +84,7 @@ try {
           if (['index.html','political-donation.html','vision.html','achievements.html'].includes(file)) {
             await page.screenshot({path:fileURLToPath(new URL(`${file}-${width}.png`,output)),fullPage:true});
           }
+          });
         }
       });
       await check(`homepage CTA ${width}px and back navigation`, async () => {
@@ -119,6 +125,10 @@ try {
           await page.goto(base+file);
           const img=page.locator(selector+' img'); await img.evaluate(el=>el.decode());
           const box=await img.boundingBox(); const heading=await page.locator('h1').boundingBox();
+          await page.evaluate(()=>document.fonts.ready);
+          const cls=await page.evaluate(()=>window.layoutShifts.reduce((a,b)=>a+b,0));
+          report.checks.push({name:`${file} ${width}px measured initial CLS`,status:cls<0.1?'Passed':'Failed',value:cls});
+          assert(cls<0.1,'initial CLS threshold');
           assert(box.width<=max+1);assert(Math.abs(box.width/box.height-1348/1728)<0.01);
           assert(box.x+box.width<=width); assert(box.x>=heading.x+heading.width || box.y>=heading.y+heading.height || box.y+box.height<=heading.y);
           assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');

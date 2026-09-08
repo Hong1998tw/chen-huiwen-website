@@ -36,3 +36,5 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 @media(max-width:900px){.hero-grid{grid-template-columns:minmax(0,1fr) 220px;gap:28px}.hero-portrait{width:220px}}
 @media(max-width:560px){.hero-grid{grid-template-columns:1fr;gap:22px}.hero-portrait{width:160px;justify-self:end;margin-top:0}.hero-portrait figcaption{font-size:.75rem;padding:8px}.about-portrait{max-width:240px}}
 .platform-years{display:flex;flex-wrap:wrap;gap:12px;margin-block:24px}.platform-years a{padding:10px 16px;border:1px solid var(--line);border-radius:999px;min-height:44px}.platform-section{max-width:900px;margin-inline:auto;padding-block:30px}.platform-section h2{font-size:1.8rem}.platform-section h3{font-size:1.25rem;margin-top:28px}.platform-section li{margin-block:14px}.evidence-note{padding:20px;border-left:4px solid #84620b;background:#fff8e6}.facebook-frame button{white-space:normal}
+
+.case-facts dt{color:#3e503d}

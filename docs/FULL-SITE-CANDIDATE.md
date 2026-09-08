@@ -22,7 +22,7 @@ Production 未部署。Drive 未更新。Notion 未更新。僅更新既有 Draf
 | 480w | 17,090 | 19,718 |
 | 800w | 35,606 | 44,076 |
 
-首頁桌面280px、390px手機160px；政治獻金桌面180px靠右上、手機120px在文字後靠右。homepage/donation eager + high priority；about lazy。實際下載依 DPR/srcset，不能把最小檔案說成所有裝置的下載量。視覺檢查衍生圖未見臉部失真或截頭；CLS 與 browser 結果以本次 CI artifact 為準，不將尺寸預留等同測得 CLS=0。
+首頁桌面280px、390px手機160px；政治獻金桌面180px靠右上、手機120px在文字後靠右。homepage eager + high priority；donation eager + auto priority；about lazy。實際下載依 DPR/srcset，不能把最小檔案說成所有裝置的下載量。視覺檢查衍生圖未見臉部失真或截頭；CLS 與 browser 結果以本次 CI artifact 為準，不將尺寸預留等同測得 CLS=0。
 
 首頁與新聞頁 Facebook 改 click-to-load；保留直接連結與失敗提示。Canva、地圖底圖等第三方仍有外部請求。新聞／活動維持手寫 HTML，P2 才考慮獨立 data/news.json、data/activities.json，各自模板/build，由內容維護者審稿；逐頁遷移、同一 PR 可 revert，避免把所有內容塞入政績 build。
 
@@ -47,7 +47,7 @@ Production 未部署。Drive 未更新。Notion 未更新。僅更新既有 Draf
 - Notion unique URLs: 原1 → 最終0；保留0、移除1、待重新確認1。
 - 2個引用位置已改為 petition.html / service.html#contact，無 iframe、JS/JSON 隱藏引用。
 - 舊 vision 的自訂網域全文入口無法核驗，已改本站完整年份內容；不推定該網址必為 Notion。
-- 無法确认外部入口是否包含私人 database；因此撤下，沒有嘗試曝光或遍歷內部頁面。
+- 無法確認外部入口是否包含私人 database；因此撤下，沒有嘗試曝光或遍歷內部頁面。
 - `data/public-link-allowlist.json` 為空；只能加入服務處正式確認的完整服務登記 URL。
 - `scripts/validate_site.py` 全 repository exact URL allowlist guard；一般內容不得透過 Notion runtime、embed 或內容目的地提供。
 - petition 僅提供既有公開服務處聯絡。未建立姓名、身分證、地址或附件收集表單；實際告知、保存期限、處理者/權限/委外及個資流程仍需服務處確認。
@@ -64,7 +64,7 @@ Production 未部署。Drive 未更新。Notion 未更新。僅更新既有 Draf
 
 `python3 scripts/validate_site.py`：HTML5、JSON、內部target/anchor、srcset、圖片尺寸、SEO/sitemap一致性、敏感pattern與Notion guard。`validate_donation.py` 保留帳戶及法律整合檢查。`tests/donation/browser.mjs` 雖保留路徑，已擴為全站 Chromium，Desktop/390px核心頁 axe serious/critical、54頁導覽/overflow、功能、照片與no-JS。截圖及報告存CI artifact，外部偶發403/429不作CI blocker。
 
-本地已執行：兩個 build、兩個validator、JS syntax、git diff --check。遠端browser結論以本次head CI為準；不可沿用旧head的passed。未執行電話撥打、Email寄送、實際案件/付款提交；無測試個資。
+本地已執行：兩個 build、兩個validator、JS syntax、git diff --check。遠端browser結論以本次head CI為準；不可沿用舊head的passed。未執行電話撥打、Email寄送、實際案件/付款提交；無測試個資。
 
 ## Main protection read-only audit
 
@@ -74,7 +74,7 @@ main protected=false；rulesets=[]；branch metadata required status checks off�
 
 ## Required Information Before Publication
 
-P0：服務處逐字確認政治獻金專戶仍有效、收受期間/截止、戶名/帳號/分行；確認轉帳後捐贈人資料的安全接收方式、收據及退款/繳庫流程、個資告知。若恢復外部案件登記，先确认正式完整入口及公開邊界。未核驗政績不得恢復為完成／經費確定聲明。
+P0：服務處逐字確認政治獻金專戶仍有效、收受期間/截止、戶名/帳號/分行；確認轉帳後捐贈人資料的安全接收方式、收據及退款/繳庫流程、個資告知。若恢復外部案件登記，先確認正式完整入口及公開邊界。未核驗政績不得恢復為完成／經費確定聲明。
 
 P1：補2002與代表選舉原始公報、核對歷史政見轉錄；補最新工程證據/位置核驗/個人功績歸因；正式服務處時間、Email、社群與素材公開性複核；人工真機、Safari/Firefox、完整鍵盤與第三方服務驗證。
 
