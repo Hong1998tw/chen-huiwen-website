@@ -8,6 +8,8 @@
 .footer h2{font-size:1rem}.footer-grid{gap:28px}.footer-bottom{gap:16px;align-items:start}
 .footer-bottom>div{display:flex;gap:8px 18px;flex-wrap:wrap}.footer a{display:inline-flex;align-items:center;min-height:44px;overflow-wrap:anywhere}.footer-phone{font-size:1.3rem}
 .site-header #navigation{gap:14px}.site-header #navigation>a{font-size:.88rem}
+/* Keep the lawyer-schedule tab; remove the redundant service-info tab from site navigation. */
+.site-header #navigation>a[href="service.html"]{display:none}
 .platform-timeline{margin:36px 0 56px}.platform-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:24px;position:relative;padding-bottom:18px}
 .platform-row::before{content:"";position:absolute;left:102px;top:0;bottom:0;width:1px;background:var(--line)}
 .platform-year{padding-top:22px;font-size:1.4rem;font-weight:800;color:var(--green)}
