@@ -89,6 +89,10 @@ try {
           assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(),'活動公告');
           for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
           assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
+          if(file.startsWith('achievement-')) {
+            const bodyText=await page.locator('main').innerText();
+            assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗/.test(bodyText),file+': editorial copy');
+          }
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
           if (core.includes(file)) {
             const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
@@ -96,7 +100,7 @@ try {
             await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations,null,2));
             assert.deepEqual(serious.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${file}: axe`);
           }
-          if (['index.html','political-donation.html','vision.html','achievements.html','activities.html'].includes(file)) {
+          if (['index.html','political-donation.html','vision.html','achievements.html','activities.html','achievement-wende-school-center.html','achievement-huangpu-visitor-center.html'].includes(file)) {
             await page.screenshot({path:fileURLToPath(new URL(`${file}-${width}.png`,output)),fullPage:true});
           }
           });
