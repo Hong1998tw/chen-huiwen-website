@@ -38,3 +38,7 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 .platform-years{display:flex;flex-wrap:wrap;gap:12px;margin-block:24px}.platform-years a{padding:10px 16px;border:1px solid var(--line);border-radius:999px;min-height:44px}.platform-section{max-width:900px;margin-inline:auto;padding-block:30px}.platform-section h2{font-size:1.8rem}.platform-section h3{font-size:1.25rem;margin-top:28px}.platform-section li{margin-block:14px}.evidence-note{padding:20px;border-left:4px solid #84620b;background:#fff8e6}.facebook-frame button{white-space:normal}
 
 .case-facts dt{color:#3e503d}
+/* Keep first-paint text opaque and readable; avoid entrance fades on the LCP region. */
+.hero-copy,.hero-portrait{animation:none}
+:root{--muted:#52615b}
+.explore-grid span{color:#52615b}

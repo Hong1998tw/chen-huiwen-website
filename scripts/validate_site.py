@@ -16,7 +16,7 @@ for name in sorted(files):
  if not p.is_file():continue
  try:s=p.read_text()
  except UnicodeDecodeError:continue
- for raw in re.findall(r'https?://[^\s<>"\x27`]+',unescape(s)):
+ for raw in re.findall(r'https?://[^\s<>"\x27`]+',unescape(s).replace('\\/', '/')):
   u=urlsplit(raw.rstrip('.,);]'));host=u.hostname or ''
   if any(host==d or host.endswith('.'+d) for d in ['notion'+'.so','notion'+'.site','notion'+'.com']):
    found.append({'file':name,'url':raw});require(raw in allow,f'{name}: non-allowlisted public content URL')

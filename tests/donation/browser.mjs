@@ -117,6 +117,10 @@ try {
         await page.locator('#village-filter').selectOption('v:' + village);
         assert.equal(await count(), items.filter(x => x.villages.includes(village)).length);
         await page.locator('#reset-map-filters').click();
+        const scope=items.find(x=>x.scope!=='鳳山區').scope;
+        await page.locator('#village-filter').selectOption('s:'+scope);
+        assert.equal(await count(),items.filter(x=>x.scope===scope).length);
+        await page.locator('#reset-map-filters').click();
         assert.equal(await count(), items.length);
         assert(await page.locator('.leaflet-container').isVisible());
       });

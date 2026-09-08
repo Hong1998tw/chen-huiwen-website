@@ -68,7 +68,9 @@ Production 未部署。Drive 未更新。Notion 未更新。僅更新既有 Draf
 
 ## Main protection read-only audit
 
-main protected=false；rulesets=[]；branch metadata required status checks off。精確 protection endpoint 回403（integration缺 administration read），因此 force push、deletion、required PR、merge methods的獨立細項無法確認，不能寫成已啟用。
+main protected=false；rulesets=[]；branch metadata required status checks off。精確 protection endpoint 回403（integration缺 administration read），因此 force push、deletion、required PR、等獨立細項無法確認，不能寫成已啟用。
+
+Repository merge commit / squash / rebase 三種方法均允許；delete_branch_on_merge=false，此旗標不代表 main 已受刪除保護。
 
 建議另行授權管理者：Require PR；Require canonical-source及full-site QA checks；Require latest main before merge；禁止force push及刪除main。此任務沒有修改管理設定。
 
