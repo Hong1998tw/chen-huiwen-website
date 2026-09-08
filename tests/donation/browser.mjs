@@ -85,7 +85,7 @@ try {
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
           assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'),'service.html#monthly-heading');
-          for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
+          for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
           assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
           if (core.includes(file)) {
@@ -185,6 +185,12 @@ try {
         const frameBox=await frame.boundingBox();
         assert(frameBox.width>=(width===390?350:499));
         assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('small_header'),'false');
+        assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('hide_cover'),'true');
+        const hours=await page.locator('.home-office-hours').boundingBox();
+        const contacts=await page.locator('.home-contact-info').boundingBox();
+        assert(hours.x>=contacts.x+contacts.width,'office hours to the right of contact information');
+        assert((await page.locator('.home-office-hours').innerText()).includes('09:00–12:00'));
+        assert((await page.locator('.home-office-hours').innerText()).includes('14:00–18:00'));
         assert(await page.getByText('陳慧文 高雄市議員',{exact:true}).isVisible());
         const hero=await page.locator('.hero-grid').boundingBox();
         assert(Math.abs(hero.x+hero.width/2-width/2)<2,'hero centered');
