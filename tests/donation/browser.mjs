@@ -60,7 +60,9 @@ try {
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
     });
     if ([1440,390].includes(width)) {
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
       await page.screenshot({ path: fileURLToPath(new URL(`donation-${width}.png`, output)), fullPage: true });
+      await page.screenshot({ path: fileURLToPath(new URL(`donation-top-${width}.png`, output)) });
       await check(`all pages ${width}px: navigation and layout`, async () => {
         for (const file of pages) {
           await page.goto(base + file);

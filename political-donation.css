@@ -12,3 +12,5 @@
 @media(max-width:900px){.donation-grid{grid-template-columns:1fr;gap:30px}.donation-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.donation-hero,.donation-account-section{padding-block:38px}.donation-limits,.donation-steps{grid-template-columns:1fr}.donation-limits{gap:16px}.donation-note,.donation-account,.donation-limits article{padding:24px}.donation-warning{padding:22px}.donation-jump{gap:4px 12px}.donation-hero .actions{align-items:stretch;flex-direction:column}.donation-hero .actions>a{min-height:48px;display:inline-flex;align-items:center}.donation-steps{gap:8px}.donation-faq summary{font-size:1.05rem}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.donation-page .button{transition:none;transform:none}}
+/* The shared footer's muted text was 4.16:1; increase contrast on this page. */
+.donation-page + .footer p,.donation-page + .footer .footer-bottom{color:#52615b}
