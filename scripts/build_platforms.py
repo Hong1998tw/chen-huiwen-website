@@ -6,7 +6,7 @@ from html import escape
 ROOT = Path(__file__).resolve().parents[1]
 data = json.loads((ROOT / 'data/platforms.json').read_text())
 e = lambda value: escape(str(value), quote=True)
-body = '<section class="page-head"><div class="wrap"><p class="eyebrow">ELECTION PLATFORMS</p><h1>歷屆政見與願景</h1><p>選擇一場選舉，閱讀當年的政見。</p></div></section><div class="wrap platforms-wrap"><p class="section-intro">以下保存當年正式選舉公報政見，不代表已完成，也不自動代表現在的政策立場。後續執行情形請另看<a class="text-link" href="achievements.html">政績與追蹤紀錄</a>。</p><div class="platform-timeline">'
+body = '<section class="page-head"><div class="wrap"><p class="eyebrow">ELECTION PLATFORMS</p><h1>歷屆政見與願景</h1><p>選擇一場選舉，閱讀當年的政見。</p></div></section><div class="wrap platforms-wrap"><div class="platform-timeline">'
 entries = [(x['year'], x['election'], x) for x in data['elections']]
 # Keep research gaps in source; publish empty content without asserting completeness.
 for gap in data['gaps']:
