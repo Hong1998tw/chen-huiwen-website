@@ -28,6 +28,7 @@ jobs:
       - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
       - run: python scripts/validate_donation.py
       - run: python scripts/validate_site.py
+      - run: python -m unittest discover -s tests/events
       - run: npm ci --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs

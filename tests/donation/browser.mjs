@@ -85,8 +85,14 @@ try {
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
           assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'),'service.html#monthly-heading');
-          for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
+          assert.equal(await page.locator('#navigation a[href="gallery.html"]').count(),0);
+          assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(),'活動公告');
+          for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
           assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
+          if(file.startsWith('achievement-')) {
+            const bodyText=await page.locator('main').innerText();
+            assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗/.test(bodyText),file+': editorial copy');
+          }
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
           if (core.includes(file)) {
             const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
@@ -94,7 +100,7 @@ try {
             await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations,null,2));
             assert.deepEqual(serious.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${file}: axe`);
           }
-          if (['index.html','political-donation.html','vision.html','achievements.html','activities.html'].includes(file)) {
+          if (['index.html','political-donation.html','vision.html','achievements.html','activities.html','achievement-wende-school-center.html','achievement-huangpu-visitor-center.html'].includes(file)) {
             await page.screenshot({path:fileURLToPath(new URL(`${file}-${width}.png`,output)),fullPage:true});
           }
           });
@@ -185,11 +191,20 @@ try {
         const frameBox=await frame.boundingBox();
         assert(frameBox.width>=(width===390?350:499));
         assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('small_header'),'false');
+        assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('hide_cover'),'true');
+        const hours=await page.locator('.home-office-hours').boundingBox();
+        const contacts=await page.locator('.home-contact-info').boundingBox();
+        assert(hours.x>=contacts.x+contacts.width,'office hours to the right of contact information');
+        assert((await page.locator('.home-office-hours').innerText()).includes('09:00–12:00'));
+        assert((await page.locator('.home-office-hours').innerText()).includes('14:00–18:00'));
         assert(await page.getByText('陳慧文 高雄市議員',{exact:true}).isVisible());
         const hero=await page.locator('.hero-grid').boundingBox();
         assert(Math.abs(hero.x+hero.width/2-width/2)<2,'hero centered');
         assert.equal(await page.locator('#load-facebook,template#facebook-template').count(),0);
         assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
+        await page.goto(base+'activities.html');
+        assert(await page.getByRole('heading',{name:'活動公告',exact:true}).isVisible());
+        assert.equal(await page.locator('.content-card,.photo-grid').count(),0);
         await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
         await page.goto(base+'gallery.html');
         const photo=page.locator('[data-lightbox]').first();await photo.focus();await page.keyboard.press('Enter');
