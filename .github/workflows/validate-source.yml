@@ -27,6 +27,7 @@ jobs:
         run: |
           python scripts/build_cases.py
           python scripts/build_platforms.py
+          python scripts/build_events.py
 
       - name: Ensure generated files are committed
         run: git diff --exit-code

@@ -25,3 +25,6 @@
  .platform-row{grid-template-columns:48px minmax(0,1fr);gap:12px}.platform-year{font-size:1rem;padding-top:20px}
  .platform-election summary{padding:16px 14px;gap:8px}.platform-election summary h2{font-size:1rem}.platform-content{padding:0 14px 18px;font-size:.9rem}.platform-content ol{padding-left:20px}
 }
+.event-announcements{padding-bottom:40px}.event-empty{padding:32px;border:1px solid var(--line);border-radius:22px;background:white}.event-empty p{margin:0}
+.event-card{padding:28px;margin-bottom:20px;background:white;border:1px solid var(--line);border-radius:22px}.event-card h2{font-size:1.5rem}.event-card h3{font-size:1.1rem;margin-top:24px}.event-card dl{margin:0}.event-card dt{font-weight:700}.event-card dd{margin:4px 0 14px}.event-card .source-note{margin:16px 0 0;font-size:.85rem}.event-card .button{min-height:48px}
+@media(max-width:780px){.event-card{padding:20px}.event-card .actions{gap:12px}.event-card .button{width:100%;justify-content:center}}

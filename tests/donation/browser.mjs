@@ -85,6 +85,8 @@ try {
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
           assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'),'service.html#monthly-heading');
+          assert.equal(await page.locator('#navigation a[href="gallery.html"]').count(),0);
+          assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(),'活動公告');
           for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
           assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
@@ -196,6 +198,9 @@ try {
         assert(Math.abs(hero.x+hero.width/2-width/2)<2,'hero centered');
         assert.equal(await page.locator('#load-facebook,template#facebook-template').count(),0);
         assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
+        await page.goto(base+'activities.html');
+        assert(await page.getByRole('heading',{name:'活動公告',exact:true}).isVisible());
+        assert.equal(await page.locator('.content-card,.photo-grid').count(),0);
         await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
         await page.goto(base+'gallery.html');
         const photo=page.locator('[data-lightbox]').first();await photo.focus();await page.keyboard.press('Enter');
