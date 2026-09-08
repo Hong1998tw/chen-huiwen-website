@@ -1,0 +1,50 @@
+name: Validate canonical source
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate achievements JSON
+        run: python -m json.tool data/achievements.json > /dev/null
+
+      - name: Rebuild generated achievement pages
+        run: python scripts/build_cases.py
+
+      - name: Ensure generated files are committed
+        run: git diff --exit-code
+
+      - name: Reject deployment placeholders
+        shell: bash
+        run: |
+          if grep -RInE 'YOUR_GITHUB_USERNAME|YOUR_REPOSITORY_NAME' \
+            --include='*.html' --include='*.js' --include='*.json' --include='*.md' .; then
+            echo 'Deployment placeholder found.'
+            exit 1
+          fi
+
+      - name: Check required canonical-source files
+        shell: bash
+        run: |
+          test -f data/achievements.json
+          test -f scripts/build_cases.py
+          test -f templates/case-page.html
+          test -f docs/CANONICAL-SOURCE.md
+          test -f docs/DEPLOYMENT.md
+          test -f docs/TEST-CHECKLIST.md
+          test -f docs/CONTENT-SOURCES.md
