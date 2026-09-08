@@ -1,0 +1,7 @@
+{
+  "name": "chen-huiwen-donation-qa",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node browser.mjs"},
+  "devDependencies": {"playwright": "1.55.0", "@axe-core/playwright": "4.10.2"}
+}

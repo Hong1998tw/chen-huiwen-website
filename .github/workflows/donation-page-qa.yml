@@ -1,0 +1,38 @@
+name: Political donation page QA
+on:
+  pull_request:
+    paths:
+      - '**.html'
+      - '**.css'
+      - '**.js'
+      - 'data/**'
+      - 'templates/**'
+      - 'scripts/**'
+      - 'tests/donation/**'
+      - '.github/workflows/donation-page-qa.yml'
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python scripts/validate_donation.py
+      - run: npm ci --prefix tests/donation
+      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - run: node tests/donation/browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: political-donation-browser-qa
+          path: tests/donation/results/
