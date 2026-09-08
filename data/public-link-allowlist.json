@@ -1,4 +1,6 @@
 {
-  "notion": [],
-  "note": "服務案件入口尚未完成正式公開性確認，因此目前不允許任何 Notion URL。日後須審核完整 URL、公開表單邊界及個資告知後，以 PR 加入精確 allowlist。"
+  "notion": [
+    "https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d"
+  ],
+  "note": "僅允許使用者於 2026-09-08 明確指定的陳慧文議員服務案件登記 Notion Site URL；其他 Notion URL 仍不得出現在公開網站。"
 }

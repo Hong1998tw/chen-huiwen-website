@@ -205,7 +205,10 @@ try {
         await page.goto(base+'activities.html');
         assert(await page.getByRole('heading',{name:'活動公告',exact:true}).isVisible());
         assert.equal(await page.locator('.content-card,.photo-grid').count(),0);
-        await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
+        await page.goto(base+'petition.html');
+        assert.equal(await page.locator('form,input,iframe').count(),0);
+        assert.equal(await page.locator('a[href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d"]').count(),1);
+        assert.equal(await page.locator('a[href*="notion"]').count(),1);
         await page.goto(base+'gallery.html');
         const photo=page.locator('[data-lightbox]').first();await photo.focus();await page.keyboard.press('Enter');
         assert(await page.locator('#photo-dialog').isVisible());await page.keyboard.press('Escape');assert(!(await page.locator('#photo-dialog').isVisible()));
