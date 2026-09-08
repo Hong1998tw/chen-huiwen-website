@@ -4,15 +4,16 @@
 
 ## 基準與實作
 
-- Baseline main：`b65316777405ac7c6c8e2bc489249c6227d8c642`。
-- Branch：`feat/political-donation-page`；本次只提 PR，不授權 merge 或部署。
+- 初始 baseline main：`b65316777405ac7c6c8e2bc489249c6227d8c642`。
+- 首次發布：PR [#2](https://github.com/Hong1998tw/chen-huiwen-website/pull/2)，merge commit `f86dc423814784370963c6b38ff8793a6fe9a4c4`。
+- 本版收尾基準：PR [#8](https://github.com/Hong1998tw/chen-huiwen-website/pull/8)，main `7a9f0b1c3777bc8e7bb416ea7450a37b9a0ada46`；GitHub Pages 已部署並完成 Production Verification。
 - 初始盤點沒有政治獻金頁面／入口；採現行小寫連字號命名 `political-donation.html`。
 - 獨立手寫 HTML 與 `political-donation.css`；重用 `styles.css`、`site.js`、favicon、公開聯絡資訊與既有照片的 OG URL。
 - 新增全站 header/footer 入口及首頁 CTA、sitemap URL。政績模板同步更新後由原 build 產生 41 個詳情頁及 1 個地圖頁。
 - 不改政績資料、地圖邏輯、共用 JS、一般公開內容、既有網址、Pages 設定；無新付款服務、QR Code、表單或追蹤程式。
 - 不引入文宣整張圖片，無新增圖片 asset；文宣不能替代許可公告，也不把聯絡用 QR Code 說成付款碼。
 - 無既有捐款 URL，無需建立舊網址 redirect；404 頁僅增加共用導覽。
-- 不使用 Drive candidate 作 source，沒有讀寫 Drive／Notion。
+- 不使用 Drive candidate 作 source；Drive release 及 Notion 只保存發布追溯與治理紀錄。
 
 ## 頁面資訊架構
 
@@ -90,7 +91,7 @@ Hero（政治獻金／查看專戶／先確認資格）→ 本頁導覽 → 資�
 | P0 | 承辦窗口、收據交付及更正／退回流程 | 公開服務處電話已沿用 main；捐款專責角色、方式、時程尚未確認 |
 | P0 | 必要個資欄位、安全接收及告知 | 明確蒐集者、依據、用途、保管期限、存取權、委外、刪除與權利管道；不必另建網站表單才能完成 |
 | P0 | 桌面／390px 視覺、鍵盤、contrast 及全站回歸 | 見 QA 實際結果；失敗不得直接 merge |
-| P0 | 發布授權 | 本次未授權；維持 Draft PR，禁止自動合併 |
+| P0 | 發布授權 | 2026-09-08 已取得部署授權；本版已合併、部署並驗證 |
 | P1 | 是否只採銀行轉帳／臨櫃，是否接受匿名 | 團隊確認；不假設法定允許就代表團隊提供 |
 | P1 | 若要線上／刷卡，平台、契約、URL、收據與個資架構 | 未提供；不選用即可不加此功能，不是銀行資訊頁必備 |
 | P2 | QR Code 與額外圖片 | 選配；確認用途、URL 與權利後再加，須附等價文字連結 |
@@ -100,7 +101,7 @@ Hero（政治獻金／查看專戶／先確認資格）→ 本頁導覽 → 資�
 - 靜態驗證：`python3 scripts/validate_donation.py`（需 beautifulsoup4、html5lib）。
 - 瀏覽器驗證：`npm ci --prefix tests/donation`、安裝 Chromium 後 `node tests/donation/browser.mjs`；CI 不部署，只保存 QA artifacts。
 - 既有 build 及 source validation 必須持續通過。新增 QA 不降低既有 gate。
-- 正式網站未變動。日後若獲准 merge，此 PR 含多頁共用入口，應整體 revert 該次 merge，不以舊單檔覆蓋。
+- 正式網站已發布。回滾應 revert 對應 merge commit 並重新走 CI／Pages，不以舊單檔覆蓋。
 
 ## QA 修正紀錄
 
