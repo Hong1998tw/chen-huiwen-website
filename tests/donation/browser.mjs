@@ -84,7 +84,9 @@ try {
           await page.goto(base + file);
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
-          assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), file==='index.html'?0:1, file);
+          assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'),'service.html#monthly-heading');
+          for(const target of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ']) assert(await page.locator('footer a').evaluateAll((els,href)=>els.some(a=>a.getAttribute('href')===href),target));
+          assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
           const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
           if (core.includes(file)) {
             const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
@@ -92,7 +94,7 @@ try {
             await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations,null,2));
             assert.deepEqual(serious.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${file}: axe`);
           }
-          if (['index.html','political-donation.html','vision.html','achievements.html'].includes(file)) {
+          if (['index.html','political-donation.html','vision.html','achievements.html','activities.html'].includes(file)) {
             await page.screenshot({path:fileURLToPath(new URL(`${file}-${width}.png`,output)),fullPage:true});
           }
           });
@@ -150,7 +152,7 @@ try {
           if(width===390){
             assert(box.width>=86&&box.width<=96,'portrait target width');
             const intro=await page.locator('.hero-intro').boundingBox();
-            assert(intro.width>335,'intro spans inset mobile width');
+            assert(intro.width>325,'intro spans centered mobile width');
             assert(box.x>=28,'hero inset to the right');
             const account=await page.locator('.home-account-number').boundingBox();
             const contact=await page.locator('.home-contact').boundingBox();
@@ -171,9 +173,21 @@ try {
       await check(`platforms and social fallback ${width}px`, async()=>{
         await page.goto(base+'vision.html');
         for(const year of [2005,2010,2014,2018,2022]) assert(await page.locator('#platform-'+year).isVisible());
-        await page.locator('.platform-years a').first().click();assert(page.url().includes('#platform-2022'));
+        const election=page.locator('#platform-2022 details');
+        assert.equal(await election.getAttribute('open'),null);
+        await election.locator('summary').focus();await page.keyboard.press('Enter');
+        assert.equal(await election.getAttribute('open'),'');
+        assert(await election.locator('h3').first().isVisible());
+        await page.keyboard.press('Enter');assert.equal(await election.getAttribute('open'),null);
         await page.goto(base);assert.equal(await page.locator('iframe').count(),1);
         assert.equal(await page.locator('iframe').getAttribute('loading'),'eager');
+        const frame=page.locator('.home-facebook iframe');
+        const frameBox=await frame.boundingBox();
+        assert(frameBox.width>=(width===390?350:499));
+        assert.equal(new URL(await frame.getAttribute('src')).searchParams.get('small_header'),'false');
+        assert(await page.getByText('陳慧文 高雄市議員',{exact:true}).isVisible());
+        const hero=await page.locator('.hero-grid').boundingBox();
+        assert(Math.abs(hero.x+hero.width/2-width/2)<2,'hero centered');
         assert.equal(await page.locator('#load-facebook,template#facebook-template').count(),0);
         assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
         await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
