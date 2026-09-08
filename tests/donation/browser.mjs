@@ -159,7 +159,10 @@ try {
             assert.equal(await page.locator('.home-contact a[href="https://line.me/R/ti/p/@yve2766q"]').count(),1);
             for(const a of await page.locator('.home-contact-actions a').all()) assert((await a.boundingBox()).height>=48);
             assert.equal(await page.locator('.quick-services,.explore-grid,.news-grid,.hero .actions').count(),0);
-            assert.equal(await page.locator('main a[href="political-donation.html"]').count(),0,'page navigation stays in menu');
+            assert.equal(await page.locator('h1').innerText(),'慧文會武\n會做事');
+            await page.locator('.home-donation-notes').click();
+            assert(page.url().endsWith('political-donation.html#eligibility'));
+            await page.goBack();
           }
           assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');
           assert((await img.evaluate(el=>el.currentSrc)).match(/\.(avif|webp)$/));
