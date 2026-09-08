@@ -150,9 +150,14 @@ try {
           if(width===390){
             assert(box.width>=86&&box.width<=96,'portrait target width');
             const intro=await page.locator('.hero-intro').boundingBox();
-            assert(intro.width>350,'intro spans mobile width');
+            assert(intro.width>335,'intro spans inset mobile width');
+            assert(box.x>=28,'hero inset to the right');
             const account=await page.locator('.home-account-number').boundingBox();
-            assert(account.y+account.height<844,'homepage account visible in first screen');
+            const contact=await page.locator('.home-contact').boundingBox();
+            assert(contact.y+contact.height<account.y,'service contact precedes donation');
+            assert.equal(await page.locator('.home-contact a[href="petition.html"]').count(),1);
+            assert.equal(await page.locator('.home-contact a[href="https://line.me/R/ti/p/@yve2766q"]').count(),1);
+            for(const a of await page.locator('.home-contact-actions a').all()) assert((await a.boundingBox()).height>=48);
             assert.equal(await page.locator('.quick-services,.explore-grid,.news-grid,.hero .actions').count(),0);
             assert.equal(await page.locator('main a[href="political-donation.html"]').count(),0,'page navigation stays in menu');
           }
