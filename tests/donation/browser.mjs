@@ -9,7 +9,7 @@ const output = new URL('./results/', import.meta.url);
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
-const report = { checks: [], failures: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
+const report = { scope: 'Full-site candidate QA', checks: [], failures: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
 let browser;
 async function check(name, fn) {
   try { await fn(); report.checks.push({ name, status: 'Passed' }); }
@@ -69,6 +69,16 @@ try {
           assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
           assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, file);
           assert.equal(await page.locator('footer a[href="political-donation.html"]').count(), 1, file);
+          const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','404.html','achievement-wende-school-center.html'];
+          if (core.includes(file)) {
+            const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
+            const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
+            await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations,null,2));
+            assert.deepEqual(serious.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${file}: axe`);
+          }
+          if (['index.html','political-donation.html','vision.html','achievements.html'].includes(file)) {
+            await page.screenshot({path:fileURLToPath(new URL(`${file}-${width}.png`,output)),fullPage:true});
+          }
         }
       });
       await check(`homepage CTA ${width}px and back navigation`, async () => {
@@ -80,7 +90,7 @@ try {
         await page.getByRole('link', { name: '查看專戶資訊' }).click();
         assert(page.url().endsWith('#account'));
         await page.getByRole('link', { name: '← 回官網首頁' }).click();
-        assert(page.url().endsWith('/index.html'));
+        assert(page.url() === base);
         await page.goBack(); assert(page.url().includes('/political-donation.html'));
       });
       await check(`map filters ${width}px against source`, async () => {
@@ -104,6 +114,29 @@ try {
         assert.equal(await count(), items.length);
         assert(await page.locator('.leaflet-container').isVisible());
       });
+      await check(`portraits ${width}px: scale, ratio, no collision`, async () => {
+        for (const [file,selector,max] of [['index.html','.hero-portrait',width===390?160:280],['political-donation.html','.donation-portrait',width===390?120:180]]) {
+          await page.goto(base+file);
+          const img=page.locator(selector+' img'); await img.evaluate(el=>el.decode());
+          const box=await img.boundingBox(); const heading=await page.locator('h1').boundingBox();
+          assert(box.width<=max+1);assert(Math.abs(box.width/box.height-1348/1728)<0.01);
+          assert(box.x+box.width<=width); assert(box.x>=heading.x+heading.width || box.y>=heading.y+heading.height || box.y+box.height<=heading.y);
+          assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');
+          assert((await img.evaluate(el=>el.currentSrc)).match(/\.(avif|webp)$/));
+        }
+      });
+      await check(`platforms and social fallback ${width}px`, async()=>{
+        await page.goto(base+'vision.html');
+        for(const year of [2005,2010,2014,2018,2022]) assert(await page.locator('#platform-'+year).isVisible());
+        await page.locator('.platform-years a').first().click();assert(page.url().includes('#platform-2022'));
+        await page.goto(base);assert.equal(await page.locator('iframe').count(),0);
+        await page.getByRole('button',{name:'載入 Facebook 即時動態'}).click();assert.equal(await page.locator('iframe').count(),1);
+        assert(await page.getByRole('link',{name:'前往陳慧文 Facebook'}).isVisible());
+        await page.goto(base+'petition.html');assert.equal(await page.locator('form,input,iframe,a[href*="notion"]').count(),0);
+        await page.goto(base+'gallery.html');
+        const photo=page.locator('[data-lightbox]').first();await photo.focus();await page.keyboard.press('Enter');
+        assert(await page.locator('#photo-dialog').isVisible());await page.keyboard.press('Escape');assert(!(await page.locator('#photo-dialog').isVisible()));
+      });
       await check(`local resources and JS exceptions ${width}px`, async () => {
         assert.deepEqual(errors, []); assert.deepEqual(localFailures, []);
       });
@@ -114,13 +147,20 @@ try {
   const page = await nojs.newPage();
   await page.goto(base + 'political-donation.html');
   await check('no JavaScript: navigation, FAQ, bank information', async () => {
-    assert(await page.locator('#navigation a[href="index.html"]').isVisible());
+    assert(await page.locator('#navigation a[href="./"]').isVisible());
     await page.locator('summary').first().click();
     assert.equal(await page.locator('details').first().getAttribute('open'), '');
     assert(await page.getByText('752200636579', { exact: true }).isVisible());
     assert.equal(await page.locator('form,input,iframe').count(), 0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   });
+  for (const file of ['vision.html','achievements.html']) {
+    await page.goto(base+file);
+    await check(`no JavaScript: ${file}`,async()=>{
+      assert(await page.locator('h1').isVisible());
+      assert(await page.locator(file==='vision.html'?'#platform-2005':'[data-case]').first().isVisible());
+    });
+  }
   await nojs.close();
 } catch (e) { report.failures.push(String(e)); }
 finally {

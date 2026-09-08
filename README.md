@@ -55,7 +55,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 新增政績紀錄（achievements.html）、政見與願景（vision.html）、活動花絮（activities.html）、相片集（gallery.html）與服務案件表單入口（petition.html）。新聞頁加入具名媒體原文連結。政績頁提供關鍵字篩選；照片可放大，無 JavaScript 時仍可開啟原圖。
 
-案件表單沿用服務處現有 Notion 公開表單：https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d 。本網站不收集或儲存案件內容。已確認填寫頁可開啟，未送出測試案件。
+案件登記入口目前未重新確認，petition.html 提供服務處聯絡方式。本網站不收集或儲存案件內容，不送出測試案件。
 
 法律諮詢網頁：https://www.canva.com/design/DAFtNuTWpPI/yUqaUJ0UAD4Kda0_gcL6rw/view
 每月時間表：https://canva.link/ty6cqsy53ypef5l
@@ -74,7 +74,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 2. 執行 `python3 scripts/build_cases.py`，生成政績地圖與41個詳情頁。共用詳情版型在 `templates/case-page.html`。
 3. 預覽、檢查來源與連結後提交工作 branch，經測試／review 後再進入 `main`。新增/移除專題時一併更新 sitemap.xml；移除需處理舊網址。
 
-Notion 自動同步尚未建置；瀏覽政績不需要連線 Notion。未把原始工作資料、內部協調文件或私人研究附件加入公開 JSON。`content.json` 為舊公告快照，不是政績產生器資料來源。
+不建立 Notion 公開內容同步或 runtime；瀏覽政績不需要連線 Notion。未把原始工作資料、內部協調文件或私人研究附件加入公開 JSON。`content.json` 為舊公告快照，不是政績產生器資料來源。
 
 首頁及新聞頁嵌入 Facebook 官方粉絲專頁；服務頁嵌入 Canva 律師時間表，均保留另開原頁連結。這兩項第三方嵌入可能因瀏覽器隱私設定或供應商限制而無法顯示。LINE 官方帳號使用 https://line.me/R/ti/p/@yve2766q 。
 

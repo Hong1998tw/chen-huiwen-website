@@ -1,4 +1,4 @@
-name: Political donation page QA
+name: Full-site browser and accessibility QA
 on:
   pull_request:
     paths:
@@ -6,6 +6,7 @@ on:
       - '**.css'
       - '**.js'
       - 'data/**'
+      - 'assets/**'
       - 'templates/**'
       - 'scripts/**'
       - 'tests/donation/**'
@@ -26,11 +27,12 @@ jobs:
           python-version: '3.12'
       - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
       - run: python scripts/validate_donation.py
+      - run: python scripts/validate_site.py
       - run: npm ci --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: political-donation-browser-qa
+          name: full-site-browser-qa
           path: tests/donation/results/
