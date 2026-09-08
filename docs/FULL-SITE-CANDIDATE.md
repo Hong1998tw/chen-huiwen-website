@@ -1,6 +1,6 @@
-# Full-site candidate review — 2026-09-08
+# Full-site release review — 2026-09-08
 
-Production 未部署。Drive 未更新。Notion 未更新。僅更新既有 Draft PR #2，不 merge、不 push main、不變更 Pages、Release 或管理設定。
+本文件前段保存 PR #2 的候選審查基準；本版後續經 PR #2–#8 演進，已合併至 main、由 GitHub Pages 發布並完成 Production Verification。正式收尾狀態與最新 SHA 見 `docs/RELEASE-2026-09-08-V1.md`。
 
 ## Runtime / baseline
 
@@ -84,4 +84,4 @@ P2：新聞活動structured source遷移、進一步效能量測與LCP改善。
 
 ## Rollback / publication
 
-所有source+generated在同一工作branch，人工review後可逐commit revert；兩個build應可重現。候選變更不影響正式站，Production 未部署。此文件不代表已獲merge或正式收款頁發布授權。
+候選階段的限制敘述保留作審查歷史；正式發布結果以 release 文件與實際 GitHub Runtime State 為準。需要回滾時 revert 對應 merge commit，重跑 build、CI 與 Pages。
