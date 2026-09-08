@@ -18,26 +18,26 @@ def page(file,title,description,body,head=''):
  for k,v in {'TITLE':E(title),'DESCRIPTION':E(description),'FILE':E(file),'BODY':body,'HEAD':head}.items():s=s.replace('{{'+k+'}}',v)
  (R/file).write_text(s)
 def card(c):
- return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-tags">{tags(c)}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3><span class="case-status">{E(c['status'])}</span><p>{E(c['summary'])}</p><div class="case-actions"><a href="{href(c['id'])}">說明與歷史紀錄 →</a>{f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else '<span class="location-unmapped">'+E(c['scope'] if c['scope'] in ('全市政策','跨區服務','跨里建設') else '位置待核驗')+'</span>'}</div></article>'''
+ status='' if c['status']=='待核驗' else '<span class="case-status">'+E(c['status'])+'</span>'
+ return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-tags">{tags(c)}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{status}{('<p>'+E(c['summary'])+'</p>') if c['summary'] else ''}<div class="case-actions"><a href="{href(c['id'])}">說明與歷史紀錄 →</a>{f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else '<span class="location-unmapped">'+E(c['scope'] if c['scope'] in ('全市政策','跨區服務','跨里建設') else '位置待核驗')+'</span>'}</div></article>'''
 for c in items:
  h=''.join(f'<li><time>{E(x["date"])}</time><div><h3>{E(x["title"])}</h3><p>{E(x["text"])}</p></div></li>' for x in c['history'])
  photos=''
  if c['images']:photos='<div class="case-photos">'+''.join(f'<a href="assets/{E(p)}"><img src="assets/{E(p)}" alt="{E(c["title"])}公開照片" width="{c["imageDimensions"][p][0]}" height="{c["imageDimensions"][p][1]}" loading="lazy"></a>' for p in c['images'])+'</div>'
  location=('、'.join(c['villages']) or c['scope'])
- info=f'<dl class="case-facts"><div><dt>服務範圍</dt><dd>{E(location)}</dd></div><div><dt>紀錄狀態</dt><dd>{E(c["status"])}</dd></div><div><dt>網站整理日期</dt><dd>{E(c["updated"])}</dd></div>'
+ info=f'<dl class="case-facts"><div><dt>服務範圍</dt><dd>{E(location)}</dd></div>'
+ if c['status']!='待核驗':info+=f'<div><dt>進度</dt><dd>{E(c["status"])}</dd></div>'
  if c['budget']:info+=f'<div><dt>來源所載經費</dt><dd>{E(c["budget"])}</dd></div>'
  info+='</dl>'
- note=''
- if c['notes']:note='<aside class="case-notes"><h2>紀錄補充</h2><ul>'+''.join('<li>'+E(t)+'</li>' for t in c['notes'])+'</ul></aside>'
- sources='<p class="source-caption">本頁僅以所列來源支持具體敘述；待核驗專題不代表已完成或已核定。</p>'
- if c['sources']:sources+='<ul class="source-links">'+''.join('<li>'+ext(x['url'],x['title'])+'</li>' for x in c['sources'])+'</ul>'
- if c['coordinates']:sources+=f'<p class="source-caption">地圖沿用既有代表位置，精確座標與里別仍待重新核驗；里界依內政部國土測繪中心2026年8月17日圖資。{E(c["villageMethod"])}</p>'
+ content=('<h2>這件事，為什麼重要？</h2>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])) if c['paragraphs'] else ''
+ history=('<section class="history-section"><p class="eyebrow">STEP BY STEP</p><h2>歷史紀錄</h2><ol class="case-timeline">'+h+'</ol></section>') if h else ''
+ description=c['summary'] or c['title']+'｜陳慧文服務處'
  related=''
  if c['related']:related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in c['related'])+'</div></section>'
- body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">政績地圖</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head"><div class="wrap"><p class="eyebrow">WORK & PROGRESS</p><div class="case-tags">{tags(c)}</div><h1>{E(c['title'])}</h1><p>{E(c['summary'])}</p></div></section><div class="wrap case-layout"><article class="case-body"><h2>這件事，為什麼重要？</h2>{''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])}{photos}<section class="history-section"><p class="eyebrow">STEP BY STEP</p><h2>歷史紀錄</h2><ol class="case-timeline">{h}</ol></section>{note}<section class="case-sources"><h2>資料與追蹤</h2>{sources}</section></article><aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到政績列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
- structured={'@context':'https://schema.org','@type':'Article','headline':c['title'],'description':c['summary'],'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':{'@type':'Organization','name':'陳慧文服務處'},'mainEntityOfPage':BASE+href(c['id'])}
+ body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">政績地圖</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head"><div class="wrap"><p class="eyebrow">WORK & PROGRESS</p><div class="case-tags">{tags(c)}</div><h1>{E(c['title'])}</h1>{('<p>'+E(c['summary'])+'</p>') if c['summary'] else ''}</div></section><div class="wrap case-layout"><article class="case-body">{content}{photos}{history}</article><aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到政績列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
+ structured={'@context':'https://schema.org','@type':'Article','headline':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':{'@type':'Organization','name':'陳慧文服務處'},'mainEntityOfPage':BASE+href(c['id'])}
  breadcrumbs={'@context':'https://schema.org','@type':'BreadcrumbList','itemListElement':[{'@type':'ListItem','position':1,'name':'首頁','item':BASE},{'@type':'ListItem','position':2,'name':'政績與追蹤紀錄','item':BASE+'achievements.html'},{'@type':'ListItem','position':3,'name':c['title'],'item':BASE+href(c['id'])}]}
- page(href(c['id']),c['title'],c['summary'],body,'<script type="application/ld+json">'+json.dumps([structured,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>')
+ page(href(c['id']),c['title'],description,body,'<script type="application/ld+json">'+json.dumps([structured,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>')
 # Map page: all cards pre-rendered so reading never depends on map tiles or JavaScript.
 villages=sorted([f['properties']['name'] for f in geo['features']])
 scopes=sorted(set(x['scope'] for x in items if x['scope']!='鳳山區'))
