@@ -37,6 +37,11 @@ try {
     const localFailures = [];
     page.on('response', r => { if (r.url().startsWith(base) && r.status() >= 400) localFailures.push(r.url()); });
     await page.goto(base + 'political-donation.html');
+    await check(`account first and no portrait ${width}px`,async()=>{
+      assert.equal(await page.locator('.donation-portrait,picture').count(),0);
+      const account=await page.locator('.donation-account-number').boundingBox();assert(account.y+account.height<844);
+      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'),'political-donation.html');
+    });
     await check(`donation ${width}px: no overflow`, async () => {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow');
     });
@@ -125,7 +130,7 @@ try {
         assert(await page.locator('.leaflet-container').isVisible());
       });
       await check(`portraits ${width}px: scale, ratio, no collision`, async () => {
-        for (const [file,selector,max] of [['index.html','.hero-portrait',width===390?160:280],['political-donation.html','.donation-portrait',width===390?120:180]]) {
+        for (const [file,selector,max] of [['index.html','.hero-portrait',width===390?100:220]]) {
           await page.goto(base+file);
           const img=page.locator(selector+' img'); await img.evaluate(el=>el.decode());
           const box=await img.boundingBox(); const heading=await page.locator('h1').boundingBox();
@@ -134,7 +139,7 @@ try {
           report.checks.push({name:`${file} ${width}px measured initial CLS`,status:cls<0.1?'Passed':'Failed',value:cls});
           assert(cls<0.1,'initial CLS threshold');
           assert(box.width<=max+1);assert(Math.abs(box.width/box.height-1348/1728)<0.01);
-          assert(box.x+box.width<=width); assert(box.x>=heading.x+heading.width || box.y>=heading.y+heading.height || box.y+box.height<=heading.y);
+          assert(box.x+box.width<=heading.x); assert(box.y<heading.y+heading.height);
           assert.equal(await img.evaluate(el=>getComputedStyle(el).objectFit),'contain');
           assert((await img.evaluate(el=>el.currentSrc)).match(/\.(avif|webp)$/));
         }
