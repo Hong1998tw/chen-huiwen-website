@@ -16,6 +16,7 @@
 .platform-election summary::after{content:none}.platform-election summary::-webkit-details-marker{display:none}.platform-election summary h2{font-size:1.2rem;margin:0;line-height:1.5}.platform-toggle{font-size:1.5rem;color:var(--green)}
 .platform-election[open] .platform-toggle{transform:rotate(45deg)}
 .platform-content{padding:0 24px 24px}.platform-content h3{font-size:1.1rem;margin-top:28px}.platform-content li{margin-block:14px}.platform-content:empty{min-height:24px}
+.platform-poster{margin:18px 0 28px}.platform-poster a{display:block;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff}.platform-poster img{display:block;width:100%;height:auto}.platform-poster figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}
 @media(min-width:781px) and (max-width:1200px){.nav-wrap{flex-wrap:wrap;justify-content:space-between}.site-header #navigation{width:100%;justify-content:center;flex-wrap:wrap}}
 @media(max-width:780px){
  .activities-page .wrap,.platforms-wrap{width:calc(100% - 40px)}.activities-page .content-grid{grid-template-columns:1fr;gap:20px}.activities-page .page-head{padding-block:30px}
