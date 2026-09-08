@@ -24,7 +24,9 @@ jobs:
         run: python -m json.tool data/achievements.json > /dev/null
 
       - name: Rebuild generated achievement pages
-        run: python scripts/build_cases.py
+        run: |
+          python scripts/build_cases.py
+          python scripts/build_platforms.py
 
       - name: Ensure generated files are committed
         run: git diff --exit-code

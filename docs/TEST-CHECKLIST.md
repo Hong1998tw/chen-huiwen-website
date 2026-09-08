@@ -70,3 +70,16 @@
 - [ ] 部署後已重新驗證 production URL。
 
 最後更新：2026-09-08。
+
+## Full-site candidate QA
+
+- python3 scripts/build_cases.py
+- python3 scripts/build_platforms.py
+- git diff --exit-code （generated consistency）
+- python3 scripts/validate_donation.py
+- python3 scripts/validate_site.py
+- npm ci --prefix tests/donation
+- npx --prefix tests/donation playwright install --with-deps chromium
+- node tests/donation/browser.mjs
+
+Browser report/screenshots/axe：tests/donation/results（CI artifact，勿commit）。外部URL另以 scripts/audit_external_links.py 審核，不作merge blocker。上述為指令清單，執行狀態以當次head CI及報告為準。

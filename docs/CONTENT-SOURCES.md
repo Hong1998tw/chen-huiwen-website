@@ -58,3 +58,7 @@
 - 第三方內容變更時不得假設舊嵌入仍有效，發布前重新驗證。
 
 最後更新：2026-09-08。
+
+## 2026-09-08 candidate source revision
+
+歷屆政見唯一structured source為 data/platforms.json，官方CEC公報逐年URL與頁碼在各筆sourceUrl/pdfPage；由 build_platforms.py 獨立產生 vision.html。政績查核依 ACHIEVEMENT-EVIDENCE-AUDIT.md，本次待核驗資料不當作完成事實。Notion一般公開內容入口禁止，服務案件例外須完整URL確認及exact allowlist；本次allowlist為空。
