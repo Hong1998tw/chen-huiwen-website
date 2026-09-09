@@ -7,6 +7,7 @@ import json, re
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import html5lib
+from validate_seo import BASE
 R=Path(__file__).resolve().parents[1]
 page=R/'political-donation.html'
 s=page.read_text(); soup=BeautifulSoup(s,'html.parser')
@@ -22,7 +23,7 @@ for name in ['description']:
  require(bool(soup.select_one(f'meta[name="{name}"]')['content']),name)
 for prop in ['og:title','og:description','og:url','og:type','og:locale','og:image','og:image:alt']:
  require(bool(soup.select_one(f'meta[property="{prop}"]')['content']),prop)
-url='https://hong1998tw.github.io/chen-huiwen-website/political-donation.html'
+url=BASE+'political-donation.html'
 require(soup.select_one('link[rel="canonical"]')['href']==url,'canonical')
 require(soup.select_one('meta[property="og:url"]')['content']==url,'og url')
 require(sum(e.text==url for e in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc'))==1,'sitemap exactly once')
