@@ -5,6 +5,7 @@ on:
     branches: [content/seo-migration-stage2]
     paths:
       - scripts/stage2_patch.py
+      - scripts/stage2_fix_scope.py
       - .github/workflows/stage2-content-apply.yml
 
 permissions:
@@ -29,7 +30,9 @@ jobs:
         run: python -m pip install beautifulsoup4 html5lib
 
       - name: Apply source patch
-        run: python scripts/stage2_patch.py
+        run: |
+          python scripts/stage2_patch.py
+          python scripts/stage2_fix_scope.py
 
       - name: Validate source JSON
         run: python -m json.tool data/achievements.json > /dev/null
