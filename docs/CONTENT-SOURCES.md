@@ -1,5 +1,17 @@
 # 內容來源、事實狀態與公開邊界
 
+## 0. Canonical-by-Native-Type／官網 Editorial Policy 路由
+
+本 repository 只維護與可部署網站直接相關的 source、資料結構、build、validation 與公開內容邊界；**新聞收錄、完整報導、圖片選用、文案口吻與素材發布的 Editorial Policy 不在 GitHub 維護第二份正文**。
+
+遇到新聞／內容／素材編輯任務時，先依 ChatGPT Project Instructions 與最新治理路由，再於 Notion 精確搜尋並讀取目前有效頁：
+
+`陳慧文官網｜內容・新聞・素材發布規範`
+
+該 Notion 頁是此類 Editorial Policy／Content Governance 的 canonical；GitHub `main` 仍是 executable code、HTML/CSS/JS、資料 schema、build、assets、generated output 與 Git history 的唯一程式碼 Canonical Source。不得把私人 Notion URL 寫入 public repository。
+
+若 Notion Editorial Policy 與 GitHub 的程式／資料結構限制衝突，先停止發布並釐清：**內容政策在 Notion 決定「應呈現什麼」；GitHub 決定「網站如何實作與部署」**，不得讓兩邊各保存一份可獨立修改的相同規則正文。
+
 ## 1. 公開內容來源優先序
 
 對可能變動的內容，優先使用第一手／官方來源：
@@ -11,6 +23,8 @@
 5. 經人工審閱、保留來源欄位的 `data/achievements.json`。
 
 二手新聞與 AI 摘要只能作補充，不應取代第一手來源。
+
+新聞本身的原文標題、發布日期、URL、報導內容與圖片 credit，應回到該媒體原始報導核對；多媒體來源的收錄與呈現方式依 Notion canonical Editorial Policy 執行。
 
 ## 2. 事實狀態
 
@@ -54,10 +68,11 @@
 ## 6. 素材與第三方服務
 
 - 圖片、地圖、圖資與第三方 library 必須保留合法來源／授權脈絡。
+- 新聞卡不得以無關官網形象圖、其他事件照片或資料照冒充該事件的新聞照片；具體選圖、credit、權利不明時的處理方式依 Notion canonical Editorial Policy。
 - Facebook、Canva 等第三方 iframe 可能因供應商或瀏覽器設定失敗，需保留直接連結作 fallback。
 - 第三方內容變更時不得假設舊嵌入仍有效，發布前重新驗證。
 
-最後更新：2026-09-08。
+最後更新：2026-09-10。
 
 ## 2026-09-08 v1 published source revision（歷史）
 
