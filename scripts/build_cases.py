@@ -4,7 +4,7 @@ from pathlib import Path
 import json,re,html
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
-BASE='https://hong1998tw.github.io/chen-huiwen-website/'
+BASE='https://www.huiwen.tw/'
 items=json.loads((R/'data/achievements.json').read_text())
 geo=json.loads((R/'assets/fengshan-villages.geojson').read_text())
 template=(R/'templates/case-page.html').read_text()
