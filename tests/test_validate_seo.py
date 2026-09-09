@@ -102,7 +102,7 @@ class SeoValidatorRegressionTests(unittest.TestCase):
     def test_sitemap_lastmods_match_phase3_change_date(self):
         root = ET.parse(ROOT / "sitemap.xml").getroot()
         urls = root.findall("{*}url")
-        self.assertEqual(len(urls), 55)
+        self.assertEqual(len(urls), 57)
         self.assertTrue(all(url.findtext("{*}lastmod") == "2026-09-09" for url in urls))
         self.assertNotIn("404.html", "".join(url.findtext("{*}loc") or "" for url in urls))
 
