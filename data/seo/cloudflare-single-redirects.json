@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "name": "strip legacy homepage pvs query",
+      "expression": "http.host eq \"www.huiwen.tw\" and http.request.uri.path eq \"/\" and http.request.uri.query eq \"pvs=18\"",
+      "target_url": "https://www.huiwen.tw/",
+      "status_code": 301,
+      "preserve_query_string": false,
+      "enabled_after_cutover": true
+    }
+  ]
+}
