@@ -1,0 +1,57 @@
+name: Temporary Stage 2 content apply
+
+on:
+  push:
+    branches: [content/seo-migration-stage2]
+    paths:
+      - scripts/stage2_patch.py
+      - .github/workflows/stage2-content-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: content/seo-migration-stage2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply source patch
+        run: python scripts/stage2_patch.py
+
+      - name: Validate source JSON
+        run: python -m json.tool data/achievements.json > /dev/null
+
+      - name: Rebuild generated content
+        run: |
+          python scripts/build_cases.py
+          python scripts/build_platforms.py
+          python scripts/build_events.py
+
+      - name: Run site validators
+        run: |
+          python scripts/validate_donation.py
+          python scripts/validate_site.py
+          git diff --check
+
+      - name: Commit applied source and generated output
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/achievements.json achievements.html achievement-*.html activity-market.html history-meilidao.html news.html sitemap.xml docs/MIGRATION-CONTENT-AUDIT-STAGE2.md
+          if git diff --cached --quiet; then
+            echo "No content changes to commit."
+          else
+            git commit -m "content: restore stage 2 migration content"
+            git push origin HEAD:content/seo-migration-stage2
+          fi
