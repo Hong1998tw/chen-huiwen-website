@@ -1,0 +1,38 @@
+name: Apply news editorial migration once
+
+on:
+  push:
+    branches:
+      - content/news-editorial-policy-20260910
+    paths:
+      - scripts/_apply_news_editorial_migration.py
+      - .github/workflows/_news-editorial-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply editorial migration
+        run: python scripts/_apply_news_editorial_migration.py
+      - name: Validate site
+        run: python scripts/validate_site.py
+      - name: Commit migrated source and remove one-time tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm scripts/_apply_news_editorial_migration.py .github/workflows/_news-editorial-migration.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "content: align news cards with editorial policy"
+          git push origin HEAD:content/news-editorial-policy-20260910
