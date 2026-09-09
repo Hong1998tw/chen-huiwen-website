@@ -8,7 +8,7 @@ from urllib.parse import urlencode, urlsplit
 import json, re
 ROOT = Path(__file__).resolve().parents[1]
 TAIPEI = ZoneInfo('Asia/Taipei')
-BASE = 'https://hong1998tw.github.io/chen-huiwen-website/activities.html'
+BASE = 'https://www.huiwen.tw/activities.html'
 def parse_time(value):
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:

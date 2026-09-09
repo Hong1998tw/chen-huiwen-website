@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-BASE = "https://hong1998tw.github.io/chen-huiwen-website/"
+BASE = "https://www.huiwen.tw/"
 HOST = urlsplit(BASE).netloc
 BASE_PATH = urlsplit(BASE).path
 PLACEHOLDERS = ("YOUR_", "example.com", "{{", "}}")
@@ -218,7 +218,7 @@ def main() -> int:
         if not c:
             fail(f"{name}: missing canonical")
         if c and urlsplit(c).netloc != HOST:
-            fail(f"{name}: canonical host is not the GitHub Pages host")
+            fail(f"{name}: canonical host is not the configured canonical host")
         if c and og_url != c:
             fail(f"{name}: canonical and og:url differ")
         for value, label in ((title, "title"), (descriptions[0] if descriptions else "", "description")):
