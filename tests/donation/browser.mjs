@@ -29,7 +29,11 @@ try {
     await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
     await context.addInitScript(() => {
       window.layoutShifts=[];
-      new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.layoutShifts.push(entry.value)}).observe({type:'layout-shift',buffered:true});
+      new PerformanceObserver(list=>{
+        for(const entry of list.getEntries()) {
+          if(!entry.hadRecentInput) window.layoutShifts.push({value:entry.value,startTime:entry.startTime});
+        }
+      }).observe({type:'layout-shift',buffered:true});
     });
     const page = await context.newPage();
     const errors = [];
@@ -150,7 +154,23 @@ try {
           const img=page.locator(selector+' img'); await img.evaluate(el=>el.decode());
           const box=await img.boundingBox(); const heading=await page.locator('h1').boundingBox();
           await page.evaluate(()=>document.fonts.ready);
-          const cls=await page.evaluate(()=>window.layoutShifts.reduce((a,b)=>a+b,0));
+          const cls=await page.evaluate(()=>{
+            // Current Core Web Vitals CLS is the largest session window, not the legacy lifetime sum.
+            // A session window allows gaps under 1s and lasts at most 5s.
+            const shifts=[...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime);
+            let max=0,current=0,windowStart=0,last=0;
+            for(const entry of shifts){
+              if(current>0 && entry.startTime-last<1000 && entry.startTime-windowStart<=5000){
+                current+=entry.value;
+              }else{
+                current=entry.value;
+                windowStart=entry.startTime;
+              }
+              last=entry.startTime;
+              max=Math.max(max,current);
+            }
+            return max;
+          });
           report.checks.push({name:`${file} ${width}px measured initial CLS`,status:cls<0.1?'Passed':'Failed',value:cls});
           assert(cls<0.1,'initial CLS threshold');
           assert(box.width<=max+1);assert(Math.abs(box.width/box.height-1348/1728)<0.01);
