@@ -42,11 +42,43 @@ def find_og_image(page: str) -> str | None:
     return None
 
 
-def download_sep7_office_photo() -> str | None:
+def jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    sof_markers = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+    i = 2
+    while i + 9 < len(data):
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        while i < len(data) and data[i] == 0xFF:
+            i += 1
+        if i >= len(data):
+            break
+        marker = data[i]
+        i += 1
+        if marker in {0xD8, 0xD9}:
+            continue
+        if i + 2 > len(data):
+            break
+        length = int.from_bytes(data[i:i + 2], "big")
+        if length < 2 or i + length > len(data):
+            break
+        if marker in sof_markers and length >= 7:
+            height = int.from_bytes(data[i + 3:i + 5], "big")
+            width = int.from_bytes(data[i + 5:i + 7], "big")
+            if width > 0 and height > 0:
+                return width, height
+        i += length
+    return None
+
+
+def download_sep7_office_photo() -> tuple[str, int, int] | None:
     """Best-effort copy of the lead photo credited by the source to 陳慧文辦公室.
 
-    If a reliable image cannot be obtained, return None. The card then stays
-    text-only rather than using a wrong generic/portrait image.
+    Only a valid JPEG with readable intrinsic dimensions is accepted. If it
+    cannot be retrieved, the card stays text-only rather than using a wrong
+    generic/portrait image.
     """
     for article_url in (SEP7_TAIPO, SEP7_YAHOO):
         try:
@@ -56,19 +88,16 @@ def download_sep7_office_photo() -> str | None:
             if not image_url:
                 continue
             image_bytes, content_type = fetch_bytes(image_url)
-            if len(image_bytes) < 20_000:
+            if content_type != "image/jpeg" or len(image_bytes) < 20_000:
                 continue
-            ext = {
-                "image/jpeg": "jpg",
-                "image/png": "png",
-                "image/webp": "webp",
-            }.get(content_type)
-            if not ext:
+            dimensions = jpeg_dimensions(image_bytes)
+            if not dimensions:
                 continue
-            target = ASSETS / f"news-20260907-mazu-port-bridge.{ext}"
+            target = ASSETS / "news-20260907-mazu-port-bridge.jpg"
             target.write_bytes(image_bytes)
-            return target.relative_to(ROOT).as_posix()
-        except Exception as exc:  # network/site failures must not create a fake image
+            width, height = dimensions
+            return target.relative_to(ROOT).as_posix(), width, height
+        except Exception as exc:
             print(f"photo fetch skipped for {article_url}: {exc}")
     return None
 
@@ -103,7 +132,7 @@ def sep9_card() -> str:
     )
 
 
-def sep7_card(photo_path: str | None) -> str:
+def sep7_card(photo: tuple[str, int, int] | None) -> str:
     reports = [
         ("Newtalk｜登記參選後首個上班日 黃敬雅、陳慧文媽祖港橋合體站路口", "https://newtalk.tw/news/view/2026-09-07/1058255"),
         ("太報｜倒數80天選戰升溫！陳慧文跨區挺黃敬雅　媽祖港橋合體拜票拚整合", SEP7_TAIPO),
@@ -113,10 +142,11 @@ def sep7_card(photo_path: str | None) -> str:
         ("NOWnews今日新聞｜南方問政成員登記後上班首日　站路口拜票", "https://news.pchome.com.tw/public/nownews/20260907/index-78876001485583207016.html"),
     ]
     figure = ""
-    if photo_path:
+    if photo:
+        photo_path, width, height = photo
         figure = (
             f'<figure class="news-report-media"><img src="{photo_path}" '
-            'alt="陳慧文與黃敬雅於媽祖港橋路口向通勤市民拜票" loading="lazy" decoding="async">'
+            f'alt="陳慧文與黃敬雅於媽祖港橋路口向通勤市民拜票" width="{width}" height="{height}" loading="lazy" decoding="async">'
             '<figcaption>陳慧文與黃敬雅於媽祖港橋路口向通勤市民拜票。圖／陳慧文辦公室提供。</figcaption></figure>'
         )
     return (
@@ -154,14 +184,14 @@ def main() -> None:
         "一篇報導可能同時屬於多個主題；同一事件原則上整合為一張卡，已查得且有效的相關媒體原文均列於「完整報導」。",
     )
 
-    photo_path = download_sep7_office_photo()
-    if photo_path:
-        print(f"Using rights-cleared Sep 7 office-provided photo: {photo_path}")
+    photo = download_sep7_office_photo()
+    if photo:
+        print(f"Using rights-cleared Sep 7 office-provided photo: {photo[0]} {photo[1]}x{photo[2]}")
     else:
         print("No rights-cleared Sep 7 binary could be retrieved; card will remain text-only.")
 
     source, sep9_count = replace_card(source, SEP9_TITLE, sep9_card())
-    source, sep7_count = replace_card(source, SEP7_TITLE, sep7_card(photo_path))
+    source, sep7_count = replace_card(source, SEP7_TITLE, sep7_card(photo))
     if sep9_count != 1 or sep7_count != 1:
         raise SystemExit(f"target card match failed: sep9={sep9_count}, sep7={sep7_count}")
 
