@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -43,6 +44,13 @@ def og_url(doc: HeadParser) -> str:
         if meta.get("property", "").lower() == "og:url":
             return meta.get("content", "").strip()
     return ""
+
+
+def local_target(root: Path, target_url: str) -> Path:
+    path = urlsplit(target_url).path
+    if path in ("", "/"):
+        return root / "index.html"
+    return root / path.lstrip("/")
 
 
 def main() -> int:
@@ -135,6 +143,55 @@ def main() -> int:
             fail(f"redirect-map.csv: unrelated legacy path redirects to home: {row.get('legacy_path')}")
         if row.get("action") in {"先補新頁再301", "410"} and row.get("verification_status") == "confirmed":
             fail(f"redirect-map.csv: unresolved/high-risk action marked confirmed: {row.get('legacy_path')}")
+        if row.get("action") == "301" and row.get("new_path"):
+            target = local_target(root, NEW_BASE.rstrip("/") + row["new_path"])
+            if not target.exists():
+                fail(f"redirect-map.csv: successor does not exist: {row.get('new_path')}")
+
+    bulk_path = root / "data" / "seo" / "cloudflare-redirects.csv"
+    single_path = root / "data" / "seo" / "cloudflare-single-redirects.json"
+    if not bulk_path.exists() or not single_path.exists():
+        fail("Cloudflare redirect candidate files are missing")
+        bulk_rows = []
+        single_rules = []
+    else:
+        with bulk_path.open(encoding="utf-8", newline="") as fh:
+            bulk_rows = list(csv.DictReader(fh))
+        single_rules = json.loads(single_path.read_text(encoding="utf-8")).get("rules", [])
+
+    expected_bulk_sources = {
+        urlsplit(row["legacy_path"]).path
+        for row in redirect_rows
+        if row.get("action") == "301" and row.get("legacy_path") != "/?pvs=18"
+    }
+    bulk_sources = {row.get("source_path", "") for row in bulk_rows}
+    if bulk_sources != expected_bulk_sources:
+        fail("cloudflare-redirects.csv: source paths differ from confirmed path-based 301 map")
+    if len(bulk_sources) != len(bulk_rows):
+        fail("cloudflare-redirects.csv: duplicate source_path")
+    for row in bulk_rows:
+        if "?" in row.get("source_path", ""):
+            fail(f"cloudflare-redirects.csv: source path must not include query: {row.get('source_path')}")
+        if row.get("status_code") != "301":
+            fail(f"cloudflare-redirects.csv: non-301 status: {row.get('source_path')}")
+        if row.get("preserve_query", "").lower() != "false":
+            fail(f"cloudflare-redirects.csv: legacy query must be stripped: {row.get('source_path')}")
+        target_url = row.get("target_url", "")
+        if urlsplit(target_url).netloc != NEW_HOST:
+            fail(f"cloudflare-redirects.csv: target host mismatch: {target_url}")
+        if not local_target(root, target_url).exists():
+            fail(f"cloudflare-redirects.csv: target page missing: {target_url}")
+
+    if len(single_rules) != 1:
+        fail("cloudflare-single-redirects.json: expected exactly one legacy homepage query rule")
+    else:
+        rule = single_rules[0]
+        if "pvs=18" not in rule.get("expression", "") or 'http.request.uri.path eq "/"' not in rule.get("expression", ""):
+            fail("cloudflare-single-redirects.json: homepage rule must precisely match /?pvs=18")
+        if rule.get("target_url") != NEW_BASE or rule.get("status_code") != 301:
+            fail("cloudflare-single-redirects.json: homepage rule target/status mismatch")
+        if rule.get("preserve_query_string") is not False:
+            fail("cloudflare-single-redirects.json: homepage rule must strip query string")
 
     cname = root / "CNAME"
     if cname.exists() and cname.read_text(encoding="utf-8").strip() != NEW_HOST:
@@ -142,7 +199,8 @@ def main() -> int:
 
     print(
         f"Domain migration validation: {'FAIL' if errors else 'PASS'} | "
-        f"html={len(html_files)} indexable={indexable} sitemap={len(locs)} legacy={len(legacy_rows)}"
+        f"html={len(html_files)} indexable={indexable} sitemap={len(locs)} "
+        f"legacy={len(legacy_rows)} bulkRedirects={len(bulk_rows)}"
     )
     for error in errors:
         print(f"ERROR: {error}")
