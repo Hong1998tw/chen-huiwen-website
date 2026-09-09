@@ -47,7 +47,7 @@ def render_events(events):
         seen.add(event['id'])
     body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>活動公告</h1><p>活動時間、內容與報名資訊，都在這裡。</p></div></section><section class="wrap event-announcements" aria-label="活動資訊">'
     if not events:
-        return body + '<div class="event-empty"><p>新的活動公告將於本頁發布。</p></div></section>'
+        return body + '<div class="event-empty"><p>新的活動公告將於本頁發布。</p><p><a class="text-link" href="gallery.html">查看過往活動與相片紀錄 →</a></p><p><a class="text-link" href="activity-market.html">五福市場職人展活動紀錄 →</a>　<a class="text-link" href="activity-mooncake.html">議起做月餅活動紀錄 →</a></p></div></section>'
     for event in sorted(events, key=lambda x: parse_time(x['start'])):
         e = lambda x: escape(str(x), quote=True)
         start, end = (parse_time(event[k]).astimezone(TAIPEI) for k in ('start','end'))
