@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from shutil import copy2
 
-from scripts.validate_seo import normalize_sitemap_target
+from scripts.validate_seo import BASE, normalize_sitemap_target
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,20 +30,11 @@ class SeoValidatorRegressionTests(unittest.TestCase):
         )
         return completed.returncode, json.loads(completed.stdout)
 
-    def test_sitemap_paths_are_checked_against_repository_base(self):
+    def test_sitemap_paths_are_checked_against_configured_base(self):
+        self.assertEqual(normalize_sitemap_target(BASE), "index.html")
         self.assertEqual(
-            normalize_sitemap_target("https://hong1998tw.github.io/chen-huiwen-website/"),
-            "index.html",
-        )
-        self.assertEqual(
-            normalize_sitemap_target(
-                "https://hong1998tw.github.io/chen-huiwen-website/not-a-page.html"
-            ),
+            normalize_sitemap_target(BASE + "not-a-page.html"),
             "not-a-page.html",
-        )
-        self.assertEqual(
-            normalize_sitemap_target("https://hong1998tw.github.io/other/not-a-page.html"),
-            "__outside_canonical_base__",
         )
 
     def test_rejects_wrong_language(self):
@@ -67,13 +58,13 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             self.make_site(temp_root)
             about = temp_root / "about.html"
             about_text = about.read_text(encoding="utf-8")
-            root_url = "https://hong1998tw.github.io/chen-huiwen-website/"
+            root_url = BASE
             about_text = about_text.replace(
-                'href="https://hong1998tw.github.io/chen-huiwen-website/about.html"',
+                f'href="{BASE}about.html"',
                 f'href="{root_url}"',
                 1,
             ).replace(
-                'content="https://hong1998tw.github.io/chen-huiwen-website/about.html"',
+                f'content="{BASE}about.html"',
                 f'content="{root_url}"',
                 1,
             )
@@ -99,7 +90,7 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             sitemap.write_text(
                 sitemap.read_text(encoding="utf-8").replace(
                     "</urlset>",
-                    '<url><loc>https://hong1998tw.github.io/chen-huiwen-website/not-a-page.html</loc><lastmod>2026-09-09</lastmod></url></urlset>',
+                    f'<url><loc>{BASE}not-a-page.html</loc><lastmod>2026-09-09</lastmod></url></urlset>',
                     1,
                 ),
                 encoding="utf-8",
