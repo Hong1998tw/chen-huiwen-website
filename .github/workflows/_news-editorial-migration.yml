@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install validator dependencies
+        run: python -m pip install beautifulsoup4 html5lib
       - name: Apply editorial migration
         run: python scripts/_apply_news_editorial_migration.py
       - name: Validate and capture diagnostics
@@ -42,7 +44,7 @@ jobs:
           git add _news-editorial-validation.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: capture news editorial validation failure"
+          git commit -m "chore: capture news editorial validation failure" || true
           git push origin HEAD:content/news-editorial-policy-20260910
           exit 1
       - name: Commit migrated source and remove one-time tooling
