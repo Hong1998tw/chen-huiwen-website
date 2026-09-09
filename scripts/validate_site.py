@@ -50,6 +50,22 @@ for name,doc in pages.items():
  for source in doc.select('[srcset]'):
   for item in source['srcset'].split(','):require((R/item.strip().split()[0]).is_file(),f'{name}: srcset asset')
  for a in doc.select('a[target="_blank"]'):require('noopener' in a.get('rel',[]),f'{name}: external rel')
+# News editorial contract: Notion owns the prose policy; GitHub enforces deployable invariants.
+news=pages.get('news.html')
+if news:
+ news_text=news.get_text(' ',strip=True)
+ for bad in ['多家媒體均確認','多家媒體證實','經多家媒體交叉確認']:
+  require(bad not in news_text,f'news.html: forbidden self-verification wording {bad}')
+ for i,card in enumerate(news.select('.news-report-card'),start=1):
+  links=card.select('.news-source-links a')
+  if len(links)>=2:
+   require('完整報導' in card.get_text(' ',strip=True),f'news.html: multi-source card {i} missing 完整報導')
+   for a in links:
+    require('｜' in a.get_text(' ',strip=True),f'news.html: multi-source card {i} link missing 媒體｜原文標題')
+  for figure in card.select('.news-report-media'):
+   image=figure.select_one('img');src=(image.get('src','') if image else '')
+   require('site-share' not in src and not re.search(r'(^|/)chen-huiwen-(?:240|480|800)\.(?:avif|webp|png|jpe?g)$',src),f'news.html: generic portrait/share image used as news photo {src}')
+   require(bool(figure.select_one('figcaption')),f'news.html: news image missing caption/credit {src}')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():
