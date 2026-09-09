@@ -49,6 +49,14 @@ jobs:
           python scripts/validate_site.py
           git diff --check
 
+      - name: Install browser QA dependencies
+        run: |
+          npm ci --prefix tests/donation
+          npx --prefix tests/donation playwright install --with-deps chromium
+
+      - name: Run full-site browser QA
+        run: node tests/donation/browser.mjs
+
       - name: Commit applied source and generated output
         shell: bash
         run: |
