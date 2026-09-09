@@ -24,13 +24,33 @@ jobs:
           python-version: '3.12'
       - name: Apply editorial migration
         run: python scripts/_apply_news_editorial_migration.py
-      - name: Validate site
-        run: python scripts/validate_site.py
-      - name: Commit migrated source and remove one-time tooling
+      - name: Validate and capture diagnostics
+        id: validate
+        shell: bash
+        run: |
+          set +e
+          python scripts/validate_site.py > _news-editorial-validation.txt 2>&1
+          status=$?
+          cat _news-editorial-validation.txt
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist diagnostics on validation failure
+        if: steps.validate.outputs.status != '0'
         shell: bash
         run: |
           set -euo pipefail
-          git rm scripts/_apply_news_editorial_migration.py .github/workflows/_news-editorial-migration.yml
+          git add _news-editorial-validation.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: capture news editorial validation failure"
+          git push origin HEAD:content/news-editorial-policy-20260910
+          exit 1
+      - name: Commit migrated source and remove one-time tooling
+        if: steps.validate.outputs.status == '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f _news-editorial-validation.txt scripts/_apply_news_editorial_migration.py .github/workflows/_news-editorial-migration.yml 2>/dev/null || true
           git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
