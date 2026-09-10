@@ -1,0 +1,77 @@
+name: Production live verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-live-verification
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout deployed commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare report directory
+        run: mkdir -p tests/donation/results/production-live
+
+      - name: Verify live HTTP parity with canonical source
+        id: http
+        continue-on-error: true
+        run: >
+          python scripts/verify_production.py
+          --base-url https://www.huiwen.tw/
+          --attempts 16
+          --delay 15
+          --timeout 20
+          --report tests/donation/results/production-live/http-parity.json
+
+      - name: Install browser QA dependencies
+        run: npm ci --prefix tests/donation
+
+      - name: Install Chromium
+        run: npx --prefix tests/donation playwright install --with-deps chromium
+
+      - name: Run independent live browser, responsive and accessibility QA
+        id: browser
+        continue-on-error: true
+        env:
+          BASE_URL: https://www.huiwen.tw/
+        run: node tests/donation/production-browser.mjs
+
+      - name: Upload production verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-live-verification
+          path: tests/donation/results/production-live/
+
+      - name: Enforce production verification gate
+        if: always()
+        shell: bash
+        run: |
+          echo "HTTP parity outcome: ${{ steps.http.outcome }}"
+          echo "Browser QA outcome: ${{ steps.browser.outcome }}"
+          if [[ "${{ steps.http.outcome }}" != "success" || "${{ steps.browser.outcome }}" != "success" ]]; then
+            echo "Independent Production Verification failed."
+            exit 1
+          fi
+          echo "Independent Production Verification passed."
