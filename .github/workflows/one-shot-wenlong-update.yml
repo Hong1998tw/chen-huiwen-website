@@ -1,0 +1,62 @@
+name: One-shot Wenlong Lane 16 update
+
+on:
+  push:
+    branches:
+      - content/wenlong-lane16-20260910
+    paths:
+      - .github/workflows/one-shot-wenlong-update.yml
+      - .tmp/wenlong-lane16-payload.json
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: content/wenlong-lane16-20260910
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Replace reviewed achievement record
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path('data/achievements.json')
+          payload = json.loads(Path('.tmp/wenlong-lane16-payload.json').read_text())
+          items = json.loads(source.read_text())
+          matches = [i for i, item in enumerate(items) if item.get('id') == payload['id']]
+          if len(matches) != 1:
+              raise SystemExit(f'Expected exactly one {payload["id"]} record, got {len(matches)}')
+          items[matches[0]] = payload
+          source.write_text(json.dumps(items, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+      - name: Build generated achievement pages
+        run: python scripts/build_cases.py
+
+      - name: Validate changed site source
+        run: |
+          python -m json.tool data/achievements.json > /dev/null
+          python -m pip install beautifulsoup4 html5lib
+          python scripts/validate_site.py
+          python scripts/validate_seo.py
+          python -m unittest tests/test_validate_seo.py
+
+      - name: Commit canonical source and generated output
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/achievements.json achievements.html achievement-wenlong-lane16.html
+          git rm .tmp/wenlong-lane16-payload.json .github/workflows/one-shot-wenlong-update.yml
+          git diff --cached --check
+          git commit -m 'content: update 文龍路16巷政績進度與時間軸'
+          git push origin HEAD:content/wenlong-lane16-20260910
