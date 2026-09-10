@@ -123,30 +123,68 @@ try {
         assert(page.url() === base);
         await page.goBack(); assert(page.url().includes('/political-donation.html'));
       });
-      await check(`map filters ${width}px against source`, async () => {
+      await check(`map filters and pagination ${width}px against source`, async () => {
         await page.goto(base + 'achievements.html');
         const count = () => page.locator('[data-case]:visible').count();
-        assert.equal(await count(), items.length);
+        const pageSize = Math.min(10, items.length);
+        assert.equal(await count(), pageSize);
+        assert.equal(await page.locator('#case-search').isVisible(), false);
+        await page.locator('#toggle-map-search').click();
+        assert.equal(await page.locator('#case-search').isVisible(), true);
         await page.locator('#case-search').fill('文龍');
-        assert((await count()) > 0 && (await count()) < items.length);
+        assert((await count()) > 0 && (await count()) <= 10);
         await page.locator('#reset-map-filters').click();
+        assert.equal(await page.locator('#case-search').isVisible(), false);
         for (const [selector, key] of [['#category-filter','categories'], ['#status-filter','status']]) {
           const value = Array.isArray(items[0][key]) ? items[0][key][0] : items[0][key];
           await page.locator(selector).selectOption(value);
           const expected = items.filter(x => Array.isArray(x[key]) ? x[key].includes(value) : x[key] === value).length;
-          assert.equal(await count(), expected);
+          assert.equal(await count(), Math.min(10, expected));
           await page.locator('#reset-map-filters').click();
         }
         const village = items.find(x => x.villages.length).villages[0];
         await page.locator('#village-filter').selectOption('v:' + village);
-        assert.equal(await count(), items.filter(x => x.villages.includes(village)).length);
+        assert.equal(await count(), Math.min(10, items.filter(x => x.villages.includes(village)).length));
         await page.locator('#reset-map-filters').click();
         const scope=items.find(x=>x.scope!=='鳳山區').scope;
         await page.locator('#village-filter').selectOption('s:'+scope);
-        assert.equal(await count(),items.filter(x=>x.scope===scope).length);
+        assert.equal(await count(),Math.min(10,items.filter(x=>x.scope===scope).length));
         await page.locator('#reset-map-filters').click();
-        assert.equal(await count(), items.length);
+        assert.equal(await count(), pageSize);
+        if(items.length>10){
+          assert(await page.locator('.case-pagination').isVisible());
+          await page.getByRole('button',{name:'第 2 頁'}).click();
+          assert((await count())>0 && (await count())<=10);
+          assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(),'2');
+        }
         assert(await page.locator('.leaflet-container').isVisible());
+      });
+      await check(`news unified controls ${width}px`, async () => {
+        await page.goto(base + 'news.html');
+        await page.locator('#unified-news-search').waitFor({state:'visible'});
+        assert.equal(await page.locator('#news-reports').count(),0);
+        assert.equal(await page.locator('.news-unified-grid > *').count(),10);
+        assert.equal(await page.locator('#news-sort option').allTextContents().then(x=>x.join('|')),'重要優先|日期優先（新到舊）');
+        await page.locator('#news-sort').selectOption('date');
+        assert.equal(await page.locator('#news-sort').inputValue(),'date');
+        await page.locator('#unified-news-search').fill('鳳山');
+        assert((await page.locator('.news-unified-grid > *').count())>0);
+        await page.locator('#unified-news-search').fill('');
+        await page.getByRole('button',{name:'交通建設',exact:true}).click();
+        assert((await page.locator('.news-unified-grid > *').count())>0);
+      });
+      await check(`requested UI changes ${width}px`, async () => {
+        await page.goto(base + 'service.html');
+        const legal=await page.locator('.legal-section').boundingBox();
+        const monthly=await page.locator('.monthly-schedule').boundingBox();
+        assert(legal.y<monthly.y,'lawyer rules should precede the monthly schedule');
+        assert.equal(await page.locator('.monthly-schedule a[href*="canva.com"]').count(),0);
+        assert((await page.locator('.schedule-phone-cta').boundingBox()).height>=60);
+        await page.goto(base + 'about.html');
+        for(const href of ['https://www.facebook.com/hwcfs/','https://www.threads.com/@huiwen.ifs','https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028']) assert.equal(await page.locator(`.social-grid a[href="${href}"]`).count(),1);
+        assert.equal(await page.locator('.social-grid a').count(),3);
+        await page.goto(base + 'activities.html');
+        assert.equal(await page.locator('.event-empty a').count(),0);
       });
       await check(`portraits ${width}px: scale, ratio, no collision`, async () => {
         for (const [file,selector,max] of [['index.html','.hero-portrait',width===390?100:220]]) {
