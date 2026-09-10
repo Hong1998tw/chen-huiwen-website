@@ -42,3 +42,15 @@
 .monthly-schedule .actions{margin-top:24px}
 .schedule-phone-cta{min-height:66px;padding:16px 30px;border-radius:18px;font-size:clamp(1.05rem,2vw,1.3rem);gap:22px}
 @media(max-width:780px){.schedule-phone-cta{width:100%;justify-content:space-between;padding-inline:22px}}
+
+/* Achievement list: search is opt-in and filtered results are paginated 10 at a time. */
+.map-controls [hidden]{display:none!important}
+.map-search-toggle.is-active{background:#163e32}
+.case-pagination{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:24px 0 0}
+.case-pagination[hidden]{display:none!important}
+.case-page-button{min-width:44px;min-height:44px;border:1px solid #cfdccd;border-radius:10px;background:#fff;color:#254c3e;padding:8px 12px;font:inherit;font-weight:700;cursor:pointer}
+.case-page-button:hover:not(:disabled){border-color:#254c3e}
+.case-page-button[aria-current="page"]{background:#254c3e;border-color:#254c3e;color:#fff}
+.case-page-button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:1100px){.map-controls button{grid-column:auto}.map-controls #reset-map-filters{grid-column:1}}
+@media(max-width:780px){.case-pagination{margin-top:20px}.case-page-button{flex:0 0 auto}}
