@@ -99,12 +99,26 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             self.assertNotEqual(code, 0)
             self.assertTrue(any("missing local page not-a-page.html" in error for error in result["errors"]))
 
-    def test_sitemap_lastmods_match_phase3_change_date(self):
+    def test_sitemap_covers_indexable_pages_and_news_lastmods(self):
         root = ET.parse(ROOT / "sitemap.xml").getroot()
         urls = root.findall("{*}url")
-        self.assertEqual(len(urls), 57)
-        self.assertTrue(all(url.findtext("{*}lastmod") == "2026-09-09" for url in urls))
-        self.assertNotIn("404.html", "".join(url.findtext("{*}loc") or "" for url in urls))
+        loc_to_lastmod = {
+            url.findtext("{*}loc"): url.findtext("{*}lastmod")
+            for url in urls
+        }
+        expected_locs = {
+            BASE if path.name == "index.html" else BASE + path.name
+            for path in ROOT.glob("*.html")
+            if path.name != "404.html"
+        }
+        self.assertEqual(set(loc_to_lastmod), expected_locs)
+        news_locs = {
+            loc for loc in expected_locs
+            if loc == BASE + "news.html" or "/news-" in loc
+        }
+        self.assertTrue(news_locs)
+        self.assertTrue(all(loc_to_lastmod[loc] == "2026-09-10" for loc in news_locs))
+        self.assertNotIn(BASE + "404.html", loc_to_lastmod)
 
 
 if __name__ == "__main__":
