@@ -32,14 +32,10 @@
       const button=document.createElement('button');button.type='button';button.className='news-page-button';button.textContent=text;button.disabled=Boolean(options.disabled);
       if(options.current)button.setAttribute('aria-current','page');button.setAttribute('aria-label',options.ariaLabel||`第 ${page} 頁`);button.addEventListener('click',()=>onChange(page));return button;
     };
-    container.append(makePageButton('上一頁',Math.max(1,currentPage-1),{disabled:currentPage===1,ariaLabel:'上一頁'}));
-    for(let page=1;page<=totalPages;page+=1)container.append(makePageButton(String(page),page,{current:page===currentPage}));
-    container.append(makePageButton('下一頁',Math.min(totalPages,currentPage+1),{disabled:currentPage===totalPages,ariaLabel:'下一頁'}));
+    container.append(makeButton('上一頁',Math.max(1,currentPage-1),{disabled:currentPage===1,ariaLabel:'上一頁'}));
+    for(let page=1;page<=totalPages;page+=1)container.append(makeButton(String(page),page,{current:page===currentPage}));
+    container.append(makeButton('下一頁',Math.min(totalPages,currentPage+1),{disabled:currentPage===totalPages,ariaLabel:'下一頁'}));
   };
-  function makePageButton(text,page,options={}) {
-    const button=document.createElement('button');button.type='button';button.className='news-page-button';button.textContent=text;button.disabled=Boolean(options.disabled);
-    if(options.current)button.setAttribute('aria-current','page');button.setAttribute('aria-label',options.ariaLabel||`第 ${page} 頁`);return button;
-  }
 
   const makePressCard = item => {
     const article=document.createElement('article');article.className='content-card news-report-card news-press-card';article.dataset.newsCategories=item.topics.join(' ');article.dataset.newsDate=item.date;article.dataset.newsKind='press';article.dataset.newsKeywords=item.keywords;
