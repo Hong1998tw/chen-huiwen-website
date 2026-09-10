@@ -64,14 +64,10 @@ jobs:
           name: production-live-verification
           path: tests/donation/results/production-live/
 
-      - name: Enforce production verification gate
-        if: always()
-        shell: bash
+      - name: Fail production verification when a live check failed
+        if: ${{ always() && (steps.http.outcome != 'success' || steps.browser.outcome != 'success') }}
         run: |
           echo "HTTP parity outcome: ${{ steps.http.outcome }}"
           echo "Browser QA outcome: ${{ steps.browser.outcome }}"
-          if [[ "${{ steps.http.outcome }}" != "success" || "${{ steps.browser.outcome }}" != "success" ]]; then
-            echo "Independent Production Verification failed."
-            exit 1
-          fi
-          echo "Independent Production Verification passed."
+          echo "Independent Production Verification failed."
+          exit 1
