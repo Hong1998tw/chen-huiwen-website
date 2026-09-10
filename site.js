@@ -60,3 +60,33 @@
     dialog.addEventListener('click', event => {if (event.target === dialog) {const r = dialog.getBoundingClientRect();if(event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close();}});
   }
 })();
+
+// News article pages keep a compact static footer for no-JS readability; enhance it
+// with the same public contact/social destinations used across the rest of the site.
+(() => {
+  if (!document.querySelector('.news-full-article')) return;
+  const footerLinks = document.querySelector('.footer .footer-bottom div');
+  if (!footerLinks) return;
+  const required = [
+    ['tel:+88678212536', '07-821-2536', false],
+    ['https://line.me/R/ti/p/@yve2766q', 'LINE ↗', true],
+    ['https://www.facebook.com/hwcfs/', 'Facebook ↗', true],
+    ['https://www.instagram.com/huiwen.ifs/', 'Instagram ↗', true],
+    ['https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ', 'YouTube ↗', true],
+    ['https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==', 'Threads（脆） ↗', true],
+  ];
+  const hasHref = href => [...footerLinks.querySelectorAll('a')].some(link => link.getAttribute('href') === href);
+  required.forEach(([href, label, external]) => {
+    if (hasHref(href)) return;
+    footerLinks.append(document.createTextNode(' '));
+    const link = document.createElement('a');
+    link.className = 'text-link';
+    link.href = href;
+    link.textContent = label;
+    if (external) {
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
+    footerLinks.append(link);
+  });
+})();
