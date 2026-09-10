@@ -29,6 +29,8 @@ jobs:
       - run: python scripts/validate_donation.py
       - run: python scripts/validate_site.py
       - run: python -m unittest discover -s tests/events
+      - run: python -m py_compile scripts/verify_production.py
+      - run: node --check tests/donation/production-browser.mjs
       - run: npm ci --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
