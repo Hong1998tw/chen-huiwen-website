@@ -32,10 +32,14 @@
       const button=document.createElement('button');button.type='button';button.className='news-page-button';button.textContent=text;button.disabled=Boolean(options.disabled);
       if(options.current)button.setAttribute('aria-current','page');button.setAttribute('aria-label',options.ariaLabel||`第 ${page} 頁`);button.addEventListener('click',()=>onChange(page));return button;
     };
-    container.append(makeButton('上一頁',Math.max(1,currentPage-1),{disabled:currentPage===1,ariaLabel:'上一頁'}));
-    for(let page=1;page<=totalPages;page+=1)container.append(makeButton(String(page),page,{current:page===currentPage}));
-    container.append(makeButton('下一頁',Math.min(totalPages,currentPage+1),{disabled:currentPage===totalPages,ariaLabel:'下一頁'}));
+    container.append(makePageButton('上一頁',Math.max(1,currentPage-1),{disabled:currentPage===1,ariaLabel:'上一頁'}));
+    for(let page=1;page<=totalPages;page+=1)container.append(makePageButton(String(page),page,{current:page===currentPage}));
+    container.append(makePageButton('下一頁',Math.min(totalPages,currentPage+1),{disabled:currentPage===totalPages,ariaLabel:'下一頁'}));
   };
+  function makePageButton(text,page,options={}) {
+    const button=document.createElement('button');button.type='button';button.className='news-page-button';button.textContent=text;button.disabled=Boolean(options.disabled);
+    if(options.current)button.setAttribute('aria-current','page');button.setAttribute('aria-label',options.ariaLabel||`第 ${page} 頁`);return button;
+  }
 
   const makePressCard = item => {
     const article=document.createElement('article');article.className='content-card news-report-card news-press-card';article.dataset.newsCategories=item.topics.join(' ');article.dataset.newsDate=item.date;article.dataset.newsKind='press';article.dataset.newsKeywords=item.keywords;
@@ -62,21 +66,20 @@
 
     const tools=document.createElement('div');tools.className='news-unified-tools';
     const searchField=document.createElement('div');searchField.className='news-search-field';const searchLabel=document.createElement('label');searchLabel.className='news-search-label';searchLabel.htmlFor='unified-news-search';searchLabel.textContent='搜尋';const search=document.createElement('input');search.id='unified-news-search';search.className='news-search-input';search.type='search';search.placeholder='輸入標題、媒體、議題或人物';search.autocomplete='off';searchField.append(searchLabel,search);
-    const sortField=document.createElement('div');sortField.className='news-sort-field';const sortLabel=document.createElement('label');sortLabel.className='news-search-label';sortLabel.htmlFor='unified-news-sort';sortLabel.textContent='排序';const sort=document.createElement('select');sort.id='unified-news-sort';sort.className='news-sort-select';sort.innerHTML='<option value="featured">重要（服務處發布優先）</option><option value="date-desc">日期：新到舊</option><option value="date-asc">日期：舊到新</option>';sortField.append(sortLabel,sort);tools.append(searchField,sortField);
+    const sortField=document.createElement('div');sortField.className='news-sort-field';const sortLabel=document.createElement('label');sortLabel.className='news-search-label';sortLabel.htmlFor='news-sort';sortLabel.textContent='排序';const sort=document.createElement('select');sort.id='news-sort';sort.className='news-sort-select';sort.innerHTML='<option value="important">重要優先</option><option value="date">日期優先（新到舊）</option>';sortField.append(sortLabel,sort);tools.append(searchField,sortField);
 
     filterPanel.hidden=false;filterPanel.classList.add('news-unified-filters');
-    const note=document.createElement('p');note.className='source-note news-filter-note';note.textContent='新聞稿、公告與媒體報導已整合在同一列表，每頁 10 筆。「重要」會先顯示服務處發布內容，再依日期排列；日期排序則跨類型排列。';
-    const grid=document.createElement('div');grid.className='content-grid news-unified-grid';allRecords.forEach(record=>grid.append(record));
+    const note=document.createElement('p');note.className='source-note news-filter-note';note.textContent='新聞稿、公告與媒體報導已整合在同一列表，每頁 10 筆。可依主題篩選，並切換重要優先或日期優先。';
+    const grid=document.createElement('div');grid.className='content-grid news-unified-grid';
     const empty=document.createElement('p');empty.className='news-filter-empty';empty.textContent='目前沒有符合條件的新聞。';empty.hidden=true;
     const pagination=document.createElement('nav');pagination.className='news-pagination';pagination.setAttribute('aria-label','新聞列表分頁');
     host.append(head,tools,filterPanel,note,grid,empty,pagination);reportSection.remove();
 
-    const buttons=[...filterPanel.querySelectorAll('[data-news-filter]')];const labels=new Map(buttons.map(button=>[button.dataset.newsFilter,button.textContent.trim()]));let category='all',query='',sortMode='featured',currentPage=1;
+    const buttons=[...filterPanel.querySelectorAll('[data-news-filter]')];const labels=new Map(buttons.map(button=>[button.dataset.newsFilter,button.textContent.trim()]));let category='all',query='',sortMode='important',currentPage=1;
     const render=()=>{
       const term=normalize(query);let matches=allRecords.filter(record=>{const categories=(record.dataset.newsCategories||'').split(/\s+/).filter(Boolean);const haystack=normalize(`${record.textContent} ${record.dataset.newsKeywords||''}`);return(category==='all'||categories.includes(category))&&(!term||haystack.includes(term));});
-      matches.sort((a,b)=>{if(sortMode==='featured'){const kindDiff=(b.dataset.newsKind==='press'?1:0)-(a.dataset.newsKind==='press'?1:0);if(kindDiff)return kindDiff;return dateValue(b)-dateValue(a);}if(sortMode==='date-asc')return dateValue(a)-dateValue(b);return dateValue(b)-dateValue(a);});
-      matches.forEach(record=>grid.append(record));
-      const totalPages=Math.max(1,Math.ceil(matches.length/PAGE_SIZE));currentPage=Math.min(Math.max(1,currentPage),totalPages);const start=(currentPage-1)*PAGE_SIZE;const visible=new Set(matches.slice(start,start+PAGE_SIZE));allRecords.forEach(record=>{record.hidden=!visible.has(record);});
+      matches.sort((a,b)=>{if(sortMode==='important'){const kindDiff=(b.dataset.newsKind==='press'?1:0)-(a.dataset.newsKind==='press'?1:0);if(kindDiff)return kindDiff;}return dateValue(b)-dateValue(a);});
+      const totalPages=Math.max(1,Math.ceil(matches.length/PAGE_SIZE));currentPage=Math.min(Math.max(1,currentPage),totalPages);const start=(currentPage-1)*PAGE_SIZE;const visibleItems=matches.slice(start,start+PAGE_SIZE);grid.replaceChildren(...visibleItems);
       buttons.forEach(button=>{const active=button.dataset.newsFilter===category;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active));});
       const categoryText=category==='all'?'全部':(labels.get(category)||'此分類');status.textContent=`${categoryText} ${matches.length} 筆 · 第 ${currentPage}/${totalPages} 頁`;empty.hidden=matches.length!==0;
       createPagination({container:pagination,totalItems:matches.length,currentPage,onChange:page=>{currentPage=page;render();host.scrollIntoView({behavior:'smooth',block:'start'});}});
