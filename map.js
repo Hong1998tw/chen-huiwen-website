@@ -1,12 +1,12 @@
 'use strict';
 (() => {
  const root=document.getElementById('achievement-map');if(!root)return;
- const PAGE_SIZE=10;
+ const PAGE_SIZE=10; // Public list contract: ten records per page.
  const data=JSON.parse(document.getElementById('map-data').textContent);
  const search=document.getElementById('case-search'),village=document.getElementById('village-filter'),category=document.getElementById('category-filter'),status=document.getElementById('status-filter');
  const list=document.getElementById('case-list'),cards=[...document.querySelectorAll('#case-list [data-case]')],count=document.getElementById('case-count'),empty=document.getElementById('case-empty'),message=document.getElementById('map-message');
- const resetButton=document.getElementById('reset-map-filters'),searchControl=search.closest('div');
- const pagination=document.createElement('nav');pagination.className='case-pagination';pagination.setAttribute('aria-label','建設與服務紀錄分頁');list.after(pagination);
+ const resetButton=document.getElementById('reset-map-filters'),searchControl=search.closest('div');list.dataset.pageSize=String(PAGE_SIZE);
+ const pagination=document.createElement('nav');pagination.className='case-pagination';pagination.setAttribute('aria-label','建設與服務紀錄分頁');pagination.dataset.pageSize=String(PAGE_SIZE);list.after(pagination);
  const searchToggle=document.createElement('button');searchToggle.type='button';searchToggle.id='toggle-map-search';searchToggle.className='map-search-toggle';searchToggle.textContent='搜尋';searchToggle.setAttribute('aria-controls',search.id);resetButton.after(searchToggle);
  let map,markers,boundaries,visible=data,currentPage=1,initial=true;const layers=new Map();
  const initialParams=new URLSearchParams(location.search);
@@ -35,7 +35,7 @@
  filter(false,false);
  if(!window.L){message.textContent='互動地圖暫時無法載入，篩選與完整紀錄仍可使用。';root.querySelector('.map-startup').textContent='請由列表閱讀完整紀錄。';return;}
  root.replaceChildren();map=L.map(root,{scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false}).setView([22.615,120.351],13);markers=L.layerGroup().addTo(map);
- let tileErrors=0;const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+ let tileErrors=0;const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{y}.png'.replace('{y}','{y}'),{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
  tiles.on('tileerror',()=>{tileErrors++;if(tileErrors>=3)message.textContent='部分底圖未能載入；里界、點位及完整紀錄仍可使用。';});
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);
  fetch('assets/fengshan-villages.geojson',{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('boundaries');return r.json();}).then(geo=>{boundaries=L.geoJSON(geo,{onEachFeature:(f,layer)=>{layers.set(f.properties.name,layer);layer.bindTooltip(f.properties.name);const choose=()=>{village.value='v:'+f.properties.name;filter();};layer.on('click',choose);layer.on('add',()=>{const el=layer.getElement();if(el){el.setAttribute('role','button');el.setAttribute('aria-label','篩選'+f.properties.name);el.setAttribute('tabindex','0');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});}});}}).addTo(map);draw();if(initial){fit();initial=false;}}).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與專題點位查詢。';}).finally(()=>clearTimeout(timeout));
