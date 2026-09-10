@@ -39,6 +39,18 @@ def normalize_space(value: str) -> str:
     return " ".join(value.split())
 
 
+def decode_cfemail(value: str) -> str | None:
+    """Decode Cloudflare Email Address Obfuscation's data-cfemail payload."""
+    try:
+        encoded = bytes.fromhex(value)
+        if len(encoded) < 2:
+            return None
+        key = encoded[0]
+        return bytes(byte ^ key for byte in encoded[1:]).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 class PageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -71,6 +83,15 @@ class PageParser(HTMLParser):
                 self.description = data.get("content")
         elif tag == "script" and data.get("src"):
             self._add_asset(data["src"])
+
+        # Cloudflare replaces visible email addresses with a placeholder and a
+        # reversible data-cfemail payload. Rehydrate the original address for
+        # semantic source comparison while still allowing the injected markup.
+        cfemail = data.get("data-cfemail")
+        if not self._hidden_depth and cfemail:
+            decoded = decode_cfemail(cfemail)
+            if decoded:
+                self.visible_fragments.append(decoded)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -133,7 +154,7 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
     request = Request(
         target,
         headers={
-            "User-Agent": "chen-huiwen-production-verifier/1.1",
+            "User-Agent": "chen-huiwen-production-verifier/1.2",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         },
