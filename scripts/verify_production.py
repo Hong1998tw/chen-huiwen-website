@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Independent live production verification for www.huiwen.tw.
 
-Compares critical production responses against the checked-out canonical source
-and validates basic HTML metadata. Intended to run after a main-branch deploy.
+Cloudflare may intentionally transform HTML at the edge (for example email
+obfuscation or Rocket Loader), so HTML is verified semantically instead of by
+raw byte equality. Canonical same-origin CSS/JS assets and static files still
+require exact hash parity.
 """
 from __future__ import annotations
 
@@ -30,9 +32,14 @@ CORE_PAGES = (
     "political-donation.html",
 )
 STATIC_FILES = ("robots.txt", "sitemap.xml")
+MIN_TEXT_COVERAGE = 0.95
 
 
-class HeadParser(HTMLParser):
+def normalize_space(value: str) -> str:
+    return " ".join(value.split())
+
+
+class PageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.lang = None
@@ -41,9 +48,13 @@ class HeadParser(HTMLParser):
         self.canonical = None
         self.description = None
         self.local_assets: set[str] = set()
+        self.visible_fragments: list[str] = []
+        self._hidden_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
         data = dict(attrs)
+        if tag in {"script", "style", "template", "noscript"}:
+            self._hidden_depth += 1
         if tag == "html":
             self.lang = data.get("lang")
         elif tag == "title":
@@ -64,22 +75,32 @@ class HeadParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self.in_title = False
+        if tag in {"script", "style", "template", "noscript"} and self._hidden_depth:
+            self._hidden_depth -= 1
 
     def handle_data(self, data: str) -> None:
         if self.in_title:
             self.title_parts.append(data)
+        if not self._hidden_depth:
+            text = normalize_space(data)
+            if text:
+                self.visible_fragments.append(text)
 
     def _add_asset(self, raw: str) -> None:
-        u = urlsplit(raw)
-        if u.scheme or u.netloc or not u.path:
+        url = urlsplit(raw)
+        if url.scheme or url.netloc or not url.path:
             return
-        path = u.path.lstrip("/")
-        if path and not path.startswith("../"):
+        path = url.path.lstrip("/")
+        if path and not path.startswith("../") and not path.startswith("cdn-cgi/"):
             self.local_assets.add(path)
 
     @property
     def title(self) -> str:
         return "".join(self.title_parts).strip()
+
+    @property
+    def visible_text(self) -> str:
+        return normalize_space(" ".join(self.visible_fragments))
 
 
 def normalize_text_bytes(data: bytes) -> bytes:
@@ -89,6 +110,16 @@ def normalize_text_bytes(data: bytes) -> bytes:
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(normalize_text_bytes(data)).hexdigest()
+
+
+def visible_text_coverage(local: PageParser, remote: PageParser) -> float:
+    fragments = [fragment for fragment in local.visible_fragments if len(fragment) >= 4]
+    if not fragments:
+        return 1.0
+    remote_text = remote.visible_text
+    total = sum(len(fragment) for fragment in fragments)
+    matched = sum(len(fragment) for fragment in fragments if fragment in remote_text)
+    return matched / total if total else 1.0
 
 
 def remote_path(local_path: str) -> str:
@@ -102,7 +133,7 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
     request = Request(
         target,
         headers={
-            "User-Agent": "chen-huiwen-production-verifier/1.0",
+            "User-Agent": "chen-huiwen-production-verifier/1.1",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         },
@@ -117,12 +148,12 @@ def verify_once(base_url: str, timeout: int) -> dict:
     assets: set[str] = set()
     base_host = urlsplit(base_url).hostname
 
-    paths = list(CORE_PAGES) + list(STATIC_FILES)
-    for local_path in paths:
+    for local_path in list(CORE_PAGES) + list(STATIC_FILES):
         source_path = ROOT / local_path
         if not source_path.is_file():
             failures.append(f"{local_path}: missing canonical source")
             continue
+
         local = source_path.read_bytes()
         cache_key = digest(local)[:16]
         try:
@@ -132,9 +163,58 @@ def verify_once(base_url: str, timeout: int) -> dict:
             checks.append({"path": local_path, "status": "Failed", "stage": "fetch"})
             continue
 
-        final = urlsplit(final_url)
-        same_host = final.hostname == base_host
-        parity = digest(local) == digest(remote)
+        same_host = urlsplit(final_url).hostname == base_host
+        raw_parity = digest(local) == digest(remote)
+
+        if local_path.endswith(".html"):
+            local_parser = PageParser()
+            local_parser.feed(local.decode("utf-8-sig", errors="replace"))
+            remote_parser = PageParser()
+            remote_parser.feed(remote.decode("utf-8-sig", errors="replace"))
+            assets.update(local_parser.local_assets)
+
+            page_failures: list[str] = []
+            if status != 200:
+                page_failures.append(f"HTTP {status}")
+            if not same_host:
+                page_failures.append("redirected away from production host")
+            if remote_parser.lang != "zh-Hant-TW":
+                page_failures.append("live lang is not zh-Hant-TW")
+            if not remote_parser.title or remote_parser.title != local_parser.title:
+                page_failures.append("live title mismatch")
+            if not remote_parser.description or remote_parser.description != local_parser.description:
+                page_failures.append("live description mismatch")
+            if not remote_parser.canonical or remote_parser.canonical != local_parser.canonical:
+                page_failures.append("live canonical mismatch")
+
+            missing_assets = sorted(local_parser.local_assets - remote_parser.local_assets)
+            if missing_assets:
+                page_failures.append("canonical asset references missing: " + ", ".join(missing_assets))
+
+            coverage = visible_text_coverage(local_parser, remote_parser)
+            if coverage < MIN_TEXT_COVERAGE:
+                page_failures.append(
+                    f"visible text coverage {coverage:.3f} below {MIN_TEXT_COVERAGE:.2f}"
+                )
+
+            checks.append(
+                {
+                    "path": local_path,
+                    "status": "Passed" if not page_failures else "Failed",
+                    "http": status,
+                    "sameHost": same_host,
+                    "rawSourceParity": raw_parity,
+                    "edgeTransformed": not raw_parity,
+                    "visibleTextCoverage": round(coverage, 4),
+                    "expectedAssetsPresent": not missing_assets,
+                    "localSha256": digest(local),
+                    "remoteSha256": digest(remote),
+                }
+            )
+            failures.extend(f"{local_path}: {failure}" for failure in page_failures)
+            continue
+
+        parity = raw_parity
         checks.append(
             {
                 "path": local_path,
@@ -153,26 +233,10 @@ def verify_once(base_url: str, timeout: int) -> dict:
         if not parity:
             failures.append(f"{local_path}: production body differs from canonical source")
 
-        if local_path.endswith(".html"):
-            remote_text = remote.decode("utf-8-sig", errors="replace")
-            parser = HeadParser()
-            parser.feed(remote_text)
-            assets.update(parser.local_assets)
-            local_parser = HeadParser()
-            local_parser.feed(local.decode("utf-8-sig"))
-            if parser.lang != "zh-Hant-TW":
-                failures.append(f"{local_path}: live lang is not zh-Hant-TW")
-            if not parser.title or parser.title != local_parser.title:
-                failures.append(f"{local_path}: live title mismatch")
-            if not parser.description or parser.description != local_parser.description:
-                failures.append(f"{local_path}: live description mismatch")
-            if not parser.canonical or parser.canonical != local_parser.canonical:
-                failures.append(f"{local_path}: live canonical mismatch")
-
     for asset in sorted(assets):
         source_path = ROOT / asset
         if not source_path.is_file():
-            failures.append(f"{asset}: referenced local asset missing from canonical source")
+            failures.append(f"{asset}: referenced canonical asset missing from source")
             continue
         local = source_path.read_bytes()
         cache_key = digest(local)[:16]
@@ -182,6 +246,7 @@ def verify_once(base_url: str, timeout: int) -> dict:
             failures.append(f"{asset}: fetch failed ({type(exc).__name__})")
             checks.append({"path": asset, "status": "Failed", "stage": "fetch"})
             continue
+
         same_host = urlsplit(final_url).hostname == base_host
         parity = digest(local) == digest(remote)
         checks.append(
