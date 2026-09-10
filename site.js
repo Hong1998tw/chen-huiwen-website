@@ -90,3 +90,15 @@
     footerLinks.append(link);
   });
 })();
+
+// The news page first lets news.js enhance its legacy sections, then consolidates
+// those rendered cards into one searchable, filterable and sortable interface.
+(() => {
+  if (!document.querySelector('#news-reports')) return;
+  window.addEventListener('DOMContentLoaded', () => {
+    const script = document.createElement('script');
+    script.src = 'news-unified.js?v=20260910-1';
+    script.async = false;
+    document.body.append(script);
+  }, {once: true});
+})();
