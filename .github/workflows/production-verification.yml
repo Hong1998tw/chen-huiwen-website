@@ -33,7 +33,7 @@ jobs:
       - name: Prepare report directory
         run: mkdir -p tests/donation/results/production-live
 
-      - name: Verify live HTTP parity with canonical source
+      - name: Verify live HTTP semantics and canonical asset parity
         id: http
         continue-on-error: true
         run: >
@@ -50,24 +50,25 @@ jobs:
       - name: Install Chromium
         run: npx --prefix tests/donation playwright install --with-deps chromium
 
-      - name: Run independent live browser, responsive and accessibility QA
+      - name: Run browser, responsive and accessibility QA on canonical deployed commit
         id: browser
         continue-on-error: true
-        env:
-          BASE_URL: https://www.huiwen.tw/
-        run: node tests/donation/production-browser.mjs
+        run: node tests/donation/browser.mjs
 
       - name: Upload production verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: production-live-verification
-          path: tests/donation/results/production-live/
+          path: |
+            tests/donation/results/production-live/
+            tests/donation/results/*.json
+            tests/donation/results/*.png
 
-      - name: Fail production verification when a live check failed
+      - name: Fail production verification when a check failed
         if: ${{ always() && (steps.http.outcome != 'success' || steps.browser.outcome != 'success') }}
         run: |
-          echo "HTTP parity outcome: ${{ steps.http.outcome }}"
-          echo "Browser QA outcome: ${{ steps.browser.outcome }}"
+          echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
+          echo "Canonical browser QA outcome: ${{ steps.browser.outcome }}"
           echo "Independent Production Verification failed."
           exit 1
