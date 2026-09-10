@@ -1,12 +1,12 @@
 'use strict';
 (() => {
  const root=document.getElementById('achievement-map');if(!root)return;
- const PAGE_SIZE=10;
+ const PAGE_SIZE=10; // Public list contract: ten records per page.
  const data=JSON.parse(document.getElementById('map-data').textContent);
  const search=document.getElementById('case-search'),village=document.getElementById('village-filter'),category=document.getElementById('category-filter'),status=document.getElementById('status-filter');
  const list=document.getElementById('case-list'),cards=[...document.querySelectorAll('#case-list [data-case]')],count=document.getElementById('case-count'),empty=document.getElementById('case-empty'),message=document.getElementById('map-message');
- const resetButton=document.getElementById('reset-map-filters'),searchControl=search.closest('div');
- const pagination=document.createElement('nav');pagination.className='case-pagination';pagination.setAttribute('aria-label','建設與服務紀錄分頁');list.after(pagination);
+ const resetButton=document.getElementById('reset-map-filters'),searchControl=search.closest('div');list.dataset.pageSize=String(PAGE_SIZE);
+ const pagination=document.createElement('nav');pagination.className='case-pagination';pagination.setAttribute('aria-label','建設與服務紀錄分頁');pagination.dataset.pageSize=String(PAGE_SIZE);list.after(pagination);
  const searchToggle=document.createElement('button');searchToggle.type='button';searchToggle.id='toggle-map-search';searchToggle.className='map-search-toggle';searchToggle.textContent='搜尋';searchToggle.setAttribute('aria-controls',search.id);resetButton.after(searchToggle);
  let map,markers,boundaries,visible=data,currentPage=1,initial=true;const layers=new Map();
  const initialParams=new URLSearchParams(location.search);
