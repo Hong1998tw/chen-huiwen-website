@@ -1,0 +1,88 @@
+name: One-shot Wenlong public copy cleanup
+
+on:
+  push:
+    branches:
+      - content/wenlong-public-copy-cleanup-20260910
+    paths:
+      - .github/workflows/one-shot-wenlong-public-copy-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: content/wenlong-public-copy-cleanup-20260910
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install validator dependencies
+        run: python -m pip install beautifulsoup4 html5lib
+
+      - name: Update reviewed source copy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          p = Path('data/achievements.json')
+          items = json.loads(p.read_text())
+          matches = [x for x in items if x.get('id') == 'wenlong-lane16']
+          assert len(matches) == 1, f'expected one wenlong-lane16, got {len(matches)}'
+          item = matches[0]
+
+          old_budget = '1,400多萬元（2026-09-01副市長議會答覆保留經費）；新工處於2026-07-15會勘初估約1,416萬元，兩者口徑待後續核對'
+          assert item.get('budget') == old_budget, f'unexpected budget preimage: {item.get("budget")!r}'
+          item['budget'] = '1,400多萬元'
+
+          hist = [h for h in item.get('history', []) if h.get('date') == '2026-09-01']
+          assert len(hist) == 1, f'expected one 2026-09-01 history row, got {len(hist)}'
+          h = hist[0]
+          old_title = '議會質詢追蹤（逐字稿00:30:36–00:32:59）'
+          old_text = '陳慧文追問道路安全與1,400多萬元改善經費；林欽榮副市長於逐字稿00:32:10起回應，表示保留經費、移設正式側溝並於程序確定後執行。時間碼為逐字稿定位，不是當日實際鐘點。'
+          assert h.get('title') == old_title, f'unexpected history title preimage: {h.get("title")!r}'
+          assert h.get('text') == old_text, f'unexpected history text preimage: {h.get("text")!r}'
+          h['title'] = '議會質詢追蹤'
+          h['text'] = '陳慧文追問道路安全與1,400多萬元改善經費；林欽榮副市長表示保留經費、移設正式側溝並於程序確定後執行。'
+
+          p.write_text(json.dumps(items, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+      - name: Rebuild canonical generated pages
+        run: python scripts/build_cases.py
+
+      - name: Validate expected diff only
+        shell: bash
+        run: |
+          python -m json.tool data/achievements.json > /dev/null
+          python scripts/validate_site.py
+          python scripts/validate_seo.py
+          python -m unittest tests/test_validate_seo.py
+          python - <<'PY'
+          import subprocess
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          allowed = {'data/achievements.json', 'achievements.html', 'achievement-wenlong-lane16.html'}
+          unexpected = changed - allowed
+          assert not unexpected, f'unexpected generated diff: {sorted(unexpected)}'
+          assert 'data/achievements.json' in changed
+          assert 'achievement-wenlong-lane16.html' in changed
+          PY
+          git diff --check
+
+      - name: Commit source and generated output
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/achievements.json achievements.html achievement-wenlong-lane16.html
+          git commit -m 'content: 精簡文龍路16巷公開查核文字'
+          git push origin HEAD:content/wenlong-public-copy-cleanup-20260910
