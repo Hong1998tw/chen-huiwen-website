@@ -79,7 +79,7 @@
 
   function matchesKeyword(item, query) {
     if (!query) return true;
-    const haystack = normalize([item.title,item.summary,item.scope,item.status,...(item.categories||[]),...(item.villages||[]),...(item.paragraphs||[]),...((item.history||[]).flatMap(h=>[h.title,h.text,h.date]))].filter(Boolean).join(' '));
+    const haystack = normalize([item.title,item.summary,item.scope,item.status,...(item.categories||[]),...(item.subcategories||[]),...(item.villages||[]),...(item.paragraphs||[]),...((item.history||[]).flatMap(h=>[h.title,h.text,h.date]))].filter(Boolean).join(' '));
     return query.split(' ').filter(Boolean).every(token=>haystack.includes(token));
   }
 
@@ -113,7 +113,7 @@
     filtered.forEach(item => {
       const article=document.createElement('article');article.className='explore-result-card';
       const place=(item.villages||[]).join('、')||item.scope||'鳳山區';
-      article.innerHTML=`<p class="eyebrow">${escapeHTML((item.categories||[]).join('・'))}</p><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.summary||'查看完整說明與歷史紀錄。')}</p><p class="explore-relation-note">${escapeHTML(place)} · ${escapeHTML(item.status||'')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄 →</a>`;
+      article.innerHTML=`<p class="eyebrow">${escapeHTML([...(item.categories||[]),...(item.subcategories||[])].join('・'))}</p><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.summary||'查看完整說明與歷史紀錄。')}</p><p class="explore-relation-note">${escapeHTML(place)} · ${escapeHTML(item.status||'')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄 →</a>`;
       achievementBox.append(article);
     });
     empty.hidden=filtered.length>0;

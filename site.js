@@ -106,7 +106,7 @@
 // Shared digital-civic layer: global search, PWA, view transitions, timeline reveal
 // and cross-content exploration. Kept separate so existing page logic stays isolated.
 (() => {
-  const VERSION = '20260912-1';
+  const VERSION = '20260912-3';
   if (!document.querySelector(`link[data-digital-civic="${VERSION}"]`)) {
     const style = document.createElement('link');
     style.rel = 'stylesheet';

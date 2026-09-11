@@ -35,3 +35,16 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 .hero-copy,.hero-portrait{animation:none}.about-portrait{max-width:320px}.about-portrait img{object-fit:contain;object-position:center top}
 .footer p,.footer .footer-bottom,.explore-grid span{color:#52615b}.location-unmapped{color:#52615b}.case-facts dt{color:#3e503d}:root{--muted:#52615b}
 .platform-years{display:flex;flex-wrap:wrap;gap:12px;margin-block:24px}.platform-years a{padding:10px 16px;border:1px solid var(--line);border-radius:999px;min-height:44px}.platform-section{max-width:900px;margin-inline:auto;padding-block:30px}.platform-section h2{font-size:1.8rem}.platform-section h3{font-size:1.25rem;margin-top:28px}.platform-section li{margin-block:14px}.evidence-note{padding:20px;border-left:4px solid #84620b;background:#fff8e6}.facebook-frame button{white-space:normal}
+
+
+/* Public achievement taxonomy and compact related-card treatment. */
+.case-subtags{display:flex;gap:7px;flex-wrap:wrap;margin:-7px 0 16px}
+.case-subtags .case-tag-sub{font-size:11px;padding:4px 10px;border:1px solid #d5dfd8;border-radius:24px;background:#fff;color:#53675e}
+.case-tags .case-tag-main{font-weight:650}
+.related-cases .case-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.related-cases .case-tag-group{min-width:0}
+.related-cases .case-subtags{margin:6px 0 0}
+.related-cases .case-card-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.related-cases .case-place{font-size:11px;color:var(--muted)}
+.related-cases .case-primary-link{font-weight:700;color:var(--green)}
+.related-cases .case-summary{font-size:14px;line-height:1.85;color:var(--muted);margin:13px 0 0}
