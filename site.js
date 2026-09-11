@@ -102,3 +102,23 @@
     document.body.append(script);
   }, {once: true});
 })();
+
+// Shared digital-civic layer: global search, PWA, view transitions, timeline reveal
+// and cross-content exploration. Kept separate so existing page logic stays isolated.
+(() => {
+  const VERSION = '20260912-1';
+  if (!document.querySelector(`link[data-digital-civic="${VERSION}"]`)) {
+    const style = document.createElement('link');
+    style.rel = 'stylesheet';
+    style.href = `digital.css?v=${VERSION}`;
+    style.dataset.digitalCivic = VERSION;
+    document.head.append(style);
+  }
+  if (!document.querySelector(`script[data-digital-civic="${VERSION}"]`)) {
+    const script = document.createElement('script');
+    script.src = `digital.js?v=${VERSION}`;
+    script.async = false;
+    script.dataset.digitalCivic = VERSION;
+    document.body.append(script);
+  }
+})();
