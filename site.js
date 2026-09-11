@@ -125,7 +125,7 @@
   }
 })();
 
-// Mobile navigation owns the global search trigger at phone/tablet widths.
+// Mobile navigation owns the global search trigger at phone/tablet widths; this is regression-tested at 390px.
 // Desktop keeps search beside the primary navigation; mobile keeps the header to logo + menu only.
 (() => {
   const header = document.querySelector('.site-header .nav-wrap');
