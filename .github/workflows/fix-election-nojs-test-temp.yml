@@ -1,0 +1,70 @@
+name: Fix election nojs test temp
+on:
+  push:
+    branches: [feat/election-mode-v1]
+    paths: ['.github/workflows/fix-election-nojs-test-temp.yml']
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: feat/election-mode-v1}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Restore valid no-JS Playwright context
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/donation/browser.mjs')
+          s=p.read_text()
+          old="""  await context.setJavaScriptEnabled(false);await page.setViewportSize({width:390,height:844});
+  await check('no JavaScript: navigation, FAQ, bank information',async()=>{await page.goto(base+'political-donation.html');assert(await page.locator('#navigation').isVisible());assert(await page.locator('.donation-account-number').isVisible());assert(await page.locator('summary').first().isVisible());});
+  await check('no JavaScript: vision.html',async()=>{await page.goto(base+'vision.html');assert(await page.locator('main').isVisible());assert(await page.locator('[id=\"platform-2026\"]').isVisible());});
+  await check('no JavaScript: achievements.html',async()=>{await page.goto(base+'achievements.html');assert(await page.locator('#case-list').isVisible());assert((await page.locator('[data-case]').count())===items.length);});
+  await context.close();
+}finally{if(browser)await browser.close();server.kill('SIGTERM');await writeFile(new URL('browser-report.json',output),JSON.stringify(report,null,2));}
+console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
+"""
+          new="""  await context.close();
+  const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  const nojsPage = await nojs.newPage();
+  await nojsPage.goto(base + 'political-donation.html');
+  await check('no JavaScript: navigation, FAQ, bank information', async () => {
+    assert(await nojsPage.locator('#navigation a[href=\"./\"]').isVisible());
+    await nojsPage.locator('summary').first().click();
+    assert.equal(await nojsPage.locator('details').first().getAttribute('open'), '');
+    assert(await nojsPage.getByText('752200636579', { exact: true }).isVisible());
+    assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
+    assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  });
+  for (const file of ['vision.html','achievements.html']) {
+    await nojsPage.goto(base+file);
+    await check(`no JavaScript: ${file}`,async()=>{
+      assert(await nojsPage.locator('h1').isVisible());
+      assert(await nojsPage.locator(file==='vision.html'?'#platform-2005':'[data-case]').first().isVisible());
+    });
+  }
+  await nojs.close();
+} catch (e) { report.failures.push(String(e)); }
+finally {
+  if (browser) await browser.close();
+  server.kill();
+  await writeFile(new URL('browser-report.json', output), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+  if (report.failures.length) process.exitCode = 1;
+}
+"""
+          if old not in s: raise SystemExit('invalid nojs block not found')
+          p.write_text(s.replace(old,new,1))
+          PY
+          node --check tests/donation/browser.mjs
+      - name: Commit test fix
+        run: |
+          git config user.name 'Hong1998tw'
+          git config user.email '126787497+Hong1998tw@users.noreply.github.com'
+          git add tests/donation/browser.mjs
+          git diff --cached --check
+          git commit -m 'test: restore no-js browser context'
+          git push origin HEAD:feat/election-mode-v1
