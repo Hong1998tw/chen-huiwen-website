@@ -2,6 +2,11 @@
 @media(max-width:900px){
  .hero-grid{grid-template-columns:160px minmax(0,1fr);gap:24px}.hero-portrait{width:160px}
 }
+/* Avoid a mobile navigation flash before the deferred menu script runs. Browsers
+   with scripting disabled do not match this media feature, so the no-JS nav stays visible. */
+@media(max-width:780px) and (scripting:enabled){
+ .site-header nav:not(.is-open){display:none}
+}
 @media(max-width:780px){
  body.menu-open{overflow:hidden}.wrap{width:calc(100% - 32px)}
  .topline .wrap{width:calc(100% - 32px)}
