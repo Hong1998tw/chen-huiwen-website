@@ -29,6 +29,7 @@
 ## Release／Rollback
 
 - 上一個可回滾 commit：
-- 是否要部署 production：是／否
+- 預設 Production：必要測試／CI 通過且無具體疑慮時，直接 merge、部署並驗證。
+- 是否存在需停止部署的具體疑慮：否／是（若是，請明列 Evidence／CI／安全／diff／rollback／重大變更範圍等原因與解除條件）
 - 部署後驗證結果：
 - Drive release archive：
