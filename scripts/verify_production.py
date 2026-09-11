@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import time
 from html.parser import HTMLParser
 from pathlib import Path
@@ -154,7 +155,7 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
     request = Request(
         target,
         headers={
-            "User-Agent": "chen-huiwen-production-verifier/1.2",
+            "User-Agent": "chen-huiwen-production-verifier/1.3",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         },
@@ -163,7 +164,12 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
         return response.status, response.geturl(), response.read()
 
 
-def verify_once(base_url: str, timeout: int) -> dict:
+def verification_cache_key(local: bytes, run_cache_key: str, attempt: int) -> str:
+    """Use a fresh URL namespace for every workflow run and retry attempt."""
+    return f"{digest(local)[:16]}-{run_cache_key}-{attempt}"
+
+
+def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int) -> dict:
     checks: list[dict] = []
     failures: list[str] = []
     assets: set[str] = set()
@@ -176,7 +182,7 @@ def verify_once(base_url: str, timeout: int) -> dict:
             continue
 
         local = source_path.read_bytes()
-        cache_key = digest(local)[:16]
+        cache_key = verification_cache_key(local, run_cache_key, attempt)
         try:
             status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -260,7 +266,7 @@ def verify_once(base_url: str, timeout: int) -> dict:
             failures.append(f"{asset}: referenced canonical asset missing from source")
             continue
         local = source_path.read_bytes()
-        cache_key = digest(local)[:16]
+        cache_key = verification_cache_key(local, run_cache_key, attempt)
         try:
             status, final_url, remote = fetch(base_url, "/" + asset, cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -307,9 +313,10 @@ def main() -> int:
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/") + "/"
+    run_cache_key = os.environ.get("GITHUB_RUN_ID") or str(time.time_ns())
     result = {}
     for attempt in range(1, max(args.attempts, 1) + 1):
-        result = verify_once(base_url, args.timeout)
+        result = verify_once(base_url, args.timeout, run_cache_key, attempt)
         result["attempt"] = attempt
         if result["status"] == "Passed":
             break
