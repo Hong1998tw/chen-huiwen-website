@@ -72,6 +72,6 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 
 `需求／官方或原始來源 → 最新 main → branch → 修改 source → 必要 build → test → diff review → PR → CI → merge main → GitHub Pages → Production Verification`
 
-發布授權與重大變更 Gate 依 Notion 最新有效治理與 `docs/DEPLOYMENT.md` 的 operational contract 執行：一般小型／中型變更在測試與 CI 通過後預設完成部署；重大變更才停在正式發布前等待明確核准。
+發布授權依 `docs/DEPLOYMENT.md` 的 operational contract 執行：**只要必要查核、測試與 CI 通過，且沒有具體疑慮，就預設直接完成 merge、GitHub Pages 與 Production Verification，不再逐次詢問是否部署。** 只有 Evidence／CI／安全邊界／diff／rollback／重大變更範圍等存在實質疑慮時，才停在 PR／candidate 等待人工確認。
 
-最後更新：2026-09-10（Asia/Taipei）。
+最後更新：2026-09-11（Asia/Taipei）。
