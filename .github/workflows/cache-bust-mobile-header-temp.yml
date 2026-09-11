@@ -33,11 +33,11 @@ jobs:
                   touched += 1
           sw = Path('sw.js')
           text = sw.read_text()
-          text = re.sub(r"huiwen-digital-v1-[^']+", 'huiwen-digital-v1-20260912-mobilemenu1', text, count=1)
+          text = re.sub(r"huiwen-digital-v2-[^']+", 'huiwen-digital-v2-20260912-mobilemenu1', text, count=1)
           sw.write_text(text)
           assert 'site.js?v=20260912-mobilemenu1' in Path('index.html').read_text()
           assert 'mobile.css?v=20260912-mobilemenu1' in Path('index.html').read_text()
-          assert 'huiwen-digital-v1-20260912-mobilemenu1' in sw.read_text()
+          assert 'huiwen-digital-v2-20260912-mobilemenu1' in sw.read_text()
           assert touched > 0
           print(f'Updated asset versions in {touched} HTML/template files')
           PY
