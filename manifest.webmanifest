@@ -1,0 +1,20 @@
+{
+  "name": "陳慧文｜高雄市議員・鳳山區",
+  "short_name": "陳慧文官網",
+  "description": "鳳山區民眾服務、議會問政、政績追蹤、政見與服務處資訊。",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7faf8",
+  "theme_color": "#075548",
+  "lang": "zh-Hant-TW",
+  "icons": [
+    {"src":"assets/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}
+  ],
+  "shortcuts": [
+    {"name":"政績地圖","short_name":"政績","url":"/achievements.html"},
+    {"name":"里別與主題探索","short_name":"探索","url":"/explore.html"},
+    {"name":"服務案件陳情","short_name":"陳情","url":"/petition.html"}
+  ]
+}
