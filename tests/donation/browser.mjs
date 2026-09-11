@@ -45,6 +45,7 @@ try {
       assert.equal(await page.locator('.donation-portrait,picture').count(),0);
       const account=await page.locator('.donation-account-number').boundingBox();assert(account.y+account.height<844);
       assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'),'political-donation.html');
+      assert.equal(await page.locator('#navigation a[href="election.html"]').count(),1);
     });
     await check(`donation ${width}px: no overflow`, async () => {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow');

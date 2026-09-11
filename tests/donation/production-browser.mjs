@@ -12,6 +12,9 @@ await mkdir(output, { recursive: true });
 const corePages = [
   'index.html',
   'about.html',
+  'election.html',
+  'press.html',
+  'facts.html',
   'achievements.html',
   'vision.html',
   'news.html',
@@ -155,7 +158,7 @@ try {
     });
 
     if (width === 1440 || width === 390) {
-      for (const file of ['index.html', 'achievements.html', 'news.html', 'service.html']) {
+      for (const file of ['index.html', 'election.html', 'achievements.html', 'news.html', 'service.html']) {
         const target = file === 'index.html' ? base : new URL(file, base).href;
         await page.goto(target, { waitUntil: 'domcontentloaded' });
         await page.screenshot({

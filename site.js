@@ -9,6 +9,7 @@
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
   backdrop.setAttribute('aria-label', '關閉選單');
   document.body.append(backdrop);
+  if (!navigation.querySelector('a[href="election.html"]')) { const election=document.createElement('a'); election.href='election.html'; election.textContent='2026選舉'; const donation=navigation.querySelector('a[href="political-donation.html"]'); if (donation) donation.after(election); else navigation.append(election); }
   const links = [...navigation.querySelectorAll('a')];
   function closeMenu(returnFocus = false) {
     navigation.classList.remove('is-open'); document.body.classList.remove('menu-open');
@@ -108,7 +109,7 @@
 // Shared digital-civic layer: global search, PWA, view transitions, timeline reveal
 // and cross-content exploration. Kept separate so existing page logic stays isolated.
 (() => {
-  const VERSION = '20260912-3';
+  const VERSION = '20260912-election1';
   if (!document.querySelector(`link[data-digital-civic="${VERSION}"]`)) {
     const style = document.createElement('link');
     style.rel = 'stylesheet';
