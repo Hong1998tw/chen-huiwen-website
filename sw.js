@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='huiwen-digital-v2-20260912';
+const CACHE='huiwen-digital-v2-20260912-mobilemenu1';
 const SHELL=['./','./index.html','./styles.css','./digital.css','./digital.js','./explore.html','./explore.js','./assets/favicon.svg'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>Promise.allSettled(SHELL.map(url=>cache.add(url)))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE&&key.startsWith('huiwen-digital-')).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
