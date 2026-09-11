@@ -29,6 +29,7 @@ jobs:
       - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
       - run: python scripts/validate_donation.py
       - run: python scripts/validate_site.py
+      - run: python scripts/validate_public_copy.py
       - run: python -m unittest discover -s tests/events
       - run: python -m py_compile scripts/verify_production.py
       - run: node --check tests/donation/production-browser.mjs
