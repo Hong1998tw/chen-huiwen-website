@@ -1,0 +1,23 @@
+name: Export public copy audit temp
+on:
+  push:
+    branches:
+      - fix/public-election-copy
+    paths:
+      - '.github/workflows/export-public-copy-audit-temp.yml'
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/public-election-copy
+      - name: Pack worktree
+        run: zip -qr "$RUNNER_TEMP/public-copy-audit.zip" . -x '.git/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-copy-audit
+          path: ${{ runner.temp }}/public-copy-audit.zip
+          retention-days: 1
