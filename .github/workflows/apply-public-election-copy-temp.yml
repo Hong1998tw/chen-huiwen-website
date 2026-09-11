@@ -53,7 +53,7 @@ jobs:
           python3 scripts/validate_seo.py
       - name: Public-facing contract checks
         run: |
-          test "$(find . -maxdepth 1 -name 'achievement-*.html' | wc -l)" -eq 19
+          test "$(find . -maxdepth 1 -name 'achievement-*.html' | wc -l)" -eq 20
           grep -q '公開行程與活動' activities.html
           grep -q '勝選倒數' index.html
           grep -q '候選人姓名號次抽籤' index.html
