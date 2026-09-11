@@ -1,4 +1,4 @@
-name: Export public copy worktree temp
+name: Apply public achievement source payload temp
 on:
   push:
     branches:
@@ -6,16 +6,59 @@ on:
     paths:
       - '.github/workflows/export-public-copy-worktree-temp.yml'
 permissions:
-  contents: read
+  contents: write
 jobs:
-  export:
+  apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Pack worktree
-        run: zip -qr "$RUNNER_TEMP/chen-huiwen-public-copy-worktree.zip" . -x '.git/*'
-      - uses: actions/upload-artifact@v4
         with:
-          name: public-copy-worktree
-          path: ${{ runner.temp }}/chen-huiwen-public-copy-worktree.zip
-          retention-days: 1
+          ref: content/public-achievement-copy-taxonomy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply source payload
+        run: |
+          cat .tmp/public-copy-payload/part* | base64 -d > "$RUNNER_TEMP/public-copy-source.tar.xz"
+          tar -xJf "$RUNNER_TEMP/public-copy-source.tar.xz"
+      - name: Build generated public pages
+        run: |
+          python3 scripts/build_cases.py
+          python3 scripts/build_events.py
+      - name: Syntax and unit checks
+        run: |
+          python3 -m py_compile scripts/build_cases.py scripts/build_events.py
+          python3 -m unittest discover -s tests/events
+          node --check map.js
+          node --check digital.js
+          node --check explore.js
+          node --check site.js
+          node --check tests/donation/digital-civic.mjs
+      - name: Static validators
+        run: |
+          pip install beautifulsoup4==4.13.5 html5lib==1.1
+          python3 scripts/validate_site.py
+          python3 scripts/validate_donation.py
+          python3 scripts/validate_seo.py
+      - name: Assert public copy contract
+        run: |
+          ! grep -R -E '這件事，為什麼重要？|STEP BY STEP|議會質詢紀錄載陳慧文|議會紀錄載陳慧文|<h3>官方公開紀錄</h3>' achievement-*.html achievements.html
+          grep -q '<option>寵物</option>' achievements.html
+          grep -q '官方資訊 ↗' activities.html
+          grep -q '陳慧文議員於2025年5月14日市政總質詢' achievement-wende-school-center.html
+          grep -q 'id="subcategory-filter"' achievements.html
+          grep -q '查看完整內容 →' achievements.html
+      - name: Commit source and generated output
+        run: |
+          rm -rf .tmp/public-copy-payload
+          rm .github/workflows/export-public-copy-worktree-temp.yml
+          git config user.name 'Hong1998tw'
+          git config user.email '126787497+Hong1998tw@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'content: improve public achievement taxonomy and copy'
+          git push origin HEAD:content/public-achievement-copy-taxonomy
