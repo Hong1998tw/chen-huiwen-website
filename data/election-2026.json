@@ -1,0 +1,30 @@
+{
+  "election": "115年地方公職人員選舉",
+  "area": "高雄市鳳山區",
+  "voteDate": "2026-11-28",
+  "pollsOpen": "08:00",
+  "pollsClose": "16:00",
+  "numberDrawDate": "2026-10-23",
+  "numberDrawTime": null,
+  "numberDrawPlace": null,
+  "candidateListAnnouncementDate": "2026-11-17",
+  "councilPlatformPeriodStart": "2026-11-18",
+  "councilPlatformPeriodEnd": "2026-11-27",
+  "verifiedAt": "2026-09-12",
+  "sources": [
+    {
+      "title": "高雄市選舉委員會第175次委員會議紀錄｜115年地方公職人員選舉工作進行程序表",
+      "url": "https://web.cec.gov.tw/api/file/7d249f6a-cef3-48ce-a3b0-2857ae661f37.pdf",
+      "sourceType": "官方第一手資料"
+    },
+    {
+      "title": "中央選舉委員會｜115年地方公職人員選舉",
+      "url": "https://www.cec.gov.tw/central/",
+      "sourceType": "官方選舉機關"
+    }
+  ],
+  "notes": [
+    "候選人姓名號次抽籤日期為2026年10月23日；本資料尚未取得鳳山區市議員抽籤的確切時間與地點，未自行推定。",
+    "投票起止時間依選務程序為上午8時至下午4時；如後續官方公告異動，以最新公告為準。"
+  ]
+}
