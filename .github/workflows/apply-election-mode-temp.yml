@@ -27,23 +27,12 @@ jobs:
           from pathlib import Path
           import re
           R=Path('.')
-          def replace(path,old,new):
-              p=R/path; s=p.read_text()
-              if old not in s: raise SystemExit(f'missing pattern in {path}: {old[:80]}')
-              p.write_text(s.replace(old,new,1))
-          def regex_all(path,pattern,repl):
-              p=R/path; s=p.read_text(); ns,n=re.subn(pattern,repl,s)
-              if n: p.write_text(ns)
-              return n
-
-          # Election page: countdown and verified key dates, available even before JS enhances it.
           election=R/'election.html'; s=election.read_text()
           marker='</aside></div></section>\n<section class="wrap campaign-shell" aria-labelledby="campaign-nav-heading">'
           block='''</aside></div></section>\n<section class="wrap campaign-shell campaign-countdown-wrap" aria-labelledby="countdown-heading"><div class="campaign-countdown"><div><p class="campaign-kicker" id="countdown-heading">勝選倒數</p><strong id="campaign-countdown">—</strong> <span id="campaign-countdown-unit">天，距離投票日</span></div></div><div class="campaign-keydates"><div class="campaign-keydate" id="campaign-number-draw"><strong>2026/10/23</strong><span>候選人姓名號次抽籤</span><small>官方目前僅確認日期；時間／地點待最新公告</small></div><div class="campaign-keydate" id="campaign-vote-date"><strong>2026/11/28</strong><span>投開票</span><small>08:00–16:00，如有異動以中選會最新公告為準</small></div><p class="campaign-election-source" id="campaign-election-source">選務日期查核：2026-09-12 · <a href="https://web.cec.gov.tw/api/file/7d249f6a-cef3-48ce-a3b0-2857ae661f37.pdf" target="_blank" rel="noopener noreferrer">高雄市選舉委員會第175次委員會議紀錄 ↗</a></p></div></section>\n<section class="wrap campaign-shell" aria-labelledby="campaign-nav-heading">'''
           if marker not in s: raise SystemExit('election insertion marker missing')
           election.write_text(s.replace(marker,block,1))
 
-          # Homepage election mode entry.
           p=R/'index.html'; s=p.read_text()
           s=s.replace('<link rel="stylesheet" href="home.css?v=20260908-hours">','<link rel="stylesheet" href="home.css?v=20260908-hours">\n<link rel="stylesheet" href="campaign.css?v=20260912-1">\n<script src="campaign.js?v=20260912-1" defer></script>',1)
           s=s.replace('<nav id="navigation" aria-label="主要導覽"><a href="./" aria-current="page">首頁</a><a href="political-donation.html">','<nav id="navigation" aria-label="主要導覽"><a href="./" aria-current="page">首頁</a><a href="election.html">2026選舉</a><a href="political-donation.html">',1)
@@ -52,7 +41,6 @@ jobs:
           if home_marker not in s: raise SystemExit('home insertion marker missing')
           p.write_text(s.replace(home_marker,home_block,1))
 
-          # Shared nav: dynamically add election link before focusable links are captured.
           p=R/'site.js'; s=p.read_text()
           nav_old="  document.body.append(backdrop);\n  const links = [...navigation.querySelectorAll('a')];"
           nav_new="""  document.body.append(backdrop);\n  if (!navigation.querySelector('a[href=\"election.html\"]')) {\n    const election = document.createElement('a');\n    election.href = 'election.html';\n    election.textContent = '2026選舉';\n    const home = navigation.querySelector('a[href=\"./\"]');\n    if (home) home.after(election); else navigation.prepend(election);\n  }\n  const links = [...navigation.querySelectorAll('a')];"""
@@ -60,14 +48,12 @@ jobs:
           s=s.replace(nav_old,nav_new,1).replace("const VERSION = '20260912-3';","const VERSION = '20260912-election1';")
           p.write_text(s)
 
-          # Global search knows the new public pages.
           p=R/'digital.js'; s=p.read_text().replace("const VERSION = '20260912-3';","const VERSION = '20260912-election1';")
           static="    ['首頁','./','服務處、問政與官網入口','頁面'],"
           new_static="""    ['首頁','./','服務處、問政與官網入口','頁面'],\n    ['2026選舉資訊','election.html','2026政見、慧文追蹤中、公開行程與選務日期','選舉'],\n    ['記者與媒體專區','press.html','新聞、人物資料、公開照片與媒體聯絡','媒體'],\n    ['資料查核與澄清','facts.html','查核方法、來源邊界與澄清入口','查核'],"""
           if static not in s: raise SystemExit('digital static marker missing')
           p.write_text(s.replace(static,new_static,1))
 
-          # Update asset versions on all public HTML/templates to avoid stale PWA/browser assets.
           htmls=list(R.glob('*.html'))+list((R/'templates').glob('*.html'))
           for hp in htmls:
               t=hp.read_text()
@@ -77,7 +63,6 @@ jobs:
               t=re.sub(r'data-digital-civic=\"[^\"]+\"', 'data-digital-civic="20260912-election1"', t)
               hp.write_text(t)
 
-          # Sitemap.
           p=R/'sitemap.xml'; s=p.read_text()
           insert='<url><loc>https://www.huiwen.tw/explore.html</loc><lastmod>2026-09-12</lastmod></url>'
           addition=insert+'\n<url><loc>https://www.huiwen.tw/election.html</loc><lastmod>2026-09-12</lastmod></url>\n<url><loc>https://www.huiwen.tw/press.html</loc><lastmod>2026-09-12</lastmod></url>\n<url><loc>https://www.huiwen.tw/facts.html</loc><lastmod>2026-09-12</lastmod></url>'
@@ -86,26 +71,22 @@ jobs:
               s=s.replace(insert,addition,1)
           p.write_text(s)
 
-          # PWA cache: election mode should update immediately and remain usable as a navigation shell.
           p=R/'sw.js'; s=p.read_text()
           s=re.sub(r"const CACHE='[^']+';", "const CACHE='huiwen-digital-v3-20260912-election1';", s)
           s=re.sub(r"const SHELL=\[[^\n]+\];", "const SHELL=['./','./index.html','./styles.css','./digital.css','./digital.js','./explore.html','./explore.js','./election.html','./press.html','./facts.html','./campaign.css','./campaign.js','./data/election-2026.json','./assets/favicon.svg'];", s)
           p.write_text(s)
 
-          # PR browser workflow includes election-mode contract tests.
           p=R/'.github/workflows/donation-page-qa.yml'; s=p.read_text()
           s=s.replace('      - run: node --check tests/donation/digital-civic.mjs\n','      - run: node --check tests/donation/digital-civic.mjs\n      - run: node --check tests/donation/election-mode.mjs\n',1)
           s=s.replace('      - run: node tests/donation/digital-civic.mjs\n','      - run: node tests/donation/digital-civic.mjs\n      - run: node tests/donation/election-mode.mjs\n',1)
           p.write_text(s)
 
-          # Existing brittle nav-position assertion becomes semantic now that Election is a first-class nav item.
           p=R/'tests/donation/browser.mjs'; s=p.read_text()
           old="      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'),'political-donation.html');"
           new="      assert.equal(await page.locator('#navigation a[href=\"election.html\"]').count(),1);\n      assert.equal(await page.locator('#navigation a[href=\"political-donation.html\"]').count(),1);"
           if old not in s: raise SystemExit('browser nav assertion marker missing')
           p.write_text(s.replace(old,new,1))
 
-          # Production browser/HTTP verification explicitly gates the three new pages.
           for path in ['tests/donation/production-browser.mjs','scripts/verify_production.py']:
               p=R/path; s=p.read_text()
               marker="  'about.html'," if path.endswith('.mjs') else '    "about.html",'
@@ -116,8 +97,6 @@ jobs:
               if path.endswith('verify_production.py'):
                   s=s.replace('STATIC_FILES = ("robots.txt", "sitemap.xml")','STATIC_FILES = ("robots.txt", "sitemap.xml", "data/election-2026.json")')
               p.write_text(s)
-
-          # Election page screenshot becomes part of live visual verification.
           p=R/'tests/donation/production-browser.mjs'; s=p.read_text().replace("['index.html', 'achievements.html', 'news.html', 'service.html']","['index.html', 'election.html', 'achievements.html', 'news.html', 'service.html']")
           p.write_text(s)
           PY
@@ -159,3 +138,4 @@ jobs:
           git diff --cached --check
           git commit -m 'feat: launch 2026 election information mode'
           git push origin HEAD:feat/election-mode-v1
+# trigger-after-registration
