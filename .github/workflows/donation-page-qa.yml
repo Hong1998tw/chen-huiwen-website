@@ -36,6 +36,7 @@ jobs:
       - run: node --check tests/donation/election-mode.mjs
       - run: npm ci --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - run: node tests/donation/cls-debug.mjs
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/digital-civic.mjs
       - run: node tests/donation/election-mode.mjs
