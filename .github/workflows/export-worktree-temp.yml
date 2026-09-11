@@ -1,0 +1,23 @@
+name: Export worktree temp
+
+on:
+  push:
+    branches:
+      - chore/export-worktree-temp
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Upload worktree
+        uses: actions/upload-artifact@v4
+        with:
+          name: chen-huiwen-worktree
+          path: .
+          include-hidden-files: true
+          retention-days: 1
