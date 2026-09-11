@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const VERSION = '20260912-2';
+  const VERSION = '20260912-3';
   const TOPICS = new Set(['交通與基建','教育與文化','環境與綠地','社福與衛環','經濟與產業']);
   const STATIC_PAGES = [
     ['首頁','./','服務處、問政與官網入口','頁面'],
@@ -122,7 +122,7 @@
       url:`achievement-${item.id}.html`,
       description:item.summary || `${item.scope || '鳳山區'} · ${item.status || '政績紀錄'}`,
       type:'政績',
-      keywords:[...(item.categories || []),...(item.villages || []),item.scope,item.status,...(item.paragraphs || []),...((item.history || []).flatMap(h => [h.title,h.text,h.date]))].filter(Boolean).join(' '),
+      keywords:[...(item.categories || []),...(item.subcategories || []),...(item.villages || []),item.scope,item.status,...(item.paragraphs || []),...((item.history || []).flatMap(h => [h.title,h.text,h.date]))].filter(Boolean).join(' '),
       priority:80
     }));
     const platforms = requests[1].status === 'fulfilled' ? requests[1].value?.elections || [] : [];
@@ -160,10 +160,11 @@
     const search = document.getElementById('case-search');
     const village = document.getElementById('village-filter');
     const category = document.getElementById('category-filter');
+    const subcategory = document.getElementById('subcategory-filter');
     const status = document.getElementById('status-filter');
     const caseList = document.getElementById('case-list');
     const caseCount = document.getElementById('case-count');
-    if (!search || !village || !category || !status || !caseList) return;
+    if (!search || !village || !category || !subcategory || !status || !caseList) return;
     const villages = [...new Set(data.flatMap(item => item.villages || []))];
     const topics = [...new Set(data.flatMap(item => item.categories || []))];
     const mapped = data.filter(item => Array.isArray(item.coordinates) && item.coordinates.length === 2).length;
@@ -196,9 +197,9 @@
     mapRoot.after(insight);
     const fits = item => {
       const q = search.value.trim().toLocaleLowerCase();
-      const text = [item.title,item.summary,...(item.categories || []),...(item.villages || []),item.scope].join(' ').toLocaleLowerCase();
+      const text = [item.title,item.summary,...(item.categories || []),...(item.subcategories || []),...(item.villages || []),item.scope].join(' ').toLocaleLowerCase();
       const villageOK = village.value === 'all' || (village.value === 'unassigned' ? !(item.villages || []).length && !['全市政策','跨區服務'].includes(item.scope) : village.value.startsWith('v:') ? (item.villages || []).includes(village.value.slice(2)) : item.scope === village.value.slice(2));
-      return (!q || text.includes(q)) && (category.value === 'all' || (item.categories || []).includes(category.value)) && (status.value === 'all' || item.status === status.value) && villageOK;
+      return (!q || text.includes(q)) && (category.value === 'all' || (item.categories || []).includes(category.value)) && (subcategory.value === 'all' || (item.subcategories || []).includes(subcategory.value)) && (status.value === 'all' || item.status === status.value) && villageOK;
     };
     const breakdown = cases => {
       const counts = new Map();
@@ -224,7 +225,7 @@
       const visibleMapped = visible.filter(item => item.coordinates).length;
       insight.innerHTML = `<p class="eyebrow">LIVE VIEW</p><h3>目前篩選結果：${visible.length} 筆</h3><p>${visibleMapped} 筆有地圖代表點位。點選里界、點位或卡片可繼續探索。</p><div class="insight-breakdown">${breakdown(visible).map(([topic,total]) => `<span>${escapeHTML(topic)} ${total}</span>`).join('')}</div><a href="explore.html">開啟里別／主題探索 →</a>`;
     };
-    [search,village,category,status].forEach(control => control.addEventListener(control === search ? 'input' : 'change',() => requestAnimationFrame(render)));
+    [search,village,category,subcategory,status].forEach(control => control.addEventListener(control === search ? 'input' : 'change',() => requestAnimationFrame(render)));
     if (caseCount) new MutationObserver(() => requestAnimationFrame(render)).observe(caseCount,{childList:true,subtree:true,characterData:true});
     new MutationObserver(() => requestAnimationFrame(render)).observe(caseList,{subtree:true,attributes:true,attributeFilter:['class']});
     render();

@@ -40,6 +40,10 @@ try {
     const result = dialog.locator('a[href="achievement-wende-school-center.html"]');
     await result.waitFor({ state: 'visible' });
     assert.match(await result.textContent(), /文德國小活動中心/);
+    await input.fill('寵物');
+    const petResult = dialog.locator('a[href="achievement-consumer-dudu.html"]');
+    await petResult.waitFor({ state: 'visible' });
+    assert.match(await petResult.textContent(), /毛動力嘟嘟車消費爭議協助/);
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
   });
@@ -60,6 +64,19 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('#case-list .case-card:not([hidden])').length === 10);
   });
 
+  await check('achievement subcategory filter supports pet cases', async () => {
+    const select = page.locator('#subcategory-filter');
+    assert.equal(await select.count(), 1);
+    assert((await select.locator('option').allTextContents()).includes('寵物'));
+    await select.selectOption({ label: '寵物' });
+    await page.waitForFunction(() => document.querySelector('#case-count')?.textContent.includes('共 1 個專題'));
+    const visible = page.locator('#case-list .case-card:not([hidden])');
+    assert.equal(await visible.count(), 1);
+    assert.match(await visible.first().textContent(), /毛動力嘟嘟車消費爭議協助/);
+    assert((await visible.first().boundingBox()).height < 360);
+    await page.locator('#reset-map-filters').click();
+  });
+
   await page.goto(base + 'explore.html?type=village&value=' + encodeURIComponent('文德里'));
   await check('village exploration loads matching achievements', async () => {
     await page.waitForFunction(() => document.querySelector('#explore-title')?.textContent.includes('文德里'));
@@ -76,6 +93,15 @@ try {
   });
 
   await page.goto(base + 'achievement-wende-school-center.html');
+  await check('achievement public copy uses council action and city response', async () => {
+    const mainText = await page.locator('main').innerText();
+    assert.match(mainText, /陳慧文議員於2025年5月14日市政總質詢/);
+    assert.match(mainText, /教育局回應/);
+    assert(!/這件事，為什麼重要？|STEP BY STEP|官方公開紀錄/.test(mainText));
+    assert.match(mainText, /重點說明/);
+    assert.match(mainText, /重要進度/);
+    assert.match(mainText, /資料來源/);
+  });
   await check('achievement timeline progressive reveal and related exploration', async () => {
     const timeline = page.locator('.case-timeline > li');
     assert((await timeline.count()) > 0);

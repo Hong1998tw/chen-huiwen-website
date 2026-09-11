@@ -23,10 +23,11 @@ def validate(event):
         raise ValueError('Event id must be a lowercase URL slug')
     if parse_time(event['end']) <= parse_time(event['start']):
         raise ValueError('Event end must follow start')
-    if event.get('registrationUrl'):
-        u = urlsplit(event['registrationUrl'])
-        if u.scheme != 'https' or not u.hostname or u.username or u.password:
-            raise ValueError('Registration URL must be public HTTPS')
+    for field in ('registrationUrl', 'sourceUrl'):
+        if event.get(field):
+            u = urlsplit(event[field])
+            if u.scheme != 'https' or not u.hostname or u.username or u.password:
+                raise ValueError(f'{field} must be public HTTPS')
 
 def calendar_url(event):
     validate(event)
@@ -59,7 +60,9 @@ def render_events(events):
         body += f'<h3>報名資訊</h3><p>{e(event["registration"])}</p><div class="actions">'
         if event.get('registrationUrl'):
             body += f'<a class="button button-green" href="{e(event["registrationUrl"])}" target="_blank" rel="noopener noreferrer">前往報名（外部網站） ↗</a>'
-        body += f'<a class="button button-outline" href="{e(calendar_url(event))}" target="_blank" rel="noopener noreferrer">加入 Google 日曆 ↗</a></div><p class="source-note">開啟 Google 日曆後，確認內容並儲存；加入日曆不代表完成報名。</p></article>'
+        if event.get('sourceUrl'):
+            body += f'<a class="button button-outline" href="{e(event["sourceUrl"])}" target="_blank" rel="noopener noreferrer">官方資訊 ↗</a>'
+        body += f'<a class="button button-outline" href="{e(calendar_url(event))}" target="_blank" rel="noopener noreferrer">加入 Google 日曆 ↗</a></div><p class="source-note">活動內容如有異動，以主辦單位最新公告為準；開啟 Google 日曆後請確認內容再儲存。</p></article>'
     return body + '</section>'
 
 def main():
