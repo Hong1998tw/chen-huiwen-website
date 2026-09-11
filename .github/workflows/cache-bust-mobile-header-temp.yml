@@ -1,0 +1,34 @@
+name: Cache bust mobile header temp
+on:
+  push:
+    branches:
+      - fix/mobile-search-menu-layout
+    paths:
+      - '.github/workflows/cache-bust-mobile-header-temp.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-search-menu-layout
+      - name: Bump shared header asset versions
+        run: |
+          perl -pi -e 's#site\.js\?v=[^" ]+#site.js?v=20260912-mobilemenu1#g; s#mobile\.css\?v=[^" ]+#mobile.css?v=20260912-mobilemenu1#g' -- *.html templates/*.html
+          perl -pi -e 's#huiwen-digital-v1-20260912#huiwen-digital-v1-20260912-mobilemenu1#g' sw.js
+      - name: Verify cache bust
+        run: |
+          grep -q 'site.js?v=20260912-mobilemenu1' index.html
+          grep -q 'mobile.css?v=20260912-mobilemenu1' index.html
+          grep -q 'huiwen-digital-v1-20260912-mobilemenu1' sw.js
+      - name: Commit
+        run: |
+          rm .github/workflows/cache-bust-mobile-header-temp.yml
+          git config user.name 'Hong1998tw'
+          git config user.email '126787497+Hong1998tw@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'chore: bust mobile header asset cache'
+          git push origin HEAD:fix/mobile-search-menu-layout
