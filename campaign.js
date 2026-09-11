@@ -8,6 +8,10 @@
     try { return new Intl.DateTimeFormat('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'}).format(new Date(value)); }
     catch { return value || ''; }
   };
+  const dayLabel = value => {
+    try { return new Intl.DateTimeFormat('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',timeZone:'Asia/Taipei'}).format(new Date(`${value}T00:00:00+08:00`)); }
+    catch { return value || ''; }
+  };
   const googleCalendar = event => {
     const fmt = value => new Date(value).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
     const params = new URLSearchParams({action:'TEMPLATE',text:event.name || '公開行程',dates:`${fmt(event.start)}/${fmt(event.end || event.start)}`,details:event.content || '',location:event.location || ''});
@@ -18,6 +22,28 @@
     const response = await fetch(path,{cache:'no-store'});
     if (!response.ok) throw new Error(`${path}: ${response.status}`);
     return response.json();
+  }
+
+  function renderElectionDates(data) {
+    const countdown = q('#campaign-countdown');
+    const draw = q('#campaign-number-draw');
+    const vote = q('#campaign-vote-date');
+    const source = q('#campaign-election-source');
+    if (!countdown || !data?.voteDate) return;
+    const target = new Date(`${data.voteDate}T00:00:00+08:00`).getTime();
+    const update = () => {
+      const diff = Math.max(0,target-Date.now());
+      const days = Math.ceil(diff/86400000);
+      countdown.textContent = String(days);
+      q('#campaign-countdown-unit')?.replaceChildren(document.createTextNode(diff > 0 ? '天，距離投票日' : '投票日到了'));
+    };
+    update();
+    const timer = window.setInterval(update,60000);
+    window.addEventListener('pagehide',() => clearInterval(timer),{once:true});
+    if (draw) draw.innerHTML = `<strong>${esc(dayLabel(data.numberDrawDate))}</strong><span>候選人姓名號次抽籤</span><small>${data.numberDrawTime ? esc(data.numberDrawTime) : '官方目前僅確認日期；時間／地點待最新公告'}</small>`;
+    if (vote) vote.innerHTML = `<strong>${esc(dayLabel(data.voteDate))}</strong><span>投開票</span><small>${esc(data.pollsOpen || '08:00')}–${esc(data.pollsClose || '16:00')}，如有異動以中選會最新公告為準</small>`;
+    const firstSource = data.sources?.[0];
+    if (source && firstSource) source.innerHTML = `選務日期查核：${esc(data.verifiedAt || '')} · <a href="${esc(firstSource.url)}" target="_blank" rel="noopener noreferrer">${esc(firstSource.title)} ↗</a>`;
   }
 
   function renderPlatforms(data) {
@@ -93,7 +119,8 @@
   }
 
   async function init() {
-    const [platforms,achievements,events] = await Promise.allSettled([loadJSON('data/platforms.json'),loadJSON('data/achievements.json'),loadJSON('data/events.json')]);
+    const [election,platforms,achievements,events] = await Promise.allSettled([loadJSON('data/election-2026.json'),loadJSON('data/platforms.json'),loadJSON('data/achievements.json'),loadJSON('data/events.json')]);
+    if (election.status === 'fulfilled') renderElectionDates(election.value);
     if (platforms.status === 'fulfilled') renderPlatforms(platforms.value); else q('#campaign-platforms').innerHTML = '<p class="campaign-empty">政見資料暫時無法載入，請改至歷屆政見頁查看。</p>';
     if (achievements.status === 'fulfilled') renderTracking(achievements.value); else q('#campaign-tracking').innerHTML = '<p class="campaign-empty">追蹤資料暫時無法載入，請改至政績頁查看。</p>';
     if (events.status === 'fulfilled') renderEvents(events.value); else q('#campaign-events').innerHTML = '<p class="campaign-empty">公開行程暫時無法載入，請改至活動公告查看。</p>';
