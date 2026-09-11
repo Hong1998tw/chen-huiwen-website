@@ -1,0 +1,87 @@
+name: Public copy cleanup temp
+on:
+  push:
+    branches:
+      - fix/public-election-copy-v2
+    paths:
+      - '.github/workflows/public-copy-cleanup-temp.yml'
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/public-election-copy-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Clean public-facing copy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('data/achievements.json'); data=json.loads(p.read_text())
+          for item in data:
+              if item.get('id')=='rail-greenway':
+                  old='本頁不把會勘、盤點或局部改善直接寫成全線完成；後續仍須依土地協調、工程施作與正式驗收更新。'
+                  new='後續將持續追蹤土地協調、工程施作與正式驗收進度。'
+                  item['paragraphs']=[new if x==old else x for x in item.get('paragraphs',[])]
+                  if item.get('editorialReview'):
+                      item['editorialReview']['paragraphs']=[new if x==old else x for x in item['editorialReview'].get('paragraphs',[])]
+              if item.get('id')=='bade-detention':
+                  new_summary='高雄市政府水利局公開資料顯示，八德滯洪公園總經費8,350萬元、總滯洪量約4.7萬噸；截至2026年7月，池內開挖及入流渠道已完成並具階段性防汛功能。原工程採購決標金額為7,289萬元，2026年8月另有第一次變更設計690萬元決標，工程進度持續追蹤。'
+                  item['summary']=new_summary
+                  if item.get('editorialReview'): item['editorialReview']['summary']=new_summary
+                  repl={
+                    "8,350萬元與7,289萬元不是同一個會計／採購口徑。高雄市政府水利局2025年10月20日及2026年7月10日公開說明皆以『總經費8,350萬元』描述整體工程；7,289萬元則是原工程採購的決標金額。網站不再把7,289萬元誤寫成唯一『工程總經費』。":"高雄市政府水利局2025年10月20日及2026年7月10日公開說明皆以『總經費8,350萬元』描述整體工程；7,289萬元則是原工程採購的決標金額，兩項金額依各自公開資料口徑分列。",
+                    "2026年8月11日另有『第一次變更設計』採購決標690萬元。公開採購摘要同時出現契約變更累計金額等欄位，不能只把690萬元直接加到7,289萬元，就推定為變更後契約總價；在取得完整契約價金明細前，本頁只分別呈現原始決標、變更設計決標與水利局總經費三種口徑。":"2026年8月11日另有『第一次變更設計』採購決標690萬元。公開資料分別呈現原工程決標、變更設計決標與水利局公布的總經費，網站依各自公開資料口徑分列。",
+                    "完工期程也曾更新。水利局2025年10月20日新聞稿原預計2026年10月底完工；其後2025年12月及2026年4月工程動態改列預計2026年9月。到2026年7月10日，官方最新進度是『已完成池內開挖及入流渠道設置，具備階段性防汛功能』，並未宣告全案完工。2026年8月的第一次變更設計採購履約期估計延伸至2027年1月，但該日期不等同於整體工程完工日，因此仍以官方正式完工公告作最後認定。":"完工期程曾多次更新。水利局2025年10月20日新聞稿原預計2026年10月底完工；其後2025年12月及2026年4月工程動態改列預計2026年9月。2026年7月10日，水利局公布池內開挖及入流渠道已完成，工程具備階段性防汛功能。2026年8月第一次變更設計採購履約期延伸至2027年1月，後續工程進度持續更新。",
+                  }
+                  item['paragraphs']=[repl.get(x,x) for x in item.get('paragraphs',[])]
+                  if item.get('editorialReview'): item['editorialReview']['paragraphs']=[repl.get(x,x) for x in item['editorialReview'].get('paragraphs',[])]
+                  for target in [item.get('history',[]), item.get('editorialReview',{}).get('history',[])]:
+                      for h in target:
+                          if h.get('date')=='2026-07-10': h['text']='水利局說明池內開挖及入流渠道已完成，總滯洪量約4.7萬噸，工程已具階段性防汛功能。'
+                          if h.get('date')=='2026-08-11': h['text']='政府採購公開資料記載第一次變更設計決標金額690萬元，與原工程決標金額及水利局公布的總經費分列呈現。'
+          p.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+          for name in ['activity-market.html','activity-mooncake.html']:
+              p=Path(name); s=p.read_text().replace('活動公告','公開行程與活動'); p.write_text(s)
+          p=Path('activity-market.html'); s=p.read_text().replace('活動現已結束。本頁改以活動回顧方式永久保留，不因展期結束而刪除或縮成短公告。','活動已結束，相關故事與照片持續保留供民眾回顧。').replace('內容依陳慧文服務處2026年6月27日原公開活動紀錄整理；日期與人物敘述保留原公開資訊，不把活動參與延伸解讀為工程或市場改造已完成。','內容整理自陳慧文服務處2026年6月27日公開活動紀錄。'); p.write_text(s)
+          p=Path('activity-mooncake.html'); p.write_text(p.read_text().replace('以下保留公開活動照片；目前未收錄更完整的逐日紀錄。','以下為活動現場照片，一起回顧中秋節的手作時光。'))
+          p=Path('news-20251217-certificate-map.html'); p.write_text(p.read_text().replace('本文依陳慧文服務處 2025 年 12 月 17 日新聞稿原文整理；未公開原資料中的內部連結。','本文整理自陳慧文服務處 2025 年 12 月 17 日新聞稿。'))
+          p=Path('news.html'); p.write_text(p.read_text().replace('公開報導對交叉路口名稱有不同記載，因此官網保留「三民、鳳山交界路口」的範圍描述，不把未釐清的單一路口名稱寫成確定事實。','當天活動於三民、鳳山交界路口舉行，民進黨高雄團隊進行跨區聯合拜票。'))
+          p=Path('election.html'); s=p.read_text(); start='<div class="campaign-page-links campaign-compact-links">'
+          if start in s:
+              a=s.index(start); b=s.index('</div>',a)+6; s=s[:a]+s[b:]
+          p.write_text(s)
+          p=Path('tests/donation/election-mode.mjs'); s=p.read_text().replace("  for (const label of ['2026 政見 →','政績與服務 →','公開行程與活動 →']) assert(await page.getByRole('link',{name:label,exact:true}).isVisible());\n", "  assert.equal(await page.locator('.campaign-page-links').count(),0);\n  assert(await page.getByRole('link',{name:/高雄市選舉委員會選務時程/}).isVisible());\n"); p.write_text(s)
+          p=Path('scripts/validate_site.py'); s=p.read_text(); old="for bad in ['待核驗','資料核驗狀態','資料查核','來源邊界','不混為完成','正式選舉公報尚未取得','已收到並核對']:"; new="for bad in ['待核驗','資料核驗狀態','資料查核','來源邊界','不混為完成','正式選舉公報尚未取得','已收到並核對','尚未查到','本頁不把','不把未釐清','內部連結','目前未收錄更完整']:"; assert old in s; p.write_text(s.replace(old,new))
+          PY
+      - name: Rebuild and validate
+        run: |
+          python3 scripts/build_cases.py
+          python3 scripts/build_events.py
+          python3 scripts/build_platforms.py
+          python3 -m py_compile scripts/build_cases.py scripts/validate_site.py
+          node --check tests/donation/election-mode.mjs
+          pip install beautifulsoup4==4.13.5 html5lib==1.1
+          python3 scripts/validate_site.py
+          python3 scripts/validate_donation.py
+          python3 scripts/validate_seo.py
+          test "$(grep -RIl --include='*.html' '活動公告' . | wc -l)" -eq 0
+          test "$(find . -maxdepth 1 -name 'achievement-*.html' | wc -l)" -eq 20
+          ! grep -q 'campaign-page-links' election.html
+      - name: Commit cleanup
+        run: |
+          git config user.name 'Hong1998tw'
+          git config user.email '126787497+Hong1998tw@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'content: polish public election copy'
+          git push origin HEAD:fix/public-election-copy-v2
