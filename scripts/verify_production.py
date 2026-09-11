@@ -24,6 +24,9 @@ DEFAULT_BASE_URL = "https://www.huiwen.tw/"
 CORE_PAGES = (
     "index.html",
     "about.html",
+    "election.html",
+    "press.html",
+    "facts.html",
     "achievements.html",
     "vision.html",
     "news.html",
@@ -32,7 +35,7 @@ CORE_PAGES = (
     "petition.html",
     "political-donation.html",
 )
-STATIC_FILES = ("robots.txt", "sitemap.xml")
+STATIC_FILES = ("robots.txt", "sitemap.xml", "data/election-2026.json")
 MIN_TEXT_COVERAGE = 0.95
 
 

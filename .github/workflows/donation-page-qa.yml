@@ -33,10 +33,12 @@ jobs:
       - run: python -m py_compile scripts/verify_production.py
       - run: node --check tests/donation/production-browser.mjs
       - run: node --check tests/donation/digital-civic.mjs
+      - run: node --check tests/donation/election-mode.mjs
       - run: npm ci --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/digital-civic.mjs
+      - run: node tests/donation/election-mode.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
