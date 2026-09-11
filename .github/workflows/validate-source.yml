@@ -44,6 +44,9 @@ jobs:
       - name: Validate SEO contract
         run: python scripts/validate_seo.py
 
+      - name: Validate public-facing copy
+        run: python scripts/validate_public_copy.py
+
       - name: Validate domain migration candidate when present
         shell: bash
         run: |
