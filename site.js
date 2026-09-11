@@ -9,7 +9,20 @@
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
   backdrop.setAttribute('aria-label', '關閉選單');
   document.body.append(backdrop);
-  if (!navigation.querySelector('a[href="election.html"]')) { const election=document.createElement('a'); election.href='election.html'; election.textContent='2026選舉'; const donation=navigation.querySelector('a[href="political-donation.html"]'); if (donation) donation.after(election); else navigation.append(election); }
+  if (!navigation.querySelector('a[href="election.html"]')) {
+    const election = document.createElement('a');
+    election.href = 'election.html';
+    election.textContent = '2026選舉';
+    const donation = navigation.querySelector('a[href="political-donation.html"]');
+    if (donation) donation.after(election); else navigation.append(election);
+  }
+  if (!navigation.querySelector('a[href="service.html#monthly-heading"]')) {
+    const lawyer = document.createElement('a');
+    lawyer.href = 'service.html#monthly-heading';
+    lawyer.textContent = '律師時間表';
+    const election = navigation.querySelector('a[href="election.html"]');
+    if (election) election.after(lawyer); else navigation.append(lawyer);
+  }
   const links = [...navigation.querySelectorAll('a')];
   function closeMenu(returnFocus = false) {
     navigation.classList.remove('is-open'); document.body.classList.remove('menu-open');
