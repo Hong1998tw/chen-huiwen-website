@@ -1,0 +1,92 @@
+name: Apply public election copy temp
+on:
+  push:
+    branches:
+      - fix/public-election-copy-v2
+    paths:
+      - '.github/workflows/apply-public-election-copy-temp.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/public-election-copy-v2
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply reviewed source patch
+        shell: bash
+        run: |
+          cat .tmp/public-election-copy/part* | base64 -d | xz -d > "$RUNNER_TEMP/public-election-copy.patch"
+          patch -p1 < "$RUNNER_TEMP/public-election-copy.patch"
+      - name: Normalize public navigation labels and cache key
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in Path('.').glob('*.html'):
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('活動公告', '公開行程與活動')
+              text = text.replace('site.js?v=20260912-election1', 'site.js?v=20260912-public3')
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Rebuild generated public pages
+        run: |
+          python scripts/build_cases.py
+          python scripts/build_platforms.py
+          python scripts/build_events.py
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in Path('.').glob('*.html'):
+              text = path.read_text(encoding='utf-8').replace('活動公告', '公開行程與活動')
+              text = text.replace('site.js?v=20260912-election1', 'site.js?v=20260912-public3')
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Install validators
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - name: Validate candidate
+        run: |
+          python -m json.tool data/achievements.json >/dev/null
+          python scripts/validate_site.py
+          python scripts/validate_donation.py
+          python scripts/validate_seo.py
+          python scripts/validate_public_copy.py
+          python -m unittest discover -s tests/events
+          python -m py_compile scripts/build_cases.py scripts/build_platforms.py scripts/build_events.py scripts/validate_public_copy.py
+          node --check site.js
+          node --check digital.js
+          node --check campaign.js
+          node --check explore.js
+          node --check tests/donation/browser.mjs
+          node --check tests/donation/election-mode.mjs
+      - name: Assert requested public presentation
+        shell: bash
+        run: |
+          test "$(grep -o 'campaign-quick-card' index.html | wc -l)" -eq 0
+          test "$(grep -o 'campaign-nav-card' election.html | wc -l)" -eq 5
+          grep -q '勝選倒數' index.html
+          grep -q '政治獻金專戶' index.html
+          grep -q '有事找慧文' index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('index.html').read_text()
+          assert text.index('id="account"') < text.index('home-contact')
+          PY
+          test "$(find . -maxdepth 1 -name 'achievement-*.html' | wc -l)" -eq 19
+      - name: Commit reviewed source and generated output
+        shell: bash
+        run: |
+          rm -rf .tmp/public-election-copy
+          git config user.name 'Hong1998tw'
+          git config user.email '126787497+Hong1998tw@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'content: polish public election presentation'
+          git push origin HEAD:fix/public-election-copy-v2
