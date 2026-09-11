@@ -128,13 +128,14 @@ try {
         const count = () => page.locator('[data-case]:visible').count();
         const pageSize = Math.min(10, items.length);
         assert.equal(await count(), pageSize);
-        assert.equal(await page.locator('#case-search').isVisible(), false);
+        assert.equal(await page.locator('#case-search').isVisible(), true);
         await page.locator('#toggle-map-search').click();
         assert.equal(await page.locator('#case-search').isVisible(), true);
+        assert(await page.locator('#case-search').evaluate(el => el === document.activeElement));
         await page.locator('#case-search').fill('文龍');
         assert((await count()) > 0 && (await count()) <= 10);
         await page.locator('#reset-map-filters').click();
-        assert.equal(await page.locator('#case-search').isVisible(), false);
+        assert.equal(await page.locator('#case-search').isVisible(), true);
         for (const [selector, key] of [['#category-filter','categories'], ['#status-filter','status']]) {
           const value = Array.isArray(items[0][key]) ? items[0][key][0] : items[0][key];
           await page.locator(selector).selectOption(value);
