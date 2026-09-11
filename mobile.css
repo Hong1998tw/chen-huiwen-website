@@ -34,6 +34,9 @@
  .quick-num{font-size:.68rem}.section{padding-block:40px}.page-head{padding-block:32px}.page-head h1{font-size:2rem}
  .button,a,button,summary{touch-action:manipulation}input,select,textarea{font-size:16px!important}
  .footer-bottom a{display:inline-flex;align-items:center;min-height:44px}
+ .menu-ready .site-header nav>.global-search-trigger{grid-column:1/-1;position:static!important;right:auto!important;bottom:auto!important;width:100%!important;height:auto!important;min-height:52px;padding:12px 14px!important;justify-content:flex-start;border:0;border-radius:14px;background:var(--green-soft);box-shadow:none;font-size:.95rem}
+ .menu-ready .site-header nav>.global-search-trigger span:nth-child(2){display:inline!important}
+ .menu-ready .site-header nav>.global-search-trigger kbd{display:none!important}
 }
 @media(max-width:380px){
  .hero-grid{grid-template-columns:86px minmax(0,1fr);column-gap:13px}.hero-portrait{width:86px}.hero-copy>h1{font-size:1.8rem}

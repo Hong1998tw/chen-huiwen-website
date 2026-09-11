@@ -18,15 +18,17 @@
   function openMenu() {
     navigation.classList.add('is-open'); document.body.classList.add('menu-open');
     toggle.setAttribute('aria-expanded', 'true'); backdrop.hidden = false;
-    links[0]?.focus();
+    const search = navigation.querySelector('.global-search-trigger');
+    (search || links[0])?.focus();
   }
   toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu(true) : openMenu());
   backdrop.addEventListener('click', () => closeMenu(true));
-  navigation.addEventListener('click', event => { if (event.target.closest('a')) closeMenu(); });
+  navigation.addEventListener('click', event => { if (event.target.closest('a') || event.target.closest('.global-search-trigger')) closeMenu(); });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') closeMenu(true);
     if (event.key === 'Tab' && toggle.getAttribute('aria-expanded') === 'true') {
-      const focusable = [toggle, ...links]; const first = focusable[0], last = focusable.at(-1);
+      const search = navigation.querySelector('.global-search-trigger');
+      const focusable = [toggle, ...(search ? [search] : []), ...links]; const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
@@ -121,4 +123,33 @@
     script.dataset.digitalCivic = VERSION;
     document.body.append(script);
   }
+})();
+
+// Mobile navigation owns the global search trigger at phone/tablet widths; this is regression-tested at 390px.
+// Desktop keeps search beside the primary navigation; mobile keeps the header to logo + menu only.
+(() => {
+  const header = document.querySelector('.site-header .nav-wrap');
+  const navigation = document.getElementById('navigation');
+  const menuToggle = header?.querySelector('.menu-toggle');
+  if (!header || !navigation || !menuToggle) return;
+  const media = window.matchMedia('(max-width: 780px)');
+  const placeSearch = () => {
+    const trigger = document.querySelector('.global-search-trigger');
+    if (!trigger) return false;
+    if (media.matches) {
+      if (trigger.parentElement !== navigation) navigation.prepend(trigger);
+      trigger.classList.add('global-search-trigger--menu');
+    } else {
+      if (trigger.parentElement !== header) header.insertBefore(trigger, menuToggle);
+      trigger.classList.remove('global-search-trigger--menu');
+    }
+    return true;
+  };
+  if (!placeSearch()) {
+    const observer = new MutationObserver(() => {
+      if (placeSearch()) observer.disconnect();
+    });
+    observer.observe(header, {childList:true, subtree:true});
+  }
+  media.addEventListener('change', placeSearch);
 })();

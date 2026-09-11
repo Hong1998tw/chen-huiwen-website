@@ -48,6 +48,28 @@ try {
     await dialog.waitFor({ state: 'hidden' });
   });
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(base + 'index.html');
+  await check('mobile header keeps search inside the opened menu', async () => {
+    await page.waitForFunction(() => document.querySelector('.global-search-trigger'));
+    const trigger = page.locator('.global-search-trigger');
+    assert.equal(await trigger.evaluate(el => el.parentElement?.id), 'navigation');
+    assert.equal(await trigger.isVisible(), false);
+    const menu = page.locator('.menu-toggle');
+    await menu.click();
+    await trigger.waitFor({ state: 'visible' });
+    assert.equal(await trigger.evaluate(el => el.parentElement?.id), 'navigation');
+    const menuBox = await menu.boundingBox();
+    const searchBox = await trigger.boundingBox();
+    assert(menuBox && searchBox);
+    assert(searchBox.y > menuBox.y + menuBox.height);
+    await trigger.click();
+    await page.locator('#global-search-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#navigation').evaluate(el => el.classList.contains('is-open')), false);
+    await page.keyboard.press('Escape');
+  });
+  await page.setViewportSize({ width: 1440, height: 960 });
+
   await page.goto(base + 'achievements.html');
   await check('achievement dashboard derives from source data', async () => {
     const dashboard = page.locator('.digital-dashboard');
