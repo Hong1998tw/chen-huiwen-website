@@ -34,7 +34,7 @@ for name,doc in pages.items():
  c=doc.select_one('link[rel="canonical"]')['href'];canonical.append(c)
  require(doc.select_one('meta[property="og:url"]')['content']==c,f'{name}: OG canonical mismatch')
  public_text=(R/name).read_text()
- for bad in ['待核驗','資料核驗狀態','資料查核','來源邊界','不混為完成','正式選舉公報尚未取得','已收到並核對']:
+ for bad in ['待核驗','資料核驗狀態','資料查核','來源邊界','不混為完成','正式選舉公報尚未取得','已收到並核對','尚未查到','本頁不把','不把未釐清','內部連結','目前未收錄更完整']:
   require(bad not in public_text,f'{name}: internal-facing public copy {bad}')
  for script in doc.select('script[type="application/ld+json"],script[type="application/json"]'):
   try:json.loads(script.string or script.text)

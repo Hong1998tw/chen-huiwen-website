@@ -19,7 +19,8 @@ try {
   assert(await page.getByRole('heading',{name:'2026 鳳山選戰',exact:true}).isVisible());
   assert.equal(await page.locator('.campaign-nav-grid').count(),0);
   assert.equal(await page.locator('#campaign-platforms,#campaign-tracking,#campaign-events').count(),0);
-  for (const label of ['2026 政見 →','政績與服務 →','公開行程與活動 →']) assert(await page.getByRole('link',{name:label,exact:true}).isVisible());
+  assert.equal(await page.locator('.campaign-page-links').count(),0);
+  assert(await page.getByRole('link',{name:/高雄市選舉委員會選務時程/}).isVisible());
   await page.goto(base+'activities.html');
   assert(await page.getByRole('heading',{name:'公開行程與活動',exact:true}).isVisible());
   console.log('Election compact public mode QA passed');
