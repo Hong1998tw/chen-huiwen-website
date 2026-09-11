@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: '22'
       - name: Clean public-facing copy
-        run: python3 .tmp/cleanup_public_copy.py
+        run: |
+          python3 .tmp/cleanup_public_copy.py
+          python3 .tmp/replace_activity_label.py
       - name: Rebuild and validate
         run: |
           python3 scripts/build_cases.py
@@ -46,7 +48,7 @@ jobs:
           PY
       - name: Commit cleanup
         run: |
-          rm -f .tmp/cleanup_public_copy.py
+          rm -f .tmp/cleanup_public_copy.py .tmp/replace_activity_label.py
           git config user.name 'Hong1998tw'
           git config user.email '126787497+Hong1998tw@users.noreply.github.com'
           git add -A
