@@ -14,15 +14,33 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/mobile-search-menu-layout
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Bump shared header asset versions
         run: |
-          perl -pi -e 's#site\.js\?v=[^" ]+#site.js?v=20260912-mobilemenu1#g; s#mobile\.css\?v=[^" ]+#mobile.css?v=20260912-mobilemenu1#g' -- *.html templates/*.html
-          perl -pi -e 's#huiwen-digital-v1-20260912#huiwen-digital-v1-20260912-mobilemenu1#g' sw.js
-      - name: Verify cache bust
-        run: |
-          grep -q 'site.js?v=20260912-mobilemenu1' index.html
-          grep -q 'mobile.css?v=20260912-mobilemenu1' index.html
-          grep -q 'huiwen-digital-v1-20260912-mobilemenu1' sw.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          targets = list(Path('.').glob('*.html')) + list(Path('templates').glob('*.html'))
+          touched = 0
+          for path in targets:
+              text = path.read_text()
+              updated = re.sub(r'site\.js\?v=[^"\']+', 'site.js?v=20260912-mobilemenu1', text)
+              updated = re.sub(r'mobile\.css\?v=[^"\']+', 'mobile.css?v=20260912-mobilemenu1', updated)
+              if updated != text:
+                  path.write_text(updated)
+                  touched += 1
+          sw = Path('sw.js')
+          text = sw.read_text()
+          text = re.sub(r"huiwen-digital-v1-[^']+", 'huiwen-digital-v1-20260912-mobilemenu1', text, count=1)
+          sw.write_text(text)
+          assert 'site.js?v=20260912-mobilemenu1' in Path('index.html').read_text()
+          assert 'mobile.css?v=20260912-mobilemenu1' in Path('index.html').read_text()
+          assert 'huiwen-digital-v1-20260912-mobilemenu1' in sw.read_text()
+          assert touched > 0
+          print(f'Updated asset versions in {touched} HTML/template files')
+          PY
       - name: Commit
         run: |
           rm .github/workflows/cache-bust-mobile-header-temp.yml
