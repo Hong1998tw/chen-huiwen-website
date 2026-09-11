@@ -55,7 +55,7 @@ try {
     const trigger = page.locator('.global-search-trigger');
     assert.equal(await trigger.evaluate(el => el.parentElement?.id), 'navigation');
     assert.equal(await trigger.isVisible(), false);
-    const menu = page.getByRole('button', { name: /選單/ });
+    const menu = page.locator('.menu-toggle');
     await menu.click();
     await trigger.waitFor({ state: 'visible' });
     assert.equal(await trigger.evaluate(el => el.parentElement?.id), 'navigation');
@@ -63,6 +63,10 @@ try {
     const searchBox = await trigger.boundingBox();
     assert(menuBox && searchBox);
     assert(searchBox.y > menuBox.y + menuBox.height);
+    await trigger.click();
+    await page.locator('#global-search-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#navigation').evaluate(el => el.classList.contains('is-open')), false);
+    await page.keyboard.press('Escape');
   });
   await page.setViewportSize({ width: 1440, height: 960 });
 

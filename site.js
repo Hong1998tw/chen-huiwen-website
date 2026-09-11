@@ -23,7 +23,7 @@
   }
   toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu(true) : openMenu());
   backdrop.addEventListener('click', () => closeMenu(true));
-  navigation.addEventListener('click', event => { if (event.target.closest('a')) closeMenu(); });
+  navigation.addEventListener('click', event => { if (event.target.closest('a') || event.target.closest('.global-search-trigger')) closeMenu(); });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') closeMenu(true);
     if (event.key === 'Tab' && toggle.getAttribute('aria-expanded') === 'true') {
