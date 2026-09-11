@@ -1,18 +1,16 @@
 'use strict';
 (() => {
-  const VERSION = '20260912-election1';
+  const VERSION = '20260912-public2';
   const TOPICS = new Set(['交通與基建','教育與文化','環境與綠地','社福與衛環','經濟與產業']);
   const STATIC_PAGES = [
     ['首頁','./','服務處、問政與官網入口','頁面'],
-    ['2026選舉資訊','election.html','2026政見、慧文追蹤中、公開行程與選務日期','選舉'],
-    ['記者與媒體專區','press.html','新聞、人物資料、公開照片與媒體聯絡','媒體'],
-    ['資料查核與澄清','facts.html','查核方法、來源邊界與澄清入口','查核'],
+    ['2026鳳山選戰','election.html','勝選倒數、重要選務日期、2026政見、政績與公開行程','選舉'],
     ['關於慧文','about.html','陳慧文經歷與介紹','頁面'],
     ['政績地圖','achievements.html','鳳山建設、服務與進度查詢','頁面'],
     ['里別／主題探索','explore.html','依里別或主題跨內容探索','探索'],
     ['歷屆政見','vision.html','歷屆選舉政見與願景','政見'],
     ['新聞與議會問政','news.html','新聞、議會問政與地方服務紀錄','新聞'],
-    ['活動公告','activities.html','近期活動與公告','頁面'],
+    ['公開行程與活動','activities.html','近期公開行程與活動資訊','頁面'],
     ['服務資訊','service.html','服務時間、法律諮詢與聯絡方式','頁面'],
     ['服務案件陳情','petition.html','服務案件公開表單入口','頁面'],
     ['政治獻金','political-donation.html','政治獻金專戶與注意事項','頁面'],
@@ -91,7 +89,7 @@
     const section = document.createElement('section');
     section.className = 'wrap cross-content-explore';
     section.setAttribute('aria-labelledby','cross-content-heading');
-    section.innerHTML = `<p class="eyebrow">CONNECTED CONTENT</p><h2 id="cross-content-heading">延伸探索</h2><p>依里別與共同主題串連站內內容；關聯僅供探索，不代表個別政見已完成或新聞即為政績證明。</p><div class="explore-chip-list">${links.join('')}</div><button type="button" class="share-current-page">分享這一頁</button>`;
+    section.innerHTML = `<p class="eyebrow">CONNECTED CONTENT</p><h2 id="cross-content-heading">延伸探索</h2><p>依里別與共同主題串連政績、新聞與政見，方便一次閱讀相關內容。</p><div class="explore-chip-list">${links.join('')}</div><button type="button" class="share-current-page">分享這一頁</button>`;
     layout.after(section);
     section.querySelector('.share-current-page')?.addEventListener('click',shareCurrentPage);
   }
@@ -120,7 +118,7 @@
       fetch('news.html',{cache:'no-store'}).then(r => r.ok ? r.text() : Promise.reject())
     ]);
     const achievements = requests[0].status === 'fulfilled' ? requests[0].value : [];
-    achievements.forEach(item => results.push({
+    achievements.filter(item => item.status !== '待核驗').forEach(item => results.push({
       title:item.title,
       url:`achievement-${item.id}.html`,
       description:item.summary || `${item.scope || '鳳山區'} · ${item.status || '政績紀錄'}`,

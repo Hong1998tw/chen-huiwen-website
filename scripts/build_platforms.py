@@ -49,17 +49,15 @@ for year, title, item in sorted(entries, key=lambda x: x[0], reverse=True):
 
             body += (
                 '<p class="source-note">'
-                f'資料狀態：{e(item["status"])}<br>'
                 f'資料來源：{e(item["sourceTitle"])}<br>'
-                f'{e(item["sourceDateNote"])}<br>'
-                f'查核日期：{e(item["verifiedAt"])}'
+                f'{e(item["sourceDateNote"])}'
                 '</p>'
             )
         else:
             body += f'<p>{e(item["district"])} · {item["candidateNumber"]}號 · 當時身分：{e(item["roleAtElection"])}</p><p class="source-note">投票日：<time datetime="{item["electionDate"]}">{item["electionDate"]}</time></p>'
             for section in item['sections']:
                 body += f'<h3>{e(section["heading"])}</h3><ol>' + ''.join(f'<li>{e(text)}</li>' for text in section['items']) + '</ol>'
-            body += f'<p class="source-note"><a class="text-link" href="{e(item["sourceUrl"])}#page={item["pdfPage"]}" target="_blank" rel="noopener noreferrer">{e(item["sourceTitle"])}（PDF 第 {item["pdfPage"]} 頁，外部網站）↗</a><br>查核日期：{e(item["verifiedAt"])}</p>'
+            body += f'<p class="source-note"><a class="text-link" href="{e(item["sourceUrl"])}#page={item["pdfPage"]}" target="_blank" rel="noopener noreferrer">{e(item["sourceTitle"])}（PDF 第 {item["pdfPage"]} 頁，外部網站）↗</a></p>'
 
     body += '</div></details></section>'
 

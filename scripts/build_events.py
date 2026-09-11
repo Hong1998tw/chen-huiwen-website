@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build public event announcements without credentials or personal-data collection."""
+"""Build public schedules and activities without credentials or personal-data collection."""
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -46,9 +46,9 @@ def render_events(events):
         if event['id'] in seen:
             raise ValueError('Duplicate event id')
         seen.add(event['id'])
-    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>活動公告</h1><p>活動時間、內容與報名資訊，都在這裡。</p></div></section><section class="wrap event-announcements" aria-label="活動資訊">'
+    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>公開行程與活動</h1><p>活動時間、內容與報名資訊，都在這裡。</p></div></section><section class="wrap event-announcements" aria-label="活動資訊">'
     if not events:
-        return body + '<div class="event-empty"><p>新的活動公告將於本頁發布。</p></div></section>'
+        return body + '<div class="event-empty"><p>新的公開行程與活動將於本頁發布。</p></div></section>'
     for event in sorted(events, key=lambda x: parse_time(x['start'])):
         e = lambda x: escape(str(x), quote=True)
         start, end = (parse_time(event[k]).astimezone(TAIPEI) for k in ('start','end'))
@@ -70,6 +70,6 @@ def main():
     template = (ROOT / 'templates/events-page.html').read_text()
     assert template.count('{{EVENTS}}') == 1
     (ROOT / 'activities.html').write_text(template.replace('{{EVENTS}}', render_events(events)))
-    print(f'Built activities.html from {len(events)} public event announcements')
+    print(f'Built activities.html from {len(events)} public schedules and activities')
 if __name__ == '__main__':
     main()

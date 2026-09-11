@@ -26,7 +26,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
-  const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url)));
+  const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
 
   await page.goto(base + 'index.html');
   await check('global search opens with Ctrl+K and finds achievement', async () => {
@@ -111,7 +111,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#explore-title')?.textContent.includes('教育與文化'));
     assert((await page.locator('#explore-achievements .explore-result-card').count()) > 0);
     await page.locator('#explore-related').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#explore-related').textContent(), /僅供閱讀導覽/);
+    assert.match(await page.locator('#explore-related').textContent(), /方便延伸閱讀/);
   });
 
   await page.goto(base + 'achievement-wende-school-center.html');

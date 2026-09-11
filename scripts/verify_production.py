@@ -25,8 +25,6 @@ CORE_PAGES = (
     "index.html",
     "about.html",
     "election.html",
-    "press.html",
-    "facts.html",
     "achievements.html",
     "vision.html",
     "news.html",
