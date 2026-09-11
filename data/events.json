@@ -1,3 +1,14 @@
 {
-  "events": []
+  "events": [
+    {
+      "id": "council-general-interpellation-2026-10-08",
+      "name": "高雄市議會第4屆第8次定期大會｜陳慧文市政總質詢",
+      "start": "2026-10-08T16:00:00+08:00",
+      "end": "2026-10-08T16:50:00+08:00",
+      "content": "高雄市議會官方「議員市政總質詢」排程顯示，115年10月8日（2026年10月8日）市政總質詢名單列有陳慧文，質詢時段為16:00–16:50。\n議程如有調整，以高雄市議會官方最新公告為準。",
+      "registration": "此為高雄市議會正式議程，無需報名。",
+      "sourceUrl": "https://cissearch.kcc.gov.tw/System/MunicipalQuestion/Default.aspx",
+      "verifiedAt": "2026-09-11"
+    }
+  ]
 }
