@@ -19,8 +19,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Patch mobile search placement and cache-bust assets
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
           import re
 
@@ -28,7 +29,7 @@ jobs:
           text = site.read_text()
           marker = '// Mobile navigation owns the global search trigger at phone/tablet widths.'
           assert marker not in text
-          text += r'''
+          text += """
 
 // Mobile navigation owns the global search trigger at phone/tablet widths.
 // Desktop keeps search beside the primary navigation; mobile keeps the header to logo + menu only.
@@ -58,14 +59,14 @@ jobs:
   }
   media.addEventListener('change', placeSearch);
 })();
-'''
+"""
           site.write_text(text)
 
           mobile = Path('mobile.css')
           css = mobile.read_text()
           css_marker = '/* Mobile search belongs inside the opened navigation, never beside the menu pill. */'
           assert css_marker not in css
-          css += r'''
+          css += """
 
 /* Mobile search belongs inside the opened navigation, never beside the menu pill. */
 @media(max-width:780px){
@@ -73,10 +74,9 @@ jobs:
  .menu-ready .site-header nav>.global-search-trigger span:nth-child(2){display:inline!important}
  .menu-ready .site-header nav>.global-search-trigger kbd{display:none!important}
 }
-'''
+"""
           mobile.write_text(css)
 
-          # Cache-bust shared header assets on every deployable HTML page and source template.
           targets = list(Path('.').glob('*.html')) + list(Path('templates').glob('*.html'))
           for path in targets:
               html = path.read_text()
@@ -88,7 +88,7 @@ jobs:
           t = test.read_text()
           anchor = "  await page.goto(base + 'achievements.html');\n"
           assert anchor in t
-          check = r'''  await page.setViewportSize({ width: 390, height: 844 });
+          check = """  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + 'index.html');
   await check('mobile header keeps search inside the opened menu', async () => {
     await page.waitForFunction(() => document.querySelector('.global-search-trigger'));
@@ -106,9 +106,9 @@ jobs:
   });
   await page.setViewportSize({ width: 1440, height: 960 });
 
-'''
-          t = t.replace(anchor, check + anchor)
-          test.write_text(t)
+"""
+          test.write_text(t.replace(anchor, check + anchor))
+          PY
       - name: Verify syntax and targeted contract
         run: |
           node --check site.js
