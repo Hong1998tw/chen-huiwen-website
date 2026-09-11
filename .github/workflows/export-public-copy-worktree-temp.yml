@@ -1,0 +1,21 @@
+name: Export public copy worktree temp
+on:
+  push:
+    branches:
+      - content/public-achievement-copy-taxonomy
+    paths:
+      - '.github/workflows/export-public-copy-worktree-temp.yml'
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack worktree
+        run: zip -qr "$RUNNER_TEMP/chen-huiwen-public-copy-worktree.zip" . -x '.git/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-copy-worktree
+          path: ${{ runner.temp }}/chen-huiwen-public-copy-worktree.zip
+          retention-days: 1
