@@ -21,14 +21,14 @@
 5. 檢查 `git diff`，確認沒有非預期輸出、placeholder、token、私人資料或內部網址。
 6. 完成 `docs/TEST-CHECKLIST.md` 的必要項目。
 7. 建立 Pull Request，讓 CI 與必要 browser／Accessibility QA 驗證修改。
-8. 依下方「預設發布授權與重大變更 Gate」決定是否直接 merge 或等待人工核准。
+8. 依下方「預設直接部署；有疑慮才等待」規則處理，不再對例行安全修改逐次詢問是否部署。
 9. 合併至 `main` 後，由 GitHub Pages 發布。
 10. 部署完成後重新檢查 production，而不是只確認 GitHub commit 成功。
 11. 需要正式 release／收尾時，將 release artifact、commit SHA、測試摘要歸檔至 Google Drive `03_releases/`；重大決策或流程變更更新 Notion。
 
-## 預設發布授權與重大變更 Gate
+## 預設直接部署；有疑慮才等待
 
-自 2026-09-10 起，**一般小型／中型官網變更在完成必要測試、PR 與 CI 後，預設直接 merge `main`、等待 GitHub Pages 並完成 Production Verification，不需逐次再詢問是否部署。**
+自 2026-09-11 起，**官網修改只要已完成必要查核、build、test、diff review、PR 與 CI，且沒有具體疑慮，就預設直接 merge `main`、等待 GitHub Pages，並完成 Production Verification；不得再逐次詢問「是否要部署」。**
 
 這裡的「直接部署」代表自動完成安全發布流程，不代表：
 
@@ -40,21 +40,22 @@
 
 通常可直接發布的例行變更包括：少量新聞／政績／活動／公開文字更新；已核驗的日期、數字、地址、電話與來源修正；權利清楚的同事件圖片更換；既有視覺語言內的小型 CSS、mobile、Accessibility、SEO metadata、broken link 修正；不改資料模型與核心流程的小型 JavaScript bugfix；以及既有 build pipeline 內的 source＋generated output 更新。
 
-### 重大變更：發布前必須取得明確核准
+### 只有出現具體疑慮時才停在 PR／candidate
 
-下列變更應停在 candidate／PR，等待使用者明確核准後才 merge／Production：
+下列任一情況存在時，才停止自動 merge／Production 並等待使用者確認：
 
-- 全站或主要頁面重新設計、品牌／視覺語言大改。
-- 資訊架構、主要導覽或核心使用流程的大幅改動。
-- 資料模型、source architecture、build system 或 deployment architecture 變更。
-- 自訂網域、DNS、Cloudflare、GitHub Pages、TLS 或 Redirect 架構變更。
-- CMS、API backend、表單後端、資料庫、analytics、auth 或其他新 runtime service。
-- 大量 URL 更名／刪除、SEO migration 或 canonical strategy 大幅調整。
-- 不可逆批次刪除、廣泛權限變更、blast radius 大或難以快速 rollback 的修改。
+- 第一手／官方來源不足、來源互相衝突、日期／金額／狀態等公開事實仍無法可靠確認。
+- build、test、CI、browser／Accessibility QA 失敗，或出現無法合理解釋的 warning、generated diff、console error、broken link。
+- diff 超出原需求、修改到明確不修改範圍，或 blast radius／rollback 風險無法可靠判斷。
+- 涉及個資、credential、權限、法律／著作權、未公開資料或其他安全與公開邊界疑慮。
+- 全站重設計、資訊架構、資料模型、build／deployment architecture、自訂網域／DNS／Cloudflare、CMS、backend、database、analytics、auth、大量 URL／SEO migration 等重大變更，且使用者尚未在該任務中明確授權其範圍與 production 影響。
+- Production Verification 顯示部署後異常，需先 rollback、修正或進一步診斷。
 
-若無法可靠判斷是否屬重大變更，預設視為重大變更，先停在 PR／candidate。
+若只是一般例行修改且上述疑慮都不存在，**不得因「尚未另外取得部署確認」而停在 PR；應直接完成發布。**
 
-資安事件、credential exposure、個資事件的 containment／rotation／刪除 evidence 仍依獨立安全授權邊界，不因本預設部署授權而自動執行。
+重大變更並非永久禁止部署；若使用者已明確授權該重大變更的範圍與 production 影響，且 migration／SEO／rollback／安全與測試均已處理，則可依該授權完成部署。
+
+資安事件、credential exposure、個資事件的 containment／rotation／刪除 evidence 仍依獨立安全授權邊界，不因本預設部署授權而自動執行高風險外部操作。
 
 ## Production Verification 狀態用語
 
@@ -92,4 +93,4 @@
 - 可回滾 commit
 - Drive release artifact 位置（若本次執行正式 release／收尾）
 
-最後更新：2026-09-10。
+最後更新：2026-09-11。
