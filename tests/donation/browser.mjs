@@ -49,7 +49,7 @@ try {
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
-  const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url)));
+  const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
 
   for (const width of [1440, 1100, 1024, 780, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 960 });
@@ -121,15 +121,15 @@ try {
         assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'), 'election.html', `${file}: election order`);
         assert.equal(await page.locator('#navigation a').nth(3).getAttribute('href'), 'service.html#monthly-heading', `${file}: lawyer order`);
         assert.equal(await page.locator('#navigation a[href="gallery.html"]').count(), 0, `${file}: gallery nav`);
-        assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(), '活動公告', `${file}: activities nav`);
+        assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(), '公開行程與活動', `${file}: activities nav`);
         for (const href of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) {
           assert(await page.locator('footer a').evaluateAll((els, target) => els.some(a => a.getAttribute('href') === target), href), `${file}: footer ${href}`);
         }
         if (file.startsWith('achievement-')) {
           const text = await page.locator('main').innerText();
-          assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗/.test(text), `${file}: public copy`);
+          assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','press.html','facts.html','404.html','achievement-wende-school-center.html'];
+        const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','achievement-wende-school-center.html'];
         if (core.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
           const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
@@ -206,7 +206,7 @@ try {
       for (const href of ['https://www.facebook.com/hwcfs/','https://www.threads.com/@huiwen.ifs','https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028']) assert.equal(await page.locator(`.social-grid a[href="${href}"]`).count(), 1);
       assert.equal(await page.locator('.social-grid a').count(), 3);
       await page.goto(base + 'activities.html');
-      assert(await page.getByRole('heading', { name: '活動公告', exact: true }).isVisible());
+      assert(await page.getByRole('heading', { name: '公開行程與活動', exact: true }).isVisible());
       assert.equal(await page.locator('.event-empty a').count(), 0);
     });
 

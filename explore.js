@@ -23,7 +23,7 @@
       fetch('news.html',{cache:'no-store'})
     ]);
     if (!responses.every(response => response.ok)) throw new Error('explore-data');
-    state.achievements = await responses[0].json();
+    state.achievements = (await responses[0].json()).filter(item => item.status !== '待核驗');
     const platforms = await responses[1].json();
     state.platforms = platforms.elections || [];
     state.news = parseNews(await responses[2].text());
@@ -132,12 +132,12 @@
       url:`vision.html#platform-${item.year}`,
       text:(item.sections||[]).flatMap(section=>[section.heading,...(section.items||[])]).join(' ')
     })).filter(item=>relationMatch(item.text,keywords)).sort((a,b)=>b.year-a.year).slice(0,5);
-    const heading=document.createElement('div');heading.innerHTML='<p class="eyebrow">CONNECTED CONTENT</p><h2>政績 × 新聞 × 政見</h2><p class="explore-relation-note">依共同主題詞彙建立站內探索關聯；僅供閱讀導覽，不等於新聞直接證明政績，也不代表歷屆政見已完成。</p>';
+    const heading=document.createElement('div');heading.innerHTML='<p class="eyebrow">CONNECTED CONTENT</p><h2>政績 × 新聞 × 政見</h2><p class="explore-relation-note">依共同主題整理相關政績、新聞與歷屆政見，方便延伸閱讀。</p>';
     relatedBox.append(heading);
     const list=document.createElement('div');list.className='explore-related-list';
     news.forEach(item=>{const a=document.createElement('a');a.className='explore-related-item';a.href=item.url;a.innerHTML=`<span class="global-search-type">新聞</span><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.date)}</small>`;list.append(a);});
     platforms.forEach(item=>{const a=document.createElement('a');a.className='explore-related-item';a.href=item.url;a.innerHTML=`<span class="global-search-type">政見</span><strong>${escapeHTML(item.title)}</strong><small>歷屆政見原文</small>`;list.append(a);});
-    if(!news.length&&!platforms.length){const p=document.createElement('p');p.textContent='目前沒有找到可可靠串連的新聞或政見內容。';list.append(p);}
+    if(!news.length&&!platforms.length){const p=document.createElement('p');p.textContent='目前沒有其他相關新聞或政見內容。';list.append(p);}
     relatedBox.append(list);
   }
 
