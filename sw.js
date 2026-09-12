@@ -1,6 +1,8 @@
 'use strict';
-const CACHE='huiwen-digital-v6-20260912-header-consistency';
-const SHELL=['./','./index.html','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./explore.html','./explore.js','./election.html','./election.js','./campaign.css','./campaign.js','./data/election-2026.json','./assets/favicon.svg'];
+const CACHE='huiwen-digital-v7-20260912-header3';
+/* Keep SHELL to stable documents/data/icons. Volatile CSS/JS stay network-first via fetch handler
+   and are intentionally not precached so normal reloads pick up ?v= cache-bust tokens. */
+const SHELL=['./','./index.html','./explore.html','./election.html','./data/election-2026.json','./assets/favicon.svg'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>Promise.allSettled(SHELL.map(url=>cache.add(url)))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE&&key.startsWith('huiwen-digital-')).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
 async function networkFirst(request){try{const response=await fetch(request);if(response&&response.ok){const cache=await caches.open(CACHE);cache.put(request,response.clone());}return response;}catch(error){return (await caches.match(request)) || (request.mode==='navigate' ? await caches.match('./') : Response.error());}}
