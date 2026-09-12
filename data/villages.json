@@ -1,6 +1,16 @@
 [
   {
     "district": "鳳山區",
+    "name": "中和里",
+    "currentHead": "張簡進興",
+    "term": "第四屆",
+    "boundaryName": "中和里",
+    "sourceUrl": "https://fsdo.kcg.gov.tw/cp.aspx?n=45401A5D47F711ED",
+    "sourceDate": null,
+    "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
     "name": "中榮里",
     "currentHead": "劉秀美",
     "term": "第四屆",
@@ -125,6 +135,16 @@
     "currentHead": "曾齡瑩",
     "term": "第四屆",
     "boundaryName": "曹公里",
+    "sourceUrl": "https://fsdo.kcg.gov.tw/cp.aspx?n=45401A5D47F711ED",
+    "sourceDate": null,
+    "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "武松里",
+    "currentHead": "戴惠敏",
+    "term": "第四屆",
+    "boundaryName": "武松里",
     "sourceUrl": "https://fsdo.kcg.gov.tw/cp.aspx?n=45401A5D47F711ED",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"

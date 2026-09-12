@@ -128,7 +128,7 @@
     dashboard.dataset.ready = 'true';
     dashboard.className = 'wrap digital-dashboard';
     dashboard.setAttribute('aria-labelledby','dashboard-title');
-    dashboard.innerHTML = `<div class="dashboard-heading"><div><p class="eyebrow">FENGSHAN IN FOCUS</p><h2 id="dashboard-title">政績統計總覽</h2><p>依目前篩選統計公開專題，點選圖表繼續探索。</p></div><button type="button" class="share-current-page">分享目前篩選</button></div><div class="digital-dashboard-grid"></div><div class="dashboard-charts"><div><h3>主題分布</h3><div class="digital-dashboard-topics chart-bars"></div></div><div><h3>進度分布</h3><div class="dashboard-status chart-bars"></div></div><div><h3>歷程年度</h3><div class="dashboard-years chart-bars"></div></div></div><p class="dashboard-note">件數代表收錄專題；同一專題可跨主題、里別與年度，分布加總可能超過總件數。年度依歷程記載，不代表完工年度。</p>`;
+    dashboard.innerHTML = `<div class="dashboard-heading"><div><h2 id="dashboard-title">政績統計總覽</h2><p>依目前篩選統計公開專題，點選圖表繼續探索。</p></div><button type="button" class="share-current-page">分享目前篩選</button></div><div class="digital-dashboard-grid"></div><div class="dashboard-charts"><div><h3>主題分布</h3><div class="digital-dashboard-topics chart-bars"></div></div><div><h3>進度分布</h3><div class="dashboard-status chart-bars"></div></div><div><h3>歷程年度</h3><div class="dashboard-years chart-bars"></div></div></div><p class="dashboard-note">件數代表收錄專題；同一專題可跨主題、里別與年度，分布加總可能超過總件數。年度依歷程記載，不代表完工年度。</p>`;
     if (!dashboard.isConnected) controls.before(dashboard);
     dashboard.querySelector('.share-current-page').addEventListener('click',shareCurrentPage);
     const insight = document.createElement('aside');

@@ -98,8 +98,9 @@ class MetadataTests(unittest.TestCase):
             for name in ['build_cases.py','achievement_metadata.py','validate_achievements.py']:
                 shutil.copy(ROOT/'scripts'/name,root/'scripts'/name)
             shutil.copy(ROOT/'templates/case-page.html',root/'templates/case-page.html')
-            for name in ['styles.css','map.css','map.js']:
+            for name in ['styles.css','map.css','map.js','digital.css','digital.js']:
                 shutil.copy(ROOT/name,root/name)
+            (root/'sitemap.xml').write_text('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.huiwen.tw/about.html</loc></url><url><loc>https://www.huiwen.tw/achievement-test-pending.html</loc></url></urlset>')
             c=case(); pending=copy.deepcopy(c);pending.update(id='test-pending',status='待核驗')
             (root/'data/achievements.json').write_text(json.dumps([c,pending],ensure_ascii=False))
             (root/'data/villages.json').write_text(json.dumps(villages(),ensure_ascii=False))
@@ -110,6 +111,12 @@ class MetadataTests(unittest.TestCase):
             self.assertTrue((root/'achievement-test-road.html').is_file())
             self.assertIn('測試甲里長',(root/'achievements.html').read_text())
             self.assertNotIn('test-pending',(root/'achievements.html').read_text())
+            sitemap=(root/'sitemap.xml').read_text()
+            self.assertIn('about.html',sitemap)
+            self.assertIn('achievement-test-road.html',sitemap)
+            self.assertNotIn('achievement-test-pending.html',sitemap)
+            subprocess.run([sys.executable,str(root/'scripts/build_cases.py')],check=True,capture_output=True)
+            self.assertEqual(sitemap,(root/'sitemap.xml').read_text())
 
 
 class AuditTests(unittest.TestCase):
