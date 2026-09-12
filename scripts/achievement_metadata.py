@@ -63,5 +63,5 @@ def facts_html(case, lookup):
     # Verification belongs to the joined current directory, never to historical attribution.
     if rows:
         dates = '、'.join(sorted({r['verifiedAt'] for r in rows}))
-        body += '<div><dt>里長名錄更新</dt><dd>' + escape(dates) + '</dd></div>'
+        body += '<div><dt>里長資料確認日</dt><dd>' + escape(dates) + '</dd></div>'
     return '<dl class="case-facts">' + body + '</dl>'
