@@ -8,7 +8,7 @@
 | --- | --- |
 | GitHub `main` | 網站公開 source；`data/achievements.json` 是唯一政績資料來源 |
 | 私人 Candidate Registry | 候選 backlog、原始來源定位、查核與排除記錄；不直接供網站或 build 讀取 |
-| 官方／第一手資料 | 工程狀態、日期、位置、歸因與現任里長的事實依據 |
+| 官方／第一手資料 | 工程狀態、日期、位置、歸因、里界與歷史合作關係的事實依據 |
 | Notion Editorial Policy | 讀取最新「陳慧文官網｜內容・新聞・素材發布規範」；不在此複製政策正文或私人網址 |
 | Production | 實際上線狀態，只用於驗證 |
 
@@ -27,9 +27,10 @@ Candidate Registry 保存於專案 Drive 的 `00_current/achievement-candidates.
 3. 原始案件 ID、姓名、電話、住址、私人附件與內部備註只留私人原件／候選池。另整理公開工程位置；不能把陳情人的住宅當作工程座標。
 4. 執行 Coverage Audit。先處理 existing／needs_update，再確認 missing；possible_duplicate／conflict 必須人工檢視，不能自動新增。
 5. 查官方資料，分開判定工程存在、進度及議員行動。只有政府工程紀錄，不能推成個別議員促成。缺證據留 `needs_verification`。
-6. 讀取當時有效編輯規範，保全數字、日期、否定、條件及不確定性。提出、質詢、會勘、爭取、核定、發包、施工與完成不能互換。
-7. 明確通過查核才更新原 ID 或新增公開 ID。Candidate Registry 不能直接匯出覆寫 achievements。
-8. PR／CI 與授權發布後，再從最新 main 重新執行 Audit，更新 `last_compared_main_commit`，不要把未合併 branch 當成網站已收錄。
+6. 里別與合作里長分開查核：`villages` 用現行行政里界供搜尋／地圖；案件當時實際共同反映、會勘、協調或追蹤的里長，只有具公開可追溯證據時才寫入 `villageHeadPartners`。不能用「目前誰是里長」倒灌舊案件。
+7. 讀取當時有效編輯規範，保全數字、日期、否定、條件及不確定性。提出、質詢、會勘、爭取、核定、發包、施工與完成不能互換。
+8. 明確通過查核才更新原 ID 或新增公開 ID。Candidate Registry 不能直接匯出覆寫 achievements。
+9. PR／CI 與授權發布後，再從最新 main 重新執行 Audit，更新 `last_compared_main_commit`，不要把未合併 branch 當成網站已收錄。
 
 ## Registry 欄位與狀態
 
@@ -72,21 +73,50 @@ python scripts/audit_achievement_coverage.py \
 
 Repository 內報告目的地必須在 gitignore 中；檔案建立為 0600。`.gitignore` 是防誤提交，不能代替權限管理，也不能擋 `git add -f`；PR 前須檢查 staged paths。
 
-## 里別與位置
+## 里別、位置與歷史合作里長
 
-`data/villages.json` 使用 **district＋name** 複合鍵，避免同名里跨區錯配。只保存官方公開姓名、任期、來源、查核日期及里界名稱，不保存里長電話／生日／住址。
+`data/villages.json` 使用 **district＋name** 複合鍵，僅負責目前網站使用的行政里名與里界來源。它保存 `district`、`name`、`boundaryName`、官方 `sourceUrl`、`sourceDate` 與 `verifiedAt`；**不保存、也不自動提供現任里長**。新增政績使用到新的里別時，先補足對應的官方里界 metadata。
 
-首次名冊來自鳳山區公所[第四屆里長名冊](https://fsdo.kcg.gov.tw/cp.aspx?n=45401A5D47F711ED)。`verifiedAt` 為實際讀取日期；網頁未提供個別名冊修訂日，`sourceDate` 留 null，不把網站頁尾更新日當成每列發布日。
+里界採[內政部國土測繪中心村里界圖](https://data.gov.tw/dataset/7438)，網站圖資為 `assets/fengshan-villages.geojson`。`boundaryName` 必須能對應圖資名稱。跨區案件可加入其他區的官方里界 metadata；沒有 polygon 不妨礙文字列表與已核對點位使用。
 
-既有里界採[內政部國土測繪中心村里界圖](https://data.gov.tw/dataset/7438)，實際網站檔案為 `assets/fengshan-villages.geojson`。`boundaryName` 必須對應圖資名稱。此版不更新里界快照、不宣稱重新驗證所有案件的落點。跨區案件可加入其他區的官方名冊；沒有該區 polygon 不妨礙文字列表與已核對點位使用。
+`villages` 是**現行地理分類**，可依新的官方里界資料校正；這不會改寫誰在歷史上參與案件。
 
-build 依案件 villages join 現任里長；跨里全部顯示，不暗示現任者曾參與歷史工程。全市政策 villages 為空、coordinates 為 null，顯示高雄市／現任里長不適用。其他未分里的跨區案件顯示服務範圍，不亂填一位里長。
+案件當時有實際參與的里長使用 `villageHeadPartners`，例如：
+
+```json
+"villageHeadPartners": [
+  {
+    "village": "五福里",
+    "name": "王劉煌",
+    "role": "共同反映與追蹤",
+    "from": "2019-06-11",
+    "to": "2020-04-08",
+    "source": {
+      "title": "公開可追溯的會勘／議會／政府紀錄",
+      "url": "https://example.gov.tw/public-record",
+      "sourceDate": "2020-04-08"
+    }
+  }
+]
+```
+
+規則：
+
+- 這是歷史 attribution，不因里長改選而更新姓名。
+- 只有「當時在任」不等於「有參與」。沒有共同反映、會勘、協調、追蹤等直接證據，就不要加入 `villageHeadPartners`。
+- `village` 保存案件當時合作關係的里名；它不必等同目前 `villages` 的現行里界名稱。
+- `role` 使用中性可驗證描述，例如「共同反映與追蹤」「共同會勘」「後續工程協調」，不使用沒有證據的功勞歸因。
+- `from`／`to` 是可選 ISO 日期；日期不足就留白，不補造精度。
+- `source` 必須是公開可追溯 URL。私人服務案件、Drive、Notion、內部公文掃描若未公開，不得直接寫進 public JSON。
+- 同一工程跨任期、前後兩任均有參與證據時可保留多筆，不覆蓋前任。
 
 `locationName` 為公開工程／場館位置；`locationNote` 記錄有證據的起訖、跨里與代表點限制。**範圍未知時顯示位置說明，不創造工程起訖。** 座標僅為代表位置，不是工程 polygon；不確定就 null。
 
 ## Build、搜尋與驗證
 
-`scripts/achievement_metadata.py` 提供共用 lookup、可公開判定、semantic facts 與搜尋文字。`build_cases.py` 先驗證再生成，僅使用明確公開欄位，從不載入 Registry。`build_search.py` 繼續從公開 HTML 產生唯一全站搜尋索引。地址、里長可搜尋的前提是已有通過公開範圍的案件；未公開的候選搜不到是正確行為。
+`scripts/achievement_metadata.py` 提供共用里界 lookup、可公開判定、歷史合作里長顯示與搜尋文字。`build_cases.py` 先驗證再生成，只顯示每案明確寫入的 `villageHeadPartners`；**不會從目前里長名冊自動回填舊政績**。合作里長姓名與角色若通過公開證據範圍，才進入卡片、詳情頁與關鍵字搜尋。
+
+`build_search.py` 繼續從公開 HTML 產生唯一全站搜尋索引。地址、里別與已確認合作里長可搜尋；未公開候選與低證據合作關係搜不到是正確行為。
 
 ```bash
 python -m json.tool data/achievements.json > /dev/null
@@ -106,14 +136,14 @@ python scripts/validate_p0.py
 python scripts/validate_public_copy.py
 ```
 
-新增／刪除詳情頁時還要更新 sitemap 與 `scripts/build_share_cards.py` 所需分享圖；檢查 Article／Breadcrumb JSON-LD、canonical、OG、Twitter Card 與 `zh-Hant-TW`。本次保留既有 stable ID 與 20 個公開詳情頁，無新增分享圖需求。
+新增／刪除詳情頁時還要更新 sitemap 與 `scripts/build_share_cards.py` 所需分享圖；檢查 Article／Breadcrumb JSON-LD、canonical、OG、Twitter Card 與 `zh-Hant-TW`。
 
-`validate_achievements.py` 阻擋重複／無效 ID、未知里別、缺失里長／官方來源／查核日、無效座標、缺失可追溯來源、私人欄位與常見個資／憑證。手機、身分證樣式、住戶姓名加門牌及私有文件 URL 採保守規則；錯誤不輸出偵測內容。正規表示式不能證明個資不存在，仍須差異審閱。既有 attribution 待證據記錄目前明確 warning，不能因此替它新增功勞或升級成果。
+`validate_achievements.py` 阻擋重複／無效 ID、未知現行里別、缺失里界來源／查核日、無效座標、缺失可追溯來源、私人欄位與常見個資／憑證。若存在 `villageHeadPartners`，還會檢查姓名、里名、角色、日期範圍與公開來源。validator 只驗證結構與可追溯性，**不能證明合作事實本身為真**；仍需人工 evidence review。
 
 CI 不持有私人 Excel；只跑 synthetic unit tests 與 CLI help。完整瀏覽器 QA 包含桌面／390px、搜尋、篩選、10 筆分頁、Dashboard、地圖、跨里 facts、鍵盤、無 JS 閱讀、Accessibility 與 SEO。不要把 Not Run 寫成 Passed。
 
 ## 本版與後續
 
-本版先完成治理架構；新線索未查核者不新增公開頁。既有資料中的來源只是追蹤入口、歸因不足、里界尚未逐案確認等問題，須逐筆補證據，不把 validator 通過當作事實查核成功。
+本版先完成治理架構；新線索未查核者不新增公開頁。私人 Step 2 Master Registry 是後續內容 intake 的候選來源，不是網站 source，也不得整批轉成公開 JSON。
 
-P1：補原始案件／行程檔、官方逐案證據、里界與工程範圍；成熟後再做里別探索頁。P2：大量資料分批 intake、來源快照 freshness、人工確認映射回饋與可衡量的語意配對準確率。任何模型／schema／部署架構擴充另依任務授權。
+P1：依 Master Registry 分批補官方逐案證據、現行里界、工程範圍與歷史合作里長公開證據，再寫入 `data/achievements.json`。P2：成熟後再做里別探索頁與更完整的資料 freshness／mapping 回饋。任何模型／schema／部署架構擴充另依任務授權。
