@@ -33,7 +33,7 @@ jobs:
       - name: Validate canonical achievement metadata
         run: |
           python -m json.tool data/achievements.json > /dev/null
-          python scripts/validate_achievements.py --baseline-ref main
+          python scripts/validate_achievements.py --baseline-ref origin/main
           python -m unittest discover -s tests -p 'test_achievement*.py'
           git diff --check
 
