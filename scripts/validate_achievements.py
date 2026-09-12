@@ -75,6 +75,36 @@ def privacy_issues(value):
     return sorted(issues)
 
 
+def validate_partners(case, label, errors):
+    partners = case.get('villageHeadPartners', [])
+    if not isinstance(partners, list):
+        errors.append(label + ': villageHeadPartners must be a list')
+        return
+    seen = set()
+    for index, partner in enumerate(partners, start=1):
+        p_label = f'{label}: villageHeadPartners {index}'
+        if not isinstance(partner, dict):
+            errors.append(p_label + ': invalid object')
+            continue
+        for field in ('village', 'name', 'role'):
+            if not isinstance(partner.get(field), str) or not partner[field].strip():
+                errors.append(p_label + ': missing ' + field)
+        key = tuple(partner.get(k, '') for k in ('village', 'name', 'from', 'to'))
+        if key in seen:
+            errors.append(p_label + ': duplicate historical partner')
+        seen.add(key)
+        for field in ('from', 'to'):
+            if partner.get(field) is not None and not valid_date(partner[field]):
+                errors.append(p_label + ': invalid ' + field + ' date')
+        if valid_date(partner.get('from')) and valid_date(partner.get('to')) and partner['from'] > partner['to']:
+            errors.append(p_label + ': from date after to date')
+        source = partner.get('source')
+        if not traceable(source):
+            errors.append(p_label + ': source needs titled traceable URL')
+        elif source.get('sourceDate') is not None and not valid_date(source['sourceDate']):
+            errors.append(p_label + ': invalid source date')
+
+
 def validate(achievements, villages, baseline=None):
     errors, warnings = [], []
     if not isinstance(achievements, list) or not isinstance(villages, list):
@@ -89,15 +119,14 @@ def validate(achievements, villages, baseline=None):
             errors.append(label + ': invalid verification date')
         if village.get('sourceDate') is not None and not valid_date(village['sourceDate']):
             errors.append(label + ': invalid source date')
-        if not traceable({'title': 'official directory', 'url': village.get('sourceUrl')}):
+        if not traceable({'title': 'official boundary source', 'url': village.get('sourceUrl')}):
             errors.append(label + ': missing traceable source')
         else:
             host = urlsplit(village['sourceUrl']).hostname
             if not host or not host.endswith('.gov.tw'):
                 errors.append(label + ': village source must be official')
-        for field in ('term', 'boundaryName'):
-            if not village.get(field):
-                errors.append(label + ': missing ' + field)
+        if not village.get('boundaryName'):
+            errors.append(label + ': missing boundaryName')
         errors.extend(label + ': ' + issue for issue in privacy_issues(village))
     seen = set()
     for n, a in enumerate(achievements):
@@ -119,6 +148,7 @@ def validate(achievements, villages, baseline=None):
                 joined_villages(a, lookup)
             except KeyError:
                 errors.append(label + ': unknown district/village')
+        validate_partners(a, label, errors)
         coords = a.get('coordinates')
         if coords is not None:
             if not (isinstance(coords, list) and len(coords) == 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in coords) and -90 <= coords[0] <= 90 and -180 <= coords[1] <= 180):
@@ -150,7 +180,7 @@ def validate(achievements, villages, baseline=None):
                 errors.append(label + ': city policy must not use a village/point')
         elif a.get('scope') != '跨區服務' and not a.get('locationName'):
             errors.append(label + ': local work needs public locationName')
-        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget', 'imageMetadata')}
+        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget', 'imageMetadata', 'villageHeadPartners')}
         if INTERNAL.search(json.dumps(public_fields, ensure_ascii=False)):
             errors.append(label + ': internal language in public fields')
         if re.search(r'\d+(?:之\d+)?號', a.get('locationName', '')):
