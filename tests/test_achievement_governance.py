@@ -11,13 +11,17 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from achievement_metadata import facts_html, head_text, is_public, search_text, village_lookup
+from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
 from audit_achievement_coverage import Matcher, compare, normalize_location, read_candidates
 from validate_achievements import privacy_issues, validate
 
 
 def villages():
-    return [dict(district='測試區', name=n, currentHead=h, term='測試任期', boundaryName=n, sourceUrl='https://test.gov.tw/directory', sourceDate=None, verifiedAt='2026-09-12') for n,h in [('測試甲里','測試甲里長'),('測試乙里','測試乙里長')]]
+    return [dict(district='測試區', name=n, boundaryName=n, sourceUrl='https://data.gov.tw/dataset/7438', sourceDate=None, verifiedAt='2026-09-12') for n in ('測試甲里','測試乙里')]
+
+
+def partner(name='測試甲里長', village='測試甲里', role='共同會勘'):
+    return dict(village=village, name=name, role=role, **{'from':'2026-08-01'}, source=dict(title='測試官方紀錄', url='https://test.gov.tw/partners/1', sourceDate='2026-08-01'))
 
 
 def case():
@@ -30,27 +34,34 @@ def candidate(**kwargs):
 
 class MetadataTests(unittest.TestCase):
     def test_village_lookup_is_district_scoped(self):
-        rows=villages(); other=copy.deepcopy(rows[0]); other['district']='另一測試區'; other['currentHead']='另一里長'; rows.append(other)
+        rows=villages(); other=copy.deepcopy(rows[0]); other['district']='另一測試區'; other['boundaryName']='另一測試甲里'; rows.append(other)
         lookup=village_lookup(rows)
         self.assertEqual(len(lookup),3)
-        self.assertEqual(lookup[('另一測試區','測試甲里')]['currentHead'],'另一里長')
+        self.assertEqual(lookup[('另一測試區','測試甲里')]['boundaryName'],'另一測試甲里')
 
     def test_single_village_semantic_facts(self):
         facts=facts_html(case(),village_lookup(villages()))
         self.assertIn('<dt>里別</dt><dd>測試甲里</dd>',facts)
-        self.assertIn('<dt>現任里長</dt><dd>測試甲里長</dd>',facts)
+        self.assertNotIn('現任里長',facts)
         self.assertIn('位置／地址',facts)
         self.assertIn('工程範圍／位置說明',facts)
 
-    def test_cross_village(self):
-        c=case(); c['villages']=['測試甲里','測試乙里']
-        self.assertEqual(head_text(c,village_lookup(villages())),'測試甲里 測試甲里長；測試乙里 測試乙里長')
+    def test_historical_partner_is_explicit(self):
+        c=case(); c['villageHeadPartners']=[partner()]
+        facts=facts_html(c,village_lookup(villages()))
+        self.assertIn('<dt>合作里長（案件當時）</dt>',facts)
+        self.assertIn('測試甲里 測試甲里長（共同會勘）',facts)
+        self.assertEqual(partner_text(c),'測試甲里 測試甲里長（共同會勘）')
+
+    def test_cross_village_historical_partners(self):
+        c=case(); c['villages']=['測試甲里','測試乙里']; c['villageHeadPartners']=[partner(),partner('測試乙里長','測試乙里','後續追蹤')]
+        self.assertEqual(partner_text(c),'測試甲里 測試甲里長（共同會勘）；測試乙里 測試乙里長（後續追蹤）')
 
     def test_city_policy(self):
         c=case(); c.update(scope='全市政策',villages=[],locationName='')
         facts=facts_html(c,village_lookup(villages()))
         self.assertIn('<dt>服務範圍</dt><dd>高雄市</dd>',facts)
-        self.assertIn('<dt>現任里長</dt><dd>不適用</dd>',facts)
+        self.assertNotIn('現任里長',facts)
         self.assertNotIn('位置／地址',facts)
         self.assertFalse(validate([c],villages())[0])
 
@@ -68,9 +79,19 @@ class MetadataTests(unittest.TestCase):
         c=case(); c['villages']=['不存在里']
         self.assertTrue(validate([c],villages())[0])
 
-    def test_missing_head_fails(self):
-        rows=villages(); rows[0]['currentHead']=''
+    def test_missing_boundary_metadata_fails(self):
+        rows=villages(); rows[0]['boundaryName']=''
         self.assertTrue(validate([case()],rows)[0])
+
+    def test_partner_source_and_dates_are_required(self):
+        c=case(); c['villageHeadPartners']=[partner()]
+        self.assertFalse(validate([c],villages())[0])
+        bad=copy.deepcopy(c); bad['villageHeadPartners'][0]['source']={}
+        self.assertTrue(validate([bad],villages())[0])
+        bad=copy.deepcopy(c); bad['villageHeadPartners'][0]['from']='2026-99-01'
+        self.assertTrue(validate([bad],villages())[0])
+        bad=copy.deepcopy(c); bad['villageHeadPartners'][0]['to']='2026-07-01'
+        self.assertTrue(validate([bad],villages())[0])
 
     def test_invalid_coordinates(self):
         for coord in ([91,120],[22,181],[True,120],[22,float('nan')],[22], '22,120'):
@@ -82,18 +103,24 @@ class MetadataTests(unittest.TestCase):
         c=case(); before=copy.deepcopy(c); c['id']='renamed-road'
         self.assertTrue(validate([c],villages(),[before])[0])
 
-    def test_search_has_head_and_location(self):
-        text=search_text(case(),village_lookup(villages()))
+    def test_search_has_historical_partner_and_location(self):
+        c=case(); c['villageHeadPartners']=[partner()]
+        text=search_text(c,village_lookup(villages()))
         self.assertIn('測試甲里長',text)
+        self.assertIn('共同會勘',text)
         self.assertIn('測試路565巷',text)
         self.assertIn('第一路口',text)
+
+    def test_search_does_not_auto_join_current_office_holder(self):
+        text=search_text(case(),village_lookup(villages()))
+        self.assertNotIn('里長',text)
 
     def test_privacy_detects_nested_private_payloads(self):
         for value in ({'notes_private':'synthetic'}, {'text':'09'+'12345678'}, {'text':'A'+'123456789'}, {'text':'https://'+'drive.google.com/file/d/synthetic'}, {'text':'住戶王小明住在測試路1號'}):
             self.assertTrue(privacy_issues(value))
 
-    def test_public_engineering_and_head_names_allowed(self):
-        self.assertFalse(privacy_issues({'locationName':'測試路1巷','currentHead':'測試里長'}))
+    def test_public_engineering_and_public_partner_names_allowed(self):
+        self.assertFalse(privacy_issues({'locationName':'測試路1巷','villageHeadPartners':[partner()]}))
 
     def test_internal_notes_not_rendered(self):
         c=case();c.update(notes_private='SYNTHETIC_PRIVATE_SENTINEL',verification={'attribution':'SYNTHETIC_PRIVATE_SENTINEL'})
@@ -111,7 +138,7 @@ class MetadataTests(unittest.TestCase):
             for name in ['styles.css','map.css','map.js','digital.css','digital.js']:
                 shutil.copy(ROOT/name,root/name)
             (root/'sitemap.xml').write_text('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.huiwen.tw/about.html</loc></url><url><loc>https://www.huiwen.tw/achievement-test-pending.html</loc></url></urlset>')
-            c=case(); pending=copy.deepcopy(c);pending.update(id='test-pending',status='待核驗')
+            c=case(); c['villageHeadPartners']=[partner()]; pending=copy.deepcopy(c);pending.update(id='test-pending',status='待核驗')
             (root/'data/achievements.json').write_text(json.dumps([c,pending],ensure_ascii=False))
             (root/'data/villages.json').write_text(json.dumps(villages(),ensure_ascii=False))
             (root/'assets/fengshan-villages.geojson').write_text('{"features": []}')
@@ -119,8 +146,12 @@ class MetadataTests(unittest.TestCase):
             subprocess.run([sys.executable,str(root/'scripts/build_cases.py')],check=True,capture_output=True)
             self.assertFalse((root/'achievement-test-pending.html').exists())
             self.assertTrue((root/'achievement-test-road.html').is_file())
-            self.assertIn('測試甲里長',(root/'achievements.html').read_text())
-            self.assertNotIn('test-pending',(root/'achievements.html').read_text())
+            public=(root/'achievements.html').read_text()
+            detail=(root/'achievement-test-road.html').read_text()
+            self.assertIn('合作里長：測試甲里 測試甲里長',public)
+            self.assertIn('合作里長（案件當時）',detail)
+            self.assertNotIn('現任里長',public+detail)
+            self.assertNotIn('test-pending',public)
             sitemap=(root/'sitemap.xml').read_text()
             self.assertIn('about.html',sitemap)
             self.assertIn('achievement-test-road.html',sitemap)

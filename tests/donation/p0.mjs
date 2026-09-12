@@ -30,7 +30,7 @@ try{
   assert.equal(await page.locator('#global-search-dialog svg').count(),0);await page.keyboard.press('Escape');
  });
  await check('Mobile search restores focus to the visible menu button',async()=>{
-  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');
+  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');await page.locator('#global-search-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.classList.contains('menu-toggle'));
   assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));
  });
  await page.setViewportSize({width:1440,height:1000});await go();
@@ -48,8 +48,8 @@ try{
  });
  await check('Year filter uses history dates and handles missing years',async()=>{
   await page.locator('#reset-map-filters').click();
-  await page.locator('#year-filter').selectOption('2013');await count(1);assert.match(await page.locator('#case-list .case-card:visible').textContent(),/鳳山車站整合專題/);
-  await page.locator('#year-filter').selectOption('undated');await count(3);await page.locator('#reset-map-filters').click();
+  const runtime=await page.evaluate(()=>window.HuiwenCases.getState().data.map(c=>({id:c.id,years:c.years}))); const in2013=runtime.filter(c=>c.years.includes('2013')); await page.locator('#year-filter').selectOption('2013'); await count(in2013.length); assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),in2013.map(c=>c.id));
+  const undated=runtime.filter(c=>c.years.length===0); await page.locator('#year-filter').selectOption('undated'); await count(undated.length); assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),undated.map(c=>c.id)); await page.locator('#reset-map-filters').click();
  });
  await check('Grouped map point exposes every topic and selection never leaks through filters',async()=>{
   await page.locator('#reset-map-filters').click();
