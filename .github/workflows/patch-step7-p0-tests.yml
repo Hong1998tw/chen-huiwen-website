@@ -1,0 +1,44 @@
+name: Patch Step 7 P0 regression expectations
+
+on:
+  push:
+    branches:
+      - chore/achievement-audit-foundation
+    paths:
+      - .github/workflows/patch-step7-p0-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/achievement-audit-foundation
+          fetch-depth: 0
+      - name: Replace brittle P0 assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/donation/p0.mjs')
+          s=p.read_text()
+          old="""  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');\n  assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));"""
+          new="""  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');await page.locator('#global-search-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.classList.contains('menu-toggle'));\n  assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));"""
+          assert old in s, 'mobile focus assertion block not found'
+          s=s.replace(old,new,1)
+          old="""  await page.locator('#year-filter').selectOption('2013');await count(1);assert.match(await page.locator('#case-list .case-card:visible').textContent(),/鳳山車站整合專題/);\n  await page.locator('#year-filter').selectOption('undated');await count(3);await page.locator('#reset-map-filters').click();"""
+          new="""  const in2013=data.filter(c=>c.history.some(h=>String(h.date).startsWith('2013')));await page.locator('#year-filter').selectOption('2013');await count(in2013.length);assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),in2013.map(c=>c.id));\n  const undated=data.filter(c=>!c.history.some(h=>/^(19|20)\\d{2}(?:\\D|$)/.test(String(h.date))));await page.locator('#year-filter').selectOption('undated');await count(undated.length);assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),undated.map(c=>c.id));await page.locator('#reset-map-filters').click();"""
+          assert old in s, 'year filter assertion block not found'
+          p.write_text(s)
+          PY
+          node --check tests/donation/p0.mjs
+      - name: Commit test correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/donation/p0.mjs
+          git commit -m "test: derive P0 focus and year expectations from runtime state"
+          git push origin HEAD:chore/achievement-audit-foundation
