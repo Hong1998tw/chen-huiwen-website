@@ -7,7 +7,6 @@
 .footer>.wrap{width:min(1040px,calc(100% - 64px));margin-inline:auto}
 .footer h2{font-size:1rem}.footer-grid{gap:28px}.footer-bottom{gap:16px;align-items:start}
 .footer-bottom>div{display:flex;gap:8px 18px;flex-wrap:wrap}.footer a{display:inline-flex;align-items:center;min-height:44px;overflow-wrap:anywhere}.footer-phone{font-size:1.3rem}
-.site-header #navigation{gap:2px}.site-header #navigation>a{font-size:clamp(.68rem,1.1vw,.82rem)}
 /* Keep the lawyer-schedule tab; remove the redundant service-info tab from site navigation. */
 .site-header #navigation>a[href="service.html"]{display:none}
 .platform-timeline{margin:36px 0 56px}.platform-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:24px;position:relative;padding-bottom:18px}
@@ -22,11 +21,10 @@
 /* Keep provenance in structured source, but do not present verification/source notes as campaign-page copy. */
 .platform-content>.source-note:last-child{display:none}
 /* Do not reintroduce the legacy wrapping/centering behavior after mobile.css. */
-@media(min-width:781px) and (max-width:1200px){.site-header #navigation{width:100%;justify-content:space-between;flex-wrap:nowrap}}
 @media(max-width:780px){
  .activities-page .wrap,.platforms-wrap{width:calc(100% - 40px)}.activities-page .content-grid{grid-template-columns:1fr;gap:20px}.activities-page .page-head{padding-block:30px}
  .footer>.wrap{width:calc(100% - 40px)}.footer-grid{grid-template-columns:1fr;gap:20px}.footer-bottom{flex-direction:column}.footer-bottom>div{gap:8px 16px}
- .site-header #navigation>a{font-size:.9rem}.menu-ready .site-header nav>a:nth-last-child(2){border-bottom:1px solid var(--line)}
+ .site-header #navigation>a{font-size:1rem}
  .platform-row::before{left:54px}
  .platform-row{grid-template-columns:48px minmax(0,1fr);gap:12px}.platform-year{font-size:1rem;padding-top:20px}
  .platform-election summary{padding:16px 14px;gap:8px}.platform-election summary h2{font-size:1rem}.platform-content{padding:0 14px 18px;font-size:.9rem}.platform-content ol{padding-left:20px}
@@ -77,4 +75,32 @@
  .service-page .legal-grid .section-intro{max-width:none}
  .service-page .legal-steps li,.service-page .legal-steps li:first-child{gap:15px;padding:16px}
  .service-page .legal-steps li>span{width:34px;height:34px}
+}
+
+/* One shared outer edge for navigation, page headings and content on every route.
+   Component padding controls readability inside cards without moving their edges. */
+:root{--site-width:1200px;--site-gutter:32px}
+body .wrap,body .topline .wrap,body .footer>.wrap,
+body .activities-page .wrap,body .platforms-wrap,body .hero-grid,
+body .home-account,body .home-contact,body .home-facebook,
+body .campaign-entry-compact{width:min(var(--site-width),calc(100% - var(--site-gutter) * 2));max-width:var(--site-width);margin-inline:auto}
+body .site-header{width:min(var(--site-width),calc(100% - var(--site-gutter) * 2));margin-inline:auto}
+body .site-header .nav-wrap{width:100%;max-width:none}
+body .news-article-wrap{max-width:var(--site-width)}
+.news-full-article>p,.news-full-article>h2,.news-full-article>h3,.news-full-article>ul,.news-full-article>ol{max-width:52rem}
+.terms-content{padding-block:16px 48px}
+.terms-content section{max-width:52rem;margin-block:0 32px}
+.terms-content h2{font-size:1.35rem;margin-bottom:12px}
+.terms-content a{text-decoration:underline;text-underline-offset:3px}
+.terms-nav{display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:32px;padding-block:16px;border-block:1px solid var(--line)}
+.terms-nav a{display:inline-flex;align-items:center;min-height:44px;color:var(--green);font-weight:700}
+@media(max-width:780px){
+ :root{--site-gutter:16px}
+ body .site-header{border:0;background:transparent;top:8px}
+ body .site-header .nav-wrap{min-height:72px;padding:10px 14px;backdrop-filter:none}
+ .menu-ready .site-header nav.is-open{margin:0}
+ .site-header .brand-name{font-size:1.35rem}
+ .site-header .menu-toggle{min-width:80px;gap:10px;padding:10px 14px}
+ .menu-ready .site-header nav>.global-search-trigger{border:1px solid var(--line);background:#fff;min-height:48px;font-size:1rem}
+ .terms-content section{margin-bottom:28px}
 }

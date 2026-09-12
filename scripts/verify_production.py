@@ -32,6 +32,7 @@ CORE_PAGES = (
     "service.html",
     "petition.html",
     "political-donation.html",
+    "terms.html",
 )
 STATIC_FILES = ("robots.txt", "sitemap.xml", "data/election-2026.json")
 MIN_TEXT_COVERAGE = 0.95

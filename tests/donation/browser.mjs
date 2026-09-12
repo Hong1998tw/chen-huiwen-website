@@ -155,7 +155,12 @@ try {
       assert(box && heading);
       assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
       assert(box.x + box.width <= heading.x);
-      if (width === 390) assert(box.width >= 86 && box.width <= 100);
+      if (width === 390) assert(box.width >= 140 && box.width <= 170);
+      const campaign = await page.locator('.campaign-entry').boundingBox();
+      const header = await page.locator('.site-header').boundingBox();
+      assert(Math.abs(box.x - campaign.x) <= 1, 'portrait aligns with the content below');
+      assert(Math.abs(header.x - campaign.x) <= 1, 'header and content share their left edge');
+      assert(Math.abs(header.width - campaign.width) <= 1, 'header and content share their width');
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;
