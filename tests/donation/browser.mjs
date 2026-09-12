@@ -78,14 +78,18 @@ try {
     });
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
-      const toggle = page.getByRole('button', { name: '選單', exact: true });
+      const toggle = page.locator('.menu-toggle');
       await toggle.focus();
       await page.keyboard.press('Enter');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
+      assert(await page.locator('main').evaluate(el => el.inert));
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
+      assert.equal(await page.locator('main').evaluate(el => el.inert), false);
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
