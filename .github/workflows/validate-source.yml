@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,7 +26,21 @@ jobs:
         run: python -m pip install beautifulsoup4 html5lib
 
       - name: Validate achievements JSON
-        run: python -m json.tool data/achievements.json > /dev/null
+        run: |
+          python -m json.tool data/achievements.json > /dev/null
+          python -m json.tool data/villages.json > /dev/null
+          python scripts/validate_achievements.py
+
+      - name: Preserve stable achievement IDs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/validate_achievements.py --baseline-ref "$BASE_SHA"
+
+      - name: Test achievement governance without private inputs
+        run: |
+          python -m unittest discover -s tests -p 'test_achievement*.py'
+          python scripts/audit_achievement_coverage.py --help
 
       - name: Rebuild generated public pages
         run: |

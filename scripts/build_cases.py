@@ -2,11 +2,17 @@
 """Build the public map and standalone case pages from reviewed public JSON only."""
 from pathlib import Path
 import json,re,html,hashlib
+from achievement_metadata import facts_html, head_text, is_public, search_text, village_lookup
+from validate_achievements import validate
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
 BASE='https://www.huiwen.tw/'
 items=json.loads((R/'data/achievements.json').read_text())
-public_items=[x for x in items if x.get('status')!='待核驗']
+village_rows=json.loads((R/'data/villages.json').read_text())
+validation_errors,_=validate(items,village_rows)
+if validation_errors: raise SystemExit('Invalid achievement metadata: '+'; '.join(validation_errors))
+village_by_key=village_lookup(village_rows)
+public_items=[x for x in items if is_public(x)]
 geo=json.loads((R/'assets/fengshan-villages.geojson').read_text())
 template=(R/'templates/case-page.html').read_text()
 byid={x['id']:x for x in public_items}
@@ -18,15 +24,18 @@ def sub_tags(c):return ''.join(f'<span class="case-tag-sub">{E(t)}</span>' for t
 def asset_version(path):return hashlib.sha256((R/path).read_bytes()).hexdigest()[:12]
 def page(file,title,description,body,head=''):
  s=template
- for k,v in {'TITLE':E(title),'DESCRIPTION':E(description),'FILE':E(file),'BODY':body,'HEAD':head,'OG_IMAGE':E('assets/og/'+Path(file).stem+'.png'),'OG_ALT':E(('慧做事・政績地圖' if file=='achievements.html' else title)+'｜陳慧文・高雄市議員')}.items():s=s.replace('{{'+k+'}}',v)
+ for k,v in {'TITLE':E(title),'DESCRIPTION':E(description),'FILE':E(file),'BODY':body,'HEAD':head,'STYLE_VERSION':asset_version('styles.css'),'OG_IMAGE':E('assets/og/'+Path(file).stem+'.png'),'OG_ALT':E(('慧做事・政績地圖' if file=='achievements.html' else title)+'｜陳慧文・高雄市議員')}.items():s=s.replace('{{'+k+'}}',v)
  (R/file).write_text(s)
 def card(c):
  status='' if c['status']=='待核驗' else '<span class="case-status">'+E(c['status'])+'</span>'
  location='、'.join(c['villages']) or c['scope']
+ heads=head_text(c,village_by_key)
+ place=E(location)+(f'<span class="case-current-head">現任里長：{E(heads)}</span>' if heads else '')
+ if c.get('locationName'): place+=f'<span class="case-address">{E(c["locationName"])}</span>'
  summary=('<p class="case-summary">'+E(c['summary'])+'</p>') if c['summary'] else ''
  locate=f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else ''
  subtags=('<div class="case-subtags">'+sub_tags(c)+'</div>') if c.get('subcategories') else ''
- return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{main_tags(c)}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}<div class="case-card-footer"><span class="case-place">{E(location)}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看完整內容 →</a>{locate}</div></div></article>'''
+ return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{main_tags(c)}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}<div class="case-card-footer"><span class="case-place">{place}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看完整內容 →</a>{locate}</div></div></article>'''
 expected_pages={href(c['id']) for c in public_items}
 for old in R.glob('achievement-*.html'):
  if old.name not in expected_pages: old.unlink()
@@ -35,10 +44,7 @@ for c in public_items:
  photos=''
  if c['images']:photos='<div class="case-photos">'+''.join(f'<a href="assets/{E(p)}"><img src="assets/{E(p)}" alt="{E(c["title"])}公開照片" width="{c["imageDimensions"][p][0]}" height="{c["imageDimensions"][p][1]}" loading="lazy"></a>' for p in c['images'])+'</div>'
  location=('、'.join(c['villages']) or c['scope'])
- info=f'<dl class="case-facts"><div><dt>服務範圍</dt><dd>{E(location)}</dd></div>'
- if c['status']!='待核驗':info+=f'<div><dt>進度</dt><dd>{E(c["status"])}</dd></div>'
- if c['budget']:info+=f'<div><dt>來源所載經費</dt><dd>{E(c["budget"])}</dd></div>'
- info+='</dl>'
+ info=facts_html(c,village_by_key)
  content=('<h2>重點說明</h2>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])) if c['paragraphs'] else ''
  history=('<section class="history-section"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h else ''
  sources=('<section class="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
@@ -54,14 +60,14 @@ for c in public_items:
  breadcrumbs={'@context':'https://schema.org','@type':'BreadcrumbList','itemListElement':[{'@type':'ListItem','position':1,'name':'首頁','item':BASE},{'@type':'ListItem','position':2,'name':'政績與追蹤紀錄','item':BASE+'achievements.html'},{'@type':'ListItem','position':3,'name':c['title'],'item':BASE+href(c['id'])}]}
  page(href(c['id']),c['title'],description,body,'<script type="application/ld+json">'+json.dumps([structured,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>')
 # Map page: all cards pre-rendered so reading never depends on map tiles or JavaScript.
-villages=sorted([f['properties']['name'] for f in geo['features']])
+villages=sorted({f['properties']['name'] for f in geo['features']} | {v for c in public_items for v in c['villages']})
 scopes=sorted(set(x['scope'] for x in public_items if x['scope']!='鳳山區'))
 opts=''.join(f'<option value="v:{E(v)}">{E(v)}</option>' for v in villages)+''.join(f'<option value="s:{E(s)}">{E(s)}</option>' for s in scopes)
 cats=sorted({t for c in public_items for t in c['categories']});subcats=sorted({t for c in public_items for t in c.get('subcategories',[])});statuses=sorted({c['status'] for c in public_items})
 mapdata=[]
 for c in public_items:
- entry={k:c[k] for k in ['id','title','summary','categories','subcategories','villages','scope','status','coordinates','locationNote','history','updated']}
- entry['searchText']=' '.join(str(v) for v in [c['title'],c['summary'],c['scope'],c['status'],*c['categories'],*c['subcategories'],*c['villages'],*c['paragraphs'],*(v for h in c['history'] for v in [h['date'],h['title'],h['text']])])
+ entry={k:c[k] for k in ['id','title','summary','categories','subcategories','villages','scope','status','coordinates','locationName','locationNote','history','updated']}
+ entry['searchText']=search_text(c,village_by_key)
  entry['years']=sorted({h['date'][:4] for h in c['history'] if re.match(r'^(19|20)\d{2}(?:\D|$)',h['date'])})
  mapdata.append(entry)
 years=sorted({y for c in mapdata for y in c['years']},reverse=True)

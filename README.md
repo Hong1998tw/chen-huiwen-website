@@ -83,3 +83,4 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 ## P0 功能維護（2026-09-12）
 
 搜尋索引由公開 HTML 產生：完成內容 build 後執行 `python3 scripts/build_search.py`，再執行 `python3 scripts/validate_p0.py`。政績圖卡、統計口徑、測試與驗收說明見 `docs/P0-TECH-REVIEW-2026-09-12.md`。
+新增政績候選、查核、Coverage Audit 與里別資料維護，請先讀 [docs/ACHIEVEMENT-WORKFLOW.md](docs/ACHIEVEMENT-WORKFLOW.md)。

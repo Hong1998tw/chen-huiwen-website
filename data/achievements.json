@@ -790,7 +790,7 @@
       22.63828,
       120.35883
     ],
-    "locationName": "臺灣830高雄市鳳山區八德路",
+    "locationName": "高雄市鳳山區八德路",
     "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
     "published": null,
     "updated": "2026-09-09",
@@ -1118,7 +1118,7 @@
       22.59422,
       120.3269
     ],
-    "locationName": "臺灣830高雄市鳳山區三光街",
+    "locationName": "高雄市鳳山區三光街",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -1164,11 +1164,8 @@
     "scope": "鳳山區",
     "district": "鳳山區",
     "status": "待核驗",
-    "coordinates": [
-      22.64528,
-      120.36718
-    ],
-    "locationName": "臺灣830001高雄市鳳山區民安街146巷6號",
+    "coordinates": null,
+    "locationName": "",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -1215,11 +1212,8 @@
     "scope": "鳳山區",
     "district": "鳳山區",
     "status": "待核驗",
-    "coordinates": [
-      22.59118,
-      120.33455
-    ],
-    "locationName": "臺灣830653高雄市鳳山區錦田路6號",
+    "coordinates": null,
+    "locationName": "",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -1286,7 +1280,7 @@
       22.58907,
       120.36615
     ],
-    "locationName": "臺灣830高雄市鳳山區高鳳一路",
+    "locationName": "高雄市鳳山區高鳳一路",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -1500,12 +1494,9 @@
     "scope": "鳳山區",
     "district": "鳳山區",
     "status": "持續追蹤",
-    "coordinates": [
-      22.5902,
-      120.36449
-    ],
-    "locationName": "臺灣830高雄市鳳山區過埤路2號",
-    "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
+    "coordinates": null,
+    "locationName": "高雄市鳳山區過埤路2巷",
+    "locationNote": "擋土牆位於過埤路2巷；本頁未標示完整工程範圍。",
     "published": null,
     "updated": "2026-09-12",
     "budget": "",
@@ -1704,7 +1695,7 @@
       22.60433,
       120.35337
     ],
-    "locationName": "臺灣830高雄市鳳山區中崙二路",
+    "locationName": "高雄市鳳山區中崙二路",
     "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
     "published": null,
     "updated": "2026-09-12",
@@ -2252,7 +2243,7 @@
       22.61682,
       120.34035
     ],
-    "locationName": "臺灣830高雄市鳳山區輜汽路",
+    "locationName": "高雄市鳳山區輜汽路",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -2298,11 +2289,8 @@
     "scope": "鳳山區",
     "district": "鳳山區",
     "status": "待核驗",
-    "coordinates": [
-      22.61436,
-      120.33896
-    ],
-    "locationName": "臺灣830高雄市鳳山區新強路125號",
+    "coordinates": null,
+    "locationName": "",
     "locationNote": "既有代表位置，精確座標與里別待核驗；非施工範圍或受益區界",
     "published": null,
     "updated": "2026-09-08",
@@ -2405,7 +2393,7 @@
       22.58834,
       120.35439
     ],
-    "locationName": "臺灣830高雄市鳳山區頂庄一街13巷",
+    "locationName": "高雄市鳳山區頂庄一街13巷",
     "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
     "published": null,
     "updated": "2026-09-12",
@@ -2463,7 +2451,7 @@
       22.593,
       120.31913
     ],
-    "locationName": "臺灣806高雄市前鎮區海邦橋",
+    "locationName": "高雄市前鎮區海邦橋",
     "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
     "published": null,
     "updated": "2026-09-12",
@@ -2535,7 +2523,7 @@
       22.58982,
       120.36288
     ],
-    "locationName": "臺灣830高雄市鳳山區過勇路",
+    "locationName": "高雄市鳳山區過勇路",
     "locationNote": "代表位置供地圖查找使用；實際服務或工程範圍請見本頁說明。",
     "published": null,
     "updated": "2026-09-12",
