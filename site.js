@@ -24,16 +24,29 @@
     if (election) election.after(lawyer); else navigation.append(lawyer);
   }
   const links = [...navigation.querySelectorAll('a')];
+  const background = [...document.body.children].filter(node =>
+    node !== backdrop && !node.contains(toggle) && !['SCRIPT', 'STYLE', 'DIALOG'].includes(node.tagName));
+  let inertBefore = [];
+  function positionMenu() {
+    const bottom = document.querySelector('.site-header').getBoundingClientRect().bottom;
+    navigation.style.setProperty('--menu-top', `${Math.ceil(bottom + 12)}px`);
+  }
   function closeMenu(returnFocus = false) {
     navigation.classList.remove('is-open'); document.body.classList.remove('menu-open');
     toggle.setAttribute('aria-expanded', 'false'); backdrop.hidden = true;
+    toggle.setAttribute('aria-label', '開啟主要選單');
+    inertBefore.forEach(([node, value]) => { node.inert = value; }); inertBefore = [];
     if (returnFocus) toggle.focus();
   }
   function openMenu() {
+    positionMenu();
     navigation.classList.add('is-open'); document.body.classList.add('menu-open');
     toggle.setAttribute('aria-expanded', 'true'); backdrop.hidden = false;
+    toggle.setAttribute('aria-label', '關閉主要選單');
+    inertBefore = background.map(node => [node, node.inert]);
+    background.forEach(node => { node.inert = true; });
     const search = navigation.querySelector('.global-search-trigger');
-    (search || links[0])?.focus();
+    (search || links.find(link => link.getClientRects().length))?.focus();
   }
   toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu(true) : openMenu());
   backdrop.addEventListener('click', () => closeMenu(true));
@@ -42,12 +55,14 @@
     if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') closeMenu(true);
     if (event.key === 'Tab' && toggle.getAttribute('aria-expanded') === 'true') {
       const search = navigation.querySelector('.global-search-trigger');
-      const focusable = [toggle, ...(search ? [search] : []), ...links]; const first = focusable[0], last = focusable.at(-1);
+      const focusable = [toggle, ...navigation.querySelectorAll('a, button')].filter(node => node.getClientRects().length && !node.disabled); const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   });
   window.matchMedia('(min-width: 781px)').addEventListener('change', event => { if (event.matches) closeMenu(); });
+  window.addEventListener('resize', () => { if (toggle.getAttribute('aria-expanded') === 'true') positionMenu(); });
+  document.addEventListener('site:close-menu', () => closeMenu());
 })();
 
 (() => {
@@ -122,7 +137,7 @@
 // Shared digital-civic layer: global search, PWA, view transitions, timeline reveal
 // and cross-content exploration. Kept separate so existing page logic stays isolated.
 (() => {
-  const VERSION = '20260912-public2';
+  const VERSION = '20260912-p0-v2';
   if (!document.querySelector(`link[data-digital-civic="${VERSION}"]`)) {
     const style = document.createElement('link');
     style.rel = 'stylesheet';

@@ -1,0 +1,128 @@
+{
+  "achievements": {
+    "title": "慧做事・政績地圖",
+    "status": "建設與服務紀錄",
+    "place": "依里別、主題與歷程查詢",
+    "sha256": "87ecebdc366ce936f91e919dcf04ab7a2dca3a90335b5c5a4bbb20852079b9bc"
+  },
+  "achievement-wende-school-center": {
+    "title": "文德國小活動中心",
+    "status": "持續追蹤",
+    "place": "文德里",
+    "sha256": "a8a66c512abe663a1de0f1f4b030d3c5c843fb7df5c5af067a61a4329bc1d0ae"
+  },
+  "achievement-consumer-dudu": {
+    "title": "毛動力嘟嘟車消費爭議協助",
+    "status": "持續追蹤",
+    "place": "跨區服務",
+    "sha256": "2c7ba232641fd68deb85a9a7328808cfbd3851d29f46c73d07b7291e24396682"
+  },
+  "achievement-fengshan-station-overview": {
+    "title": "鳳山車站整合專題",
+    "status": "持續追蹤",
+    "place": "跨里建設",
+    "sha256": "580d9368cea5cf1b827beac83480cb9df442db83e2a44be93c6476a363b0c498"
+  },
+  "achievement-rail-greenway": {
+    "title": "鳳山鐵路綠園道最後一哩路改善",
+    "status": "持續追蹤",
+    "place": "忠孝里、鎮西里",
+    "sha256": "a216dacf117e1baae0a396b3472ecc9899286e6299b112035865c45744005755"
+  },
+  "achievement-metro-green-line": {
+    "title": "推動捷運青線進入鳳山火車站",
+    "status": "持續追蹤",
+    "place": "曹公里",
+    "sha256": "35c54fbf2e8ffabe510138ec077d4511b9111f0878da0b131f371f7d7b556513"
+  },
+  "achievement-station-parking": {
+    "title": "鳳山車站智慧停車與接送動線改善",
+    "status": "持續追蹤",
+    "place": "曹公里",
+    "sha256": "2dbc2b6297410bd356b10a8f43aea3ebdab0bda147bb093b29b5925e8fc7486f"
+  },
+  "achievement-station-design": {
+    "title": "鳳山車站站體設計、公民參與與電影院爭取",
+    "status": "持續追蹤",
+    "place": "曹公里",
+    "sha256": "76d882a596a860128af7d453875aae3de2e7b11f2d2d25eea448fe2c0c0a3542"
+  },
+  "achievement-station-walkway": {
+    "title": "鳳山車站・曹公圳・捷運步行廊道",
+    "status": "持續追蹤",
+    "place": "曹公里",
+    "sha256": "e44805612f43c3a6321226e53dc09a3b82781c1c8a89bbc7ae6d554eaa4858c7"
+  },
+  "achievement-bade-detention": {
+    "title": "八德滯洪池與防汛整備",
+    "status": "持續追蹤",
+    "place": "文英里",
+    "sha256": "3bc9d35e6f99b96542a2ebf15119326d8de51d2eaed632ca78f1f615bdcb99cb"
+  },
+  "achievement-wenlong-lane16": {
+    "title": "文龍路16巷路面改善整體規劃",
+    "status": "持續追蹤",
+    "place": "文德里",
+    "sha256": "eea8382d58c9346df68f84967f122ede43a20a5914b56b1c5fa814758b1f62e5"
+  },
+  "achievement-school-administration": {
+    "title": "高中職行政人力增置評估",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "0bd391d45f7ba4d0819f422178ee228aa2320a56b77c834c47afa21386059397"
+  },
+  "achievement-senior-transit-card": {
+    "title": "敬老卡改制每月600點",
+    "status": "政策實施",
+    "place": "全市政策",
+    "sha256": "9530eca9de000bcbf75297e94b8ddf516f73c1e58d7b5509caf8b607eae3c05c"
+  },
+  "achievement-guopi-retaining-wall": {
+    "title": "過埤路2巷擋土牆改善",
+    "status": "持續追蹤",
+    "place": "過埤里",
+    "sha256": "1aeba269ca63a4883b506ab06fdda84adde5f9925a9e8ec1646dddb6d7ffa4b6"
+  },
+  "achievement-school-crossing-flags": {
+    "title": "橫斷旗通學安全建議",
+    "status": "爭取規劃",
+    "place": "忠孝里",
+    "sha256": "db9db550d62b99d6978d64d9c3a1d2950296ed31073b5cea847ae02a80bd54f8"
+  },
+  "achievement-zhonglun-height-limit": {
+    "title": "中崙路南段增設限高門架",
+    "status": "爭取規劃",
+    "place": "中榮里",
+    "sha256": "cdc9aa7d3c61da7ab16ca1154191df87280619f2a665669d4a2ac5a788d87703"
+  },
+  "achievement-special-education-support": {
+    "title": "特教學生交通與校園照護支持",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "7240a1a8454fd959cef40dcebacec214c1336cbb1f452afb3ad69aedce52cb0e"
+  },
+  "achievement-school-case-review": {
+    "title": "校事會議分流與專業支持",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "0f3f29e8ad97498a20ae285897a6355f60790d59a642c35976875eab218ea7e3"
+  },
+  "achievement-dingbao-bridge": {
+    "title": "頂寶橋：串起鳳山溪兩岸",
+    "status": "已完成",
+    "place": "過埤里、南成里",
+    "sha256": "e67f888c4a87c690e84d24f7963a0f9927bfadd32a5a7f70e3d7d554e5ed1e43"
+  },
+  "achievement-haibang-bridge": {
+    "title": "海邦橋改建工程",
+    "status": "已完成",
+    "place": "前鎮區",
+    "sha256": "52c037fa924ae06c657f7867fef18ba2ca3b43673bb272eb22ef5b01dba36a8a"
+  },
+  "achievement-guoyong-drain": {
+    "title": "過勇路水溝加蓋",
+    "status": "已完成",
+    "place": "過埤里",
+    "sha256": "26a81f8ce3e906d1c5b65a5da30a2c3eef45c4ac7d0c1691a4b7c58045be3388"
+  }
+}

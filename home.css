@@ -1,11 +1,11 @@
 /* Homepage composition; scoped rules load after the shared base styles. */
 #main{padding-bottom:24px}
 .hero{padding:54px 0 42px;overflow:visible}
-.hero-grid{width:min(760px,calc(100% - 64px));margin-inline:auto;padding:0;grid-template-columns:200px minmax(0,1fr);gap:42px;align-items:center}
-.hero-portrait{width:200px;margin:0;border-radius:26px;align-self:center}
+.hero-grid{margin-inline:auto;padding:0;grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);gap:clamp(28px,5vw,72px);align-items:center}
+.hero-portrait{width:100%;margin:0;border-radius:26px;align-self:center;justify-self:start}
 .hero-portrait figcaption{padding:12px;font-size:.85rem;text-align:center;white-space:normal}
 .hero-copy{padding:0;min-width:0}.hero-copy>.eyebrow{margin:0 0 18px}
-.hero h1{font-size:clamp(3rem,5.5vw,4.6rem);line-height:1.16;letter-spacing:-.035em;margin:0 0 22px}
+.hero h1{font-size:clamp(3rem,6.7vw,6.25rem);line-height:1.16;letter-spacing:-.035em;margin:0 0 22px}
 .hero-intro{font-size:1rem;line-height:1.9;margin:0}
 .hero + .campaign-entry-compact{margin-top:6px}
 .campaign-entry-compact{width:min(900px,calc(100% - 64px))}
@@ -27,9 +27,9 @@
 .home-account-number{font-size:1.8rem;font-weight:800;letter-spacing:.04em;color:var(--green)}
 .home-donation-notes{text-decoration:underline;text-underline-offset:3px;font-weight:700;display:inline-block;min-height:44px;padding-block:8px}
 .home-account p{font-size:.875rem;line-height:1.8;margin:18px 0 0;padding-top:12px;border-top:1px solid var(--line)}
-.home-facebook{margin-top:28px;padding:28px 32px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,500px);gap:20px 32px;align-items:start}
+.home-facebook{width:min(900px,calc(100% - 64px));margin-top:28px;padding:28px 34px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,460px);gap:20px 28px;align-items:start}
 .home-facebook h2{font-size:1.4rem;margin:0 0 12px}.facebook-page-name{font-size:1.15rem;font-weight:700;line-height:1.7;overflow-wrap:anywhere}
-.home-facebook .facebook-frame{width:100%;max-width:500px;padding:0;min-height:600px;overflow:visible;justify-self:center}
+.home-facebook .facebook-frame{width:100%;max-width:460px;padding:0;min-height:600px;overflow:hidden;justify-self:center}
 .home-facebook iframe{display:block;border:0;width:100%;height:600px;max-width:100%}
 .home-facebook .source-note{grid-column:1/-1;margin:0;font-size:.85rem}
 .home-facebook .source-note a{display:inline-block;min-height:44px;padding-block:10px}
@@ -44,7 +44,6 @@
  .home-contact-actions{grid-area:actions}
 }
 @media(max-width:780px){
- .hero-grid{width:calc(100% - 56px);max-width:480px}
  .campaign-entry-compact{width:calc(100% - 32px)}
  .home-contact,.home-account,.home-facebook{width:calc(100% - 32px);border-radius:22px;padding:20px}
  .home-contact-columns{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px}.home-office-hours{padding-left:12px}.home-office-hours h3{font-size:.85rem}.home-office-hours dl,.home-office-hours p{font-size:.75rem}.home-contact-info a{font-size:.8rem}.home-contact-info .home-phone{font-size:1.15rem}
@@ -53,7 +52,7 @@
  .home-account dl{grid-template-columns:1fr;gap:3px}.home-account dt{margin-top:5px;font-size:.75rem}
  .home-account dd{font-size:.9rem}.home-account dd.home-account-number{font-size:1.65rem}
  .home-account p{font-size:.8rem}.home-facebook{padding:22px 0 12px;gap:14px}.facebook-heading,.home-facebook .source-note{padding-inline:20px}
- .home-facebook .facebook-frame{width:calc(100% - 2px)}
+ .home-facebook .facebook-frame{width:calc(100% - 32px)}
 }
 
 /* Donation and contact are one service cluster: donation first, public contact second. */

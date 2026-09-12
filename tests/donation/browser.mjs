@@ -78,14 +78,18 @@ try {
     });
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
-      const toggle = page.getByRole('button', { name: '選單', exact: true });
+      const toggle = page.locator('.menu-toggle');
       await toggle.focus();
       await page.keyboard.press('Enter');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
+      assert(await page.locator('main').evaluate(el => el.inert));
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
+      assert.equal(await page.locator('main').evaluate(el => el.inert), false);
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
@@ -155,7 +159,12 @@ try {
       assert(box && heading);
       assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
       assert(box.x + box.width <= heading.x);
-      if (width === 390) assert(box.width >= 86 && box.width <= 100);
+      if (width === 390) assert(box.width >= 140 && box.width <= 170);
+      const campaign = await page.locator('.campaign-entry').boundingBox();
+      const header = await page.locator('.site-header').boundingBox();
+      assert(Math.abs(box.x - campaign.x) <= 1, 'portrait aligns with the content below');
+      assert(Math.abs(header.x - campaign.x) <= 1, 'header and content share their left edge');
+      assert(Math.abs(header.width - campaign.width) <= 1, 'header and content share their width');
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;

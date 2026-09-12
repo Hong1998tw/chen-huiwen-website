@@ -30,6 +30,9 @@ SCHEMA_REQUIREMENTS = {
     "political-donation.html": {"WebPage"},
     "activity-market.html": {"Article"},
     "activity-mooncake.html": {"Article"},
+    "terms.html": {"WebPage"},
+    "election.html": {"CollectionPage"},
+    "explore.html": {"CollectionPage"},
 }
 
 
@@ -199,6 +202,8 @@ def main() -> int:
         title_count = sum(1 for tag, _ in doc.attrs if tag == "title")
         if title_count != 1:
             fail(f"{name}: expected exactly one title element, found {title_count}")
+        if sum(1 for tag, _ in doc.attrs if tag == "h1") != 1:
+            fail(f"{name}: expected exactly one h1")
         html_langs = [attrs.get("lang", "") for tag, attrs in doc.attrs if tag == "html"]
         if html_langs != ["zh-Hant-TW"]:
             fail(f'{name}: expected html lang="zh-Hant-TW"')
@@ -225,6 +230,7 @@ def main() -> int:
             if any(token in value for token in PLACEHOLDERS):
                 fail(f"{name}: {label} contains a template placeholder")
         required_meta = [
+            ("property", "og:site_name"),
             ("property", "og:title"), ("property", "og:description"), ("property", "og:image"),
             ("property", "og:image:alt"), ("name", "twitter:card"), ("name", "twitter:title"),
             ("name", "twitter:description"), ("name", "twitter:image"), ("name", "twitter:image:alt"),
@@ -261,6 +267,8 @@ def main() -> int:
                         fail(f"{name}: breadcrumb positions are not continuous")
         types = schema_types(parsed_jsonld)
         expected = SCHEMA_REQUIREMENTS.get(name)
+        if name.startswith("news-"):
+            expected = {"Article"}
         if expected and not expected.issubset(types):
             missing_schema.append(name)
             fail(f"{name}: missing JSON-LD types {sorted(expected - types)}")

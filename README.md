@@ -79,3 +79,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 首頁及新聞頁嵌入 Facebook 官方粉絲專頁；服務頁嵌入 Canva 律師時間表，均保留另開原頁連結。這兩項第三方嵌入可能因瀏覽器隱私設定或供應商限制而無法顯示。LINE 官方帳號使用 https://line.me/R/ti/p/@yve2766q 。
 
 活動頁的市場展覽與月餅活動已有站內回顧頁；綠帶會勘導向站內政績專題。現有服務案件仍透過正式公開表單收件，未建立原生案件後端或送出測試個資。
+
+## P0 功能維護（2026-09-12）
+
+搜尋索引由公開 HTML 產生：完成內容 build 後執行 `python3 scripts/build_search.py`，再執行 `python3 scripts/validate_p0.py`。政績圖卡、統計口徑、測試與驗收說明見 `docs/P0-TECH-REVIEW-2026-09-12.md`。
