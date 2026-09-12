@@ -1,0 +1,40 @@
+name: Patch Step 7 map selection regression assertion
+
+on:
+  push:
+    branches:
+      - chore/achievement-audit-foundation
+    paths:
+      - .github/workflows/patch-step7-map-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/achievement-audit-foundation
+          fetch-depth: 0
+      - name: Align map test with persistent summary panel behavior
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/donation/achievement-governance.mjs')
+          s=p.read_text()
+          old="   assert.equal(await page.locator('.map-insight-panel').count(),0);assert(!new URL(page.url()).searchParams.has('case'));"
+          new="   assert.equal(await page.locator('.case-card.is-selected').count(),0);assert.equal(await page.locator('.insight-clear').count(),0);assert(await page.locator('.map-insight-panel').isVisible());assert(!new URL(page.url()).searchParams.has('case'));"
+          if old not in s:
+              raise SystemExit('Expected map assertion not found')
+          p.write_text(s.replace(old,new,1))
+          PY
+          node --check tests/donation/achievement-governance.mjs
+      - name: Commit test correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/donation/achievement-governance.mjs
+          git commit -m "test: align map selection QA with persistent insight panel"
+          git push origin HEAD:chore/achievement-audit-foundation
