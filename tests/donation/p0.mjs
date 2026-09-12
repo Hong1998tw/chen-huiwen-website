@@ -30,7 +30,7 @@ try{
   assert.equal(await page.locator('#global-search-dialog svg').count(),0);await page.keyboard.press('Escape');
  });
  await check('Mobile search restores focus to the visible menu button',async()=>{
-  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');
+  await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');await page.locator('#global-search-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.classList.contains('menu-toggle'));
   assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));
  });
  await page.setViewportSize({width:1440,height:1000});await go();
