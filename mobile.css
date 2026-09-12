@@ -48,6 +48,15 @@
  .menu-ready .site-header nav{left:10px;right:10px}.menu-ready .site-header nav>a{padding-inline:10px}
 }
 
+/* No-JS mobile: static nav (incl. election) must wrap instead of widening the page.
+   Keeps desktop/JS single-row header intact; toggle is inert without scripting. */
+@media(max-width:780px) and (scripting:none){
+ .menu-toggle{display:none}
+ .site-header .nav-wrap{flex-wrap:wrap;height:auto;align-content:start}
+ .site-header #navigation,.site-header nav{display:flex;width:100%;flex-wrap:wrap;justify-content:flex-start;align-items:stretch;gap:0;padding:4px 0 12px;margin:0;overflow:visible}
+ .site-header #navigation>a,.site-header nav>a{flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;font-size:.85rem;line-height:1.35;padding:8px 10px;text-align:left}
+}
+
 /* Desktop navigation: compact two-row header; overrides styles.css flex/min-height conflicts. */
 @media(min-width:781px){
  .site-header{position:sticky}
