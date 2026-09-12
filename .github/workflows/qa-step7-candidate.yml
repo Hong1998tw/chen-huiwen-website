@@ -1,0 +1,71 @@
+name: Step 7 candidate browser QA
+
+on:
+  push:
+    branches:
+      - chore/achievement-audit-foundation
+    paths:
+      - .github/workflows/qa-step7-candidate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/achievement-audit-foundation
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install validators
+        run: pip install beautifulsoup4==4.13.5 html5lib==1.1
+
+      - name: Static candidate validation
+        run: |
+          python scripts/validate_site.py
+          python scripts/validate_seo.py
+          python scripts/validate_p0.py
+          python scripts/validate_public_copy.py
+          python scripts/validate_achievements.py --baseline-ref origin/main
+          python -m unittest discover -s tests -p 'test_achievement*.py'
+
+      - name: Install browser QA dependencies
+        run: |
+          npm ci --prefix tests/donation
+          npx --prefix tests/donation playwright install --with-deps chromium
+
+      - name: Full-site browser regression
+        run: node tests/donation/browser.mjs
+
+      - name: Digital civic regression
+        run: node tests/donation/digital-civic.mjs
+
+      - name: Search map dashboard regression
+        run: node tests/donation/p0.mjs
+
+      - name: Step 7 achievements and historical attribution QA
+        run: node tests/donation/achievement-governance.mjs
+
+      - name: Election-mode regression
+        run: node tests/donation/election-mode.mjs
+
+      - name: Upload QA evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: step7-candidate-qa
+          path: tests/donation/results/
