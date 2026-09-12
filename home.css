@@ -1,4 +1,4 @@
-/* Homepage composition; scoped rules load after the shared responsive styles. */
+/* Homepage composition; scoped rules load after the shared base styles. */
 #main{padding-bottom:24px}
 .hero{padding:54px 0 42px;overflow:visible}
 .hero-grid{width:min(760px,calc(100% - 64px));margin-inline:auto;padding:0;grid-template-columns:200px minmax(0,1fr);gap:42px;align-items:center}
@@ -7,6 +7,8 @@
 .hero-copy{padding:0;min-width:0}.hero-copy>.eyebrow{margin:0 0 18px}
 .hero h1{font-size:clamp(3rem,5.5vw,4.6rem);line-height:1.16;letter-spacing:-.035em;margin:0 0 22px}
 .hero-intro{font-size:1rem;line-height:1.9;margin:0}
+.hero + .campaign-entry-compact{margin-top:6px}
+.campaign-entry-compact{width:min(900px,calc(100% - 64px))}
 .home-contact,.home-account,.home-facebook{width:min(960px,calc(100% - 64px));margin-inline:auto;border:1px solid var(--line);border-radius:26px;background:#fff;box-shadow:0 12px 36px #17392d05}
 .home-contact{padding:28px 32px;margin-bottom:20px}
 .home-contact h2,.home-account h2{font-size:1.4rem;margin:0 0 14px}
@@ -33,12 +35,17 @@
 .home-facebook .source-note a{display:inline-block;min-height:44px;padding-block:10px}
 .home-footer{padding-block:20px;font-size:.85rem}
 @media(max-width:900px){.home-facebook{grid-template-columns:1fr}.facebook-heading{text-align:center}}
+@media(min-width:781px){
+ .home-contact{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"heading heading" "info hours" "actions hours";column-gap:24px;align-items:start}
+ .home-contact h2{grid-area:heading}
+ .home-contact-columns{display:contents}
+ .home-contact-info{grid-area:info}
+ .home-office-hours{grid-area:hours}
+ .home-contact-actions{grid-area:actions}
+}
 @media(max-width:780px){
- .hero{padding:30px 0}.hero-grid{width:calc(100% - 56px);max-width:480px;grid-template-columns:92px minmax(0,1fr);grid-template-rows:auto auto auto;gap:0 18px;align-items:start}
- .hero-portrait{width:92px;margin:0;border-radius:18px;align-self:start}.hero-portrait figcaption{display:none}
- .hero-copy{display:contents}.hero-copy>.eyebrow{margin:0 0 8px;font-size:.68rem}
- .hero-copy>h1{font-size:clamp(1.7rem,8.6vw,2.65rem);line-height:1.2;margin:0;letter-spacing:-.025em}
- .hero-copy>.hero-intro{margin:18px 0 0;font-size:.9rem;line-height:1.85}
+ .hero-grid{width:calc(100% - 56px);max-width:480px}
+ .campaign-entry-compact{width:calc(100% - 32px)}
  .home-contact,.home-account,.home-facebook{width:calc(100% - 32px);border-radius:22px;padding:20px}
  .home-contact-columns{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px}.home-office-hours{padding-left:12px}.home-office-hours h3{font-size:.85rem}.home-office-hours dl,.home-office-hours p{font-size:.75rem}.home-contact-info a{font-size:.8rem}.home-contact-info .home-phone{font-size:1.15rem}
  .home-contact-info{display:grid;gap:0}.home-contact-info a{min-height:40px}.home-contact h2,.home-account h2{font-size:1.2rem}
@@ -48,7 +55,6 @@
  .home-account p{font-size:.8rem}.home-facebook{padding:22px 0 12px;gap:14px}.facebook-heading,.home-facebook .source-note{padding-inline:20px}
  .home-facebook .facebook-frame{width:calc(100% - 2px)}
 }
-@media(max-width:380px){.hero-grid{grid-template-columns:86px minmax(0,1fr);column-gap:14px}.hero-portrait{width:86px}}
 
 /* Donation and contact are one service cluster: donation first, public contact second. */
 .home-account{margin-top:28px;margin-bottom:0;border-radius:26px 26px 10px 10px;border-bottom-color:rgba(7,85,72,.09);background:linear-gradient(145deg,var(--green-soft),#fff 68%);box-shadow:0 14px 34px rgba(23,57,45,.045)}
@@ -58,8 +64,8 @@
 .home-contact-actions .button{border-radius:999px}
 @media(min-width:901px){
  .home-account,.home-contact{width:min(900px,calc(100% - 64px));padding:26px 34px}
- .home-contact-columns{grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr);gap:34px}
- .home-contact-actions{margin-top:18px}
+ .home-contact{grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr);column-gap:34px}
+ .home-contact-actions{margin-top:20px}
 }
 @media(max-width:780px){
  .home-account{margin-top:18px;margin-bottom:0;border-radius:22px 22px 9px 9px}
