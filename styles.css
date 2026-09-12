@@ -57,3 +57,9 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 .case-card .case-card-footer{flex-wrap:wrap}
 .case-card .case-actions{margin-left:auto}
 @media(max-width:440px){.case-current-head{display:none}.case-card .case-actions{margin-left:0}.case-facts dd{font-size:15px}}
+
+/* Event photographs retain their public source and office credit. */
+.case-photos figure{margin:0;min-width:0}
+.case-photos figcaption{font-size:15px;line-height:1.8;color:#466055;margin-top:12px;overflow-wrap:anywhere}
+.case-photo-credit{display:block;margin-top:4px;font-size:14px}
+.case-photo-credit a{text-decoration:underline;text-underline-offset:3px}

@@ -54,6 +54,16 @@ class MetadataTests(unittest.TestCase):
         self.assertNotIn('位置／地址',facts)
         self.assertFalse(validate([c],villages())[0])
 
+    def test_photo_credit_and_source_are_required_when_metadata_is_supplied(self):
+        c=case(); c['images']=['event.jpg']
+        c['imageMetadata']={'event.jpg':dict(alt='現場活動',caption='活動說明',credit='服務處提供',sourceUrl='https://test.gov.tw/event')}
+        self.assertFalse(validate([c],villages())[0])
+        for key in ('credit','sourceUrl'):
+            bad=copy.deepcopy(c); bad['imageMetadata']['event.jpg'][key]=''
+            self.assertTrue(validate([bad],villages())[0])
+        bad=copy.deepcopy(c); bad['imageMetadata']['event.jpg']['sourceUrl']='javascript:alert(1)'
+        self.assertTrue(validate([bad],villages())[0])
+
     def test_unknown_village_fails(self):
         c=case(); c['villages']=['不存在里']
         self.assertTrue(validate([c],villages())[0])

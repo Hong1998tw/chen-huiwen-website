@@ -20,6 +20,23 @@ try{
   await ctx.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
   const page=await ctx.newPage();page.setDefaultTimeout(6000);const errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(base+'achievements.html');await page.waitForFunction(()=>!!window.HuiwenCases);
+  await check(`${width}: readable hero, dashboard labels and credited event photo`,async()=>{
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   assert.deepEqual(await page.locator('.digital-stat span').allTextContents(),['政績與服務紀錄','涵蓋里別','關注主題','可在地圖查看']);
+   const size=await page.locator('.map-head h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+   assert(size>=36&&size<=68);
+   await page.locator('.map-head').screenshot({path:out+`achievement-hero-${width}.png`});
+   await page.locator('.digital-dashboard').screenshot({path:out+`achievement-dashboard-${width}.png`});
+   await page.goto(base+'achievement-consumer-dudu.html');
+   await page.locator('.case-photos').scrollIntoViewIfNeeded();
+   assert(await page.locator('.case-photos img').evaluate(img=>img.complete&&img.naturalWidth===800));
+   assert.match(await page.locator('.case-photos figcaption').textContent(),/陳慧文服務處／提供/);
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   await page.locator('.case-photos').screenshot({path:out+`consumer-dudu-photo-${width}.png`});
+   const axe=await new AxeBuilder({page}).include('.case-layout').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+   assert.deepEqual(axe.violations.map(v=>v.id),[]);
+   await page.goto(base+'achievements.html');await page.waitForFunction(()=>!!window.HuiwenCases);
+  });
   await check(`${width}: head/address search matches published JSON`,async()=>{
    for(const q of ['莫尚忠','李錦珠','過埤里','五甲二路565巷','頂庄路','文福里','國慶九街','過埤路2巷']){
     const expected=source.filter(c=>[c.title,c.summary,c.scope,c.status,c.locationName,c.locationNote,...c.categories,...c.subcategories,...c.villages,...c.villages.map(v=>heads.get(c.district+'|'+v)),...c.paragraphs,...c.history.flatMap(h=>[h.date,h.title,h.text])].filter(Boolean).join(' ').includes(q)).map(c=>c.id);

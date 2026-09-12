@@ -136,12 +136,21 @@ def validate(achievements, villages, baseline=None):
         sources = a.get('sources', [])
         if not isinstance(sources, list) or not sources or not all(traceable(s) for s in sources):
             errors.append(label + ': sources need titled traceable URLs')
+        image_metadata = a.get('imageMetadata', {})
+        if not isinstance(image_metadata, dict):
+            errors.append(label + ': imageMetadata must be an object')
+        else:
+            for filename, metadata in image_metadata.items():
+                if filename not in a.get('images', []) or not isinstance(metadata, dict) or not all(isinstance(metadata.get(k), str) and metadata[k].strip() for k in ('alt', 'caption', 'credit', 'sourceUrl')):
+                    errors.append(label + ': image metadata needs matching image, alt, caption, credit and source')
+                elif not traceable({'title': metadata['credit'], 'url': metadata['sourceUrl']}):
+                    errors.append(label + ': image source needs a traceable URL')
         if a.get('scope') == '全市政策':
             if a.get('villages') or coords is not None:
                 errors.append(label + ': city policy must not use a village/point')
         elif a.get('scope') != '跨區服務' and not a.get('locationName'):
             errors.append(label + ': local work needs public locationName')
-        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget')}
+        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget', 'imageMetadata')}
         if INTERNAL.search(json.dumps(public_fields, ensure_ascii=False)):
             errors.append(label + ': internal language in public fields')
         if re.search(r'\d+(?:之\d+)?號', a.get('locationName', '')):
