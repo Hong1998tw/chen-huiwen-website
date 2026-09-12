@@ -70,4 +70,4 @@ jobs:
           name: step7-candidate-qa
           path: tests/donation/results/
 
-# rerun after runtime-driven year filter correction
+# final rerun after runtime-driven year and persistent-map assertions
