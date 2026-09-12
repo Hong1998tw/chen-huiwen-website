@@ -1,0 +1,7 @@
+{
+  "name": "chen-huiwen-header-qa",
+  "private": true,
+  "type": "module",
+  "scripts": { "test:header": "node header-consistency.mjs" },
+  "devDependencies": { "playwright": "1.55.0" }
+}
