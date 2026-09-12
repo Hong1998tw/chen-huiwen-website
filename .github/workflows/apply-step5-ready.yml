@@ -1,0 +1,51 @@
+name: Apply Step 5 verified achievements
+
+on:
+  push:
+    branches:
+      - chore/achievement-audit-foundation
+    paths:
+      - scripts/apply_step5_ready.py
+      - .github/workflows/apply-step5-ready.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/achievement-audit-foundation
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply reviewed Step 5 records
+        run: python scripts/apply_step5_ready.py
+
+      - name: Validate canonical achievement metadata
+        run: |
+          python -m json.tool data/achievements.json > /dev/null
+          python scripts/validate_achievements.py --baseline-ref main
+          python -m unittest discover -s tests -p 'test_achievement*.py'
+          git diff --check
+
+      - name: Commit canonical JSON
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/achievements.json
+          if git diff --cached --quiet; then
+            echo "No canonical data change produced."
+            exit 1
+          fi
+          git commit -m "content: integrate verified achievement candidates"
+          git push origin HEAD:chore/achievement-audit-foundation
