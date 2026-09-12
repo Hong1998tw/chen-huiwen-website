@@ -116,7 +116,7 @@ try{
    assert(await page.locator('.case-card.is-selected').isVisible());
    await page.locator('#category-filter').selectOption('社福與衛環');
    const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await count(expected.length);
-   assert.equal(await page.locator('.map-insight-panel').count(),0);assert(!new URL(page.url()).searchParams.has('case'));
+   assert.equal(await page.locator('.case-card.is-selected').count(),0);assert.equal(await page.locator('.insight-clear').count(),0);assert(await page.locator('.map-insight-panel').isVisible());assert(!new URL(page.url()).searchParams.has('case'));
   });
 
   await check(`${width}: all 13 first-public and 2 updated detail pages render, fit and expose correct OG`,async()=>{
