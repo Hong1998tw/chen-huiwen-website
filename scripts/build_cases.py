@@ -3,7 +3,7 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import json,re,html,hashlib
-from achievement_metadata import facts_html, head_text, is_public, search_text, village_lookup
+from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
 from validate_achievements import validate
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
@@ -31,8 +31,8 @@ def page(file,title,description,body,head=''):
 def card(c):
  status='' if c['status']=='待核驗' else '<span class="case-status">'+E(c['status'])+'</span>'
  location='、'.join(c['villages']) or c['scope']
- heads=head_text(c,village_by_key)
- place=E(location)+(f'<span class="case-current-head">現任里長：{E(heads)}</span>' if heads else '')
+ partners=partner_text(c)
+ place=E(location)+(f'<span class="case-current-head">合作里長：{E(partners)}</span>' if partners else '')
  if c.get('locationName'): place+=f'<span class="case-address">{E(c["locationName"])}</span>'
  summary=('<p class="case-summary">'+E(c['summary'])+'</p>') if c['summary'] else ''
  locate=f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else ''
@@ -98,7 +98,6 @@ dash_topics=list(dict.fromkeys(t for c in mapdata for t in c['categories']))
 dash_status=list(dict.fromkeys(c['status'] for c in mapdata))
 dash_stats=[(len(mapdata),'政績與服務紀錄'),(len({v for c in mapdata for v in c['villages']}),'涵蓋里別'),(len(dash_topics),'關注主題'),(sum(bool(c['coordinates']) for c in mapdata),'可在地圖查看')]
 dashboard=f'''<section id="achievement-dashboard" class="wrap digital-dashboard" aria-labelledby="dashboard-title"><div class="dashboard-heading"><div><h2 id="dashboard-title">政績統計總覽</h2><p>看看慧文關心哪些地方、推動哪些事。點選圖表可篩選紀錄。</p></div><button type="button" class="share-current-page" disabled>分享目前篩選</button></div><div class="digital-dashboard-grid">{''.join(f'<div class="digital-stat"><strong>{n}</strong><span>{E(label)}</span></div>' for n,label in dash_stats)}</div><div class="dashboard-charts"><div><h3>主題分布</h3><div class="digital-dashboard-topics chart-bars">{dashboard_chart(dash_topics,'categories')}</div></div><div><h3>進度分布</h3><div class="dashboard-status chart-bars">{dashboard_chart(dash_status,'status')}</div></div><div><h3>歷程年度</h3><div class="dashboard-years chart-bars">{dashboard_chart(years,'years')}</div></div></div><p class="dashboard-note">件數代表收錄專題；同一專題可跨主題、里別與年度，分布加總可能超過總件數。年度依歷程記載，不代表完工年度。</p></section>'''
-
 
 body=f'''<section class="page-head map-head"><div class="wrap"><p class="eyebrow">FENGSHAN, ONE PLACE AT A TIME</p><h1><span>慧做事</span><span class="map-title-dot" aria-hidden="true">・</span><span>政績地圖</span></h1><p class="map-intro">從你的里出發，看看地方建設、服務與每一步進度。</p><div class="map-quick-links"><a href="#case-search">搜尋政績 ↓</a><a href="#achievement-map">查看地圖 ↓</a></div><div class="map-stats"><div><strong>{len(public_items)}</strong><span>政績與服務紀錄</span></div><div><strong>{len(villages)}</strong><span>里可供查找</span></div><p>選擇里別或搜尋關鍵字，<br>了解每件事的推動歷程。</p></div></div></section>{dashboard}<section class="wrap map-controls" aria-label="政績篩選"><div><label for="case-search">關鍵字</label><input id="case-search" type="search" placeholder="搜尋道路、學校、寵物或案件名稱"></div><div><label for="village-filter">里別／服務範圍</label><select id="village-filter"><option value="all">全部里別與範圍</option>{opts}</select></div><div><label for="category-filter">主題</label><select id="category-filter"><option value="all">全部主題</option>{''.join(f'<option>{E(t)}</option>' for t in cats)}</select></div><div><label for="subcategory-filter">小分類</label><select id="subcategory-filter"><option value="all">全部小分類</option>{''.join(f'<option>{E(t)}</option>' for t in subcats)}</select></div><div><label for="status-filter">進度</label><select id="status-filter"><option value="all">全部進度</option>{''.join(f'<option>{E(t)}</option>' for t in statuses)}</select></div><div><label for="year-filter">歷程年度</label><select id="year-filter"><option value="all">全部年度</option>{year_options}<option value="undated">未載歷程年度</option></select></div><button type="button" id="reset-map-filters">清除篩選</button></section><section class="wrap map-workspace"><div class="map-panel"><a class="text-link" href="#case-results">跳到篩選結果 ↓</a><div id="achievement-map" role="region" aria-label="鳳山政績互動地圖"><p class="map-startup">地圖載入中，所有紀錄也可由下方列表閱讀。</p></div><p class="map-message" id="map-message" role="status">點選里界可篩選；數字標記代表該位置收錄的專題數。</p><p class="map-source">里界：{ext('https://data.gov.tw/dataset/7438','內政部國土測繪中心')}，2026-08-17。點位為代表位置，不是施工範圍；全市政策與尚缺座標的紀錄只列於列表。</p><button type="button" id="map-fit" class="map-fit">查看目前結果範圍</button></div><div class="case-results" id="case-results"><div class="results-heading"><h2>建設與服務紀錄</h2><p id="case-count" aria-live="polite">共 {len(public_items)} 個專題</p></div><div id="case-list">{''.join(card(c) for c in public_items)}</div><div id="case-empty" hidden><h3>這個條件下目前沒有顯示紀錄。</h3><p>請調整篩選條件，或查看全部公開紀錄。</p><button type="button" data-clear-filters>顯示全部紀錄</button></div></div></section><noscript><p class="wrap">目前未啟用 JavaScript，地圖與篩選暫不可用；下方完整紀錄與詳情頁仍可直接閱讀。</p></noscript><script type="application/json" id="map-data">{json.dumps(mapdata,ensure_ascii=False).replace('<','&#60;')}</script>'''
 collection={'@context':'https://schema.org','@type':'CollectionPage','@id':BASE+'achievements.html#collection','name':'鳳山政績與建設追蹤','url':BASE+'achievements.html','description':'結合鳳山里界、建設位置、主題與進度，直接在本站閱讀政績說明及歷史紀錄。','inLanguage':'zh-Hant-TW'}
