@@ -37,6 +37,29 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             "not-a-page.html",
         )
 
+    def test_rejects_another_achievements_share_card(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_site(root)
+            page = root / 'achievement-dingbao-bridge.html'
+            page.write_text(page.read_text().replace(
+                'assets/og/achievement-dingbao-bridge.png',
+                'assets/og/achievement-haibang-bridge.png'))
+            code, result = self.run_validator(root)
+            self.assertNotEqual(code, 0)
+            self.assertTrue(any("this achievement's share card" in e for e in result['errors']))
+
+    def test_rejects_missing_achievement_schema(self):
+        import re
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_site(root)
+            page = root / 'achievement-dingbao-bridge.html'
+            page.write_text(re.sub(r'<script type="application/ld\+json">.*?</script>', '', page.read_text()))
+            code, result = self.run_validator(root)
+            self.assertNotEqual(code, 0)
+            self.assertTrue(any('achievement-dingbao-bridge.html: missing JSON-LD types' in e for e in result['errors']))
+
     def test_rejects_wrong_language(self):
         with tempfile.TemporaryDirectory() as directory:
             temp_root = Path(directory)

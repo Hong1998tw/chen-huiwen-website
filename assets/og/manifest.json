@@ -17,6 +17,12 @@
     "place": "跨區服務",
     "sha256": "2c7ba232641fd68deb85a9a7328808cfbd3851d29f46c73d07b7291e24396682"
   },
+  "achievement-after-school-care": {
+    "title": "身障學生寒暑假與課後照顧支持",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "b02d48c484adde846f0b06ca52b8cb647652cc1e1bf7291eda4143857b0e71b5"
+  },
   "achievement-fengshan-station-overview": {
     "title": "鳳山車站整合專題",
     "status": "持續追蹤",
@@ -107,6 +113,18 @@
     "place": "全市政策",
     "sha256": "0f3f29e8ad97498a20ae285897a6355f60790d59a642c35976875eab218ea7e3"
   },
+  "achievement-xinqiang-drainage": {
+    "title": "新強路125巷周邊圳溝清疏與管理",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "55b4cf1ad3248c44eadbeaddb9487ad987b98ca9f6b2828a8fe86af72dcb7a3d"
+  },
+  "achievement-fengshan-detention": {
+    "title": "鳳山三處滯洪設施與防洪監督",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "2460b782e4b0e373b0c9b334f15412e507382f7d8b69f2064f884466b0b81016"
+  },
   "achievement-dingbao-bridge": {
     "title": "頂寶橋：串起鳳山溪兩岸",
     "status": "已完成",
@@ -124,5 +142,113 @@
     "status": "已完成",
     "place": "過埤里",
     "sha256": "26a81f8ce3e906d1c5b65a5da30a2c3eef45c4ac7d0c1691a4b7c58045be3388"
+  },
+  "achievement-guangfu-drainage": {
+    "title": "光復路排水改善與經費追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "b59a44e3543e42a4509b07eed9734d58598f3fd3d7aed9204eda0ad8611e4b9e"
+  },
+  "achievement-fengshan-second-market": {
+    "title": "鳳二市場活化與參與式預算追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "02d909e898161b92a0118bdb9e18fe9d786d152ed7b1cb744034c945bd954bcf"
+  },
+  "achievement-guoqing-5-road": {
+    "title": "國慶五街道路改善提案",
+    "status": "爭取規劃",
+    "place": "南成里",
+    "sha256": "d65aaabb9c01efd5dd9ac380008c697410322e2457ac1ee644a19aa68dbdf9ab"
+  },
+  "achievement-guoqing-3-road": {
+    "title": "國慶三街道路改善提案",
+    "status": "爭取規劃",
+    "place": "南成里",
+    "sha256": "a4a31b1a0c593f56d44d928803b88bdf0256532095694a899af568e1afe15684"
+  },
+  "achievement-zhongli-road": {
+    "title": "中利街道路改善提案",
+    "status": "爭取規劃",
+    "place": "中和里",
+    "sha256": "7d821d178bafb143c534a191ba60631fc8db410501bb789047ee44b2a497927f"
+  },
+  "achievement-guoqing-12-road": {
+    "title": "國慶十二街道路改善提案",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "b28920d31f92b9ee69effc40e49b7a4d1e219195ddd93277da7d9ace6e9e060c"
+  },
+  "achievement-dazhi-west-road": {
+    "title": "大智陸橋旁西向道路改善提案",
+    "status": "爭取規劃",
+    "place": "武松里",
+    "sha256": "9dcf6bfb59287a87109d78dce5cce5a26d241274798c063ef9b26e6f1648d257"
+  },
+  "achievement-hongcheng-road": {
+    "title": "宏成路道路改善提案",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "a4f70ca4dece67885844045f0cabc3f147a1d0b81c21a2fd84a5f3356aca2c7b"
+  },
+  "achievement-mingfeng-12-gongyuan-road": {
+    "title": "明鳳十二街道路改善提案",
+    "status": "爭取規劃",
+    "place": "大德里",
+    "sha256": "062cd69194014277205feebc0048f694e0c91f61cb2f029f6b31aeab25145853"
+  },
+  "achievement-leyuan-road": {
+    "title": "樂園街道路改善提案",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "1014620438e206b9ce0702e002a32220be248a43acdc09e40c19a307554314d6"
+  },
+  "achievement-fengyu-north-road": {
+    "title": "鳳育路北向車道道路改善提案",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "dfa5c306469516b9281d8dc803982e76d618282820bba8f6503949775e0bc107"
+  },
+  "achievement-dingming-road-widening": {
+    "title": "頂明路都市計畫道路拓寬",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "6aea4972ef924a505e740b4c868e99517e38bf8ff5966bf28ce92295f029236a"
+  },
+  "achievement-zhennan-ziqiang-jintian": {
+    "title": "鎮南街自強二路至錦田路改善追蹤",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "b14abf179dd33cd92e7bea9e5ca0142f1b2c18e7bf62ac84f85e687ec6ed40b3"
+  },
+  "achievement-zhennan-jintian-nanzheng": {
+    "title": "鎮南街錦田路至南正二路改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "4f415dd8b6f9994b0c8daf1c94de3a99053799f0d94e66f0305728c6d075d0f1"
+  },
+  "achievement-nanhe-road": {
+    "title": "南和街路面改善提案",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "345830a324ab67ee0af5cd1eb18132488c89faccfe3be1617e23ce15cb0bd264"
+  },
+  "achievement-jintian-road": {
+    "title": "錦田路路面改善追蹤",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "d86f51c69c801bb2f6c3bea626e3d0d82a4c118601ab67d0449147db4f0e030d"
+  },
+  "achievement-nancheng-planned-road": {
+    "title": "南成街都市計畫道路開闢提案",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "7ab48ba3f6862464931dbf6367e755a2289f0f053e84859faf46d22d5eb4c64b"
+  },
+  "achievement-youbike-2e-safety": {
+    "title": "YouBike 2.0E騎乘安全與規範宣導",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "36a54bc2c166be8b133e3aa25e2352a5ed9de10d4f8157bf86e955a988260019"
   }
 }

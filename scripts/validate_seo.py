@@ -269,10 +269,24 @@ def main() -> int:
         expected = SCHEMA_REQUIREMENTS.get(name)
         if name.startswith("news-"):
             expected = {"Article"}
+        if name.startswith("achievement-"):
+            expected = {"Article", "BreadcrumbList"}
         if expected and not expected.issubset(types):
             missing_schema.append(name)
             fail(f"{name}: missing JSON-LD types {sorted(expected - types)}")
         if name.startswith("achievement-"):
+            expected_image = BASE + "assets/og/" + Path(name).stem + ".png"
+            if c != BASE + name:
+                fail(f"{name}: achievement canonical must identify its own page")
+            if first_meta(doc, "property", "og:type") != "article":
+                fail(f"{name}: achievement og:type must be article")
+            for key, prefix in (("property", "og:"), ("name", "twitter:")):
+                if first_meta(doc, key, prefix + "title") != title:
+                    fail(f"{name}: {prefix}title must match this page's title")
+                if first_meta(doc, key, prefix + "description") != (descriptions[0] if descriptions else ""):
+                    fail(f"{name}: {prefix}description must match this page's description")
+                if first_meta(doc, key, prefix + "image") != expected_image:
+                    fail(f"{name}: {prefix}image must use this achievement's share card")
             headline = ""
             descriptions_in_schema: list[str] = []
             for attrs, payload in doc.scripts:
@@ -284,11 +298,23 @@ def main() -> int:
                     continue
                 for node in walk_schema(parsed):
                     if node.get("@type") == "Article":
+                        if node.get("image") != expected_image:
+                            fail(f"{name}: Article image must use this achievement's share card")
+                        if node.get("url") != c or node.get("@id") != c + "#article":
+                            fail(f"{name}: Article identity must match this page")
+                        if node.get("dateModified") != first_meta(doc, "property", "article:modified_time"):
+                            fail(f"{name}: Article modified date and metadata differ")
+                        if node.get("datePublished", "") != first_meta(doc, "property", "article:published_time"):
+                            fail(f"{name}: Article published date and metadata differ")
                         headline = str(node.get("headline", ""))
                         descriptions_in_schema.append(str(node.get("description", "")))
                         meop = node.get("mainEntityOfPage")
                         if meop != c:
                             fail(f"{name}: Article mainEntityOfPage does not match canonical")
+                    if node.get("@type") == "BreadcrumbList":
+                        trail = node.get("itemListElement", [])
+                        if not trail or trail[-1].get("item") != c:
+                            fail(f"{name}: breadcrumb must end at this achievement")
             if headline and not title.startswith(headline):
                 fail(f"{name}: Article headline does not match title")
             if descriptions_in_schema and descriptions_in_schema[0] != descriptions[0]:

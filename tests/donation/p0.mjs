@@ -35,9 +35,9 @@ try{
  });
  await page.setViewportSize({width:1440,height:1000});await go();
  await check('Overview counts agree with source and status stays distinct',async()=>{
-  await page.locator('.digital-dashboard').waitFor();assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),20);
-  await page.locator('.dashboard-status [data-filter="已完成"]').click();await count(3);
-  assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),3);
+  await page.locator('.digital-dashboard').waitFor();assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),data.length);
+  await page.locator('.dashboard-status [data-filter="已完成"]').click();await count(data.filter(c=>c.status==='已完成').length);
+  assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),data.filter(c=>c.status==='已完成').length);
   assert.equal(await page.locator('#status-filter').inputValue(),'已完成');await page.locator('#reset-map-filters').click();
  });
  await check('History-only search, multiple tokens and IME composition',async()=>{
@@ -64,14 +64,14 @@ try{
  await check('Shared query reload, deep case links and invalid query resilience',async()=>{
   await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.digital-dashboard').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.locator('.digital-dashboard').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
   await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h3').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
-  await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(20);assert.equal(await page.locator('#year-filter').inputValue(),'all');
+  await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{
   await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(2);assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
  });
  await go();
- await check('All filters clear to 20 results and ten items per page',async()=>{
-  await page.locator('#case-search').fill('qzx-no-match');await count(0);assert(await page.locator('#case-empty').isVisible());await page.locator('[data-clear-filters]').click();await count(20);assert.equal(await page.locator('#case-list .case-card:visible').count(),10);
+ await check('All filters clear to the full source count and ten items per page',async()=>{
+  await page.locator('#case-search').fill('qzx-no-match');await count(0);assert(await page.locator('#case-empty').isVisible());await page.locator('[data-clear-filters]').click();await count(data.length);assert.equal(await page.locator('#case-list .case-card:visible').count(),10);
   await page.getByRole('button',{name:'下一頁',exact:true}).click();assert.equal(await page.locator('#case-list .case-card:visible').count(),10);assert(new URL(page.url()).searchParams.get('page')==='2');
  });
  await check('WCAG AA: dashboard, map panel and search dialog',async()=>{
@@ -88,7 +88,7 @@ try{
  });
  await check('Reduced motion and no-JS progressive reading',async()=>{
   await page.emulateMedia({reducedMotion:'reduce'});await go('achievement-fengshan-station-overview.html');await page.locator('.case-timeline .is-visible').first().waitFor();assert.equal(await page.locator('.case-timeline>li:not(.is-visible)').count(),0);assert.equal(await page.locator('.case-timeline>li').first().evaluate(el=>getComputedStyle(el).transform),'none');
-  const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),20);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
+  const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),data.length);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
  });
  await go();await page.locator('.digital-dashboard').waitFor();await page.screenshot({path:root+'tests/donation/results/desktop-dashboard.png'});
  await page.locator('#achievement-map').scrollIntoViewIfNeeded();await page.screenshot({path:root+'tests/donation/results/desktop-map.png'});

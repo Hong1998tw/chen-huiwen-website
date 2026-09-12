@@ -1,3 +1,11 @@
 node_modules/
 __pycache__/
 tests/*/results/
+private/
+.local/
+audit-results/
+achievement-candidates*.xlsx
+achievement-candidates*.csv
+service-cases*.xlsx
+service-cases*.csv
+schedule-private*.xlsx
