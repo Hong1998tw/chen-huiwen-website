@@ -1,3 +1,4 @@
 User-agent: *
 Allow: /
 Sitemap: https://www.huiwen.tw/sitemap.xml
+Sitemap: https://www.huiwen.tw/sitemap-seo.xml
