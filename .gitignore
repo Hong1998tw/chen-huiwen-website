@@ -6,7 +6,6 @@ private/
 audit-results/
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 *.p12
