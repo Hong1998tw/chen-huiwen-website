@@ -10,6 +10,9 @@ for path in sorted(R.glob('*.html')):
     robots = soup.find('meta', attrs={'name': 'robots'})
     if robots and 'noindex' in robots.get('content', ''):
         continue
+    search_control = soup.find('meta', attrs={'name': 'site-search'})
+    if search_control and search_control.get('content', '').strip().lower() == 'exclude':
+        continue
     main = soup.find('main')
     if not main:
         continue
