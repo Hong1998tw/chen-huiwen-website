@@ -19,12 +19,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout full Git history
-        uses: actions/checkout@895211ea93a7a22cadc87f89f19b1c5aa8a8f005 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Scan repository history for secrets
-        uses: gitleaks/gitleaks-action@735603b797d3ceb19f8dcea1366cc0d7c4d9123e # v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
