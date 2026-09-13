@@ -4,6 +4,13 @@ tests/*/results/
 private/
 .local/
 audit-results/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 achievement-candidates*.xlsx
 achievement-candidates*.csv
 service-cases*.xlsx
