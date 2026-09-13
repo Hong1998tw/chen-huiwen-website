@@ -10,6 +10,18 @@ R=Path(__file__).resolve().parents[1];errors=[]
 def require(ok,label):
  if not ok:errors.append(label)
 files=set(subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard'],cwd=R,text=True).splitlines())
+# A public repository must never track local/private work areas, secret files or service-case exports,
+# even if someone bypasses .gitignore with `git add -f`.
+private_path_patterns=[
+ re.compile(r'(^|/)private(?:/|$)',re.I),
+ re.compile(r'(^|/)\.local(?:/|$)',re.I),
+ re.compile(r'(^|/)audit-results(?:/|$)',re.I),
+ re.compile(r'(^|/)\.env(?:\.|$)',re.I),
+ re.compile(r'\.(?:pem|key|p12|pfx)$',re.I),
+ re.compile(r'(^|/)(?:achievement-candidates|service-cases|schedule-private)[^/]*\.(?:csv|xlsx)$',re.I),
+]
+for name in sorted(files):
+ require(not any(pattern.search(name) for pattern in private_path_patterns),f'{name}: private/sensitive path must not be tracked')
 allow=json.loads((R/'data/public-link-allowlist.json').read_text())['notion'];found=[]
 for name in sorted(files):
  p=R/name
