@@ -22,7 +22,7 @@ const results=[];
 try{
  if(!process.env.BASE_URL){let ready=false;for(let i=0;i<50;i++){try{if((await fetch(base)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}if(!ready)throw Error('Local server failed');}
  for(const page of pages) for(let run=1;run<=runs;run++){
-  const chrome=await chromeLauncher.launch({chromePath:chromium.executablePath(),chromeFlags:['--headless','--no-first-run'],logLevel:'silent'});
+  const chrome=await chromeLauncher.launch({chromePath:chromium.executablePath(),chromeFlags:['--headless=new','--no-first-run','--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'],logLevel:'silent'});
   try{
    const {lhr}=await lighthouse(new URL(page,base).href,{port:chrome.port,logLevel:'error',output:'json',onlyCategories:['performance','accessibility','best-practices','seo']});
    const scores=Object.fromEntries(Object.entries(lhr.categories).map(([k,v])=>[k,Math.round(v.score*100)]));
