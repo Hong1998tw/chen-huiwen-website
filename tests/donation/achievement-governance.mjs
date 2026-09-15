@@ -80,6 +80,8 @@ try{
    assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),source.length);
    assert.equal(await page.locator('#case-list .case-card:visible').count(),Math.min(10,source.length));
    assert(await page.locator('#achievement-map').isVisible());
+   await page.locator('#achievement-map').scrollIntoViewIfNeeded();
+   await page.locator('.leaflet-overlay-pane path').first().waitFor({state:'attached'});
    assert(await page.locator('.leaflet-overlay-pane path').count()>0);
    await page.screenshot({path:out+`step7-overview-${width}.png`,fullPage:true});
   });

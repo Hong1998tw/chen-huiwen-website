@@ -104,7 +104,7 @@ collection={'@context':'https://schema.org','@type':'CollectionPage','@id':BASE+
 breadcrumbs={'@context':'https://schema.org','@type':'BreadcrumbList','itemListElement':[{'@type':'ListItem','position':1,'name':'首頁','item':BASE},{'@type':'ListItem','position':2,'name':'鳳山政績與建設追蹤','item':BASE+'achievements.html'}]}
 map_css_v=asset_version('map.css')
 map_js_v=asset_version('map.js')
-head=f'<link rel="stylesheet" href="assets/vendor/leaflet.css"><link rel="stylesheet" href="map.css?v={map_css_v}"><script src="assets/vendor/leaflet.js" defer></script><script src="map.js?v={map_js_v}" defer></script><script type="application/ld+json">'+json.dumps([collection,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>'
+head=f'<link rel="stylesheet" href="map.css?v={map_css_v}"><script src="map.js?v={map_js_v}" defer></script><script type="application/ld+json">'+json.dumps([collection,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>'
 page('achievements.html','鳳山政績與建設追蹤','查詢鳳山建設與民眾服務專題，依里別、主題、小分類與進度查詢政績、服務與推動歷程。',body,head)
 print('Built',len(public_items),'public standalone details and map index from',len(items),'source records')
 # Keep achievement URLs synchronized with generated pages; preserve other sections.

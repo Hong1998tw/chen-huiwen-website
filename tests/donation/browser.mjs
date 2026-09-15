@@ -193,6 +193,8 @@ try {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
       }
+      await page.locator('#achievement-map').scrollIntoViewIfNeeded();
+      await page.locator('.leaflet-container').waitFor({state:'visible'});
       assert(await page.locator('.leaflet-container').isVisible());
     });
 

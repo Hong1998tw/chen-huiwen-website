@@ -13,7 +13,7 @@
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
   const textById = new Map(data.map(c => [c.id, normalize(c.searchText)]));
   const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
-  let map, markers, boundaries, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
+  let map, markers, boundaries, mapPromise, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
   const boundaryLayers = new Map();
   list.dataset.pageSize = String(PAGE_SIZE);
   const pagination = document.createElement('nav');
@@ -92,7 +92,8 @@
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(c);
     }
-    // Group screen-space overlaps without changing the underlying recorded coordinates.
+    // A11Y-01: group overlapping screen-space targets without changing source coordinates.
+    // Each marker stays at a real recorded location; zooming separates nearby records.
     const separated = [];
     for (const cases of groups.values()) {
       const point = map.latLngToLayerPoint(cases[0].coordinates);
@@ -141,33 +142,59 @@
   for (const [key, el] of Object.entries(controls)) if (key !== 'q') el.addEventListener('change', () => {clearTimeout(searchTimer);filter();});
   document.getElementById('reset-map-filters').addEventListener('click',reset);
   document.querySelector('[data-clear-filters]').addEventListener('click',reset);
-  document.getElementById('map-fit').addEventListener('click',fit);
+  document.getElementById('map-fit').addEventListener('click', async () => { await ensureMap(); fit(); });
   window.addEventListener('popstate',readURL);
-  for (const button of document.querySelectorAll('[data-locate]')) button.addEventListener('click', () => {
+  for (const button of document.querySelectorAll('[data-locate]')) button.addEventListener('click', async () => {
     const c = visible.find(c => c.id === button.dataset.locate);
     if (!c) return;
     selectCase(c.id);
+    await ensureMap();
     if (!map || !c.coordinates) {message.textContent='地圖目前無法使用，請直接閱讀專題詳情。';return;}
     map.setView(c.coordinates,16,{animate:false});
     markers.eachLayer(marker => { if (marker.options.caseIds?.includes(c.id)) marker.openPopup(); });
     root.scrollIntoView({behavior:motion(),block:'center'});
   });
+  async function loadLeaflet() {
+    if (window.L) return;
+    if (!document.querySelector('link[data-leaflet]')) {
+      const style=document.createElement('link');style.rel='stylesheet';style.href='assets/vendor/leaflet.css';style.dataset.leaflet='';document.head.append(style);
+    }
+    await new Promise((resolve,reject)=>{
+      const existing=document.querySelector('script[data-leaflet]');
+      if(window.L)return resolve();
+      if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',reject,{once:true});return;}
+      const script=document.createElement('script');script.src='assets/vendor/leaflet.js';script.dataset.leaflet='';
+      script.addEventListener('load',resolve,{once:true});script.addEventListener('error',reject,{once:true});document.head.append(script);
+    });
+  }
   readURL();
-  if (!window.L) { message.textContent='互動地圖暫時無法載入，篩選與完整紀錄仍可使用。';root.querySelector('.map-startup').textContent='請由列表閱讀完整紀錄。';return; }
-  root.replaceChildren();
-  map=L.map(root,{scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false}).setView([22.615,120.351],13);
-  markers=L.layerGroup().addTo(map);
-  map.on('zoomend',draw);
-  let errors=0;
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map).on('tileerror',()=>{if(++errors>=3)message.textContent='部分底圖未能載入；里界、點位及完整紀錄仍可使用。';});
-  const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),12000);
-  fetch('assets/fengshan-villages.geojson',{signal:controller.signal}).then(r=>{if(!r.ok)throw Error('boundaries');return r.json();}).then(geo=>{
-    boundaries=L.geoJSON(geo,{onEachFeature:(f,layer)=>{
-      boundaryLayers.set(f.properties.name,layer);layer.bindTooltip(f.properties.name);
-      const choose=()=>window.HuiwenCases.setFilter('village','v:'+f.properties.name);
-      layer.on('click',choose);
-      layer.on('add',()=>{const el=layer.getElement();if(el){el.setAttribute('role','button');el.setAttribute('aria-label','篩選'+f.properties.name);el.setAttribute('tabindex','0');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});}});
-    }}).addTo(map);draw();fit();
-  }).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與專題點位查詢。';}).finally(()=>clearTimeout(timeout));
-  draw();fit();announce();
+  function ensureMap() {
+    if (map) return Promise.resolve(map);
+    if (mapPromise) return mapPromise;
+    mapPromise=(async()=>{
+      try{await loadLeaflet();}catch{message.textContent='互動地圖暫時無法載入，篩選與完整紀錄仍可使用。';return null;}
+      root.replaceChildren();
+      map=L.map(root,{scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false}).setView([22.615,120.351],13);
+      markers=L.layerGroup().addTo(map);
+      map.on('zoomend',draw);
+      let errors=0;
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map).on('tileerror',()=>{if(++errors>=3)message.textContent='部分底圖未能載入；里界、點位及完整紀錄仍可使用。';});
+      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+      fetch('assets/fengshan-villages.geojson',{signal:controller.signal}).then(r=>{if(!r.ok)throw Error('boundaries');return r.json();}).then(geo=>{
+        boundaries=L.geoJSON(geo,{onEachFeature:(f,layer)=>{
+          boundaryLayers.set(f.properties.name,layer);layer.bindTooltip(f.properties.name);
+          const choose=()=>window.HuiwenCases.setFilter('village','v:'+f.properties.name);
+          layer.on('click',choose);
+          layer.on('add',()=>{const el=layer.getElement();if(el){el.setAttribute('role','button');el.setAttribute('aria-label','篩選'+f.properties.name);el.setAttribute('tabindex','0');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});}});
+        }}).addTo(map);draw();fit();
+      }).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與專題點位查詢。';}).finally(()=>clearTimeout(timeout));
+      draw();fit();announce();
+      return map;
+    })().finally(()=>{if(!map)mapPromise=null;});
+    return mapPromise;
+  }
+  if('IntersectionObserver' in window){
+    const mapObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}},{rootMargin:'240px 0px'});
+    mapObserver.observe(root);
+  }else{ensureMap();}
 })();
