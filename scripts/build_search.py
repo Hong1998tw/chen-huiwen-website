@@ -20,7 +20,7 @@ for path in sorted(R.glob('*.html')):
     for element in main.select('script, style, noscript, nav, .map-controls, .map-source, .case-sources, .source-links, .cross-content-explore'):
         element.decompose()
     # Collection pages index their intro, not duplicate copies of every detail.
-    if path.name in ('achievements.html', 'news.html'):
+    if path.name in ('achievements.html', 'news.html', 'press.html'):
         for element in main.select('article, #case-list'):
             element.decompose()
     kind = '政績' if path.name.startswith('achievement-') else '新聞' if path.name.startswith('news-') else '活動' if path.name.startswith('activity-') else '政見' if path.name == 'vision.html' else '頁面'

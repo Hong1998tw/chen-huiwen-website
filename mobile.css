@@ -61,6 +61,6 @@
  .site-header .global-search-trigger{grid-area:search;justify-self:end;align-self:center;min-height:44px;padding:10px 16px;line-height:1.4;position:static!important;margin:0}
 }
 @media(min-width:781px) and (max-width:1200px){
- .site-header #navigation{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+ .site-header #navigation{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}
  .site-header #navigation>a{white-space:normal;padding-inline:6px}
 }

@@ -28,6 +28,7 @@ CORE_PAGES = (
     "achievements.html",
     "vision.html",
     "news.html",
+    "press.html",
     "activities.html",
     "service.html",
     "petition.html",
