@@ -112,6 +112,9 @@ workflow=(R/'.github/workflows/production-verification.yml').read_text()
 require('node tests/donation/production-browser.mjs' in workflow,'production verification: live production browser runner missing')
 require('BASE_URL: https://www.huiwen.tw/' in workflow,'production verification: canonical live BASE_URL missing')
 require('run: node tests/donation/browser.mjs' not in workflow,'production verification: candidate browser runner must not substitute live QA')
+prod_browser=(R/'tests/donation/production-browser.mjs').read_text()
+require('chen-huiwen-production-verifier/1.3' in prod_browser,'production browser: stable live verifier UA missing')
+require('route.fetch' in prod_browser,'production browser: live request-layer fetch missing')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():

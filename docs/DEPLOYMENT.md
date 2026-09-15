@@ -62,7 +62,7 @@
 - `scripts/verify_production.py`：直接比對 `https://www.huiwen.tw/` 的 live HTTP／canonical asset parity。
 - `tests/donation/production-browser.mjs`：以 `BASE_URL=https://www.huiwen.tw/` 直接操作 Production，驗證 Desktop／390px、互動與 Accessibility。
 - `tests/donation/browser.mjs`：只屬 candidate／checkout QA，不得替代 Production Browser Verification。
-- Cloudflare Rocket Loader 可能延後前端 JavaScript 啟動；live browser test 必須等待網站 runtime ready 後再判定互動結果。
+- Cloudflare Rocket Loader／bot challenge 可能針對 GitHub hosted headless browser；live browser test 保持 `https://www.huiwen.tw/` 為頁面 URL，並由 Playwright request layer 使用固定 verifier UA 向 Production edge 取得同源 response，再在 Chromium 中執行互動／Accessibility。這不是 checkout mock；若 Production response、runtime 或必要 asset 持續失敗，gate 仍必須 Fail。有限 retry 與 `edgeRetries` 只處理暫時性 edge challenge。
 
 ## Production Verification 狀態用語
 
