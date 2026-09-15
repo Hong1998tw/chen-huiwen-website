@@ -1,40 +1,23 @@
 #!/usr/bin/env python3
-# Read-only live-production fetch proxy used only by Production Browser QA.
+# Serve a verified, short-lived live Production snapshot to Chromium QA.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import os
+import json
+import mimetypes
 import re
-import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.error import HTTPError, URLError
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from urllib.request import Request, urlopen
 
-VERIFIER_UA = "chen-huiwen-production-verifier/1.3"
-RUN_CACHE_KEY = os.environ.get("GITHUB_RUN_ID") or f"local-{int(time.time())}"
 FILTERED_RESPONSE_HEADERS = {
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "content-encoding",
-    "content-length", "set-cookie", "speculation-rules", "report-to", "nel",
+    "content-length", "content-encoding", "speculation-rules", "report-to", "nel",
 }
 
 
-def cache_busted_target(target: str) -> str:
-    token = hashlib.sha256(target.encode("utf-8")).hexdigest()[:16]
-    separator = "&" if "?" in target else "?"
-    return f"{target}{separator}production-verification=browser-{RUN_CACHE_KEY}-{token}"
-
-
-def normalize_edge_html(headers: list[tuple[str, str]], body: bytes) -> tuple[list[tuple[str, str]], bytes, bool]:
-    # HTTP parity validates untouched Production. Browser QA removes only Cloudflare's
-    # automation envelope so hosted Chromium can execute the live site-owned scripts.
-    content_type = next((value for key, value in headers if key.lower() == "content-type"), "")
-    if "text/html" not in content_type.lower():
-        return headers, body, False
-
+def normalize_edge_html(body: bytes) -> tuple[bytes, bool]:
+    # HTTP parity already validated these untouched live bytes. For browser QA, remove
+    # only Cloudflare-owned automation wrappers so site-owned scripts execute directly.
     text = body.decode("utf-8", "replace")
     original = text
     text = re.sub(
@@ -55,82 +38,86 @@ def normalize_edge_html(headers: list[tuple[str, str]], body: bytes) -> tuple[li
         text,
         flags=re.IGNORECASE,
     )
-    return headers, text.encode("utf-8"), text != original
+    return text.encode("utf-8"), text != original
 
 
-def build_server(hostname: str, bind: str, port: int) -> ThreadingHTTPServer:
-    cache: dict[str, tuple[int, list[tuple[str, str]], bytes]] = {}
-    lock = threading.Lock()
+def content_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    overrides = {
+        ".js": "application/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".geojson": "application/geo+json; charset=utf-8",
+        ".webmanifest": "application/manifest+json; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+    }
+    if suffix in overrides:
+        return overrides[suffix]
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed or "application/octet-stream"
+
+
+def build_server(hostname: str, snapshot_dir: Path, bind: str, port: int) -> ThreadingHTTPServer:
+    root = snapshot_dir.resolve()
+    manifest_path = root / "_snapshot.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"missing live snapshot manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("status") != "Passed":
+        raise RuntimeError("live snapshot was not produced by a Passed HTTP parity check")
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "HuiwenLiveVerifier/1.1"
+        server_version = "HuiwenLiveSnapshot/1.0"
 
         def log_message(self, _format: str, *_args) -> None:
             return
 
-        def _send(self, status: int, headers: list[tuple[str, str]], body: bytes, *, normalized: bool = False) -> None:
+        def _send(self, status: int, body: bytes, mime: str = "text/plain; charset=utf-8", *, normalized: bool = False) -> None:
             self.send_response(status)
-            for key, value in headers:
-                if key.lower() not in FILTERED_RESPONSE_HEADERS:
-                    self.send_header(key, value)
+            self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("X-Huiwen-Live-Proxy", "1")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Huiwen-Live-Snapshot", "1")
             if normalized:
                 self.send_header("X-Huiwen-Edge-Normalized", "cloudflare-browser-envelope")
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
 
-        def _fetch(self, target: str) -> tuple[int, list[tuple[str, str]], bytes]:
-            with lock:
-                cached = cache.get(target)
-            if cached is not None:
-                return cached
+        def _handle(self) -> None:
+            parsed_request = urlsplit(self.path)
+            if parsed_request.path == "/healthz":
+                self._send(200, b"ok")
+                return
+            if parsed_request.path != "/fetch":
+                self._send(404, b"not found")
+                return
 
+            target = parse_qs(parsed_request.query).get("url", [""])[0]
             parsed = urlsplit(target)
             if parsed.scheme != "https" or parsed.hostname != hostname:
-                return 403, [("Content-Type", "text/plain; charset=utf-8")], b"forbidden"
-
-            upstream_target = cache_busted_target(target)
-            request = Request(upstream_target, headers={
-                "User-Agent": VERIFIER_UA,
-                "Accept": self.headers.get("Accept", "*/*"),
-                "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-                "Accept-Encoding": "identity",
-                "Cache-Control": "no-cache",
-                "Pragma": "no-cache",
-            })
-            last_error: Exception | None = None
-            for attempt in range(3):
-                try:
-                    with urlopen(request, timeout=20) as response:
-                        body = response.read()
-                        result = response.status, list(response.headers.items()), body
-                        if 200 <= response.status < 400:
-                            with lock:
-                                cache[target] = result
-                        return result
-                except HTTPError as exc:
-                    return exc.code, list(exc.headers.items()), exc.read()
-                except (URLError, TimeoutError, OSError) as exc:
-                    last_error = exc
-                    if attempt < 2:
-                        time.sleep(0.5 * (attempt + 1))
-            message = f"upstream fetch failed: {type(last_error).__name__}".encode()
-            return 502, [("Content-Type", "text/plain; charset=utf-8")], message
-
-        def _handle(self) -> None:
-            parsed = urlsplit(self.path)
-            if parsed.path == "/healthz":
-                self._send(200, [("Content-Type", "text/plain; charset=utf-8")], b"ok")
+                self._send(403, b"forbidden")
                 return
-            if parsed.path != "/fetch":
-                self._send(404, [("Content-Type", "text/plain; charset=utf-8")], b"not found")
+
+            relative = parsed.path.lstrip("/") or "index.html"
+            if not relative or any(part in {"", ".", ".."} for part in Path(relative).parts):
+                self._send(403, b"invalid path")
                 return
-            target = parse_qs(parsed.query).get("url", [""])[0]
-            status, headers, body = self._fetch(target)
-            headers, body, normalized = normalize_edge_html(headers, body)
-            self._send(status, headers, body, normalized=normalized)
+            candidate = (root / relative).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                self._send(403, b"invalid path")
+                return
+            if not candidate.is_file():
+                self._send(404, b"snapshot path missing")
+                return
+
+            body = candidate.read_bytes()
+            normalized = False
+            if candidate.suffix.lower() == ".html":
+                body, normalized = normalize_edge_html(body)
+            self._send(200, body, content_type(candidate), normalized=normalized)
 
         do_GET = _handle
         do_HEAD = _handle
@@ -141,10 +128,11 @@ def build_server(hostname: str, bind: str, port: int) -> ThreadingHTTPServer:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
+    parser.add_argument("--snapshot-dir", required=True)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8799)
     args = parser.parse_args()
-    build_server(args.host, args.bind, args.port).serve_forever()
+    build_server(args.host, Path(args.snapshot_dir), args.bind, args.port).serve_forever()
 
 
 if __name__ == "__main__":

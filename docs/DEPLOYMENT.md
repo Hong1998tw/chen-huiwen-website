@@ -62,7 +62,7 @@
 - `scripts/verify_production.py`：直接比對 `https://www.huiwen.tw/` 的 live HTTP／canonical asset parity。
 - `tests/donation/production-browser.mjs`：以 `BASE_URL=https://www.huiwen.tw/` 直接操作 Production，驗證 Desktop／390px、互動與 Accessibility。
 - `tests/donation/browser.mjs`：只屬 candidate／checkout QA，不得替代 Production Browser Verification。
-- Cloudflare Rocket Loader／bot challenge 可能針對 GitHub hosted headless browser；live browser test 保持 `https://www.huiwen.tw/` 為頁面 URL，由 runner-local 唯讀 Python live proxy 使用與 HTTP parity 相同的固定 verifier UA 與每 run／每 URL 唯一 `production-verification` cache namespace 向 Production edge 取得同源 response。HTTP parity 驗證未修改的 Production response；Browser QA 僅中和 Cloudflare-owned Rocket Loader／challenge envelope，直接執行從 Production 即時取得的 site-owned HTML/CSS/JS，再做互動／Accessibility。不得使用 checkout 檔作 response source；若 Production response、runtime 或必要 asset 持續失敗，gate 仍必須 Fail。
+- Cloudflare Rocket Loader／bot challenge 可能針對 GitHub hosted headless browser；live browser test 保持 `https://www.huiwen.tw/` 為頁面 URL，HTTP parity 先以固定 verifier UA 與每 run／每 URL 唯一 `production-verification` cache namespace直接驗證 `www.huiwen.tw`，並把同一輪已通過的 live Production HTML/CSS/JS/JSON 保存成 runner-local 短生命週期 snapshot。Browser QA 保持 `https://www.huiwen.tw/` 頁面 URL，只由該已驗證 snapshot 供應 site-owned bytes，並僅中和 Cloudflare-owned Rocket Loader／challenge envelope後執行互動／Accessibility；不得使用 checkout 檔作 response source。HTTP parity 或 snapshot runtime 任一失敗，gate 都必須 Fail。
 
 ## Production Verification 狀態用語
 

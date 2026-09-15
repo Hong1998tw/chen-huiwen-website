@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 
 const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, '/');
 const baseHost = new URL(base).hostname;
+const liveSnapshotDir = process.env.LIVE_SNAPSHOT_DIR;
+assert(liveSnapshotDir, 'LIVE_SNAPSHOT_DIR is required for live Production browser QA');
 const output = new URL('./results/production-live/', import.meta.url);
 await mkdir(output, { recursive: true });
 
@@ -30,7 +32,8 @@ const report = {
   checks: [],
   failures: [],
   edgeRetries: [],
-  edgeNormalization: 'Cloudflare browser envelope only; all site-owned bytes are live Production',
+  edgeNormalization: 'Cloudflare browser envelope only; all site-owned bytes come from the just-verified live Production snapshot',
+  liveSnapshot: true,
 };
 
 async function check(name, fn) {
@@ -91,7 +94,7 @@ const proxyPort = Number(process.env.LIVE_PROXY_PORT || 8799);
 const proxyBase = `http://127.0.0.1:${proxyPort}`;
 const proxy = spawn('python3', [
   fileURLToPath(new URL('./live_production_proxy.py', import.meta.url)),
-  '--host', baseHost, '--port', String(proxyPort),
+  '--host', baseHost, '--snapshot-dir', liveSnapshotDir, '--port', String(proxyPort),
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
 async function waitForProxy() {
@@ -116,6 +119,7 @@ try {
       locale: 'zh-TW',
       userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
       extraHTTPHeaders: { 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' },
+      serviceWorkers: 'block',
     });
 
     // Keep the browser on the canonical Production URL, while same-origin bytes
@@ -129,7 +133,7 @@ try {
       const url = new URL(browserRequest.url());
       if (!['http:', 'https:'].includes(url.protocol)) return route.continue();
       if (url.hostname !== baseHost) return route.abort();
-
+      if (['image', 'font', 'media'].includes(browserRequest.resourceType())) return route.abort('blockedbyclient');
       if (!['GET', 'HEAD'].includes(browserRequest.method())) return route.abort('blockedbyclient');
       try {
         const response = await fetch(`${proxyBase}/fetch?url=${encodeURIComponent(browserRequest.url())}`, {
