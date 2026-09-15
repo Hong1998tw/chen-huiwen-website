@@ -104,3 +104,16 @@ body .news-article-wrap{max-width:var(--site-width)}
  .menu-ready .site-header nav>.global-search-trigger{border:1px solid var(--line);background:#fff;min-height:48px;font-size:1rem}
  .terms-content section{margin-bottom:28px}
 }
+
+/* PERF-02: third-party content is opt-in, with a permanent no-JS source link. */
+.external-embed .embed-intro{padding:24px;max-width:42rem;margin-inline:auto}
+.external-embed .embed-intro p{color:var(--muted);font-size:1rem;line-height:1.8}
+.embed-actions{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.embed-actions .text-link{display:inline-flex;align-items:center;min-height:44px;text-decoration:underline;text-underline-offset:4px}
+.external-embed [hidden]{display:none!important}
+.external-embed [data-embed-status]:empty{display:none}
+.external-embed [data-embed-status]{padding:12px 24px;margin:0;font-size:.9rem;color:var(--muted)}
+.home-facebook .external-embed{min-height:0;border:1px solid var(--line);border-radius:16px;background:var(--green-soft)}
+.canva-frame.external-embed{aspect-ratio:auto}
+.canva-frame.external-embed .embed-slot:not(:empty){position:relative;aspect-ratio:16/9}
+@media(max-width:780px){.external-embed .embed-intro{padding:20px}.embed-actions{align-items:stretch;flex-direction:column}.embed-actions .button{justify-content:center}.embed-actions .text-link{justify-content:center}}
