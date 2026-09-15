@@ -81,9 +81,14 @@ if news:
    image=figure.select_one('img');src=(image.get('src','') if image else '')
    require('site-share' not in src and not re.search(r'(^|/)chen-huiwen-(?:240|480|800)\.(?:avif|webp|png|jpe?g)$',src),f'news.html: generic portrait/share image used as news photo {src}')
    require(bool(figure.select_one('figcaption')),f'news.html: news image missing caption/credit {src}')
+  tags=card.get('data-news-tags','').split();visible=[x.get_text(strip=True) for x in card.select('.news-tag-list .news-tag')]
+  require(bool(tags),f'news.html: card {i} missing hashtag metadata')
+  require(visible==['#'+tag for tag in tags],f'news.html: card {i} visible hashtag list mismatch')
  require(not news.select_one('.news-layout'),'news.html: legacy announcement block must not return')
  require(bool(news.select_one('#news-search')),'news.html: media search control missing')
  require(bool(news.select_one('#news-sort')),'news.html: media sort control missing')
+ require(len(news.select('.news-filter-selectors details.news-multiselect'))==2,'news.html: topic/tag multiselect controls missing')
+ require(not news.select('.news-filter-button'),'news.html: legacy pill topic filters must not return')
  require(not news.select('.news-press-card'),'news.html: press-release cards must live on press.html')
 press=pages.get('press.html')
 if press:
@@ -95,6 +100,12 @@ if press:
  require(bool(press.select_one('#press-search')),'press.html: press search control missing')
  require(bool(press.select_one('#press-sort')),'press.html: press sort control missing')
  require(all(card.get('data-news-categories') for card in press_cards),'press.html: every press card needs topic categories')
+ require(all(card.get('data-news-tags') for card in press_cards),'press.html: every press card needs hashtag metadata')
+ for i,card in enumerate(press_cards,start=1):
+  tags=card.get('data-news-tags','').split();visible=[x.get_text(strip=True) for x in card.select('.news-tag-list .news-tag')]
+  require(visible==['#'+tag for tag in tags],f'press.html: card {i} visible hashtag list mismatch')
+ require(len(press.select('.news-filter-selectors details.news-multiselect'))==2,'press.html: topic/tag multiselect controls missing')
+ require(not press.select('.news-filter-button'),'press.html: legacy pill topic filters must not return')
  require('const PAGE_SIZE = 10;' in (R/'news.js').read_text(),'news.js: page size must remain 10')
  require('const PAGE_SIZE = 10;' in (R/'press.js').read_text(),'press.js: page size must remain 10')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]

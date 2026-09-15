@@ -139,9 +139,16 @@ try {
     await check(`news interaction ${width}px`, async () => {
       await page.goto(new URL('news.html', base).href, { waitUntil: 'domcontentloaded' });
       await page.locator('#news-search').waitFor({ state: 'visible' });
-      assert.equal(await page.locator('.news-media-grid > *').count(), 10, 'news first page must contain 10 records');
+      await page.waitForFunction(() => document.querySelectorAll('.news-media-grid > *').length === 10);
       await page.locator('#news-sort').selectOption('date');
       assert.equal(await page.locator('#news-sort').inputValue(), 'date');
+      await page.locator('[data-filter-menu="topic"] summary').click();
+      await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
+      await page.locator('[data-filter-menu="topic"] input[value="transport"]').check();
+      await page.locator('[data-filter-menu="tag"] summary').click();
+      await page.locator('[data-filter-menu="tag"] input[value="鳳山車站"]').check();
+      assert((await page.locator('.news-media-grid > *').count()) > 0, 'news multi-select returned no results');
+      await page.locator('[data-filter-clear]').click();
       await page.locator('#news-search').fill('鳳山');
       assert((await page.locator('.news-media-grid > *').count()) > 0, 'news search empty');
       assert.equal(await page.locator('.news-press-card').count(), 0, 'press cards leaked into news');
@@ -150,9 +157,17 @@ try {
     await check(`press release interaction ${width}px`, async () => {
       await page.goto(new URL('press.html', base).href, { waitUntil: 'domcontentloaded' });
       await page.locator('#press-search').waitFor({ state: 'visible' });
-      assert.equal(await page.locator('.news-press-grid > *').count(), 10, 'press first page must contain 10 records');
+      await page.waitForFunction(() => document.querySelectorAll('.news-press-grid > *').length === 10);
       await page.locator('#press-sort').selectOption('date');
       assert.equal(await page.locator('#press-sort').inputValue(), 'date');
+      await page.locator('[data-filter-menu="topic"] summary').click();
+      await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
+      await page.locator('[data-filter-menu="topic"] input[value="livelihood"]').check();
+      await page.locator('[data-filter-menu="tag"] summary').click();
+      await page.locator('[data-filter-menu="tag"] input[value="特教"]').check();
+      await page.locator('[data-filter-menu="tag"] input[value="毛動力"]').check();
+      assert((await page.locator('.news-press-grid > *').count()) > 0, 'press multi-select returned no results');
+      await page.locator('[data-filter-clear]').click();
       await page.locator('#press-search').fill('特教');
       assert((await page.locator('.news-press-grid > *').count()) > 0, 'press search empty');
     });

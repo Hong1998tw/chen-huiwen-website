@@ -201,6 +201,17 @@ try {
       await page.locator('#news-search').waitFor({ state: 'visible' });
       assert.equal(await page.locator('.news-media-grid > *').count(), 10);
       assert.equal(await page.locator('#news-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
+      assert((await page.locator('.news-media-grid .news-tag').count()) > 0);
+      await page.locator('[data-filter-menu="topic"] summary').click();
+      await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
+      await page.locator('[data-filter-menu="topic"] input[value="transport"]').check();
+      assert.match(await page.locator('[data-news-count]').innerText(), /主題 2/);
+      await page.locator('[data-filter-menu="tag"] summary').click();
+      await page.locator('[data-filter-menu="tag"] input[value="鳳山車站"]').check();
+      await page.locator('[data-filter-menu="tag"] input[value="特教"]').check();
+      assert.match(await page.locator('[data-news-count]').innerText(), /# 2/);
+      assert((await page.locator('.news-media-grid > *').count()) > 0);
+      await page.locator('[data-filter-clear]').click();
       await page.locator('#news-search').fill('鳳山');
       assert((await page.locator('.news-media-grid > *').count()) > 0);
       assert.equal(await page.locator('.news-press-card').count(), 0);
@@ -211,12 +222,19 @@ try {
       await page.locator('#press-search').waitFor({ state: 'visible' });
       assert.equal(await page.locator('.news-press-grid > *').count(), 10);
       assert.equal(await page.locator('#press-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
-      await page.locator('#press-search').fill('特教');
-      assert((await page.locator('.news-press-grid > *').count()) > 0);
-      await page.locator('#press-search').fill('');
-      await page.locator('[data-press-filters] [data-news-filter="education"]').click();
+      assert((await page.locator('.news-press-grid .news-tag').count()) > 0);
+      await page.locator('[data-filter-menu="topic"] summary').click();
+      await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
+      await page.locator('[data-filter-menu="topic"] input[value="livelihood"]').check();
+      await page.locator('[data-filter-menu="tag"] summary').click();
+      await page.locator('[data-filter-menu="tag"] input[value="特教"]').check();
+      await page.locator('[data-filter-menu="tag"] input[value="毛動力"]').check();
       assert((await page.locator('.news-press-grid > *').count()) > 0);
       assert((await page.locator('.news-press-grid > *').count()) <= 10);
+      assert.match(await page.locator('[data-press-count]').innerText(), /主題 2.*# 2/);
+      await page.locator('[data-filter-clear]').click();
+      await page.locator('#press-search').fill('特教');
+      assert((await page.locator('.news-press-grid > *').count()) > 0);
     });
 
     await check(`service/about/activities regressions ${width}px`, async () => {
