@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
 import re
 import threading
 import time
@@ -12,11 +14,18 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
 VERIFIER_UA = "chen-huiwen-production-verifier/1.3"
+RUN_CACHE_KEY = os.environ.get("GITHUB_RUN_ID") or f"local-{int(time.time())}"
 FILTERED_RESPONSE_HEADERS = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "content-encoding",
     "content-length", "set-cookie", "speculation-rules", "report-to", "nel",
 }
+
+
+def cache_busted_target(target: str) -> str:
+    token = hashlib.sha256(target.encode("utf-8")).hexdigest()[:16]
+    separator = "&" if "?" in target else "?"
+    return f"{target}{separator}production-verification=browser-{RUN_CACHE_KEY}-{token}"
 
 
 def normalize_edge_html(headers: list[tuple[str, str]], body: bytes) -> tuple[list[tuple[str, str]], bytes, bool]:
@@ -82,7 +91,8 @@ def build_server(hostname: str, bind: str, port: int) -> ThreadingHTTPServer:
             if parsed.scheme != "https" or parsed.hostname != hostname:
                 return 403, [("Content-Type", "text/plain; charset=utf-8")], b"forbidden"
 
-            request = Request(target, headers={
+            upstream_target = cache_busted_target(target)
+            request = Request(upstream_target, headers={
                 "User-Agent": VERIFIER_UA,
                 "Accept": self.headers.get("Accept", "*/*"),
                 "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
