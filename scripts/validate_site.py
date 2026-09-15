@@ -108,6 +108,10 @@ if press:
  require(not press.select('.news-filter-button'),'press.html: legacy pill topic filters must not return')
  require('const PAGE_SIZE = 10;' in (R/'news.js').read_text(),'news.js: page size must remain 10')
  require('const PAGE_SIZE = 10;' in (R/'press.js').read_text(),'press.js: page size must remain 10')
+workflow=(R/'.github/workflows/production-verification.yml').read_text()
+require('node tests/donation/production-browser.mjs' in workflow,'production verification: live production browser runner missing')
+require('BASE_URL: https://www.huiwen.tw/' in workflow,'production verification: canonical live BASE_URL missing')
+require('run: node tests/donation/browser.mjs' not in workflow,'production verification: candidate browser runner must not substitute live QA')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():

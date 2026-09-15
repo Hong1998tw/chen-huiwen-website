@@ -16,6 +16,7 @@ const corePages = [
   'achievements.html',
   'vision.html',
   'news.html',
+  'press.html',
   'activities.html',
   'service.html',
   'petition.html',
@@ -37,6 +38,15 @@ async function check(name, fn) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
     report.failures.push(name);
   }
+}
+
+async function gotoLive(page, target) {
+  const response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  assert(response && response.ok(), `${new URL(target).pathname || '/'}: navigation failed`);
+  // Cloudflare Rocket Loader rewrites script types before restoring execution.
+  // Waiting for menu-ready proves the canonical site.js has actually run.
+  await page.locator('html.menu-ready').waitFor({ state: 'attached', timeout: 30000 });
+  return response;
 }
 
 const browser = await chromium.launch({ headless: true });
@@ -74,7 +84,7 @@ try {
         page.on('response', onResponse);
 
         const target = file === 'index.html' ? base : new URL(file, base).href;
-        const response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const response = await gotoLive(page, target);
         assert(response && response.ok(), `${file}: navigation failed`);
         assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hant-TW');
         assert.equal(await page.locator('main').count(), 1, `${file}: main`);
@@ -110,8 +120,8 @@ try {
 
     await check(`mobile navigation ${width}px`, async () => {
       if (width !== 390) return;
-      await page.goto(base, { waitUntil: 'domcontentloaded' });
-      const toggle = page.getByRole('button', { name: '選單', exact: true });
+      await gotoLive(page, base);
+      const toggle = page.locator('.menu-toggle');
       await toggle.click();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert(await page.locator('#navigation').isVisible());
@@ -120,16 +130,17 @@ try {
     });
 
     await check(`achievements interaction ${width}px`, async () => {
-      await page.goto(new URL('achievements.html', base).href, { waitUntil: 'domcontentloaded' });
+      await gotoLive(page, new URL('achievements.html', base).href);
+      await page.waitForFunction(() => Boolean(window.HuiwenCases?.getState));
       const visibleCases = () => page.locator('[data-case]:visible').count();
       assert((await visibleCases()) > 0, 'no achievement cards');
-      const toggle = page.locator('#toggle-map-search');
-      await toggle.click();
-      assert(await page.locator('#case-search').isVisible(), 'search did not open');
-      await page.locator('#case-search').fill('文龍');
+      const search = page.locator('#case-search');
+      assert(await search.isVisible(), 'achievement search missing');
+      await search.fill('文龍');
+      await page.waitForFunction(() => !document.querySelector('#case-count')?.textContent?.includes('54 個專題'));
       assert((await visibleCases()) > 0, 'search returned no results');
       await page.locator('#reset-map-filters').click();
-      assert(await page.locator('.leaflet-container').isVisible(), 'map missing');
+      await page.locator('.leaflet-container').waitFor({ state: 'visible' });
       if (await page.locator('.case-pagination').isVisible()) {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
@@ -137,7 +148,7 @@ try {
     });
 
     await check(`news interaction ${width}px`, async () => {
-      await page.goto(new URL('news.html', base).href, { waitUntil: 'domcontentloaded' });
+      await gotoLive(page, new URL('news.html', base).href);
       await page.locator('#news-search').waitFor({ state: 'visible' });
       await page.waitForFunction(() => document.querySelectorAll('.news-media-grid > *').length === 10);
       await page.locator('#news-sort').selectOption('date');
@@ -155,7 +166,7 @@ try {
     });
 
     await check(`press release interaction ${width}px`, async () => {
-      await page.goto(new URL('press.html', base).href, { waitUntil: 'domcontentloaded' });
+      await gotoLive(page, new URL('press.html', base).href);
       await page.locator('#press-search').waitFor({ state: 'visible' });
       await page.waitForFunction(() => document.querySelectorAll('.news-press-grid > *').length === 10);
       await page.locator('#press-sort').selectOption('date');
@@ -173,7 +184,7 @@ try {
     });
 
     await check(`service interaction ${width}px`, async () => {
-      await page.goto(new URL('service.html', base).href, { waitUntil: 'domcontentloaded' });
+      await gotoLive(page, new URL('service.html', base).href);
       const legal = await page.locator('.legal-section').boundingBox();
       const monthly = await page.locator('.monthly-schedule').boundingBox();
       assert(legal && monthly && legal.y < monthly.y, 'lawyer rules are not before monthly schedule');
@@ -184,7 +195,7 @@ try {
     if (width === 1440 || width === 390) {
       for (const file of ['index.html', 'election.html', 'achievements.html', 'news.html', 'press.html', 'service.html']) {
         const target = file === 'index.html' ? base : new URL(file, base).href;
-        await page.goto(target, { waitUntil: 'domcontentloaded' });
+        await gotoLive(page, target);
         await page.screenshot({
           path: fileURLToPath(new URL(`${file}-${width}.png`, output)),
           fullPage: true,
