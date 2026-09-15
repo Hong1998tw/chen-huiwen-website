@@ -30,6 +30,7 @@ const report = {
   checks: [],
   failures: [],
   edgeRetries: [],
+  edgeNormalization: 'Cloudflare browser envelope only; all site-owned bytes are live Production',
 };
 
 async function check(name, fn) {
@@ -124,6 +125,7 @@ try {
         const headers = Object.fromEntries(response.headers.entries());
         delete headers['content-length'];
         delete headers['x-huiwen-live-proxy'];
+        delete headers['x-huiwen-edge-normalized'];
         return route.fulfill({ status: response.status, headers, body });
       } catch {
         return route.abort('failed');

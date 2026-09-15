@@ -116,6 +116,8 @@ prod_browser=(R/'tests/donation/production-browser.mjs').read_text()
 require('live_production_proxy.py' in prod_browser,'production browser: Python live proxy launcher missing')
 require((R/'tests/donation/live_production_proxy.py').is_file(),'production browser: Python live proxy file missing')
 require('chen-huiwen-production-verifier/1.3' in (R/'tests/donation/live_production_proxy.py').read_text(),'production browser proxy: stable verifier UA missing')
+require('normalize_edge_html' in (R/'tests/donation/live_production_proxy.py').read_text(),'production browser proxy: edge normalization missing')
+require('Cloudflare browser envelope only' in prod_browser,'production browser: edge normalization disclosure missing')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():
