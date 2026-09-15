@@ -21,9 +21,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -37,14 +39,14 @@ jobs:
       - run: node --check tests/donation/production-browser.mjs
       - run: node --check tests/donation/digital-civic.mjs
       - run: node --check tests/donation/election-mode.mjs
-      - run: npm ci --prefix tests/donation
+      - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/digital-civic.mjs
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs
       - run: node tests/donation/election-mode.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: full-site-browser-qa

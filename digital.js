@@ -113,7 +113,17 @@
       if (!response.ok) throw Error('index unavailable');
       const payload = await response.json();
       if (!Array.isArray(payload.items) || !payload.items.length) throw Error('invalid index');
-      return {items:payload.items, partial:false};
+      // Search results are navigation within this site, never executable or external URLs.
+      // This is defense in depth against malformed generated data, not an HTML sanitizer.
+      const items = payload.items.filter(item => {
+        if (!item || typeof item.title !== 'string' || typeof item.url !== 'string') return false;
+        try {
+          const url = new URL(item.url, document.baseURI);
+          return ['http:', 'https:'].includes(url.protocol) && url.origin === location.origin && !url.username && !url.password;
+        } catch { return false; }
+      });
+      if (!items.length) throw Error('invalid index destinations');
+      return {items, partial:false};
     } catch (_) {
       return {items:STATIC_PAGES.map(([title,url,description,type],i) => ({title,url,description,type,priority:30-i})),partial:true};
     } finally { clearTimeout(timeout); }
