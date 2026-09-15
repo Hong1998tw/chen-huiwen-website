@@ -1,8 +1,9 @@
-import { chromium, request as playwrightRequest } from 'playwright';
+import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, '/');
 const baseHost = new URL(base).hostname;
@@ -71,14 +72,25 @@ async function gotoLive(page, target) {
   throw new Error(`${new URL(target).pathname || '/'}: live runtime unavailable after retries (${detail})`);
 }
 
-const liveHttp = await playwrightRequest.newContext({
-  extraHTTPHeaders: {
-    'User-Agent': 'chen-huiwen-production-verifier/1.3',
-    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-    'Cache-Control': 'no-cache',
-    Pragma: 'no-cache',
-  },
-});
+const proxyPort = Number(process.env.LIVE_PROXY_PORT || 8799);
+const proxyBase = `http://127.0.0.1:${proxyPort}`;
+const proxy = spawn('python3', [
+  fileURLToPath(new URL('./live_production_proxy.py', import.meta.url)),
+  '--host', baseHost, '--port', String(proxyPort),
+], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+async function waitForProxy() {
+  let lastError = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const response = await fetch(`${proxyBase}/healthz`);
+      if (response.ok) return;
+    } catch (error) { lastError = error; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw lastError || new Error('live production proxy did not start');
+}
+await waitForProxy();
 
 const browser = await chromium.launch({ headless: true });
 try {
@@ -103,19 +115,16 @@ try {
       if (!['http:', 'https:'].includes(url.protocol)) return route.continue();
       if (url.hostname !== baseHost) return route.abort();
 
-      const requestHeaders = browserRequest.headers();
-      const headers = { Accept: requestHeaders.accept || '*/*' };
-      if (requestHeaders.referer) headers.Referer = requestHeaders.referer;
+      if (!['GET', 'HEAD'].includes(browserRequest.method())) return route.abort('blockedbyclient');
       try {
-        const response = await liveHttp.fetch(browserRequest.url(), {
+        const response = await fetch(`${proxyBase}/fetch?url=${encodeURIComponent(browserRequest.url())}`, {
           method: browserRequest.method(),
-          headers,
-          data: browserRequest.postDataBuffer() || undefined,
-          failOnStatusCode: false,
-          maxRedirects: 10,
-          timeout: 30000,
         });
-        return route.fulfill({ response });
+        const body = browserRequest.method() === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer());
+        const headers = Object.fromEntries(response.headers.entries());
+        delete headers['content-length'];
+        delete headers['x-huiwen-live-proxy'];
+        return route.fulfill({ status: response.status, headers, body });
       } catch {
         return route.abort('failed');
       }
@@ -262,7 +271,7 @@ try {
   }
 } finally {
   await browser.close();
-  await liveHttp.dispose();
+  proxy.kill('SIGTERM');
 }
 
 report.status = report.failures.length ? 'Failed' : 'Passed';
