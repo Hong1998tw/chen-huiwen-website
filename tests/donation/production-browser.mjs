@@ -34,18 +34,21 @@ const report = {
 };
 
 async function check(name, fn) {
+  console.log(`[live-check:start] ${name}`);
   try {
     await fn();
     report.checks.push({ name, status: 'Passed' });
+    console.log(`[live-check:pass] ${name}`);
   } catch (error) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
     report.failures.push(name);
+    console.error(`[live-check:fail] ${name}: ${String(error)}`);
   }
 }
 
 async function gotoLive(page, target) {
   const attempts = [];
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     let response = null;
     try {
       response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -58,7 +61,7 @@ async function gotoLive(page, target) {
       // Cloudflare can first return a challenge response to hosted runners, then
       // restore the requested page. The real pass condition is the canonical
       // site runtime becoming ready, not the first navigation status alone.
-      await page.locator('html.menu-ready').waitFor({ state: 'attached', timeout: 15000 });
+      await page.locator('html.menu-ready').waitFor({ state: 'attached', timeout: 8000 });
       assert.equal(new URL(page.url()).hostname, baseHost, 'live runtime left the production host');
       if (attempt > 1 || !response?.ok()) {
         report.edgeRetries.push({ target, attempts: [...attempts] });
@@ -66,7 +69,7 @@ async function gotoLive(page, target) {
       return;
     } catch (error) {
       attempts[attempts.length - 1].runtimeError = error.name;
-      if (attempt < 3) await page.waitForTimeout(attempt * 1500);
+      if (attempt < 2) await page.waitForTimeout(attempt * 1000);
     }
   }
   const detail = attempts.map(item => `${item.attempt}:${item.status ?? 'ERR'} ${item.url}`).join(' | ');
@@ -133,6 +136,9 @@ try {
     });
 
     const page = await context.newPage();
+    console.log(`[live-preflight:start] ${width}px ${base}`);
+    await gotoLive(page, base);
+    console.log(`[live-preflight:pass] ${width}px ${base}`);
 
     for (const file of corePages) {
       await check(`${file} ${width}px: live page`, async () => {
