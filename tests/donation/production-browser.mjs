@@ -69,6 +69,17 @@ async function gotoLive(page, target) {
       return;
     } catch (error) {
       attempts[attempts.length - 1].runtimeError = error.name;
+      const diagnostic = await page.evaluate(() => ({
+        title: document.title,
+        h1: document.querySelector('h1')?.textContent?.trim() || null,
+        lang: document.documentElement.lang || null,
+        menuReady: document.documentElement.classList.contains('menu-ready'),
+        scripts: [...document.scripts].slice(0, 16).map(script => ({
+          src: script.src || null, type: script.type || null, defer: script.defer,
+        })),
+        bodyPrefix: document.body?.innerText?.slice(0, 220) || null,
+      })).catch(evalError => ({ diagnosticError: String(evalError) }));
+      console.error(`[live-runtime-miss] ${new URL(target).pathname || '/'} ${JSON.stringify(diagnostic)}`);
       if (attempt < 2) await page.waitForTimeout(attempt * 1000);
     }
   }
@@ -136,6 +147,13 @@ try {
     });
 
     const page = await context.newPage();
+    page.on('pageerror', error => console.error(`[live-pageerror] ${error.message}`));
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.hostname === baseHost && (response.status() >= 400 || /site\.js|news\.js|press\.js/.test(url.pathname))) {
+        console.log(`[live-response] ${response.status()} ${url.pathname}`);
+      }
+    });
     console.log(`[live-preflight:start] ${width}px ${base}`);
     await gotoLive(page, base);
     console.log(`[live-preflight:pass] ${width}px ${base}`);
