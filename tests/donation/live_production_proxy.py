@@ -41,7 +41,7 @@ def normalize_edge_html(headers: list[tuple[str, str]], body: bytes) -> tuple[li
         flags=re.IGNORECASE,
     )
     text = re.sub(
-        r"<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?challenge-platform[\s\S]*?</script>",
+        r"<script\b(?![^>]*\bsrc=)[^>]*>(?:(?!</script>)[\s\S])*?challenge-platform(?:(?!</script>)[\s\S])*?</script>",
         "",
         text,
         flags=re.IGNORECASE,
