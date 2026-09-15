@@ -57,6 +57,13 @@
 
 資安事件、credential exposure、個資事件的 containment／rotation／刪除 evidence 仍依獨立安全授權邊界，不因本預設部署授權而自動執行高風險外部操作。
 
+## Production Verification 執行契約
+
+- `scripts/verify_production.py`：直接比對 `https://www.huiwen.tw/` 的 live HTTP／canonical asset parity。
+- `tests/donation/production-browser.mjs`：以 `BASE_URL=https://www.huiwen.tw/` 直接操作 Production，驗證 Desktop／390px、互動與 Accessibility。
+- `tests/donation/browser.mjs`：只屬 candidate／checkout QA，不得替代 Production Browser Verification。
+- Cloudflare Rocket Loader 可能延後前端 JavaScript 啟動；live browser test 必須等待網站 runtime ready 後再判定互動結果。
+
 ## Production Verification 狀態用語
 
 - **未部署**：尚未 merge `main`。
@@ -93,4 +100,4 @@
 - 可回滾 commit
 - Drive release artifact 位置（若本次執行正式 release／收尾）
 
-最後更新：2026-09-11。
+最後更新：2026-09-16。

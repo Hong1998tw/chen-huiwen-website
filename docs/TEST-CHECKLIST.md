@@ -78,8 +78,9 @@
 - [ ] 已檢查是否存在 Evidence、CI、安全、diff、rollback 或重大變更範圍等具體疑慮；若沒有疑慮，預設直接部署，不再等待額外確認。
 - [ ] 若本次停在 PR／candidate 未部署，已明確記錄阻擋部署的具體疑慮與解除條件。
 - [ ] 部署後已重新驗證 production URL。
+- [ ] Production Browser QA 實際使用 `tests/donation/production-browser.mjs` 連線 `https://www.huiwen.tw/`，不是以 checkout candidate 取代 live 驗證。
 
-最後更新：2026-09-15。
+最後更新：2026-09-16。
 
 ## Full-site candidate QA
 

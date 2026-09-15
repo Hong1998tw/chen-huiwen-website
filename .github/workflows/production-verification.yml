@@ -50,10 +50,12 @@ jobs:
       - name: Install Chromium
         run: npx --prefix tests/donation playwright install --with-deps chromium
 
-      - name: Run browser, responsive and accessibility QA on canonical deployed commit
+      - name: Run browser, responsive and accessibility QA against live production
         id: browser
         continue-on-error: true
-        run: node tests/donation/browser.mjs
+        env:
+          BASE_URL: https://www.huiwen.tw/
+        run: node tests/donation/production-browser.mjs
 
       - name: Upload production verification evidence
         if: always()
@@ -69,6 +71,6 @@ jobs:
         if: ${{ always() && (steps.http.outcome != 'success' || steps.browser.outcome != 'success') }}
         run: |
           echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
-          echo "Canonical browser QA outcome: ${{ steps.browser.outcome }}"
+          echo "Live production browser QA outcome: ${{ steps.browser.outcome }}"
           echo "Independent Production Verification failed."
           exit 1
