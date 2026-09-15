@@ -61,6 +61,9 @@
 .news-article-source{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.86rem}
 .news-article-index-note{margin:0 0 24px;color:var(--muted)}
 
+/* Reserve progressive-enhancement controls before deferred JS runs so the archive grid does not shift after first paint. */
+[data-progressive-controls]{visibility:hidden}
+
 /* Unified news index: press releases, announcements and media coverage share one search/filter/pagination flow. */
 .news-unified{display:block}
 .news-unified>.section-head{align-items:flex-end;margin-bottom:18px}
