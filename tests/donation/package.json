@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node browser.mjs"
+    "test": "node browser.mjs",
+    "test:readiness": "node readiness.mjs",
+    "test:lighthouse": "node readiness-performance.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
