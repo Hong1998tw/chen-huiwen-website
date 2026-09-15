@@ -23,6 +23,7 @@ SCHEMA_REQUIREMENTS = {
     "achievements.html": {"CollectionPage"},
     "vision.html": {"CollectionPage"},
     "news.html": {"CollectionPage"},
+    "press.html": {"CollectionPage"},
     "activities.html": {"CollectionPage"},
     "gallery.html": {"ImageGallery"},
     "service.html": {"ContactPage"},

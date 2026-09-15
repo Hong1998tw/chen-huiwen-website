@@ -81,6 +81,22 @@ if news:
    image=figure.select_one('img');src=(image.get('src','') if image else '')
    require('site-share' not in src and not re.search(r'(^|/)chen-huiwen-(?:240|480|800)\.(?:avif|webp|png|jpe?g)$',src),f'news.html: generic portrait/share image used as news photo {src}')
    require(bool(figure.select_one('figcaption')),f'news.html: news image missing caption/credit {src}')
+ require(not news.select_one('.news-layout'),'news.html: legacy announcement block must not return')
+ require(bool(news.select_one('#news-search')),'news.html: media search control missing')
+ require(bool(news.select_one('#news-sort')),'news.html: media sort control missing')
+ require(not news.select('.news-press-card'),'news.html: press-release cards must live on press.html')
+press=pages.get('press.html')
+if press:
+ press_cards=press.select('.news-press-card')
+ press_files={p.name for p in R.glob('news-*.html')}
+ press_links={a.get('href') for a in press.select('.news-press-card h2 a[href]')}
+ require(len(press_cards)==len(press_files),f'press.html: expected {len(press_files)} press cards, got {len(press_cards)}')
+ require(press_links==press_files,'press.html: press index/detail-page set mismatch')
+ require(bool(press.select_one('#press-search')),'press.html: press search control missing')
+ require(bool(press.select_one('#press-sort')),'press.html: press sort control missing')
+ require(all(card.get('data-news-categories') for card in press_cards),'press.html: every press card needs topic categories')
+ require('const PAGE_SIZE = 10;' in (R/'news.js').read_text(),'news.js: page size must remain 10')
+ require('const PAGE_SIZE = 10;' in (R/'press.js').read_text(),'press.js: page size must remain 10')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():

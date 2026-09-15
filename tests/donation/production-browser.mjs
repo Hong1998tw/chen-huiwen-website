@@ -138,12 +138,23 @@ try {
 
     await check(`news interaction ${width}px`, async () => {
       await page.goto(new URL('news.html', base).href, { waitUntil: 'domcontentloaded' });
-      await page.locator('#unified-news-search').waitFor({ state: 'visible' });
-      assert((await page.locator('.news-unified-grid > *').count()) > 0, 'news list empty');
+      await page.locator('#news-search').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('.news-media-grid > *').count(), 10, 'news first page must contain 10 records');
       await page.locator('#news-sort').selectOption('date');
       assert.equal(await page.locator('#news-sort').inputValue(), 'date');
-      await page.locator('#unified-news-search').fill('鳳山');
-      assert((await page.locator('.news-unified-grid > *').count()) > 0, 'news search empty');
+      await page.locator('#news-search').fill('鳳山');
+      assert((await page.locator('.news-media-grid > *').count()) > 0, 'news search empty');
+      assert.equal(await page.locator('.news-press-card').count(), 0, 'press cards leaked into news');
+    });
+
+    await check(`press release interaction ${width}px`, async () => {
+      await page.goto(new URL('press.html', base).href, { waitUntil: 'domcontentloaded' });
+      await page.locator('#press-search').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('.news-press-grid > *').count(), 10, 'press first page must contain 10 records');
+      await page.locator('#press-sort').selectOption('date');
+      assert.equal(await page.locator('#press-sort').inputValue(), 'date');
+      await page.locator('#press-search').fill('特教');
+      assert((await page.locator('.news-press-grid > *').count()) > 0, 'press search empty');
     });
 
     await check(`service interaction ${width}px`, async () => {
@@ -156,7 +167,7 @@ try {
     });
 
     if (width === 1440 || width === 390) {
-      for (const file of ['index.html', 'election.html', 'achievements.html', 'news.html', 'service.html']) {
+      for (const file of ['index.html', 'election.html', 'achievements.html', 'news.html', 'press.html', 'service.html']) {
         const target = file === 'index.html' ? base : new URL(file, base).href;
         await page.goto(target, { waitUntil: 'domcontentloaded' });
         await page.screenshot({

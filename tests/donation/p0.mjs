@@ -24,6 +24,7 @@ try{
   await page.keyboard.press('Meta+k');await page.locator('#global-search-dialog').waitFor({state:'visible'});
   const input=page.locator('#global-search-dialog input');await input.fill('文德國小');await page.locator('.global-search-result[href="achievement-wende-school-center.html"]').waitFor();
   assert(await page.locator('.global-search-result mark').count()>0);
+  await input.fill('鳳山');await page.waitForFunction(()=>document.querySelectorAll('.global-search-result').length>1);
   const id=await input.getAttribute('aria-activedescendant');await page.keyboard.press('ArrowDown');assert.notEqual(await input.getAttribute('aria-activedescendant'),id);
   await input.fill('');await page.locator('[data-search-more]').click();await page.waitForFunction(()=>document.querySelectorAll('.global-search-result').length===24);
   await input.fill('不存在XYZ<svg onload=alert(1)>');await page.waitForFunction(()=>document.querySelector('.global-search-status').textContent.includes('找不到'));

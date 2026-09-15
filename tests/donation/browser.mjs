@@ -121,6 +121,7 @@ try {
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
         assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href="election.html"]').count(), 1, `${file}: election nav`);
+        assert.equal(await page.locator('#navigation a[href="press.html"]').count(), 1, `${file}: press nav`);
         assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'political-donation.html', `${file}: donation order`);
         assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'), 'election.html', `${file}: election order`);
         assert.equal(await page.locator('#navigation a').nth(3).getAttribute('href'), 'service.html#monthly-heading', `${file}: lawyer order`);
@@ -133,7 +134,7 @@ try {
           const text = await page.locator('main').innerText();
           assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','achievement-wende-school-center.html'];
+        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','achievement-wende-school-center.html'];
         if (core.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
           const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
@@ -195,13 +196,27 @@ try {
       assert(await page.locator('.leaflet-container').isVisible());
     });
 
-    await check(`news unified controls ${width}px`, async () => {
+    await check(`news media controls ${width}px`, async () => {
       await page.goto(base + 'news.html');
-      await page.locator('#unified-news-search').waitFor({ state: 'visible' });
-      assert.equal(await page.locator('.news-unified-grid > *').count(), 10);
+      await page.locator('#news-search').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('.news-media-grid > *').count(), 10);
       assert.equal(await page.locator('#news-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
-      await page.locator('#unified-news-search').fill('鳳山');
-      assert((await page.locator('.news-unified-grid > *').count()) > 0);
+      await page.locator('#news-search').fill('鳳山');
+      assert((await page.locator('.news-media-grid > *').count()) > 0);
+      assert.equal(await page.locator('.news-press-card').count(), 0);
+    });
+
+    await check(`press release controls ${width}px`, async () => {
+      await page.goto(base + 'press.html');
+      await page.locator('#press-search').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('.news-press-grid > *').count(), 10);
+      assert.equal(await page.locator('#press-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
+      await page.locator('#press-search').fill('特教');
+      assert((await page.locator('.news-press-grid > *').count()) > 0);
+      await page.locator('#press-search').fill('');
+      await page.locator('[data-press-filters] [data-news-filter="education"]').click();
+      assert((await page.locator('.news-press-grid > *').count()) > 0);
+      assert((await page.locator('.news-press-grid > *').count()) <= 10);
     });
 
     await check(`service/about/activities regressions ${width}px`, async () => {
@@ -239,13 +254,15 @@ try {
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
     assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   });
-  for (const file of ['vision.html','achievements.html','election.html']) {
+  for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
     await check(`no JavaScript: ${file}`, async () => {
       await nojsPage.goto(base + file);
       assert(await nojsPage.locator('h1').isVisible());
       if (file === 'vision.html') assert(await nojsPage.locator('#platform-2005').first().isVisible());
       if (file === 'achievements.html') assert(await nojsPage.locator('[data-case]').first().isVisible());
       if (file === 'election.html') assert.match(await nojsPage.locator('main').innerText(), /2026\/10\/23|候選人姓名號次抽籤/);
+      if (file === 'news.html') assert((await nojsPage.locator('.news-report-card').count()) >= 20);
+      if (file === 'press.html') assert.equal(await nojsPage.locator('.news-press-card').count(), 17);
     });
   }
   await nojs.close();

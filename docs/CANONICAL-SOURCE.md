@@ -36,7 +36,8 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 - `assets/`：公開靜態素材、鳳山里界與 vendor assets。
 - `styles.css`、`site.js`、`map.css`、`map.js`：前台樣式與互動。
 - `achievement-*.html`、`achievements.html` 等 generated pages：build output／部署成果；相關資料變更時優先修改 source，再重新 build。
-- `news.html`：現行新聞正式 source；新聞量或維護成本達既有 migration trigger 前，不另建第二套新聞 Runtime State。
+- `news.html`：媒體報導／議會公開報導索引的正式 source。
+- `press.html`：服務處新聞發稿索引的正式 source；個別全文沿用既有 `news-*.html` URL。`news.js`／`press.js` 只負責搜尋、主題分類、排序與 10 筆分頁，不在 Runtime 動態搬移兩類內容。
 
 `content.json` 為既有公告快照，不是政績產生器的資料來源。
 
