@@ -2,6 +2,7 @@
 (() => {
   const PAGE_SIZE = 10;
   const pressReleases = [
+    {date:'2026-09-15',category:'教育與社福',topics:['education','social'],title:'爭取一年才有的專案護理師要走了 陳慧文：市長承諾「高於業界平均」',summary:'追問特教學校專案護理師調薪與人力空窗；教育局表示成特專案護理師將於9月30日離職，薪資擬調至約4萬5千至4萬7千元。',href:'news-20260915-special-education-nurse.html',keywords:'特教 成功特教 高雄特教 專案護理師 護理師 薪資 38948 34918 45000 47000 吳立森 陳其邁 教育局'},
     {date:'2026-09-02',category:'選舉與公共參與',topics:['public'],title:'陳慧文完成鳳山市議員選舉登記',summary:'完成高雄市鳳山區市議員選舉候選人登記，攜手高雄大聯盟，持續關注交通、教育、長照與地方建設。',href:'news-20260902-candidate-registration.html',keywords:'鳳山 候選人 登記 高雄大聯盟 賴瑞隆 陳其邁 交通 教育 長照'},
     {date:'2026-08-17',category:'民生消保',topics:['livelihood'],title:'毛動力嘟嘟車團訟收件倒數兩週 陳慧文拜訪台灣消保協會 籲受害者8月31日前寄出文件',summary:'拜訪台灣消費者保護協會確認團體訴訟收件進度；原定收件已於 2026 年 8 月 31 日截止。',href:'news-20260817-dudu-lawsuit.html',keywords:'毛動力 嘟嘟車 鷹騰 團訟 消費者保護協會 消保 團體訴訟 8月31日'},
     {date:'2026-08-10',category:'國際交流',topics:['public'],title:'12 年前的那雙手，我們一直記得',summary:'記錄高雄與熊本在災害中相互扶持的情誼，以及 0728 日本熊本賑災專案；該次募款已截止。',href:'news-20260810-kumamoto-relief.html',keywords:'熊本 高雄 氣爆 地震 賑災 捐款 國合會 0728'},

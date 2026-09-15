@@ -140,7 +140,15 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             if loc == BASE + "news.html" or "/news-" in loc
         }
         self.assertTrue(news_locs)
-        self.assertTrue(all(loc_to_lastmod[loc] == "2026-09-10" for loc in news_locs))
+        for loc in news_locs:
+            lastmod = loc_to_lastmod[loc]
+            self.assertRegex(lastmod or "", r"^\d{4}-\d{2}-\d{2}$")
+            filename = loc.rsplit("/", 1)[-1]
+            if filename.startswith("news-"):
+                date_token = filename.split("-", 2)[1]
+                if len(date_token) == 8 and date_token.isdigit():
+                    published = f"{date_token[:4]}-{date_token[4:6]}-{date_token[6:]}"
+                    self.assertGreaterEqual(lastmod, published)
         self.assertNotIn(BASE + "404.html", loc_to_lastmod)
 
 

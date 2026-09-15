@@ -48,6 +48,11 @@
 .news-full-article+.news-full-article{margin-top:26px}
 .news-full-article .news-meta{margin-bottom:12px}
 .news-full-article h2{margin-top:0;line-height:1.35}
+.news-full-article--sectioned h2{margin:30px 0 10px}
+.news-full-article--sectioned>p:first-child{margin-top:0}
+.news-article-figure{margin:8px 0 4px;border:1px solid var(--line);background:var(--green-soft)}
+.news-article-figure img{display:block;width:100%;height:auto}
+.news-article-figure figcaption{padding:10px 13px;color:var(--muted);font-size:.82rem;line-height:1.65}
 .news-full-article h3{margin:30px 0 10px;font-size:1.2rem}
 .news-full-article p,.news-full-article li{line-height:1.9}
 .news-full-article ul,.news-full-article ol{padding-left:1.35rem}
