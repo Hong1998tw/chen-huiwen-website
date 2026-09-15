@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium, request as playwrightRequest } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -71,6 +71,15 @@ async function gotoLive(page, target) {
   throw new Error(`${new URL(target).pathname || '/'}: live runtime unavailable after retries (${detail})`);
 }
 
+const liveHttp = await playwrightRequest.newContext({
+  extraHTTPHeaders: {
+    'User-Agent': 'chen-huiwen-production-verifier/1.3',
+    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  },
+});
+
 const browser = await chromium.launch({ headless: true });
 try {
   for (const width of [1440, 390]) {
@@ -82,27 +91,30 @@ try {
       extraHTTPHeaders: { 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' },
     });
 
-    // Keep the browser on the canonical Production URL, but fetch same-origin
-    // bytes through Playwright's request layer with the verifier UA. GitHub-hosted
-    // headless browsers can be challenged by Cloudflare even when the live site is
-    // healthy; the HTTP verifier UA is intentionally stable and is already used by
-    // verify_production.py. This still renders and interacts with live Production
-    // responses (including Cloudflare HTML transforms), never checkout files.
+    // Keep the browser on the canonical Production URL, while same-origin bytes
+    // are fetched by an independent APIRequestContext using the same stable verifier
+    // identity as verify_production.py. GitHub-hosted Chromium can trigger Cloudflare
+    // bot challenges based on browser automation/IP heuristics; this transport still
+    // fetches the live Production edge response, then Chromium renders/interacts with
+    // those bytes. Checkout files are never used as a browser response source.
     await context.route('**/*', async route => {
-      const request = route.request();
-      const url = new URL(request.url());
+      const browserRequest = route.request();
+      const url = new URL(browserRequest.url());
       if (!['http:', 'https:'].includes(url.protocol)) return route.continue();
       if (url.hostname !== baseHost) return route.abort();
 
-      const headers = {
-        ...request.headers(),
-        'user-agent': 'chen-huiwen-production-verifier/1.3',
-        'accept-language': 'zh-TW,zh;q=0.9,en;q=0.8',
-        'cache-control': 'no-cache',
-        pragma: 'no-cache',
-      };
+      const requestHeaders = browserRequest.headers();
+      const headers = { Accept: requestHeaders.accept || '*/*' };
+      if (requestHeaders.referer) headers.Referer = requestHeaders.referer;
       try {
-        const response = await route.fetch({ headers, maxRedirects: 10, timeout: 30000 });
+        const response = await liveHttp.fetch(browserRequest.url(), {
+          method: browserRequest.method(),
+          headers,
+          data: browserRequest.postDataBuffer() || undefined,
+          failOnStatusCode: false,
+          maxRedirects: 10,
+          timeout: 30000,
+        });
         return route.fulfill({ response });
       } catch {
         return route.abort('failed');
@@ -250,6 +262,7 @@ try {
   }
 } finally {
   await browser.close();
+  await liveHttp.dispose();
 }
 
 report.status = report.failures.length ? 'Failed' : 'Passed';
