@@ -43,6 +43,7 @@ jobs:
           --delay 15
           --timeout 20
           --report tests/donation/results/production-live/http-parity.json
+          --snapshot-dir /tmp/huiwen-production-snapshot
 
       - name: Install browser QA dependencies
         run: npm ci --prefix tests/donation
@@ -55,6 +56,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_URL: https://www.huiwen.tw/
+          LIVE_SNAPSHOT_DIR: /tmp/huiwen-production-snapshot
         run: node tests/donation/production-browser.mjs
 
       - name: Upload production verification evidence

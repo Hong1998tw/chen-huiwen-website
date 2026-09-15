@@ -1,11 +1,14 @@
-import { chromium, request as playwrightRequest } from 'playwright';
+import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, '/');
 const baseHost = new URL(base).hostname;
+const liveSnapshotDir = process.env.LIVE_SNAPSHOT_DIR;
+assert(liveSnapshotDir, 'LIVE_SNAPSHOT_DIR is required for live Production browser QA');
 const output = new URL('./results/production-live/', import.meta.url);
 await mkdir(output, { recursive: true });
 
@@ -29,21 +32,26 @@ const report = {
   checks: [],
   failures: [],
   edgeRetries: [],
+  edgeNormalization: 'Cloudflare browser envelope only; all site-owned bytes come from the just-verified live Production snapshot',
+  liveSnapshot: true,
 };
 
 async function check(name, fn) {
+  console.log(`[live-check:start] ${name}`);
   try {
     await fn();
     report.checks.push({ name, status: 'Passed' });
+    console.log(`[live-check:pass] ${name}`);
   } catch (error) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
     report.failures.push(name);
+    console.error(`[live-check:fail] ${name}: ${String(error)}`);
   }
 }
 
 async function gotoLive(page, target) {
   const attempts = [];
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     let response = null;
     try {
       response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -56,7 +64,7 @@ async function gotoLive(page, target) {
       // Cloudflare can first return a challenge response to hosted runners, then
       // restore the requested page. The real pass condition is the canonical
       // site runtime becoming ready, not the first navigation status alone.
-      await page.locator('html.menu-ready').waitFor({ state: 'attached', timeout: 15000 });
+      await page.locator('html.menu-ready').waitFor({ state: 'attached', timeout: 8000 });
       assert.equal(new URL(page.url()).hostname, baseHost, 'live runtime left the production host');
       if (attempt > 1 || !response?.ok()) {
         report.edgeRetries.push({ target, attempts: [...attempts] });
@@ -64,21 +72,43 @@ async function gotoLive(page, target) {
       return;
     } catch (error) {
       attempts[attempts.length - 1].runtimeError = error.name;
-      if (attempt < 3) await page.waitForTimeout(attempt * 1500);
+      const diagnostic = await page.evaluate(() => ({
+        title: document.title,
+        h1: document.querySelector('h1')?.textContent?.trim() || null,
+        lang: document.documentElement.lang || null,
+        menuReady: document.documentElement.classList.contains('menu-ready'),
+        scripts: [...document.scripts].slice(0, 16).map(script => ({
+          src: script.src || null, type: script.type || null, defer: script.defer,
+        })),
+        bodyPrefix: document.body?.innerText?.slice(0, 220) || null,
+      })).catch(evalError => ({ diagnosticError: String(evalError) }));
+      console.error(`[live-runtime-miss] ${new URL(target).pathname || '/'} ${JSON.stringify(diagnostic)}`);
+      if (attempt < 2) await page.waitForTimeout(attempt * 1000);
     }
   }
   const detail = attempts.map(item => `${item.attempt}:${item.status ?? 'ERR'} ${item.url}`).join(' | ');
   throw new Error(`${new URL(target).pathname || '/'}: live runtime unavailable after retries (${detail})`);
 }
 
-const liveHttp = await playwrightRequest.newContext({
-  extraHTTPHeaders: {
-    'User-Agent': 'chen-huiwen-production-verifier/1.3',
-    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-    'Cache-Control': 'no-cache',
-    Pragma: 'no-cache',
-  },
-});
+const proxyPort = Number(process.env.LIVE_PROXY_PORT || 8799);
+const proxyBase = `http://127.0.0.1:${proxyPort}`;
+const proxy = spawn('python3', [
+  fileURLToPath(new URL('./live_production_proxy.py', import.meta.url)),
+  '--host', baseHost, '--snapshot-dir', liveSnapshotDir, '--port', String(proxyPort),
+], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+async function waitForProxy() {
+  let lastError = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const response = await fetch(`${proxyBase}/healthz`);
+      if (response.ok) return;
+    } catch (error) { lastError = error; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw lastError || new Error('live production proxy did not start');
+}
+await waitForProxy();
 
 const browser = await chromium.launch({ headless: true });
 try {
@@ -89,6 +119,7 @@ try {
       locale: 'zh-TW',
       userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
       extraHTTPHeaders: { 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' },
+      serviceWorkers: 'block',
     });
 
     // Keep the browser on the canonical Production URL, while same-origin bytes
@@ -102,26 +133,34 @@ try {
       const url = new URL(browserRequest.url());
       if (!['http:', 'https:'].includes(url.protocol)) return route.continue();
       if (url.hostname !== baseHost) return route.abort();
-
-      const requestHeaders = browserRequest.headers();
-      const headers = { Accept: requestHeaders.accept || '*/*' };
-      if (requestHeaders.referer) headers.Referer = requestHeaders.referer;
+      if (['image', 'font', 'media'].includes(browserRequest.resourceType())) return route.abort('blockedbyclient');
+      if (!['GET', 'HEAD'].includes(browserRequest.method())) return route.abort('blockedbyclient');
       try {
-        const response = await liveHttp.fetch(browserRequest.url(), {
+        const response = await fetch(`${proxyBase}/fetch?url=${encodeURIComponent(browserRequest.url())}`, {
           method: browserRequest.method(),
-          headers,
-          data: browserRequest.postDataBuffer() || undefined,
-          failOnStatusCode: false,
-          maxRedirects: 10,
-          timeout: 30000,
         });
-        return route.fulfill({ response });
+        const body = browserRequest.method() === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer());
+        const headers = Object.fromEntries(response.headers.entries());
+        delete headers['content-length'];
+        delete headers['x-huiwen-live-proxy'];
+        delete headers['x-huiwen-edge-normalized'];
+        return route.fulfill({ status: response.status, headers, body });
       } catch {
         return route.abort('failed');
       }
     });
 
     const page = await context.newPage();
+    page.on('pageerror', error => console.error(`[live-pageerror] ${error.message}`));
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.hostname === baseHost && (response.status() >= 400 || /site\.js|news\.js|press\.js/.test(url.pathname))) {
+        console.log(`[live-response] ${response.status()} ${url.pathname}`);
+      }
+    });
+    console.log(`[live-preflight:start] ${width}px ${base}`);
+    await gotoLive(page, base);
+    console.log(`[live-preflight:pass] ${width}px ${base}`);
 
     for (const file of corePages) {
       await check(`${file} ${width}px: live page`, async () => {
@@ -262,7 +301,7 @@ try {
   }
 } finally {
   await browser.close();
-  await liveHttp.dispose();
+  proxy.kill('SIGTERM');
 }
 
 report.status = report.failures.length ? 'Failed' : 'Passed';

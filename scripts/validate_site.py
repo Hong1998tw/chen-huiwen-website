@@ -113,8 +113,20 @@ require('node tests/donation/production-browser.mjs' in workflow,'production ver
 require('BASE_URL: https://www.huiwen.tw/' in workflow,'production verification: canonical live BASE_URL missing')
 require('run: node tests/donation/browser.mjs' not in workflow,'production verification: candidate browser runner must not substitute live QA')
 prod_browser=(R/'tests/donation/production-browser.mjs').read_text()
-require('chen-huiwen-production-verifier/1.3' in prod_browser,'production browser: stable live verifier UA missing')
-require('playwrightRequest.newContext' in prod_browser,'production browser: independent live request transport missing')
+require('live_production_proxy.py' in prod_browser,'production browser: Python live snapshot proxy launcher missing')
+require((R/'tests/donation/live_production_proxy.py').is_file(),'production browser: Python live snapshot proxy file missing')
+proxy_source=(R/'tests/donation/live_production_proxy.py').read_text()
+require('_snapshot.json' in proxy_source,'production browser proxy: verified snapshot manifest gate missing')
+require('normalize_edge_html' in proxy_source,'production browser proxy: edge normalization missing')
+require('LIVE_SNAPSHOT_DIR' in prod_browser,'production browser: live snapshot env gate missing')
+require('Cloudflare browser envelope only' in prod_browser,'production browser: edge normalization disclosure missing')
+require('--snapshot-dir /tmp/huiwen-production-snapshot' in workflow,'production verification: HTTP live snapshot capture missing')
+require('LIVE_SNAPSHOT_DIR: /tmp/huiwen-production-snapshot' in workflow,'production verification: browser live snapshot binding missing')
+require('live-preflight:start' in prod_browser,'production browser: live preflight missing')
+require('live-check:start' in prod_browser,'production browser: progress logging missing')
+verify_source=(R/'scripts/verify_production.py').read_text()
+for runtime_path in ['data/achievements.json','data/search-index.json','data/events.json','data/platforms.json','assets/fengshan-villages.geojson']:
+ require(runtime_path in verify_source,f'production verification: runtime live data snapshot missing {runtime_path}')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():

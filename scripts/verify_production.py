@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import time
 from html.parser import HTMLParser
 from pathlib import Path
@@ -35,7 +36,17 @@ CORE_PAGES = (
     "political-donation.html",
     "terms.html",
 )
-STATIC_FILES = ("robots.txt", "sitemap.xml", "data/election-2026.json")
+STATIC_FILES = (
+    "robots.txt",
+    "sitemap.xml",
+    "manifest.webmanifest",
+    "data/election-2026.json",
+    "data/achievements.json",
+    "data/platforms.json",
+    "data/search-index.json",
+    "data/events.json",
+    "assets/fengshan-villages.geojson",
+)
 MIN_TEXT_COVERAGE = 0.95
 
 
@@ -172,11 +183,22 @@ def verification_cache_key(local: bytes, run_cache_key: str, attempt: int) -> st
     return f"{digest(local)[:16]}-{run_cache_key}-{attempt}"
 
 
-def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int) -> dict:
+def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, snapshot_dir: Path | None = None) -> dict:
     checks: list[dict] = []
     failures: list[str] = []
     assets: set[str] = set()
     base_host = urlsplit(base_url).hostname
+    if snapshot_dir:
+        if snapshot_dir.exists():
+            shutil.rmtree(snapshot_dir)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_snapshot(path: str, body: bytes) -> None:
+        if not snapshot_dir:
+            return
+        destination = snapshot_dir / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(body)
 
     for local_path in list(CORE_PAGES) + list(STATIC_FILES):
         source_path = ROOT / local_path
@@ -195,6 +217,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int) -
 
         same_host = urlsplit(final_url).hostname == base_host
         raw_parity = digest(local) == digest(remote)
+        if status == 200 and same_host:
+            save_snapshot(local_path, remote)
 
         if local_path.endswith(".html"):
             local_parser = PageParser()
@@ -279,6 +303,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int) -
 
         same_host = urlsplit(final_url).hostname == base_host
         parity = digest(local) == digest(remote)
+        if status == 200 and same_host:
+            save_snapshot(asset, remote)
         checks.append(
             {
                 "path": asset,
@@ -297,13 +323,30 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int) -
         if not parity:
             failures.append(f"{asset}: production body differs from canonical source")
 
-    return {
+    result = {
         "status": "Passed" if not failures else "Failed",
         "baseUrl": base_url,
         "checked": len(checks),
         "failures": failures,
         "checks": checks,
     }
+    if snapshot_dir:
+        snapshot_paths = sorted(
+            str(path.relative_to(snapshot_dir))
+            for path in snapshot_dir.rglob("*")
+            if path.is_file()
+        )
+        (snapshot_dir / "_snapshot.json").write_text(
+            json.dumps({
+                "status": result["status"],
+                "baseUrl": base_url,
+                "attempt": attempt,
+                "runCacheKey": run_cache_key,
+                "paths": snapshot_paths,
+            }, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return result
 
 
 def main() -> int:
@@ -313,13 +356,15 @@ def main() -> int:
     parser.add_argument("--delay", type=int, default=20)
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--report")
+    parser.add_argument("--snapshot-dir")
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/") + "/"
     run_cache_key = os.environ.get("GITHUB_RUN_ID") or str(time.time_ns())
+    snapshot_dir = Path(args.snapshot_dir).resolve() if args.snapshot_dir else None
     result = {}
     for attempt in range(1, max(args.attempts, 1) + 1):
-        result = verify_once(base_url, args.timeout, run_cache_key, attempt)
+        result = verify_once(base_url, args.timeout, run_cache_key, attempt, snapshot_dir)
         result["attempt"] = attempt
         if result["status"] == "Passed":
             break
