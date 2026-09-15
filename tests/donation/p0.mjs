@@ -54,8 +54,8 @@ try{
  });
  await check('Grouped map point exposes every topic and selection never leaks through filters',async()=>{
   await page.locator('#reset-map-filters').click();
-  const marker=page.locator('.case-marker').filter({hasText:'6'});await marker.click();await page.locator('.insight-group').waitFor();
-  assert.equal(await page.locator('.insight-group button').count(),5);
+  const marker=page.locator('.case-marker[title*="智慧停車"]');await marker.click();await page.locator('.insight-group').waitFor();
+  assert((await page.locator('.insight-group button').count())>=5);
   await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h3').textContent(),/智慧停車/);
   assert(new URL(page.url()).searchParams.get('case')==='station-parking');
   await page.locator('#category-filter').selectOption('社福與衛環');await count(data.filter(c=>c.categories.includes('社福與衛環')).length);

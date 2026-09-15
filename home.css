@@ -71,3 +71,17 @@
  .home-contact{margin-top:8px;border-radius:9px 9px 22px 22px}
  .home-account-number{font-size:1.7rem}
 }
+
+/* UI-01: readable contact details rather than small type in a narrow split card. */
+.home-contact-info a:not(.home-phone){font-size:.9375rem;line-height:1.8}
+.home-contact-info a{min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere}
+.home-office-hours dl,.home-office-hours p{font-size:.9375rem;line-height:1.8}
+@media(max-width:480px){
+ .home-contact-columns{grid-template-columns:1fr;gap:20px}
+ .home-office-hours{border-left:0;border-top:1px solid var(--line);padding:18px 0 0}
+ .home-office-hours dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px}
+ .home-office-hours dt:nth-of-type(2){grid-column:2;grid-row:1}
+ .home-office-hours dd:nth-of-type(2){grid-column:2;grid-row:2}
+ .home-office-hours dd{margin:0}
+ .home-contact-actions{gap:10px}
+}

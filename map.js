@@ -92,12 +92,22 @@
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(c);
     }
+    // Group screen-space overlaps without changing the underlying recorded coordinates.
+    const separated = [];
     for (const cases of groups.values()) {
+      const point = map.latLngToLayerPoint(cases[0].coordinates);
+      const neighbor = separated.find(group => point.distanceTo(map.latLngToLayerPoint(group[0].coordinates)) < 52);
+      if (neighbor) neighbor.push(...cases); else separated.push([...cases]);
+    }
+    for (const cases of separated) {
       const pop = document.createElement('div'); pop.className = 'map-popup';
-      const title = document.createElement('strong'); title.textContent = cases.length > 1 ? `${cases.length} 個相關專題` : cases[0].title; pop.append(title);
+      const title = document.createElement('strong'); title.textContent = cases.length > 1 ? `${cases.length} 個附近專題（放大地圖可分開查看）` : cases[0].title; pop.append(title);
       for (const c of cases) { const a = document.createElement('a'); a.href = `achievement-${c.id}.html`; a.textContent = c.title + ' →'; pop.append(a); }
-      const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[34,34],iconAnchor:[17,17]}), title:cases.map(c=>c.title).join('、'),keyboard:true}).bindPopup(pop,{maxWidth:320,autoPan:false}).addTo(markers);
+      const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[44,44],iconAnchor:[22,22]}), title:cases.map(c=>c.title).join('、'),caseIds:cases.map(c=>c.id),keyboard:true}).bindPopup(pop,{maxWidth:320,autoPan:false}).addTo(markers);
       marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id)));
+      marker.getElement()?.addEventListener('keydown', event => {
+        if (event.key === ' ') { event.preventDefault(); marker.fire('click'); }
+      });
     }
     boundaries?.setStyle(f => { const selected = controls.village.value === 'v:' + f.properties.name; return {color:selected?'#c36a32':'#4b7464',weight:selected?3:1,fillColor:selected?'#def68d':'#8faf9a',fillOpacity:selected?.45:.08}; });
   }
@@ -139,7 +149,7 @@
     selectCase(c.id);
     if (!map || !c.coordinates) {message.textContent='地圖目前無法使用，請直接閱讀專題詳情。';return;}
     map.setView(c.coordinates,16,{animate:false});
-    markers.eachLayer(marker => {const p=marker.getLatLng();if(p.lat===c.coordinates[0]&&p.lng===c.coordinates[1])marker.openPopup();});
+    markers.eachLayer(marker => { if (marker.options.caseIds?.includes(c.id)) marker.openPopup(); });
     root.scrollIntoView({behavior:motion(),block:'center'});
   });
   readURL();
@@ -147,6 +157,7 @@
   root.replaceChildren();
   map=L.map(root,{scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false}).setView([22.615,120.351],13);
   markers=L.layerGroup().addTo(map);
+  map.on('zoomend',draw);
   let errors=0;
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map).on('tileerror',()=>{if(++errors>=3)message.textContent='部分底圖未能載入；里界、點位及完整紀錄仍可使用。';});
   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),12000);

@@ -125,3 +125,6 @@ body.search-open{overflow:hidden}
 .case-live-summary a{font-weight:700;color:#075548;text-decoration:underline;text-underline-offset:3px}
 #case-search,#achievement-map,#case-results{scroll-margin-top:150px}
 @media(max-width:780px){#case-search,#achievement-map,#case-results{scroll-margin-top:100px}}
+
+/* A11Y-02: 4.03:1 failed on the page background; use the shared AA text color. */
+.explore-relation-note{color:var(--muted)}
