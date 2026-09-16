@@ -1,18 +1,6 @@
 name: Full-site browser and accessibility QA
 on:
   pull_request:
-    paths:
-      - '**.html'
-      - '**.css'
-      - '**.js'
-      - 'data/**'
-      - 'assets/**'
-      - 'templates/**'
-      - 'scripts/**'
-      - 'tests/donation/**'
-      - '.github/workflows/donation-page-qa.yml'
-      - '.github/workflows/production-verification.yml'
-      - '.github/workflows/security-history-scan.yml'
 permissions:
   contents: read
 jobs:
@@ -46,11 +34,14 @@ jobs:
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs
       - run: node tests/donation/election-mode.mjs
+      - name: Verify lifecycle resilience and negative browser fixtures
+        run: node tests/donation/lifecycle.mjs
       - name: Run five-viewport production-readiness regression suite
         run: npm run test:readiness --prefix tests/donation
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
+          retention-days: 14
           name: full-site-browser-qa
           path: tests/donation/results/
 
@@ -71,5 +62,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
+          retention-days: 14
           name: production-readiness-lighthouse
           path: tests/donation/results/readiness/

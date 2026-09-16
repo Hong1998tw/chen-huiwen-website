@@ -1,6 +1,6 @@
 # 陳慧文議員官方網站
 
-網站：https://hong1998tw.github.io/chen-huiwen-website/
+網站：https://www.huiwen.tw/
 
 以 HTML、CSS、原生 JavaScript 製作的靜態網站，使用 GitHub Pages 發布。無需 API 金鑰、Notion 登入或伺服器即可瀏覽。
 
@@ -43,7 +43,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 肖像及相關內容的權利仍歸原權利人所有，本儲存庫不另行授予其素材授權。
 
-未設定自訂網域，原有 huiwen.tw 網站及 DNS 不受此專案影響。
+目前 GitHub Pages 自訂網域為 `www.huiwen.tw`；發布與回滾見 `docs/DEPLOYMENT.md`。DNS／edge 設定屬獨立管理範圍。
 
 ## 每月公益律師時間表
 
@@ -62,7 +62,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 新增照片取自服務處既有公開網站的五福市場職人展、錦田路綠帶會勘、文聖街道路刨鋪與2024年「議起做月餅」頁面，已另存靜態圖片，避免暫時網址到期。圖片權利歸原權利人所有。活動依原資料標明歷年回顧與結束狀態；推動中的案件未標為完工。政見頁整理歷年主題，非新增競選承諾。
 
-## 政績地圖與站內歷程（2026-09-08）
+## 政績地圖與站內歷程（2026-09-08 歷史紀錄）
 
 `achievements.html` 提供 75 里、關鍵字、5 種主題、6 種進度篩選，41 個專題均有獨立 HTML 頁面；27 個專題有代表點位，28 個有里別分類，共 77 筆歷程。未取得完成證據者保留爭取、追蹤或歷年紀錄狀態。地圖底圖為 OpenStreetMap，Leaflet 1.9.4 已存於 assets/vendor 並附授權。
 
@@ -71,7 +71,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 更新流程：
 
 1. 編輯經人工審閱的 `data/achievements.json`，保留固定 `id`、資料來源、階段、日期精度及缺漏說明。
-2. 執行 `python3 scripts/build_cases.py`，生成政績地圖與41個詳情頁。共用詳情版型在 `templates/case-page.html`。
+2. 執行 `python3 scripts/build_cases.py`，生成政績地圖與所有可公開詳情頁。共用詳情版型在 `templates/case-page.html`。
 3. 預覽、檢查來源與連結後提交工作 branch，經測試／review 後再進入 `main`。新增/移除專題時一併更新 sitemap.xml；移除需處理舊網址。
 
 不建立 Notion 公開內容同步或 runtime；瀏覽政績不需要連線 Notion。未把原始工作資料、內部協調文件或私人研究附件加入公開 JSON。`content.json` 為舊公告快照，不是政績產生器資料來源。
@@ -84,3 +84,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 搜尋索引由公開 HTML 產生：完成內容 build 後執行 `python3 scripts/build_search.py`，再執行 `python3 scripts/validate_p0.py`。政績圖卡、統計口徑、測試與驗收說明見 `docs/P0-TECH-REVIEW-2026-09-12.md`。
 新增政績候選、查核、Coverage Audit 與里別資料維護，請先讀 [docs/ACHIEVEMENT-WORKFLOW.md](docs/ACHIEVEMENT-WORKFLOW.md)。
+
+## 全生命週期品質入口
+
+`python3 scripts/quality.py --baseline-ref origin/main` 執行既有 validators、兩次生成一致性與正向／負向測試；加 `--browser` 執行互動回歸。首次安裝方式與完整維護索引見 [維護 runbook](docs/MAINTENANCE.md)。
