@@ -46,6 +46,8 @@ STATIC_FILES = (
     "data/search-index.json",
     "data/events.json",
     "assets/fengshan-villages.geojson",
+    "assets/vendor/leaflet.css",
+    "assets/vendor/leaflet.js",
 )
 MIN_TEXT_COVERAGE = 0.95
 
