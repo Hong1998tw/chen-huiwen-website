@@ -47,7 +47,7 @@ python3 scripts/audit_external_links.py /path/outside/repository/external-links.
 | 任務 | owner_role | Primary Scheduler Owner | trigger／頻率 | output／alert |
 | --- | --- | --- | --- | --- |
 | 品質／來源差異 | repo 維護者（人員未指派） | GitHub Actions | 每次 PR／main push，既有 workflow | current-head CI／有失敗才處理 |
-| 發布驗證 | repo 維護者（人員未指派） | GitHub Actions | Pages workflow 完成，既有 workflow | HTTP parity + 同輪 live snapshot browser；失敗阻擋發布完成判定 |
+| 發布驗證 | repo 維護者（人員未指派） | GitHub Actions | main push／手動觸發，既有 workflow | HTTP parity + 同輪 live snapshot browser；失敗阻擋發布完成判定 |
 | 重要 route／服務／活動期限 | 服務資訊 owner（未指派） | 未指定；未啟用 | 每日及異動 | 路徑／異動差異，失敗及恢復才通知 |
 | 新聞增量／候選覆蓋 | 內容編輯（未指派） | 未指定；未啟用 | 每週；新聞以 90 天範圍起始 | 原文 receipts、合併／排除理由；新增缺口才通知 |
 | 聯絡／律師／來源／GSC／套件 | 內容＋工程 owner（未指派） | 未指定；未啟用 | 每月 | 服務及 sitemap／索引差異、漏洞與到期 |
