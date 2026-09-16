@@ -57,6 +57,16 @@
     };
 
     button?.addEventListener('click', load);
-    load();
+
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        observer.disconnect();
+        load();
+      }, { rootMargin: '120px 0px' });
+      observer.observe(container);
+    } else {
+      load();
+    }
   });
 })();

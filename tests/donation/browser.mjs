@@ -254,7 +254,11 @@ try {
       const monthly = await page.locator('.monthly-schedule').boundingBox();
       assert(legal && monthly && legal.y < monthly.y);
       assert.equal(await page.locator('.monthly-schedule a[href*="canva.com"]').count(), 0);
-      assert.equal(await page.locator('.schedule-auto-embed iframe').count(), 1, 'lawyer schedule should auto-load');
+      await page.locator('.schedule-auto-embed').scrollIntoViewIfNeeded();
+      await page.locator('.schedule-auto-embed iframe').waitFor({ state: 'attached' });
+      assert.equal(await page.locator('.schedule-auto-embed iframe').count(), 1, 'lawyer schedule should auto-load when it enters the viewport');
+      assert.equal(await page.locator('.schedule-auto-embed iframe').getAttribute('title'), '每月公益律師諮詢時間表');
+      assert.equal(await page.locator('.schedule-auto-embed a[href^="https://www.canva.com/design/"]').count(), 1, 'lawyer schedule keeps a direct-link fallback');
       assert(await page.locator('.schedule-auto-embed [data-embed-load]').isVisible(), 'lawyer schedule keeps a reload fallback');
       assert((await page.locator('.schedule-phone-cta').boundingBox()).height >= 60);
       await page.goto(base + 'about.html');

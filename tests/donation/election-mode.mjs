@@ -37,8 +37,11 @@ try {
   assert(account && contact && account.y < contact.y, 'political donation must appear before contact');
   assert(contact.y - (account.y + account.height) <= 12, 'donation and contact should read as one visual cluster');
   const homeFacebook = page.locator('.home-facebook');
+  await homeFacebook.scrollIntoViewIfNeeded();
   await homeFacebook.locator('iframe').waitFor({ state: 'attached' });
   assert.equal(await homeFacebook.locator('iframe').count(), 1, 'homepage Facebook should auto-load');
+  assert.match(await homeFacebook.locator('iframe').getAttribute('title'), /Facebook/, 'homepage Facebook iframe needs an accessible title');
+  assert.equal(await homeFacebook.locator('a[href="https://www.facebook.com/hwcfs/"]').count(), 1, 'homepage Facebook keeps a direct-link fallback');
   assert(await homeFacebook.locator('[data-embed-load]').isVisible(), 'homepage Facebook keeps a reload fallback');
   const homeFrameBox = await homeFacebook.locator('.facebook-frame').boundingBox();
   assert(homeFrameBox && homeFrameBox.x >= 0 && homeFrameBox.x + homeFrameBox.width <= 390, 'homepage Facebook stays inside mobile viewport');
@@ -51,8 +54,11 @@ try {
 
   await page.goto(base + 'news.html');
   const newsFacebook = page.locator('#facebook .facebook-frame');
+  await newsFacebook.scrollIntoViewIfNeeded();
   await newsFacebook.locator('iframe').waitFor({ state: 'attached' });
   assert.equal(await newsFacebook.locator('iframe').count(), 1, 'news Facebook should auto-load');
+  assert.match(await newsFacebook.locator('iframe').getAttribute('title'), /Facebook/, 'news Facebook iframe needs an accessible title');
+  assert.equal(await newsFacebook.locator('a[href="https://www.facebook.com/hwcfs/"]').count(), 1, 'news Facebook keeps a direct-link fallback');
   assert(await newsFacebook.locator('[data-embed-load]').isVisible(), 'news Facebook keeps a reload fallback');
 
   await page.goto(base + 'election.html');
