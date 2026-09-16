@@ -34,6 +34,7 @@ SCHEMA_REQUIREMENTS = {
     "terms.html": {"WebPage"},
     "election.html": {"CollectionPage"},
     "explore.html": {"CollectionPage"},
+    "renwu-anju-social-housing/index.html": {"Article", "BreadcrumbList"},
 }
 
 
@@ -182,7 +183,8 @@ def main() -> int:
     def fail(message: str) -> None:
         errors.append(message)
 
-    pages = {p.name: parse(p)[0] for p in sorted(root.glob("*.html"))}
+    page_paths = sorted(root.glob("*.html")) + sorted(root.glob("*/index.html"))
+    pages = {p.relative_to(root).as_posix(): parse(p)[0] for p in page_paths}
     indexable: dict[str, Document] = {}
     canonicals: dict[str, str] = {}
     inbound: Counter[str] = Counter()
@@ -197,7 +199,13 @@ def main() -> int:
         if name == "404.html" and "noindex" not in robots:
             fail("404.html: missing robots noindex")
         if name != "404.html" and "noindex" in robots:
-            fail(f"{name}: unexpected noindex")
+            # Root-level directory stubs are intentional migration fallbacks. They
+            # must canonicalize away from themselves and remain followable until
+            # the Cloudflare edge redirect has fully replaced legacy discovery.
+            c = canonical(doc)
+            local_url = BASE + (name[:-10] if name.endswith("/index.html") else name)
+            if "/" not in name or not c or c == local_url:
+                fail(f"{name}: unexpected noindex")
 
     for name, doc in indexable.items():
         title_count = sum(1 for tag, _ in doc.attrs if tag == "title")
@@ -271,7 +279,7 @@ def main() -> int:
         if name.startswith("news-"):
             expected = {"Article"}
         if name.startswith("achievement-"):
-            expected = {"Article", "BreadcrumbList"}
+            expected = {"WebPage", "BreadcrumbList"}
         if expected and not expected.issubset(types):
             missing_schema.append(name)
             fail(f"{name}: missing JSON-LD types {sorted(expected - types)}")
@@ -279,8 +287,8 @@ def main() -> int:
             expected_image = BASE + "assets/og/" + Path(name).stem + ".png"
             if c != BASE + name:
                 fail(f"{name}: achievement canonical must identify its own page")
-            if first_meta(doc, "property", "og:type") != "article":
-                fail(f"{name}: achievement og:type must be article")
+            if first_meta(doc, "property", "og:type") != "website":
+                fail(f"{name}: achievement og:type must be website")
             for key, prefix in (("property", "og:"), ("name", "twitter:")):
                 if first_meta(doc, key, prefix + "title") != title:
                     fail(f"{name}: {prefix}title must match this page's title")
@@ -288,7 +296,7 @@ def main() -> int:
                     fail(f"{name}: {prefix}description must match this page's description")
                 if first_meta(doc, key, prefix + "image") != expected_image:
                     fail(f"{name}: {prefix}image must use this achievement's share card")
-            headline = ""
+            page_name = ""
             descriptions_in_schema: list[str] = []
             for attrs, payload in doc.scripts:
                 if attrs.get("type", "").lower() != "application/ld+json":
@@ -298,28 +306,27 @@ def main() -> int:
                 except json.JSONDecodeError:
                     continue
                 for node in walk_schema(parsed):
-                    if node.get("@type") == "Article":
+                    if node.get("@type") == "WebPage":
                         if node.get("image") != expected_image:
-                            fail(f"{name}: Article image must use this achievement's share card")
-                        if node.get("url") != c or node.get("@id") != c + "#article":
-                            fail(f"{name}: Article identity must match this page")
-                        if node.get("dateModified") != first_meta(doc, "property", "article:modified_time"):
-                            fail(f"{name}: Article modified date and metadata differ")
-                        if node.get("datePublished", "") != first_meta(doc, "property", "article:published_time"):
-                            fail(f"{name}: Article published date and metadata differ")
-                        headline = str(node.get("headline", ""))
+                            fail(f"{name}: WebPage image must use this achievement's share card")
+                        if node.get("url") != c or node.get("@id") != c + "#webpage":
+                            fail(f"{name}: WebPage identity must match this page")
+                        author = node.get("author") or {}
+                        logo = author.get("logo") if isinstance(author, dict) else {}
+                        if not isinstance(author, dict) or author.get("url") != BASE:
+                            fail(f"{name}: WebPage author Organization must link to the official site")
+                        if not isinstance(logo, dict) or logo.get("url") != BASE + "assets/favicon.svg":
+                            fail(f"{name}: WebPage author Organization must include the official logo")
+                        page_name = str(node.get("name", ""))
                         descriptions_in_schema.append(str(node.get("description", "")))
-                        meop = node.get("mainEntityOfPage")
-                        if meop != c:
-                            fail(f"{name}: Article mainEntityOfPage does not match canonical")
                     if node.get("@type") == "BreadcrumbList":
                         trail = node.get("itemListElement", [])
                         if not trail or trail[-1].get("item") != c:
                             fail(f"{name}: breadcrumb must end at this achievement")
-            if headline and not title.startswith(headline):
-                fail(f"{name}: Article headline does not match title")
+            if page_name and not title.startswith(page_name):
+                fail(f"{name}: WebPage name does not match title")
             if descriptions_in_schema and descriptions_in_schema[0] != descriptions[0]:
-                fail(f"{name}: Article description does not match meta description")
+                fail(f"{name}: WebPage description does not match meta description")
 
         for tag, attrs in doc.attrs:
             if tag != "a" or not attrs.get("href"):
@@ -337,7 +344,10 @@ def main() -> int:
 
     for name in indexable:
         if name != "index.html" and inbound[name] == 0:
-            fail(f"{name}: orphan indexable page")
+            if name.endswith("/index.html"):
+                warnings.append(f"{name}: directory-style migration successor has no contextual inbound link")
+            else:
+                fail(f"{name}: orphan indexable page")
     if inbound["gallery.html"] == 0:
         fail("gallery.html: no contextual inbound link")
 

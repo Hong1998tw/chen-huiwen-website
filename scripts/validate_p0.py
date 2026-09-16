@@ -10,7 +10,8 @@ index=json.loads((R/'data/search-index.json').read_text())
 assert index['count']==len(index['items'])
 assert len({c['url'] for c in index['items']})==len(index['items'])
 for c in index['items']:
- path=R/c['url'];assert path.parent==R and path.exists(),c['url']
+ path=R/c['url']; path=path/'index.html' if path.is_dir() else path
+ assert path.exists() and R in path.resolve().parents,c['url']
  doc=BeautifulSoup(path.read_text(),'html.parser');assert not doc.select_one('meta[name=robots][content*=noindex]')
 assert {c['url'] for c in index['items'] if c['type']=='政績'}=={'achievement-'+c['id']+'.html' for c in public}
 manifest=json.loads((R/'assets/og/manifest.json').read_text())

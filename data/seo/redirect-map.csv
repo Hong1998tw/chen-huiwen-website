@@ -17,3 +17,8 @@ legacy_path,legacy_title,new_path,action,seo_value,prerequisite,verification_sta
 /260709,八德滯洪池已具蓄水功能,/achievement-bade-detention.html,301,A,"新站已保留工程金額口徑與最新階段性防汛狀態",confirmed,"分列計畫總經費與採購決標，不將施工進度寫成完工"
 /7-12-38dbd1468054803f8e1ddc7550860f5c?pvs=21,五福市場職人展,/activity-market.html,301,B,"高度對應活動專頁已存在",confirmed,"內容高度對應"
 /0?v=2c8bd1468054802084f7000c0a7c3064&pvs=18,導航列,,404保留,D,"先觀察 Search Console／外部連結，不在 cutover 首日主動回410",partial,"Notion 內部資料庫 view 無獨立公開價值；先讓 GitHub Pages 正常404"
+/d13de1081a3a49219363e5a0ace2c83b?pvs=21,2026 鳳山選舉資訊中心,/election.html,301,A,existing migration stub and live election successor,confirmed,edge 直接承接，移除 GitHub Pages trailing-slash/client redirect chain
+/8-14-340-bc3304be04fa445d8423e6bd9764847a,仁武安居社會住宅申請資訊,/renwu-anju-social-housing/,301,A,existing migration stub and current successor,confirmed,GSC 有持續曝光；一對一 current successor
+/398bd146805480f98aecedb69d2e1070,鳳山八德滯洪池,/achievement-bade-detention.html,301,A,GSC query-page identity and verified successor,confirmed,修復仍有 clicks/impressions 的 404 legacy URL
+/16-396bd146805480b1ad78e832b20b6565,文龍路16巷,/achievement-wenlong-lane16.html,301,A,GSC query-page identity and verified successor,confirmed,修復仍有 clicks/impressions 的 404 legacy URL
+/mktexp26,五福市場職人展,/activity-market.html,301,B,historical site source and current successor,confirmed,舊版活動頁明確連結至該 slug；current activity page 承接同一 intent

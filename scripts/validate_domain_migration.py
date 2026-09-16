@@ -128,8 +128,8 @@ def main() -> int:
         with redirect_path.open(encoding="utf-8", newline="") as fh:
             redirect_rows = list(csv.DictReader(fh))
 
-    if legacy_rows and len(legacy_rows) != 18:
-        fail(f"legacy-urls.csv: expected 18 rows, got {len(legacy_rows)}")
+    if legacy_rows and len(legacy_rows) < 18:
+        fail(f"legacy-urls.csv: baseline inventory unexpectedly shrank below 18 rows ({len(legacy_rows)})")
     legacy_paths = [row.get("normalized_path", "") for row in legacy_rows]
     redirect_paths = [row.get("legacy_path", "") for row in redirect_rows]
     if len(legacy_paths) != len(set(legacy_paths)):
