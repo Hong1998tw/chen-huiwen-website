@@ -2,6 +2,7 @@
 (() => {
   const root = document.getElementById('achievement-map');
   if (!root) return;
+  root.classList.add('leaflet-container');
   const data = JSON.parse(document.getElementById('map-data').textContent);
   const PAGE_SIZE = 10;
   const controls = Object.fromEntries(['q','village','category','subcategory','status','year'].map((key, i) => [key, document.getElementById(['case-search','village-filter','category-filter','subcategory-filter','status-filter','year-filter'][i])]));
@@ -194,7 +195,25 @@
     return mapPromise;
   }
   if('IntersectionObserver' in window){
-    const mapObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}},{rootMargin:'240px 0px'});
+    let mapArmed = window.scrollY > 0;
+    const mapObserver=new IntersectionObserver(entries=>{
+      if(mapArmed && entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}
+    },{rootMargin:'0px 0px'});
     mapObserver.observe(root);
-  }else{ensureMap();}
+    const armMap=()=>{
+      mapArmed=true;
+      const rect=root.getBoundingClientRect();
+      if(rect.top < innerHeight && rect.bottom > 0){mapObserver.disconnect();ensureMap();}
+    };
+    window.addEventListener('scroll',armMap,{once:true,passive:true});
+    root.addEventListener('pointerenter',armMap,{once:true,passive:true});
+    root.addEventListener('pointerdown',armMap,{once:true,passive:true});
+    window.addEventListener('keydown',armMap,{once:true});
+  }else{
+    const armMap=()=>ensureMap();
+    window.addEventListener('scroll',armMap,{once:true,passive:true});
+    root.addEventListener('pointerenter',armMap,{once:true,passive:true});
+    root.addEventListener('pointerdown',armMap,{once:true,passive:true});
+    window.addEventListener('keydown',armMap,{once:true});
+  }
 })();

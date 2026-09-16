@@ -69,7 +69,7 @@ try{
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{
-  await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(2);await page.locator('#map-fit').click();assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
+  await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(2);await page.locator('#map-fit').click();await page.locator('#map-message').filter({hasText:/互動地圖暫時無法載入/}).waitFor();assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
  });
  await go();
  await check('All filters clear to the full source count and ten items per page',async()=>{

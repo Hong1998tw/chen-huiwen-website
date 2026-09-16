@@ -18,6 +18,10 @@ class SeoValidatorRegressionTests(unittest.TestCase):
     def make_site(self, temp_root: Path) -> None:
         for path in ROOT.glob("*.html"):
             copy2(path, temp_root / path.name)
+        for path in ROOT.glob("*/index.html"):
+            target = temp_root / path.relative_to(ROOT)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copy2(path, target)
         for name in ("sitemap.xml", "robots.txt"):
             copy2(ROOT / name, temp_root / name)
 
@@ -134,6 +138,10 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             for path in ROOT.glob("*.html")
             if path.name != "404.html"
         }
+        for path in ROOT.glob("*/index.html"):
+            text = path.read_text(encoding="utf-8")
+            if 'name="robots" content="noindex' not in text:
+                expected_locs.add(BASE + path.parent.name + "/")
         self.assertEqual(set(loc_to_lastmod), expected_locs)
         news_locs = {
             loc for loc in expected_locs

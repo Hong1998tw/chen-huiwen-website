@@ -23,9 +23,9 @@ def ext(url,title):return f'<a href="{E(url)}" target="_blank" rel="noopener nor
 def main_tags(c):return ''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'])
 def sub_tags(c):return ''.join(f'<span class="case-tag-sub">{E(t)}</span>' for t in c.get('subcategories',[]))
 def asset_version(path):return hashlib.sha256((R/path).read_bytes()).hexdigest()[:12]
-def page(file,title,description,body,head=''):
+def page(file,title,description,body,head='',og_type='website'):
  s=template
- for key,value in {'OG_TYPE':'article' if file.startswith('achievement-') else 'website','DIGITAL_STYLE_VERSION':asset_version('digital.css'),'DIGITAL_SCRIPT_VERSION':asset_version('digital.js')}.items():s=s.replace('{{'+key+'}}',value)
+ for key,value in {'OG_TYPE':og_type,'DIGITAL_STYLE_VERSION':asset_version('digital.css'),'DIGITAL_SCRIPT_VERSION':asset_version('digital.js')}.items():s=s.replace('{{'+key+'}}',value)
  for k,v in {'TITLE':E(title),'DESCRIPTION':E(description),'FILE':E(file),'BODY':body,'HEAD':head,'STYLE_VERSION':asset_version('styles.css'),'OG_IMAGE':E('assets/og/'+Path(file).stem+'.png'),'OG_ALT':E(('慧做事・政績地圖' if file=='achievements.html' else title)+'｜陳慧文・高雄市議員')}.items():s=s.replace('{{'+k+'}}',v)
  (R/file).write_text(s)
 def card(c):
@@ -67,15 +67,12 @@ for c in public_items:
   related_ids=[id for id in c['related'] if id in byid]
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
  body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">政績地圖</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head"><div class="wrap"><p class="eyebrow">政績與服務</p><div class="case-tags">{main_tags(c)}</div>{('<div class="case-subtags">'+sub_tags(c)+'</div>') if c.get('subcategories') else ''}<h1>{E(c['title'])}</h1>{('<p>'+E(c['summary'])+'</p>') if c['summary'] else ''}</div></section><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到政績列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
- structured={'@context':'https://schema.org','@type':'Article','headline':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':{'@type':'Organization','name':'陳慧文服務處'},'mainEntityOfPage':BASE+href(c['id']),'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
- structured['@id']=BASE+href(c['id'])+'#article'
- structured['url']=BASE+href(c['id'])
- article_meta='<meta property="article:modified_time" content="'+E(c['updated'])+'">'
+ organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
+ structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
  if c.get('published'):
   structured['datePublished']=c['published']
-  article_meta+='<meta property="article:published_time" content="'+E(c['published'])+'">'
  breadcrumbs={'@context':'https://schema.org','@type':'BreadcrumbList','itemListElement':[{'@type':'ListItem','position':1,'name':'首頁','item':BASE},{'@type':'ListItem','position':2,'name':'政績與追蹤紀錄','item':BASE+'achievements.html'},{'@type':'ListItem','position':3,'name':c['title'],'item':BASE+href(c['id'])}]}
- page(href(c['id']),c['title'],description,body,article_meta+'<script type="application/ld+json">'+json.dumps([structured,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>')
+ page(href(c['id']),c['title'],description,body,'<script type="application/ld+json">'+json.dumps([structured,breadcrumbs],ensure_ascii=False).replace('<','\\u003c')+'</script>',og_type='website')
 # Map page: all cards pre-rendered so reading never depends on map tiles or JavaScript.
 villages=sorted({f['properties']['name'] for f in geo['features']} | {v for c in public_items for v in c['villages']})
 scopes=sorted(set(x['scope'] for x in public_items if x['scope']!='鳳山區'))

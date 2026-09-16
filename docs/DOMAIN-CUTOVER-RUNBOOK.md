@@ -68,7 +68,7 @@ Proxy、SSL mode、cache 與 Redirect Rules 必須以 cutover 當下 Cloudflare 
 
 ### Bulk Redirects
 
-`data/seo/cloudflare-redirects.csv` 目前 15 筆 path-only 301 candidate：
+`data/seo/cloudflare-redirects.csv` 目前 20 筆 path-only 301 candidate：
 
 - source 不包含 query string。
 - `preserve_query=false`，用來清除舊 Notion `pvs` query。
@@ -161,7 +161,7 @@ Cloudflare Bulk Redirect source URL 不支援以 query string 作 source match�
 
 17. 在 GitHub Pages HTTPS 已穩定後，視計畫將 web records 改為 Proxied。
 18. 驗證 Cloudflare proxy 下首頁／主要頁／TLS 正常。
-19. 啟用 `cloudflare-redirects.csv` 對應的 15 筆 301 rules。
+19. 啟用 `cloudflare-redirects.csv` 對應的 20 筆 301 rules。
 20. 啟用 homepage `pvs=18` Single Redirect。
 21. 逐筆抽查 legacy status／Location，確認無 chain、無 query 汙染、無 mass-home。
 22. `/0?...` 維持 404，除非另有證據與決策。
