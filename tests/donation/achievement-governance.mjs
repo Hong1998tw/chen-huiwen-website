@@ -77,7 +77,8 @@ try{
   await go('achievements.html');await waitCases();
   await check(`${width}: overview layout, pagination and map availability`,async()=>{
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-   assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),source.length);
+   assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
+   assert((await page.locator('#case-count').textContent()).startsWith(`共 ${source.length} 個專題`));
    assert.equal(await page.locator('#case-list .case-card:visible').count(),Math.min(10,source.length));
    assert(await page.locator('#achievement-map').isVisible());
    await page.locator('#achievement-map').scrollIntoViewIfNeeded();

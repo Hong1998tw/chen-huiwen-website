@@ -23,17 +23,37 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
   await page.goto(base + 'index.html');
-  assert(await page.getByRole('heading', { name: '2026 鳳山選戰', exact: true }).isVisible());
-  assert.match(await page.locator('.campaign-entry-compact').innerText(), /勝選倒數/);
-  assert.match(await page.locator('.campaign-entry-compact').innerText(), /10\/23/);
-  assert.match(await page.locator('.campaign-entry-compact').innerText(), /11\/28/);
-  assert.equal(await page.locator('.campaign-entry-compact .campaign-nav-grid').count(), 0);
-  const countdownColor = await page.locator('.campaign-entry-compact .campaign-kicker').evaluate(el => getComputedStyle(el).color);
-  assert.match(countdownColor, /255/);
+  const heroStatus = page.locator('.hero-copy > .hero-election-status');
+  assert.equal(await heroStatus.count(), 1);
+  assert.match(await heroStatus.innerText(), /勝選倒數/);
+  assert.match(await heroStatus.innerText(), /2026\.11\.28/);
+  assert.doesNotMatch(await page.locator('main').innerText(), /10\/23|候選人姓名號次抽籤/);
+  assert.equal(await page.locator('.campaign-entry-compact').count(), 0);
+  assert.equal(await heroStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
+  const countdownColor = await heroStatus.locator('strong').evaluate(el => getComputedStyle(el).color);
+  assert.equal(countdownColor, 'rgb(213, 249, 124)');
   const account = await page.locator('.home-account').boundingBox();
   const contact = await page.locator('.home-contact').boundingBox();
   assert(account && contact && account.y < contact.y, 'political donation must appear before contact');
   assert(contact.y - (account.y + account.height) <= 12, 'donation and contact should read as one visual cluster');
+  const homeFacebook = page.locator('.home-facebook');
+  const homeFacebookBox = await homeFacebook.locator('.facebook-frame').boundingBox();
+  assert(homeFacebookBox && homeFacebookBox.height < 300, 'Facebook embed area must stay compact before opt-in');
+  assert.equal(await homeFacebook.locator('iframe').count(), 0);
+  assert(await homeFacebook.locator('[data-embed-load]').isVisible());
+
+  await page.goto(base + 'about.html');
+  const portrait = await page.locator('.about-portrait').boundingBox();
+  const profileName = await page.locator('.profile-name').boundingBox();
+  assert(portrait && profileName && portrait.width <= 120, 'mobile about portrait must remain compact');
+  assert(profileName.x > portrait.x + portrait.width, 'mobile about portrait must sit beside the profile name');
+
+  await page.goto(base + 'news.html');
+  const newsFacebook = page.locator('#facebook .facebook-frame');
+  const newsFacebookBox = await newsFacebook.boundingBox();
+  assert(newsFacebookBox && newsFacebookBox.height < 300, 'news Facebook card must stay compact before opt-in');
+  assert.equal(await newsFacebook.locator('iframe').count(), 0);
+  assert(await newsFacebook.locator('[data-embed-load]').isVisible());
 
   await page.goto(base + 'election.html');
   assert(await page.getByRole('heading', { name: '鳳山選舉資訊中心', exact: true }).isVisible());

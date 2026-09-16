@@ -29,7 +29,8 @@
  .hero-copy>.eyebrow{grid-column:2;grid-row:1;margin:0 0 12px;font-size:.875rem;line-height:1.65;letter-spacing:0;align-self:end}
  .hero-copy>.eyebrow .status-dot{display:none}
  .hero-copy>h1{grid-column:2;grid-row:2;margin:0;font-size:clamp(1.7rem,8.7vw,3.6rem);line-height:1.24;letter-spacing:-.045em;align-self:start;white-space:normal}
- .hero-copy>.hero-intro{grid-column:1/-1;grid-row:3;margin:20px 0 0;font-size:1rem;line-height:1.85;text-align:left}
+ .hero-copy>.hero-election-status{grid-column:1/-1;grid-row:3;justify-self:start}
+ .hero-copy>.hero-intro{grid-column:1/-1;grid-row:4;margin:20px 0 0;font-size:1rem;line-height:1.85;text-align:left}
  .hero-copy>.actions{grid-column:1/-1;grid-row:5;display:grid;grid-template-columns:1fr;gap:7px;width:100%}
  .hero-copy>.actions .button{width:100%;min-height:52px;padding:12px 18px;font-size:.95rem}
  .hero-copy>.actions .hero-link{display:flex;align-items:center;min-height:48px;padding:8px 2px;font-size:.9rem}
@@ -44,6 +45,20 @@
  .menu-ready .site-header nav>.global-search-trigger{grid-column:1/-1;position:static!important;right:auto!important;bottom:auto!important;width:100%!important;height:auto!important;min-height:52px;padding:12px 14px!important;justify-content:flex-start;border:0;border-radius:14px;background:var(--green-soft);box-shadow:none;font-size:.95rem}
  .menu-ready .site-header nav>.global-search-trigger span:nth-child(2){display:inline!important}
  .menu-ready .site-header nav>.global-search-trigger kbd{display:none!important}
+}
+
+/* About page: keep the portrait compact and beside the introduction on phones. */
+@media(max-width:780px){
+ .about-grid{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px 18px;align-items:start}
+ .about-portrait{grid-column:1;grid-row:1 / span 3;width:112px;max-width:112px;margin:0;position:static}
+ .about-portrait img{width:112px;border-radius:24px 0 0 0}
+ .about-portrait figcaption{padding:7px 0 0;font-size:.65rem;line-height:1.45}
+ .about-copy{display:contents}
+ .about-copy>.eyebrow{grid-column:2;grid-row:1;margin:0 0 2px;align-self:end;font-size:.72rem;letter-spacing:.08em}
+ .about-copy>.profile-name{grid-column:2;grid-row:2;margin:0;font-size:2rem;align-self:start}
+ .about-copy>.section-intro{grid-column:1/-1;grid-row:4;margin:8px 0 4px;font-size:1rem;line-height:1.8}
+ .about-copy>.profile-block,.about-copy>details,.about-copy>.source-note{grid-column:1/-1}
+ .about-copy>.profile-block{grid-row:5;margin-top:8px}
 }
 @media(max-width:380px){
  .menu-ready .site-header nav{left:10px;right:10px}.menu-ready .site-header nav>a{padding-inline:10px}

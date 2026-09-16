@@ -7,7 +7,7 @@
     const diff=Math.max(0,target-Date.now());
     countdown.textContent=String(Math.ceil(diff/86400000));
     const unit=document.getElementById('campaign-countdown-unit');
-    if(unit)unit.textContent=diff>0?'天，距離投票日':'投票日';
+    if(unit)unit.textContent=diff>0?'天':'投票日';
   };
   update();
   const timer=setInterval(update,60000);

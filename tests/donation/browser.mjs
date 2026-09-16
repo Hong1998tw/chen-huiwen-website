@@ -151,8 +151,11 @@ try {
     await check(`homepage ${width}px: election entry, portrait and CLS`, async () => {
       await page.goto(base + 'index.html');
       await page.waitForFunction(() => /^\d+$/.test(document.querySelector('#campaign-countdown')?.textContent || ''));
-      assert.match(await page.locator('.campaign-entry').innerText(), /勝選倒數/);
-      assert.match(await page.locator('.campaign-entry').innerText(), /候選人姓名號次抽籤/);
+      const electionStatus = page.locator('.hero-election-status');
+      assert.match(await electionStatus.innerText(), /勝選倒數/);
+      assert.match(await electionStatus.innerText(), /2026\.11\.28/);
+      assert.doesNotMatch(await page.locator('main').innerText(), /候選人姓名號次抽籤|10\/23/);
+      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
       const box = await img.boundingBox();
@@ -161,11 +164,11 @@ try {
       assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
       assert(box.x + box.width <= heading.x);
       if (width === 390) assert(box.width >= 140 && box.width <= 170);
-      const campaign = await page.locator('.campaign-entry').boundingBox();
+      const hero = await page.locator('.hero-grid').boundingBox();
       const header = await page.locator('.site-header').boundingBox();
-      assert(Math.abs(box.x - campaign.x) <= 1, 'portrait aligns with the content below');
-      assert(Math.abs(header.x - campaign.x) <= 1, 'header and content share their left edge');
-      assert(Math.abs(header.width - campaign.width) <= 1, 'header and content share their width');
+      assert(hero && header);
+      assert(hero.x >= header.x, 'hero stays within the page header alignment');
+      assert(hero.x + hero.width <= header.x + header.width, 'hero stays within the page header width');
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;

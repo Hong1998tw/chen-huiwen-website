@@ -23,6 +23,32 @@
   const clearFilters = section.querySelector('[data-filter-clear]');
   const selectedTopics = new Set();
   const selectedTags = new Set();
+  const reviewedMedia = [
+    {
+      title: '總質詢關注居服員安全、傳統市場再生與體育部設址高雄',
+      src: 'assets/news-20241129-general-interpellation.jpg',
+      width: 1200,
+      height: 800,
+      alt: '陳慧文於高雄市議會市政總質詢發言',
+      caption: '2024年11月29日，陳慧文於高雄市議會市政總質詢發言。圖／陳慧文議員服務處提供。',
+      source: 'https://n.yam.com/Article/20241130694798',
+      credit: '陳慧文議員服務處／提供'
+    }
+  ];
+  reviewedMedia.forEach(media => {
+    const card = [...grid.querySelectorAll('[data-news-categories]')].find(node => node.querySelector('h2')?.textContent.trim() === media.title);
+    if (!card || card.querySelector('.news-report-media')) return;
+    const figure = document.createElement('figure');
+    figure.className = 'news-report-media';
+    figure.dataset.photoSource = media.source;
+    figure.dataset.photoCredit = media.credit;
+    const image = document.createElement('img');
+    Object.assign(image,{src:media.src,alt:media.alt,width:media.width,height:media.height,loading:'lazy',decoding:'async'});
+    const caption = document.createElement('figcaption');
+    caption.textContent = media.caption;
+    figure.append(image,caption);
+    card.prepend(figure);
+  });
   const cards = [...grid.querySelectorAll('[data-news-categories]')].map((node,index) => {
     const source = node.querySelector('.card-body > .eyebrow, time[datetime]')?.textContent || node.textContent;
     const match = source.match(/(20\d{2})[.\/-](\d{2})[.\/-](\d{2})/);

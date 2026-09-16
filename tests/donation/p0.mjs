@@ -35,10 +35,10 @@ try{
   assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));
  });
  await page.setViewportSize({width:1440,height:1000});await go();
- await check('Overview counts agree with source and status stays distinct',async()=>{
-  await page.locator('.digital-dashboard').waitFor();assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),data.length);
-  await page.locator('.dashboard-status [data-filter="已完成"]').click();await count(data.filter(c=>c.status==='已完成').length);
-  assert.equal(Number(await page.locator('.digital-stat strong').first().textContent()),data.filter(c=>c.status==='已完成').length);
+ await check('Statistics overview is absent and status filter stays distinct',async()=>{
+  await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
+  assert.doesNotMatch(await page.locator('main').innerText(),/政績統計總覽/);
+  await page.locator('#status-filter').selectOption('已完成');await count(data.filter(c=>c.status==='已完成').length);
   assert.equal(await page.locator('#status-filter').inputValue(),'已完成');await page.locator('#reset-map-filters').click();
  });
  await check('History-only search, multiple tokens and IME composition',async()=>{
@@ -64,7 +64,7 @@ try{
   await page.locator('#reset-map-filters').click();
  });
  await check('Shared query reload, deep case links and invalid query resilience',async()=>{
-  await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.digital-dashboard').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.locator('.digital-dashboard').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
+  await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.map-insight-panel').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
   await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h3').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
@@ -76,8 +76,8 @@ try{
   await page.locator('#case-search').fill('qzx-no-match');await count(0);assert(await page.locator('#case-empty').isVisible());await page.locator('[data-clear-filters]').click();await count(data.length);assert.equal(await page.locator('#case-list .case-card:visible').count(),10);
   await page.getByRole('button',{name:'下一頁',exact:true}).click();assert.equal(await page.locator('#case-list .case-card:visible').count(),10);assert(new URL(page.url()).searchParams.get('page')==='2');
  });
- await check('WCAG AA: dashboard, map panel and search dialog',async()=>{
-  const axe=await new AxeBuilder({page}).include('.digital-dashboard').include('.map-insight-panel').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(axe.violations.map(v=>v.id),[]);
+ await check('WCAG AA: filters, map panel and search dialog',async()=>{
+  const axe=await new AxeBuilder({page}).include('.map-controls').include('.map-insight-panel').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(axe.violations.map(v=>v.id),[]);
   await page.keyboard.press('Control+k');await page.locator('#global-search-dialog input').fill('文德');await page.locator('.global-search-result').first().waitFor();
   const a=await new AxeBuilder({page}).include('#global-search-dialog').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();await writeFile(new URL('p0-axe.json',out),JSON.stringify(a.violations,null,2));assert.deepEqual(a.violations.map(v=>v.id),[]);await page.keyboard.press('Escape');
  });
@@ -92,15 +92,15 @@ try{
   await page.emulateMedia({reducedMotion:'reduce'});await go('achievement-fengshan-station-overview.html');await page.locator('.case-timeline .is-visible').first().waitFor();assert.equal(await page.locator('.case-timeline>li:not(.is-visible)').count(),0);assert.equal(await page.locator('.case-timeline>li').first().evaluate(el=>getComputedStyle(el).transform),'none');
   const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),data.length);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
  });
- await go();await page.locator('.digital-dashboard').waitFor();await page.screenshot({path:root+'tests/donation/results/desktop-dashboard.png'});
+ await go();await page.locator('.map-insight-panel').waitFor();await page.screenshot({path:root+'tests/donation/results/desktop-achievements.png'});
  await page.locator('#achievement-map').scrollIntoViewIfNeeded();await page.locator('.leaflet-container').waitFor({state:'visible'});await page.screenshot({path:root+'tests/donation/results/desktop-map.png'});
  for(const width of [1440,390]){
-  await page.setViewportSize({width,height:width===390?844:1000});await go();await page.locator('.digital-dashboard').waitFor();
+  await page.setViewportSize({width,height:width===390?844:1000});await go();await page.locator('.map-insight-panel').waitFor();
   await check(`P0 layout ${width}px: no overflow`,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
-  await page.locator('.digital-dashboard').screenshot({path:root+`tests/donation/results/dashboard-${width}.png`});
+  await page.locator('.map-controls').screenshot({path:root+`tests/donation/results/filters-${width}.png`});
   await page.keyboard.press('Control+k');await page.locator('#global-search-dialog input').fill('鳳山車站');await page.locator('.global-search-result').first().waitFor();await page.screenshot({path:root+`tests/donation/results/search-${width}.png`});await page.keyboard.press('Escape');
  }
- await go();await page.locator('.digital-dashboard').waitFor();
+ await go();await page.locator('.map-insight-panel').waitFor();
  await check('Warm interactive search updates within 500ms in local Chromium',async()=>{const start=performance.now();await page.locator('#case-search').fill('文德國小');await count(1);report.metrics.liveSearchMs=Math.round(performance.now()-start);assert(report.metrics.liveSearchMs<500);});
 }finally{await browser.close();server.kill();await writeFile(new URL('p0-report.json',out),JSON.stringify(report,null,2));}
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;

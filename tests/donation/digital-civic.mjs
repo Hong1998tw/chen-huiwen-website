@@ -31,6 +31,7 @@ try {
   await page.goto(base + 'index.html');
   await check('global search opens with Ctrl+K and finds achievement', async () => {
     const trigger = page.getByRole('button', { name: '搜尋陳慧文官網' });
+    await trigger.waitFor({ state: 'attached' });
     assert.equal(await trigger.count(), 1);
     await page.keyboard.press('Control+k');
     const dialog = page.locator('#global-search-dialog');
@@ -71,11 +72,9 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
 
   await page.goto(base + 'achievements.html');
-  await check('achievement dashboard derives from source data', async () => {
-    const dashboard = page.locator('.digital-dashboard');
-    await dashboard.waitFor({ state: 'visible' });
-    assert.equal(await dashboard.locator('.digital-stat').count(), 4);
-    assert.equal(Number(await dashboard.locator('.digital-stat strong').first().textContent()), items.length);
+  await check('achievement statistics overview is removed while map insight remains', async () => {
+    assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(), 0);
+    assert.doesNotMatch(await page.locator('main').innerText(), /政績統計總覽/);
     await page.locator('.map-insight-panel').waitFor({ state: 'visible' });
   });
   await check('achievement live search and ten-item pagination remain functional', async () => {
@@ -97,6 +96,16 @@ try {
     assert.match(await visible.first().textContent(), /毛動力嘟嘟車消費爭議協助/);
     assert((await visible.first().boundingBox()).height < 360);
     await page.locator('#reset-map-filters').click();
+  });
+
+  await page.goto(base + 'news.html');
+  await check('reviewed same-event news photo carries source and credit metadata', async () => {
+    await page.locator('#news-search').fill('居服員安全');
+    const figure = page.locator('[data-photo-source="https://n.yam.com/Article/20241130694798"]');
+    await figure.waitFor({ state: 'attached' });
+    assert.equal(await figure.getAttribute('data-photo-credit'), '陳慧文議員服務處／提供');
+    assert.match(await figure.locator('img').getAttribute('src'), /news-20241129-general-interpellation\.jpg$/);
+    assert.match(await figure.locator('figcaption').innerText(), /2024年11月29日/);
   });
 
   await page.goto(base + 'explore.html?type=village&value=' + encodeURIComponent('文德里'));

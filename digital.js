@@ -129,47 +129,19 @@
     } finally { clearTimeout(timeout); }
   }
 
-  function installAchievementDashboard() {
+  function installAchievementInsights() {
     const api = window.HuiwenCases;
-    const controls = document.querySelector('.map-controls');
-    if (!controls || document.querySelector('.digital-dashboard')?.dataset.ready === 'true') return;
-    if (!api) { document.addEventListener('huiwen:cases-change', installAchievementDashboard, {once:true}); return; }
-    const dashboard = document.getElementById('achievement-dashboard') || document.createElement('section');
-    dashboard.dataset.ready = 'true';
-    dashboard.className = 'wrap digital-dashboard';
-    dashboard.setAttribute('aria-labelledby','dashboard-title');
-    dashboard.innerHTML = `<div class="dashboard-heading"><div><h2 id="dashboard-title">政績統計總覽</h2><p>看看慧文關心哪些地方、推動哪些事。點選圖表可篩選紀錄。</p></div><button type="button" class="share-current-page">分享目前篩選</button></div><div class="digital-dashboard-grid"></div><div class="dashboard-charts"><div><h3>主題分布</h3><div class="digital-dashboard-topics chart-bars"></div></div><div><h3>進度分布</h3><div class="dashboard-status chart-bars"></div></div><div><h3>歷程年度</h3><div class="dashboard-years chart-bars"></div></div></div><p class="dashboard-note">件數代表收錄專題；同一專題可跨主題、里別與年度，分布加總可能超過總件數。年度依歷程記載，不代表完工年度。</p>`;
-    if (!dashboard.isConnected) controls.before(dashboard);
-    dashboard.querySelector('.share-current-page').addEventListener('click',shareCurrentPage);
-    const insight = document.createElement('aside');
+    const map = document.getElementById('achievement-map');
+    const existing = document.querySelector('.map-insight-panel');
+    if (!map || existing?.dataset.ready === 'true') return;
+    if (!api) { document.addEventListener('huiwen:cases-change', installAchievementInsights, {once:true}); return; }
+    const insight = existing || document.createElement('aside');
+    insight.dataset.ready = 'true';
     insight.className = 'map-insight-panel'; insight.setAttribute('aria-label','地圖資訊');
-    document.getElementById('achievement-map').after(insight);
-    const full = api.getState().data;
-    const topics = [...new Set(full.flatMap(c=>c.categories))];
-    const statuses = [...new Set(full.map(c=>c.status))];
-    const years = [...new Set(full.flatMap(c=>c.years))].sort().reverse();
-    function chart(selector, labels, field, selected, visible, key) {
-      const box=dashboard.querySelector(selector);box.replaceChildren();
-      const numbers=labels.map(label=>visible.filter(c=>Array.isArray(c[field])?c[field].includes(label):c[field]===label).length);
-      const max=Math.max(1,...numbers);
-      labels.forEach((label,i)=>{
-        const button=document.createElement('button');button.type='button';button.className='chart-row';button.dataset.filter=label;
-        button.setAttribute('aria-pressed',String(selected===label));
-        button.setAttribute('aria-label',`${label}，${numbers[i]} 個專題，點選篩選`);
-        button.innerHTML=`<span class="chart-label">${escapeHTML(label)}</span><span class="chart-track" aria-hidden="true"><span style="width:${numbers[i]/max*100}%"></span></span><strong>${numbers[i]}</strong>`;
-        button.addEventListener('click',()=>{api.setFilter(key,selected===label?'all':label);dashboard.querySelector(selector).querySelectorAll('button')[i]?.focus();});
-        box.append(button);
-      });
-    }
+    if (!insight.isConnected) map.after(insight);
     function render() {
       const {visible,selectedId,groupIds,filters}=api.getState();
-      const villages=new Set(visible.flatMap(c=>c.villages));
       const mapped=visible.filter(c=>c.coordinates).length;
-      const topicCount=new Set(visible.flatMap(c=>c.categories)).size;
-      dashboard.querySelector('.digital-dashboard-grid').innerHTML=[[visible.length,'政績與服務紀錄'],[villages.size,'涵蓋里別'],[topicCount,'關注主題'],[mapped,'可在地圖查看']].map(([n,label])=>`<div class="digital-stat"><strong>${n}</strong><span>${label}</span></div>`).join('');
-      chart('.digital-dashboard-topics',topics,'categories',filters.category,visible,'category');
-      chart('.dashboard-status',statuses,'status',filters.status,visible,'status');
-      chart('.dashboard-years',years,'years',filters.year,visible,'year');
       const item=visible.find(c=>c.id===selectedId);
       if(item){
         const latest=item.history.at(-1);
@@ -272,7 +244,7 @@
   addHeadAssets();
   registerServiceWorker();
   buildSearchUI();
-  installAchievementDashboard();
+  installAchievementInsights();
   installTimelineReveal();
   addAchievementRelations();
   setupInstallPrompt();
