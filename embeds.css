@@ -1,0 +1,32 @@
+/* Auto-loaded third-party embeds with explicit reload and direct-link fallbacks. */
+.external-embed .embed-intro>p{margin:0 0 10px;color:var(--muted);font-size:.86rem;line-height:1.65}
+.external-embed[data-loaded="true"] .embed-intro>p{display:none}
+.external-embed .embed-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.external-embed .embed-actions .button{width:auto;min-height:40px;padding:8px 14px;border:1px solid var(--line);background:#fff;color:var(--green);font-size:.82rem;gap:8px}
+.external-embed .embed-actions .text-link{min-height:40px;display:inline-flex;align-items:center;font-size:.84rem}
+.external-embed [data-embed-status]{min-height:0;margin:8px 0 0;color:var(--muted);font-size:.78rem;line-height:1.55}
+.external-embed [data-embed-status]:empty{display:none}
+
+.home-facebook .facebook-frame.external-embed{width:100%;max-width:500px;min-height:0;padding:14px;border:1px solid var(--line);border-radius:18px;background:#fff;justify-self:center;overflow:hidden}
+.home-facebook .facebook-frame .embed-actions{justify-content:flex-end}
+.home-facebook .facebook-frame .embed-slot{width:100%;max-width:500px;margin:10px auto 0;overflow:hidden;border-radius:13px;background:#f6f8f5}
+.home-facebook .facebook-frame .embed-slot iframe{display:block;width:100%;height:600px;max-width:100%;border:0}
+
+.social-section .facebook-frame.external-embed{width:100%;max-width:500px;padding:14px;border:1px solid var(--line);border-radius:18px;background:#fff;justify-self:center}
+.social-section .facebook-frame .embed-actions{justify-content:flex-end}
+.social-section .facebook-frame .embed-slot{margin-top:10px;overflow:hidden;border-radius:13px;background:#f6f8f5}
+.social-section .facebook-frame .embed-slot iframe{display:block;width:100%;height:600px;border:0}
+
+.schedule-auto-embed{margin:0}
+.schedule-auto-embed:not([data-loaded="true"]) .canva-frame{display:none}
+.schedule-auto-embed .canva-frame{width:100%;margin:0}
+.schedule-auto-embed .embed-intro{margin-top:10px}
+.schedule-auto-embed .embed-actions{justify-content:flex-end}
+
+@media(max-width:780px){
+  .home-facebook .facebook-frame.external-embed,.social-section .facebook-frame.external-embed{max-width:none;padding:10px;border-radius:14px}
+  .home-facebook .facebook-frame .embed-actions,.social-section .facebook-frame .embed-actions{justify-content:space-between;flex-direction:row;align-items:center}
+  .home-facebook .facebook-frame .embed-actions .button,.home-facebook .facebook-frame .embed-actions .text-link,.social-section .facebook-frame .embed-actions .button,.social-section .facebook-frame .embed-actions .text-link{width:auto;flex:0 1 auto;font-size:.78rem;text-align:left}
+  .home-facebook .facebook-frame .embed-slot iframe,.social-section .facebook-frame .embed-slot iframe{height:560px}
+  .schedule-auto-embed .embed-actions{justify-content:space-between}
+}

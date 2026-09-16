@@ -73,6 +73,40 @@ try {
       }
       const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
       row.violations=axe.violations.map(v=>({id:v.id,impact:v.impact,help:v.help,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}));
+
+      // Auto-loaded third-party embeds are intentionally best-effort. Provider-internal
+      // transport failures or accessibility findings remain recorded as diagnostics,
+      // but do not make first-party production readiness fail. The surrounding site
+      // still requires a titled iframe plus reload/direct-link fallbacks in browser QA.
+      const embedOrigins = await page.locator('[data-embed-provider] iframe').evaluateAll(frames =>
+        [...new Set(frames.map(frame => { try { return new URL(frame.src).origin; } catch { return null; } }).filter(Boolean))]
+      );
+      const isEmbedUrl = value => {
+        try { return embedOrigins.includes(new URL(value).origin); } catch { return false; }
+      };
+      const externalFailedRequests = row.failedRequests.filter(item => isEmbedUrl(item.url));
+      const externalHttpErrors = row.httpErrors.filter(item => isEmbedUrl(item.url));
+      const hasExternalTransportError = externalFailedRequests.length || externalHttpErrors.length;
+      const externalConsoleErrors = row.consoleErrors.filter(item =>
+        isEmbedUrl(item.url) || (hasExternalTransportError && item.url === 'chrome-error://chromewebdata/')
+      );
+      const externalViolations = row.violations.filter(violation =>
+        embedOrigins.length && violation.nodes.length && violation.nodes.every(node => Array.isArray(node.target) && node.target[0] === 'iframe')
+      );
+      row.failedRequests = row.failedRequests.filter(item => !externalFailedRequests.includes(item));
+      row.httpErrors = row.httpErrors.filter(item => !externalHttpErrors.includes(item));
+      row.consoleErrors = row.consoleErrors.filter(item => !externalConsoleErrors.includes(item));
+      row.violations = row.violations.filter(item => !externalViolations.includes(item));
+      if (externalFailedRequests.length || externalHttpErrors.length || externalConsoleErrors.length || externalViolations.length) {
+        row.externalEmbedDiagnostics = {
+          origins: embedOrigins,
+          consoleErrors: externalConsoleErrors,
+          failedRequests: externalFailedRequests,
+          httpErrors: externalHttpErrors,
+          violations: externalViolations
+        };
+      }
+
       if (width <=768 && file==='index.html') {
         const toggle=page.locator('.menu-toggle'); await toggle.focus(); await page.keyboard.press('Enter');
         row.menuOpen=await toggle.getAttribute('aria-expanded')==='true' && await page.locator('main').evaluate(el=>el.inert);

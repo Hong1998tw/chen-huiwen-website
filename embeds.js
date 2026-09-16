@@ -1,54 +1,72 @@
 'use strict';
-// Opt-in preserves remote content without loading third parties on every visit.
 (() => {
   const origins = { facebook: 'https://www.facebook.com', canva: 'https://www.canva.com' };
-  const legacyFacebook = document.querySelector('#facebook .facebook-frame:has(#load-facebook)');
-  if (legacyFacebook) {
-    legacyFacebook.dataset.embedProvider = 'facebook';
-    legacyFacebook.classList.add('external-embed');
-    const button = legacyFacebook.querySelector('#load-facebook');
-    const template = legacyFacebook.querySelector('#facebook-template');
-    const slot = legacyFacebook.querySelector('#facebook-content');
-    if (button) button.dataset.embedLoad = '';
-    if (slot) slot.classList.add('embed-slot');
-    if (template && !legacyFacebook.querySelector('[data-embed-status]')) {
-      const status = document.createElement('p');
-      status.dataset.embedStatus = '';
-      status.setAttribute('role','status');
-      slot?.after(status);
-    }
-  }
+
+  const innerWidth = element => {
+    const style = getComputedStyle(element);
+    const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    return Math.max(180, Math.floor(element.clientWidth - padding));
+  };
+
   document.querySelectorAll('[data-embed-provider]').forEach(container => {
+    const provider = container.dataset.embedProvider;
     const button = container.querySelector('[data-embed-load]');
     const template = container.querySelector('template');
     const slot = container.querySelector('.embed-slot');
     const status = container.querySelector('[data-embed-status]');
-    if (!button || !template || !slot || !status) return;
-    button.hidden = false;
+    if (!origins[provider] || !template || !slot || !status) return;
+
+    if (button) {
+      button.hidden = false;
+      button.textContent = '重新載入';
+    }
+
     let timer;
-    button.addEventListener('click', () => {
+    const load = () => {
       const frame = template.content.querySelector('iframe')?.cloneNode(true);
       if (!frame) return;
       const url = new URL(frame.src, document.baseURI);
-      if (url.protocol !== 'https:' || url.origin !== origins[container.dataset.embedProvider]) return;
-      if (container.dataset.embedProvider === 'facebook') {
-        url.searchParams.set('width', String(Math.max(180, Math.min(500, Math.floor(container.clientWidth)))));
+      if (url.protocol !== 'https:' || url.origin !== origins[provider]) return;
+
+      if (provider === 'facebook') {
+        const width = Math.min(500, innerWidth(container));
+        url.searchParams.set('width', String(width));
+        frame.setAttribute('width', String(width));
       }
+
       clearTimeout(timer);
       frame.src = url.href;
       frame.loading = 'eager';
       frame.referrerPolicy = 'strict-origin-when-cross-origin';
-      status.textContent = '正在連線至外部服務；也可使用原站連結閱讀。';
+      status.textContent = '正在載入外部內容…';
+
       frame.addEventListener('load', () => {
         clearTimeout(timer);
-        status.textContent = '若內容未顯示，請使用原站連結，或重新載入。';
-      }, {once:true});
+        status.textContent = '';
+      }, { once: true });
+      frame.addEventListener('error', () => {
+        clearTimeout(timer);
+        status.textContent = '外部內容載入失敗，可重新載入或使用原站連結。';
+      }, { once: true });
+
       slot.replaceChildren(frame);
       container.dataset.loaded = 'true';
-      button.textContent = '重新載入';
       timer = setTimeout(() => {
-        status.textContent = '外部服務回應較慢，請使用原站連結，或重新載入。';
-      }, 10000);
-    });
+        status.textContent = '若內容未顯示，可重新載入或使用原站連結。';
+      }, 12000);
+    };
+
+    button?.addEventListener('click', load);
+
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        observer.disconnect();
+        load();
+      }, { rootMargin: '120px 0px' });
+      observer.observe(container);
+    } else {
+      load();
+    }
   });
 })();
