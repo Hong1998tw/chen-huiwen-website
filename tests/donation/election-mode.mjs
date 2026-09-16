@@ -37,10 +37,11 @@ try {
   assert(account && contact && account.y < contact.y, 'political donation must appear before contact');
   assert(contact.y - (account.y + account.height) <= 12, 'donation and contact should read as one visual cluster');
   const homeFacebook = page.locator('.home-facebook');
-  const homeFacebookBox = await homeFacebook.locator('.facebook-frame').boundingBox();
-  assert(homeFacebookBox && homeFacebookBox.height < 300, 'Facebook embed area must stay compact before opt-in');
-  assert.equal(await homeFacebook.locator('iframe').count(), 0);
-  assert(await homeFacebook.locator('[data-embed-load]').isVisible());
+  await homeFacebook.locator('iframe').waitFor({ state: 'attached' });
+  assert.equal(await homeFacebook.locator('iframe').count(), 1, 'homepage Facebook should auto-load');
+  assert(await homeFacebook.locator('[data-embed-load]').isVisible(), 'homepage Facebook keeps a reload fallback');
+  const homeFrameBox = await homeFacebook.locator('.facebook-frame').boundingBox();
+  assert(homeFrameBox && homeFrameBox.x >= 0 && homeFrameBox.x + homeFrameBox.width <= 390, 'homepage Facebook stays inside mobile viewport');
 
   await page.goto(base + 'about.html');
   const portrait = await page.locator('.about-portrait').boundingBox();
@@ -50,10 +51,9 @@ try {
 
   await page.goto(base + 'news.html');
   const newsFacebook = page.locator('#facebook .facebook-frame');
-  const newsFacebookBox = await newsFacebook.boundingBox();
-  assert(newsFacebookBox && newsFacebookBox.height < 300, 'news Facebook card must stay compact before opt-in');
-  assert.equal(await newsFacebook.locator('iframe').count(), 0);
-  assert(await newsFacebook.locator('[data-embed-load]').isVisible());
+  await newsFacebook.locator('iframe').waitFor({ state: 'attached' });
+  assert.equal(await newsFacebook.locator('iframe').count(), 1, 'news Facebook should auto-load');
+  assert(await newsFacebook.locator('[data-embed-load]').isVisible(), 'news Facebook keeps a reload fallback');
 
   await page.goto(base + 'election.html');
   assert(await page.getByRole('heading', { name: '鳳山選舉資訊中心', exact: true }).isVisible());

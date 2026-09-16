@@ -199,6 +199,12 @@ try {
       await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({state:'visible'});
       assert(await page.locator('.leaflet-container').isVisible());
+      if (width === 390) {
+        const controls = await page.locator('.map-controls').boundingBox();
+        const map = await page.locator('#achievement-map').boundingBox();
+        assert(controls && controls.height < 350, `mobile map filters too tall: ${controls?.height}`);
+        assert(map && map.height >= 520, `mobile map too short: ${map?.height}`);
+      }
     });
 
     await check(`news media controls ${width}px`, async () => {
@@ -248,6 +254,8 @@ try {
       const monthly = await page.locator('.monthly-schedule').boundingBox();
       assert(legal && monthly && legal.y < monthly.y);
       assert.equal(await page.locator('.monthly-schedule a[href*="canva.com"]').count(), 0);
+      assert.equal(await page.locator('.schedule-auto-embed iframe').count(), 1, 'lawyer schedule should auto-load');
+      assert(await page.locator('.schedule-auto-embed [data-embed-load]').isVisible(), 'lawyer schedule keeps a reload fallback');
       assert((await page.locator('.schedule-phone-cta').boundingBox()).height >= 60);
       await page.goto(base + 'about.html');
       for (const href of ['https://www.facebook.com/hwcfs/','https://www.threads.com/@huiwen.ifs','https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028']) assert.equal(await page.locator(`.social-grid a[href="${href}"]`).count(), 1);
