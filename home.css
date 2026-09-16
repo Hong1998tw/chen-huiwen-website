@@ -85,3 +85,34 @@
  .home-office-hours dd{margin:0}
  .home-contact-actions{gap:10px}
 }
+
+/* Compact election status belongs to the hero message, directly below the slogan. */
+.hero-election-status{display:inline-flex;align-items:baseline;gap:10px;max-width:100%;margin:0 0 24px;padding:10px 14px;border:1px solid rgba(255,255,255,.38);border-radius:999px;background:#033f37;color:#fff;font-size:.9rem;font-weight:750;line-height:1.4;transition:background .2s,transform .2s}
+.hero-election-status:hover{background:#022f2a;transform:translateY(-1px)}
+.hero-election-status strong{min-width:2ch;color:var(--yellow);font-size:1.35rem;font-variant-numeric:tabular-nums;text-align:right}
+.hero-election-status time{padding-left:10px;border-left:1px solid rgba(255,255,255,.3);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+/* Facebook is a compact opt-in card until the visitor explicitly loads the feed. */
+.home-facebook{grid-template-columns:minmax(0,1fr) minmax(300px,.85fr);gap:24px 36px;align-items:center;padding:32px 36px}
+.home-facebook .facebook-heading .eyebrow{margin-bottom:8px}
+.home-facebook .facebook-heading h2{margin-bottom:8px}
+.home-facebook .facebook-heading p:last-child{margin:0;color:var(--muted)}
+.home-facebook .facebook-frame{width:100%;max-width:none;min-height:0;padding:22px;border:1px solid var(--line);border-radius:18px;background:var(--green-soft);justify-self:stretch}
+.home-facebook .embed-intro p{margin:0 0 12px;color:var(--muted);font-size:.9rem}
+.home-facebook .embed-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.home-facebook .embed-actions .button{min-height:46px;padding:9px 18px}
+.home-facebook .embed-slot:empty,.home-facebook [data-embed-status]:empty{display:none}
+.home-facebook .embed-slot:not(:empty){margin-top:18px}
+.home-facebook iframe{width:100%;height:600px}
+.home-facebook [data-embed-status]{margin:10px 0 0;color:var(--muted);font-size:.82rem}
+@media(max-width:900px){.home-facebook{grid-template-columns:1fr}.facebook-heading{text-align:left}}
+@media(max-width:780px){
+ .hero-election-status{gap:7px;margin:12px 0 0;padding:8px 11px;font-size:.76rem;white-space:nowrap}
+ .hero-election-status strong{font-size:1.05rem}
+ .hero-election-status time{padding-left:7px}
+ .home-facebook{padding:22px;gap:16px}
+ .home-facebook .facebook-heading,.home-facebook .source-note{padding-inline:0}
+ .home-facebook .facebook-frame{width:100%;padding:18px}
+ .home-facebook .embed-actions{align-items:stretch;flex-direction:column}
+ .home-facebook .embed-actions .button,.home-facebook .embed-actions .text-link{width:100%;justify-content:center;text-align:center}
+}

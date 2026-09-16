@@ -2,6 +2,22 @@
 // Opt-in preserves remote content without loading third parties on every visit.
 (() => {
   const origins = { facebook: 'https://www.facebook.com', canva: 'https://www.canva.com' };
+  const legacyFacebook = document.querySelector('#facebook .facebook-frame:has(#load-facebook)');
+  if (legacyFacebook) {
+    legacyFacebook.dataset.embedProvider = 'facebook';
+    legacyFacebook.classList.add('external-embed');
+    const button = legacyFacebook.querySelector('#load-facebook');
+    const template = legacyFacebook.querySelector('#facebook-template');
+    const slot = legacyFacebook.querySelector('#facebook-content');
+    if (button) button.dataset.embedLoad = '';
+    if (slot) slot.classList.add('embed-slot');
+    if (template && !legacyFacebook.querySelector('[data-embed-status]')) {
+      const status = document.createElement('p');
+      status.dataset.embedStatus = '';
+      status.setAttribute('role','status');
+      slot?.after(status);
+    }
+  }
   document.querySelectorAll('[data-embed-provider]').forEach(container => {
     const button = container.querySelector('[data-embed-load]');
     const template = container.querySelector('template');

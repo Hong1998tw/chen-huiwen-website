@@ -36,15 +36,30 @@ index = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html5l
 election = BeautifulSoup((ROOT / "election.html").read_text(encoding="utf-8"), "html5lib")
 activities = BeautifulSoup((ROOT / "activities.html").read_text(encoding="utf-8"), "html5lib")
 
-if not index.select_one(".campaign-entry-compact"):
-    failures.append("index.html: homepage election module must remain compact")
-if index.select_one(".campaign-entry-compact .campaign-nav-grid"):
-    failures.append("index.html: five election navigation cards must not appear on homepage")
+hero_status = index.select_one(".hero-copy > .hero-election-status")
+if not hero_status:
+    failures.append("index.html: homepage election status must sit directly inside the hero copy")
+else:
+    status_text = hero_status.get_text(" ", strip=True)
+    if "勝選倒數" not in status_text or "2026.11.28" not in status_text:
+        failures.append("index.html: hero election status must show the countdown and election date")
+    if "10/23" in status_text or "候選人姓名號次抽籤" in status_text:
+        failures.append("index.html: hero election status must not include the candidate-number draw")
+    heading = index.select_one(".hero-copy > h1")
+    if heading and heading.find_next_sibling() is not hero_status:
+        failures.append("index.html: hero election status must immediately follow the slogan")
+if index.select_one(".campaign-entry-compact"):
+    failures.append("index.html: legacy standalone election module must be removed")
 if len(election.select(".campaign-nav-card")) != 5:
     failures.append("election.html: full election center must expose five navigation cards")
 for selector in ("#campaign-platforms", "#campaign-tracking", "#campaign-events"):
     if not election.select_one(selector):
         failures.append(f"election.html: missing full election content container {selector}")
+achievements = BeautifulSoup((ROOT / "achievements.html").read_text(encoding="utf-8"), "html5lib")
+if achievements.select_one("#achievement-dashboard, .digital-dashboard, .map-stats"):
+    failures.append("achievements.html: statistics overview must not be rendered")
+if "政績統計總覽" in achievements.get_text(" ", strip=True):
+    failures.append("achievements.html: statistics overview copy must be removed")
 heading = activities.find("h1")
 if not heading or heading.get_text(" ", strip=True) != "公開行程與活動":
     failures.append("activities.html: public heading must be 公開行程與活動")

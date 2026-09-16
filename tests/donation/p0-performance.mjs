@@ -13,7 +13,7 @@ try{
    const c=await browser.newContext({viewport:{width,height:width===390?844:1000}});
    await c.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
    await c.addInitScript(()=>{window.metrics={lcp:0,shifts:[]};new PerformanceObserver(l=>{for(const e of l.getEntries())window.metrics.lcp=e.startTime;}).observe({type:'largest-contentful-paint',buffered:true});new PerformanceObserver(l=>{for(const e of l.getEntries())if(!e.hadRecentInput)window.metrics.shifts.push({t:e.startTime,value:e.value});}).observe({type:'layout-shift',buffered:true});});
-   const p=await c.newPage();await p.goto(base+path);await p.locator('.global-search-trigger').waitFor({state:'attached'});if(path==='achievements.html')await p.locator('.digital-dashboard').waitFor();
+   const p=await c.newPage();await p.goto(base+path);await p.locator('.global-search-trigger').waitFor({state:'attached'});if(path==='achievements.html')await p.locator('.map-insight-panel').waitFor();
    await p.waitForTimeout(1000);
    const v=await p.evaluate(()=>{const m=window.metrics;let cls=0,session=0,start=0,last=0;for(const e of m.shifts){if(session&&e.t-last<1000&&e.t-start<=5000)session+=e.value;else{session=e.value;start=e.t;}last=e.t;cls=Math.max(cls,session);}return {lcpMs:Math.round(m.lcp),cls:Number(cls.toFixed(4)),resourceBytes:performance.getEntriesByType('resource').reduce((s,e)=>s+e.encodedBodySize,0)};});
    reports.push({version:label,width,page:path,...v});await c.close();

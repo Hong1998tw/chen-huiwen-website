@@ -116,3 +116,21 @@
  .news-multiselect-menu{position:static;width:100%;max-width:none;max-height:260px;margin-top:6px;box-shadow:none}
  .news-filter-clear{width:100%}
 }
+
+/* Keep social follow-up compact until the visitor opts in to the third-party feed. */
+.social-section{margin-block:34px 64px;padding:32px 36px;border:1px solid var(--line);border-radius:24px;background:#fff;grid-template-columns:minmax(0,1fr) minmax(300px,.85fr);gap:28px 36px;align-items:center}
+.social-section>div:first-child h2{margin-bottom:10px}
+.social-section>div:first-child>p:not(.eyebrow):not(.source-note){color:var(--muted)}
+.social-section>div:first-child .button{margin-top:8px}
+.social-section .facebook-frame{width:100%;min-height:0;padding:22px;border:1px solid var(--line);border-radius:18px;background:var(--green-soft);overflow:hidden;justify-self:stretch}
+.social-section .facebook-frame>p{margin:0 0 12px;color:var(--muted);font-size:.9rem}
+.social-section .facebook-frame>.button{min-height:46px;padding:9px 18px}
+.social-section .embed-slot:empty,.social-section [data-embed-status]:empty{display:none}
+.social-section .embed-slot:not(:empty){margin-top:18px}
+.social-section iframe{display:block;width:100%;max-width:100%;height:600px;border:0}
+.social-section [data-embed-status]{margin:10px 0 0;color:var(--muted);font-size:.82rem}
+@media(max-width:780px){
+ .social-section{grid-template-columns:1fr;margin-block:24px 44px;padding:22px;gap:18px}
+ .social-section .facebook-frame{width:100%;padding:18px;justify-self:stretch}
+ .social-section .facebook-frame>.button{width:100%;justify-content:center;text-align:center}
+}
