@@ -71,6 +71,8 @@ for name,doc in pages.items():
 # News editorial contract: Notion owns the prose policy; GitHub enforces deployable invariants.
 news=pages.get('news.html')
 if news:
+ count=news.select_one('[data-news-count]')
+ require(count is not None and count.get_text(strip=True)==f"共 {len(news.select('.news-report-card'))} 筆",'news.html: static news count mismatch')
  news_text=news.get_text(' ',strip=True)
  for bad in ['多家媒體均確認','多家媒體證實','經多家媒體交叉確認']:
   require(bad not in news_text,f'news.html: forbidden self-verification wording {bad}')

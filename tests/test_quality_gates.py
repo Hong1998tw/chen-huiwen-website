@@ -1,5 +1,5 @@
 """Mutation tests exercise the real CLI gates in an isolated disposable repository."""
-import importlib.util, json, shutil, subprocess, sys, tempfile, unittest
+import importlib.util, json, re, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('links', ROOT/'scripts/audit_external_links.py')
@@ -69,6 +69,10 @@ class QualityMutationTests(unittest.TestCase):
         rows=json.loads((self.root/'data/search-index.json').read_text())['items']
         item=next(r for r in rows if r['url']=='news.html')
         self.assertIn('Fixture uniquely searchable media event',item['keywords'])
+    def test_static_news_count_mismatch(self):
+        old=re.search(r'共 \d+ 筆</p>',(self.root/'news.html').read_text()).group(0)
+        self.edit('news.html',old,'共 999 筆</p>')
+        self.reject('validate_site.py','static news count mismatch')
     def test_invalid_event_end(self):
         p=self.root/'data/events.json';d=json.loads(p.read_text());d['events'][0]['end']='2000-01-01T00:00:00+08:00';p.write_text(json.dumps(d))
         self.reject('build_events.py','end')
