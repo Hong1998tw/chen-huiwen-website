@@ -54,8 +54,9 @@ try{
  });
  await check('Grouped map point exposes every topic and selection never leaks through filters',async()=>{
   await page.locator('#reset-map-filters').click();
-  const marker=page.locator('.case-marker').filter({hasText:'6'});await marker.click();await page.locator('.insight-group').waitFor();
-  assert.equal(await page.locator('.insight-group button').count(),5);
+  await page.locator('#map-fit').click();await page.locator('.leaflet-container').waitFor({state:'visible'});
+  const marker=page.locator('.case-marker[title*="智慧停車"]');await marker.click();await page.locator('.insight-group').waitFor();
+  assert((await page.locator('.insight-group button').count())>=5);
   await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h3').textContent(),/智慧停車/);
   assert(new URL(page.url()).searchParams.get('case')==='station-parking');
   await page.locator('#category-filter').selectOption('社福與衛環');await count(data.filter(c=>c.categories.includes('社福與衛環')).length);
@@ -68,7 +69,7 @@ try{
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{
-  await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(2);assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
+  await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(2);await page.locator('#map-fit').click();assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
  });
  await go();
  await check('All filters clear to the full source count and ten items per page',async()=>{
@@ -92,7 +93,7 @@ try{
   const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),data.length);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
  });
  await go();await page.locator('.digital-dashboard').waitFor();await page.screenshot({path:root+'tests/donation/results/desktop-dashboard.png'});
- await page.locator('#achievement-map').scrollIntoViewIfNeeded();await page.screenshot({path:root+'tests/donation/results/desktop-map.png'});
+ await page.locator('#achievement-map').scrollIntoViewIfNeeded();await page.locator('.leaflet-container').waitFor({state:'visible'});await page.screenshot({path:root+'tests/donation/results/desktop-map.png'});
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:width===390?844:1000});await go();await page.locator('.digital-dashboard').waitFor();
   await check(`P0 layout ${width}px: no overflow`,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));

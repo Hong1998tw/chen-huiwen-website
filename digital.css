@@ -47,7 +47,7 @@ body.search-open{overflow:hidden}
 .explore-sidebar{position:sticky;top:1rem;border:1px solid #e1e8e4;border-radius:18px;padding:1rem;background:#f7faf8}
 .explore-sidebar label{display:block;margin-top:.7rem;margin-bottom:.3rem;font-weight:800}
 .explore-sidebar select,.explore-sidebar input{width:100%;padding:.68rem;border:1px solid #cbd8d2;border-radius:10px;background:#fff;font:inherit}
-.explore-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-bottom:1rem}
+.explore-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-bottom:1rem;min-height:110px}
 .explore-summary .digital-stat{min-height:110px}
 .explore-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
 .explore-result-card{border:1px solid #e1e8e4;border-radius:16px;padding:1rem;background:#fff}
@@ -62,7 +62,7 @@ body.search-open{overflow:hidden}
 .pwa-install-link{font:inherit;background:none;border:0;padding:0;cursor:pointer}
 
 @media (max-width:900px){.digital-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.explore-layout{grid-template-columns:1fr}.explore-sidebar{position:static}.explore-result-grid{grid-template-columns:1fr}.global-search-trigger kbd{display:none}}
-@media (max-width:560px){.global-search-trigger{position:fixed;right:14px;bottom:16px;z-index:79;width:48px;height:48px;justify-content:center;padding:0;box-shadow:0 10px 30px rgba(10,37,31,.18)}.global-search-trigger span:nth-child(2){display:none}.global-search-footer{display:block}.global-search-footer a{display:block;margin-top:.35rem}.digital-dashboard-grid,.explore-summary{grid-template-columns:1fr 1fr}.digital-stat{padding:.85rem}}
+@media (max-width:560px){#explore-subtitle{min-height:3.5em}.explore-summary{min-height:231px}.global-search-trigger{position:fixed;right:14px;bottom:16px;z-index:79;width:48px;height:48px;justify-content:center;padding:0;box-shadow:0 10px 30px rgba(10,37,31,.18)}.global-search-trigger span:nth-child(2){display:none}.global-search-footer{display:block}.global-search-footer a{display:block;margin-top:.35rem}.digital-dashboard-grid,.explore-summary{grid-template-columns:1fr 1fr}.digital-stat{padding:.85rem}}
 @media (prefers-reduced-motion:reduce){.timeline-reveal{transform:none;transition:none}}
 
 /* P0: connected public-record statistics and accessible search. */
@@ -125,3 +125,6 @@ body.search-open{overflow:hidden}
 .case-live-summary a{font-weight:700;color:#075548;text-decoration:underline;text-underline-offset:3px}
 #case-search,#achievement-map,#case-results{scroll-margin-top:150px}
 @media(max-width:780px){#case-search,#achievement-map,#case-results{scroll-margin-top:100px}}
+
+/* A11Y-02: 4.03:1 failed on the page background; use the shared AA text color. */
+.explore-relation-note{color:var(--muted)}

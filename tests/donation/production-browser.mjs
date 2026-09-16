@@ -234,6 +234,7 @@ try {
       await page.waitForFunction(() => !document.querySelector('#case-count')?.textContent?.includes('54 個專題'));
       assert((await visibleCases()) > 0, 'search returned no results');
       await page.locator('#reset-map-filters').click();
+      await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({ state: 'visible' });
       if (await page.locator('.case-pagination').isVisible()) {
         await page.getByRole('button', { name: '第 2 頁' }).click();

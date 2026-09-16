@@ -106,8 +106,8 @@
   const filterChanged=()=>{currentPage=1;render();};
   buildMenu(topicMenu,topicValues,selectedTopics,'topic',filterChanged);
   buildMenu(tagMenu,tagValues,selectedTags,'tag',filterChanged);
-  if (controls) controls.hidden=false;
-  if (filterSelectors) filterSelectors.hidden=false;
+  if (controls) { controls.hidden=false; controls.removeAttribute('data-progressive-controls'); }
+  if (filterSelectors) { filterSelectors.hidden=false; filterSelectors.removeAttribute('data-progressive-controls'); }
   search?.addEventListener('input',event=>{query=event.target.value;currentPage=1;render();});
   sort?.addEventListener('change',event=>{sortMode=event.target.value;currentPage=1;render();});
   clearFilters?.addEventListener('click',()=>{

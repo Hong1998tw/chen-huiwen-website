@@ -64,7 +64,10 @@ for name,doc in pages.items():
   refs+=1
  for source in doc.select('[srcset]'):
   for item in source['srcset'].split(','):require((R/item.strip().split()[0]).is_file(),f'{name}: srcset asset')
- for a in doc.select('a[target="_blank"]'):require('noopener' in a.get('rel',[]),f'{name}: external rel')
+ for a in doc.select('a[target="_blank"]'):
+  rel=set(a.get('rel',[]));require({'noopener','noreferrer'}.issubset(rel),f'{name}: external rel')
+ brand=doc.select_one('a.brand')
+ if brand:require(not brand.has_attr('aria-label'),f'{name}: visible brand text must remain in accessible name')
 # News editorial contract: Notion owns the prose policy; GitHub enforces deployable invariants.
 news=pages.get('news.html')
 if news:

@@ -83,3 +83,15 @@
  .map-controls>div:first-child{grid-column:auto}
  .case-card-footer{display:block}.case-place{display:block;max-width:none;margin-bottom:9px}.case-actions{justify-content:flex-start}
 }
+
+/* A11Y-01 / UI-02: separated 44px map controls and legible record metadata. */
+.case-marker span{width:44px;height:44px;font-size:15px}
+.map-popup a{display:flex;align-items:center;min-height:44px;line-height:1.6}
+.leaflet-container a.leaflet-popup-close-button{width:44px;height:44px;line-height:44px}
+.leaflet-popup-content{margin-right:36px}
+.map-controls label{font-size:14px}
+.case-card .case-tags span,.case-card .case-subtags span{font-size:12px;line-height:1.6}
+.case-card .case-summary{font-size:15px;line-height:1.85}
+.case-card .case-place{font-size:13px}
+.case-card .case-status{font-size:12px}
+.case-actions a,.case-actions button{min-height:44px;display:inline-flex;align-items:center}
