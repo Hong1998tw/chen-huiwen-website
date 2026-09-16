@@ -63,6 +63,12 @@ class QualityMutationTests(unittest.TestCase):
         for builder in ('build_cases.py','build_search.py'):self.assertEqual(self.gate(builder).returncode,0)
         for name in ('achievements.html','achievement-'+rows[0]['id']+'.html','data/search-index.json'):
             self.assertIn('Fixture synchronized title',(self.root/name).read_text())
+    def test_media_news_text_propagates_to_search(self):
+        self.edit('news.html','</main>','<article><h2>Fixture uniquely searchable media event</h2></article></main>')
+        self.assertEqual(self.gate('build_search.py').returncode,0)
+        rows=json.loads((self.root/'data/search-index.json').read_text())['items']
+        item=next(r for r in rows if r['url']=='news.html')
+        self.assertIn('Fixture uniquely searchable media event',item['keywords'])
     def test_invalid_event_end(self):
         p=self.root/'data/events.json';d=json.loads(p.read_text());d['events'][0]['end']='2000-01-01T00:00:00+08:00';p.write_text(json.dumps(d))
         self.reject('build_events.py','end')
