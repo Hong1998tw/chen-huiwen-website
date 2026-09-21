@@ -29,7 +29,7 @@ try {
   assert.match(await heroStatus.innerText(), /2026\.11\.28/);
   assert.doesNotMatch(await page.locator('main').innerText(), /10\/23|候選人姓名號次抽籤/);
   assert.equal(await page.locator('.campaign-entry-compact').count(), 0);
-  assert.equal(await heroStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
+  assert.equal(await heroStatus.evaluate(el => el.previousElementSibling?.tagName), 'H2');
   const countdownColor = await heroStatus.locator('strong').evaluate(el => getComputedStyle(el).color);
   assert.equal(countdownColor, 'rgb(213, 249, 124)');
   const account = await page.locator('.home-account').boundingBox();

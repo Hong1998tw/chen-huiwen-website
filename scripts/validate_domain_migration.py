@@ -21,9 +21,11 @@ class HeadParser(HTMLParser):
         self.links: list[dict[str, str]] = []
         self.metas: list[dict[str, str]] = []
         self.base_href = ""
+        self.references = []
 
     def handle_starttag(self, tag: str, attrs):
         a = {k.lower(): (v or "") for k, v in attrs}
+        self.references.extend(a[k] for k in ("href", "src") if k in a)
         if tag.lower() == "link":
             self.links.append(a)
         elif tag.lower() == "meta":
@@ -95,8 +97,11 @@ def main() -> int:
     if not_found.exists():
         doc = HeadParser()
         doc.feed(not_found.read_text(encoding="utf-8"))
-        if doc.base_href != NEW_BASE:
-            fail("404.html: base href does not use the new canonical base")
+        if doc.base_href:
+            fail("404.html: base href would redirect local and nested-path recovery")
+        for ref in doc.references:
+            if not urlsplit(ref).scheme and not ref.startswith(("/", "#")):
+                fail("404.html: recovery links and assets must be root-relative")
 
     sitemap = root / "sitemap.xml"
     try:

@@ -88,3 +88,7 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 ## 全生命週期品質入口
 
 `python3 scripts/quality.py --baseline-ref origin/main` 執行既有 validators、兩次生成一致性與正向／負向測試；加 `--browser` 執行互動回歸。首次安裝方式與完整維護索引見 [維護 runbook](docs/MAINTENANCE.md)。
+
+## 2026-09 civic reading candidate
+
+`data/civic-home.json` selects existing public stable IDs only. `scripts/build_civic.py` generates homepage previews and shared civic asset references; it runs automatically at the start of `build_search.py`. Finish every build with `build_search.py`. Do not hand-edit the homepage `civic-stories` generated region. New browser regression: `node tests/donation/astra.mjs` against a server on 127.0.0.1:8766. Recovery and design decisions: `docs/astra-redesign/`. This branch is local-only, not deployed.

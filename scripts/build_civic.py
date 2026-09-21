@@ -18,7 +18,7 @@ def build():
     photo=''
     if c['images']:
         image=c['images'][0];meta=c['imageMetadata'][image];w,h=c['imageDimensions'][image]
-        photo=f'<figure class="civic-feature-photo"><img src="assets/{e(image)}" alt="{e(meta["alt"])}" width="{w}" height="{h}" loading="lazy"><figcaption>{e(meta["caption"])} · {e(meta["credit"])}</figcaption></figure>'
+        photo=f'<figure class="civic-feature-photo"><img src="assets/{e(image)}" alt="{e(meta["alt"])}" width="{w}" height="{h}" loading="lazy"><figcaption>{e(meta["caption"])} · <a href="{e(meta["sourceUrl"])}" target="_blank" rel="noopener noreferrer">{e(meta["credit"])} ↗</a></figcaption></figure>'
     feature=f'<article class="civic-feature">{photo}<div class="civic-feature-copy"><p class="civic-kicker">地方專題 · {e(c["status"])}</p><h3><a href="{url}">{e(c["title"])}</a></h3><p>{e(c["summary"])}</p><a class="civic-read" href="{url}">閱讀歷程與資料來源 <span aria-hidden="true">↗</span></a><small>內容更新 <time datetime="{e(c["updated"])}">{e(c["updated"])}</time></small></div></article>'
     rows=[]
     for index,id in enumerate(config['reading'],1):
@@ -26,13 +26,16 @@ def build():
     page=R/'index.html';text=page.read_text();text=block(text,'civic-stories',feature+'<div class="civic-reading">'+''.join(rows)+'</div>');page.write_text(text)
     css=hashlib.sha256((R/'civic.css').read_bytes()).hexdigest()[:12]
     js=hashlib.sha256((R/'civic.js').read_bytes()).hexdigest()[:12]
+    site=hashlib.sha256((R/'site.js').read_bytes()).hexdigest()[:12]
     digital=hashlib.sha256((R/'digital.js').read_bytes()).hexdigest()[:12]
     for path in sorted(R.glob('*.html')):
         text=path.read_text()
         if '<main' not in text: continue
-        text=re.sub(r'<link[^>]+href="civic\.css[^>]+>\s*','',text)
-        text=re.sub(r'<script[^>]+src="civic\.js[^>]*></script>\s*','',text)
-        text=text.replace('</head>',f'<link rel="stylesheet" href="civic.css?v={css}">\n<script src="civic.js?v={js}" defer></script>\n</head>')
+        text=re.sub(r'<link[^>]+href="/?civic\.css[^>]+>\s*','',text)
+        text=re.sub(r'<script[^>]+src="/?civic\.js[^>]*></script>\s*','',text)
+        prefix='/' if path.name=='404.html' else ''
+        text=text.replace('</head>',f'<link rel="stylesheet" href="{prefix}civic.css?v={css}">\n<script src="{prefix}civic.js?v={js}" defer></script>\n</head>')
+        text=re.sub(r'site\.js\?v=[^"\s]+','site.js?v='+site,text)
         text=re.sub(r'digital\.js\?v=[^"\s]+','digital.js?v='+digital,text)
         path.write_text(text)
     print('Built civic home and shared public reading assets')

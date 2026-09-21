@@ -1,9 +1,10 @@
+import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
-const root=new URL('../../',import.meta.url).pathname;
+const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=new URL('./results/',import.meta.url);await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server','8777','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const base='http://127.0.0.1:8777/';
@@ -22,7 +23,7 @@ try{
  await check('Public-page search, lazy index and Cmd+K keyboard navigation',async()=>{
   assert(!await page.evaluate(()=>performance.getEntriesByType('resource').some(e=>e.name.includes('search-index'))));
   await page.keyboard.press('Meta+k');await page.locator('#global-search-dialog').waitFor({state:'visible'});
-  const input=page.locator('#global-search-dialog input');await input.fill('文德國小');await page.locator('.global-search-result[href="achievement-wende-school-center.html"]').waitFor();
+  const input=page.locator('#global-search-dialog input');await input.fill('文德國小');await page.locator('.global-search-result[href$="/achievement-wende-school-center.html"]').waitFor();
   assert(await page.locator('.global-search-result mark').count()>0);
   await input.fill('鳳山');await page.waitForFunction(()=>document.querySelectorAll('.global-search-result').length>1);
   const id=await input.getAttribute('aria-activedescendant');await page.keyboard.press('ArrowDown');assert.notEqual(await input.getAttribute('aria-activedescendant'),id);
@@ -57,7 +58,7 @@ try{
   await page.locator('#map-fit').click();await page.locator('.leaflet-container').waitFor({state:'visible'});
   const marker=page.locator('.case-marker[title*="智慧停車"]');await marker.click();await page.locator('.insight-group').waitFor();
   assert((await page.locator('.insight-group button').count())>=5);
-  await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h3').textContent(),/智慧停車/);
+  await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h2').textContent(),/智慧停車/);
   assert(new URL(page.url()).searchParams.get('case')==='station-parking');
   await page.locator('#category-filter').selectOption('社福與衛環');await count(data.filter(c=>c.categories.includes('社福與衛環')).length);
   assert.equal(await page.locator('.insight-group').count(),0);assert(!new URL(page.url()).searchParams.has('case'));
@@ -65,7 +66,7 @@ try{
  });
  await check('Shared query reload, deep case links and invalid query resilience',async()=>{
   await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.map-insight-panel').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
-  await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h3').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
+  await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h2').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{
@@ -83,7 +84,7 @@ try{
  });
  await check('Search failure is visible and retry recovers',async()=>{
   await go('about.html');await page.route('**/data/search-index.json',r=>r.abort());await page.keyboard.press('Control+k');await page.locator('[data-search-retry]').waitFor({state:'visible'});
-  assert.match(await page.locator('.global-search-status').textContent(),/暫時無法載入/);await page.unroute('**/data/search-index.json');await page.locator('[data-search-retry]').click();await page.locator('#global-search-dialog input').fill('文德國小');await page.locator('.global-search-result[href="achievement-wende-school-center.html"]').waitFor();await page.keyboard.press('Escape');
+  assert.match(await page.locator('.global-search-status').textContent(),/暫時無法載入/);await page.unroute('**/data/search-index.json');await page.locator('[data-search-retry]').click();await page.locator('#global-search-dialog input').fill('文德國小');await page.locator('.global-search-result[href$="/achievement-wende-school-center.html"]').waitFor();await page.keyboard.press('Escape');
  });
  await check('Clipboard unavailable provides a usable URL fallback',async()=>{
   await go();await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>Promise.reject(Error('denied'))},configurable:true}));await page.locator('.share-current-page').click();await page.locator('.share-fallback').waitFor({state:'visible'});assert.equal(await page.locator('.share-fallback input').inputValue(),page.url());await page.locator('.share-fallback button').click();

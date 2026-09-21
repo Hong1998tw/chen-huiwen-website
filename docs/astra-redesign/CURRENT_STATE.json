@@ -1,8 +1,8 @@
 {
   "status": "IN_PROGRESS",
-  "phase": "implementation",
+  "phase": "final_qa",
   "branch": "astra/huiwen-redesign-202609",
-  "latest_safe_commit": "6f94c52",
+  "latest_safe_commit": "eb6bfe7",
   "completed": [
     "Current repo fetched via explicit main refspec; 5aeddfd matches remote",
     "Current Notion maintenance read",
@@ -11,22 +11,31 @@
     "Baseline quality PASS",
     "Audit and six benchmark categories",
     "20 concepts / reality filter",
-    "Thesis, IA, data and design"
+    "Thesis, IA, data and design",
+    "Civic implementation",
+    "Desktop and 390px visual review",
+    "Initial performance thresholds passed"
   ],
   "current_tasks": [
-    "Build civic discovery and reading experience"
+    "Final regression after 200% text reflow fix",
+    "Lighthouse recheck",
+    "Final evidence package"
   ],
   "remaining": [
-    "concepts",
-    "design",
-    "implementation",
-    "QA"
+    "Final verification",
+    "Final recovery commit"
   ],
   "blocked": [],
   "changed_files": [],
   "tests": {
-    "passed": [],
-    "failed": []
+    "passed": [
+      "53 unit + 4 event tests",
+      "Browser, digital-civic, p0, governance, election suites",
+      "61 civic checks"
+    ],
+    "failed": [
+      "Prior lifecycle service 200% overflow; fix applied, recheck in progress"
+    ]
   },
   "visual_qa": {
     "completed": [],
@@ -35,5 +44,5 @@
       "390px"
     ]
   },
-  "next_action": "Implement shared civic generator, home, map/list, detail anchors; run build."
+  "next_action": "Run final full quality and civic checks, then representative Lighthouse; package evidence."
 }

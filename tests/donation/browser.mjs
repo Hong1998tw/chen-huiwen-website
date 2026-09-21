@@ -119,16 +119,16 @@ try {
         page.on('requestfailed', onFailed);
         await page.goto(base + file);
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
-        assert.equal(await page.locator('#navigation a[href="political-donation.html"]').count(), 1, `${file}: donation nav`);
-        assert.equal(await page.locator('#navigation a[href="election.html"]').count(), 1, `${file}: election nav`);
-        assert.equal(await page.locator('#navigation a[href="press.html"]').count(), 1, `${file}: press nav`);
-        assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'political-donation.html', `${file}: donation order`);
-        assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'), 'election.html', `${file}: election order`);
-        assert.equal(await page.locator('#navigation a').nth(3).getAttribute('href'), 'service.html#monthly-heading', `${file}: lawyer order`);
-        assert.equal(await page.locator('#navigation a[href="gallery.html"]').count(), 0, `${file}: gallery nav`);
-        assert.equal(await page.locator('#navigation a[href="activities.html"]').innerText(), '公開行程與活動', `${file}: activities nav`);
+        assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
+        assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
+        assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
+        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'political-donation.html', `${file}: donation order`);
+        assert.equal((await page.locator('#navigation a').nth(2).getAttribute('href')).replace(/^\//,''), 'election.html', `${file}: election order`);
+        assert.equal((await page.locator('#navigation a').nth(3).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order`);
+        assert.equal(await page.locator('#navigation a[href$="gallery.html"]').count(), 0, `${file}: gallery nav`);
+        assert.equal(await page.locator('#navigation a[href$="activities.html"]').innerText(), '公開行程與活動', `${file}: activities nav`);
         for (const href of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) {
-          assert(await page.locator('footer a').evaluateAll((els, target) => els.some(a => a.getAttribute('href') === target), href), `${file}: footer ${href}`);
+          assert(await page.locator('footer a').evaluateAll((els, target) => els.some(a => a.href === new URL(target,document.baseURI).href), href), `${file}: footer ${href}`);
         }
         if (file.startsWith('achievement-')) {
           const text = await page.locator('main').innerText();
@@ -148,22 +148,25 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: election entry, portrait and CLS`, async () => {
+    await check(`homepage ${width}px: civic entry, retained profile and CLS`, async () => {
       await page.goto(base + 'index.html');
       await page.waitForFunction(() => /^\d+$/.test(document.querySelector('#campaign-countdown')?.textContent || ''));
       const electionStatus = page.locator('.hero-election-status');
       assert.match(await electionStatus.innerText(), /勝選倒數/);
       assert.match(await electionStatus.innerText(), /2026\.11\.28/);
       assert.doesNotMatch(await page.locator('main').innerText(), /候選人姓名號次抽籤|10\/23/);
-      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
+      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H2');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
       const box = await img.boundingBox();
-      const heading = await page.locator('h1').boundingBox();
+      const heading = await page.locator('.hero-copy h2').boundingBox();
+      assert.equal(await page.locator('h1').count(),1);
+      assert(await page.locator('.civic-search').isVisible());
+      assert((await page.locator('.civic-lead').boundingBox()).y < (await page.locator('.hero').boundingBox()).y);
       assert(box && heading);
       assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
       assert(box.x + box.width <= heading.x);
-      if (width === 390) assert(box.width >= 140 && box.width <= 170);
+      if (width === 390) assert(box.width >= 100 && box.width <= 120);
       const hero = await page.locator('.hero-grid').boundingBox();
       const header = await page.locator('.site-header').boundingBox();
       assert(hero && header);

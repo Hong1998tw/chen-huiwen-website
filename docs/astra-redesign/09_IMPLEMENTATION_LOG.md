@@ -10,3 +10,5 @@
 - Shared editorial layer applies to all main public routes. Original political wording retained in smaller profile context; donations, election and external intake unchanged.
 - Baseline and candidate deterministic quality PASS: 51 unit tests plus 4 event tests, all validators and two-build consistency.
 - Browser, axe and mobile round in progress. No production effect.
+
+CP-09/10: corrected visual issues, same-origin nested 404, public-link root resolution and filesystem URL decoding. All original canonical achievement/platform/event bytes remain unchanged. Header search now handles nested routes safely. Added mutation tests and civic browser tests; no test gate removed. Lighthouse representative initial scores 92–99, SEO 100. Final evidence collection in progress.

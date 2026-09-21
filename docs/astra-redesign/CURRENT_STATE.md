@@ -1,45 +1,12 @@
 # CURRENT STATE
 
 Updated: 2026-09-22
-Current Phase: Implementation
-Current Branch: astra/huiwen-redesign-202609
-Latest Safe Commit: 6f94c52
+Phase: Final QA
+Branch: astra/huiwen-redesign-202609
+Last runnable checkpoint: eb6bfe7
 
-## Mission
-Local-only public-information and service redesign. No push, PR, merge, deployment or external writes.
+Audit, six benchmark categories, 20 concepts, thesis, IA, data, design and implementation complete. Desktop and 390px visual review complete. Core data, hosting configuration and original checkout preserved.
 
-## Completed
-Current repo, Drive, Notion maintenance and production homepage read. Explicit refspec corrected restricted fetch configuration.
+53 unit + 4 event tests, five core browser suites, and 61 civic checks passed. Full run identified service-card overflow at 200% text; CSS fix applied, lifecycle rerun in progress. Initial mobile Lighthouse scores 92–99, SEO 100; map headings and home accessible name corrected.
 
-## Current Work
-Audit and benchmark.
-
-## Decisions Already Made
-Preserve public facts, URLs and private-data boundary.
-
-## Files Changed
-Recovery documents only.
-
-## Tests Passed
-None yet.
-
-## Tests Failing
-Not run.
-
-## Visual QA
-Pending.
-
-## Remaining Work
-Research, concepts, selection, architecture, implementation and all QA.
-
-## Blockers
-None.
-
-## Important Unknowns
-Production parity and current data capabilities require inspection.
-
-## Do NOT Redo
-Do not touch original SEO checkout or its untracked .ai directory. Do not import Drive legacy website bytes.
-
-## Resume From
-Exact next action: implement civic discovery, map/list and detail reading anchors.
+Next: finish full regression and Lighthouse recheck, package receipts/screenshots, finalize recovery and commit. No push/PR/merge/deploy/external writes. Do not repeat audit or import legacy/Notion private bytes. See 09–13 for implementation and QA boundaries.

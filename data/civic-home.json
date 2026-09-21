@@ -1,4 +1,8 @@
 {
-  "featured": "fengshan-station-overview",
-  "reading": ["metro-green-line", "after-school-care", "bade-detention"]
+  "featured": "metro-green-line",
+  "reading": [
+    "fengshan-station-overview",
+    "after-school-care",
+    "bade-detention"
+  ]
 }

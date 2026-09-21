@@ -119,3 +119,13 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 @media print{.site-header,.topline,.footer,.external-embed,.civic-view-controls,.global-search-trigger,.menu-backdrop{display:none!important}body{background:white;color:black}.case-layout,.civic-story-grid{display:block!important}.case-aside{position:static!important}.case-sources a::after{content:" (" attr(href) ")";font-size:9pt;overflow-wrap:anywhere}}
+
+/* Visual QA round 2: remove unrelated hero ornament; keep profile image truthful. */
+.service-page .page-head .wrap::after{display:none}
+.civic-home .home-contact{margin-top:12px}
+.civic-home .hero-portrait img{height:auto;aspect-ratio:1348/1728;object-fit:contain}
+
+.map-insight-panel h2{margin:.12rem 0 .45rem;font-size:1.18rem;line-height:1.5}
+/* Keep contact details readable when users enlarge text to 200%. */
+.service-grid>div{min-width:0}
+.contact-card a{overflow-wrap:anywhere}
