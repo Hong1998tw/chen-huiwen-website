@@ -4,8 +4,11 @@ body{background:var(--civic-paper);color:#233a31}
 :where(a,button,input,select,summary):focus-visible{outline:3px solid #075548;outline-offset:4px}
 :where(h1,h2,h3,p,a,dd,span){overflow-wrap:break-word}
 [hidden]{display:none!important}
-body .site-header{border-radius:4px;box-shadow:none;background:var(--civic-paper);border:0;border-bottom:1px solid var(--civic-line);position:relative;top:auto}
-body .site-header .nav-wrap{border-radius:0;box-shadow:none;background:transparent;padding-inline:0}
+/* The full-width sticky surface keeps both the brand and menu reachable on scroll. */
+:root{--site-header-height:156px}
+html{scroll-padding-top:calc(var(--site-header-height) + 16px)}
+body .site-header{width:100%;margin:0;border-radius:0;box-shadow:0 3px 14px #163e320a;background:var(--civic-paper);border:0;border-bottom:1px solid var(--civic-line);position:sticky;top:0;z-index:90}
+body .site-header .nav-wrap{width:min(var(--site-width),calc(100% - var(--site-gutter) * 2));max-width:var(--site-width);border:0;border-radius:0;box-shadow:none;background:transparent;padding-inline:0;backdrop-filter:none}
 body .topline{background:var(--civic-ink);color:#fff}
 body .topline a{color:#fff}
 body .brand-name{letter-spacing:.04em}
@@ -30,7 +33,7 @@ body .map-panel[hidden]{display:none!important}
 body .footer{margin-top:48px}
 .civic-kicker{font:700 .78rem/1.6 system-ui,sans-serif;letter-spacing:.13em;color:#38634d;margin:0 0 18px}
 .civic-lead{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.75fr);gap:72px;padding-block:58px 46px;align-items:start}
-.civic-lead h1{font-family:var(--civic-serif);font-size:clamp(2.5rem,4.6vw,4.65rem);font-weight:800;line-height:1.28;letter-spacing:.015em;margin:0 0 26px;color:var(--civic-ink)}
+.civic-lead h2{font-family:var(--civic-serif);font-size:clamp(2.5rem,4.6vw,4.65rem);font-weight:800;line-height:1.28;letter-spacing:.015em;margin:0 0 26px;color:var(--civic-ink)}
 .civic-deck{font-size:1.08rem;line-height:1.9;color:#506259;margin:0 0 28px}
 .civic-search label{display:block;font-size:.83rem;font-weight:700;margin-bottom:8px}
 .civic-search>div{display:flex;border:1px solid var(--civic-ink);background:#fff;min-height:58px}
@@ -79,12 +82,12 @@ body .footer{margin-top:48px}
 .civic-reading-guide p{line-height:1.9;color:#506259;font-size:.9rem}
 .civic-reading-guide strong{color:var(--civic-ink)}
 /* Original identity and political wording remain in the profile context. */
-.civic-home .hero{padding:46px 0 32px}
-.civic-home .hero-grid{display:grid;grid-template-columns:180px minmax(0,1fr);gap:36px;align-items:center}
-.civic-home .hero-portrait{width:180px;border-radius:3px;margin:0}
-.civic-home .hero-portrait img{max-height:230px;object-fit:cover}
-.civic-home .hero-copy h2{font-family:var(--civic-serif);font-size:2rem;line-height:1.5;margin:0}
-.civic-home .hero-line{display:inline;margin-left:.25em}
+.civic-home .hero{padding:36px 0;background:#eaf0e6;border-bottom:1px solid var(--civic-line)}
+.civic-home .hero-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:clamp(32px,6vw,88px);align-items:center}
+.civic-home .hero-portrait{width:280px;border-radius:4px;margin:0}
+.civic-home .hero-portrait img{max-height:none;object-fit:contain}
+.civic-home .hero-copy h1{font-family:var(--civic-serif);font-size:clamp(2.5rem,4.8vw,4.5rem);line-height:1.3;margin:0;color:var(--civic-ink);letter-spacing:.02em}
+.civic-home .hero-line{display:block;margin:0}
 .civic-home .hero-intro{font-size:.9rem;margin-top:14px}
 .civic-home .hero-election-status{max-width:420px;margin-top:16px}
 .civic-home .home-account,.civic-home .home-contact{border-radius:4px;box-shadow:none;margin-top:28px}
@@ -95,7 +98,7 @@ body .footer{margin-top:48px}
 .civic-article-nav{display:flex;gap:12px 28px;align-items:center;flex-wrap:wrap;border-block:1px solid var(--civic-line);padding-block:12px;margin-bottom:32px!important}
 .civic-article-nav a{font-weight:700;min-height:44px;display:inline-flex;align-items:center}
 .civic-article-nav span{margin-left:auto;color:#506259;font-size:.82rem}
-#case-history,#case-sources,#case-overview{scroll-margin-top:24px}
+#case-history,#case-sources,#case-overview{scroll-margin-top:16px}
 .civic-view-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-block:16px}
 .civic-view-controls>span{font-size:.83rem;font-weight:700;margin-right:10px}
 .civic-view-controls button{min-height:44px;padding:10px 18px;border:1px solid #799382;background:transparent;color:var(--civic-ink);font:inherit;cursor:pointer;border-radius:3px}
@@ -104,15 +107,30 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
 .civic-list-only #case-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
 @media(max-width:1100px){.civic-lead{gap:32px}.civic-service-desk{padding:26px 22px 10px}.civic-tasknav a{padding-inline:14px}.civic-story-grid{gap:28px}}
 @media(max-width:780px){
- body .site-header .nav-wrap{padding:12px 0;min-height:72px}body .site-header{border-bottom:1px solid var(--civic-line)}
- .civic-lead{grid-template-columns:1fr;gap:28px;padding-block:32px}.civic-lead h1{font-size:clamp(2rem,8.5vw,3.2rem);margin-bottom:18px}.civic-kicker{margin-bottom:14px}
+ :root{--site-header-height:68px}
+ html:not(.menu-ready) .site-header{position:relative}
+ body .site-header .nav-wrap{padding:10px 0;min-height:68px;gap:12px}body .site-header{border-bottom:1px solid var(--civic-line)}
+ body .site-header .brand-mark{width:32px;height:32px;line-height:32px;border-radius:8px;transform:none}
+ body .site-header .brand-mark>span{right:-4px;top:-8px;font-size:.75rem}
+ body .site-header .brand-name{font-size:1.2rem}
+ body .site-header .menu-toggle{min-width:88px;min-height:44px;border:1px solid var(--civic-ink);border-radius:6px;background:var(--civic-ink);color:#fff;font-size:.85rem}
+ body .site-header .menu-toggle[aria-expanded=true]{background:#eaf0e6;color:var(--civic-ink)}
+ .menu-ready body .site-header nav.is-open{border-radius:8px;box-shadow:0 12px 32px #163e3226}
+ .menu-ready body .site-header nav>a{border-radius:4px}
+ .civic-lead{grid-template-columns:1fr;gap:28px;padding-block:32px}.civic-lead h2{font-size:clamp(2rem,8.5vw,3.2rem);margin-bottom:18px}.civic-kicker{margin-bottom:14px}
  .civic-deck{font-size:.95rem;margin-bottom:20px}.civic-search button{padding-inline:18px}.civic-search input{padding-inline:12px;font-size:1rem}
  .civic-service-desk{padding:24px 22px 8px}.civic-service-desk dl{max-width:310px}.civic-desk-phone{font-size:1.7rem}
  .civic-tasknav{grid-template-columns:1fr 1fr}.civic-tasknav a,.civic-tasknav a:first-child{padding:17px 12px}.civic-tasknav a:nth-child(2){border-right:0}.civic-tasknav a:nth-child(-n+2){border-bottom:1px solid var(--civic-line)}.civic-tasknav strong{font-size:.94rem}
  .civic-stories{padding-top:36px}.civic-section-head{align-items:start;flex-direction:column;gap:10px;margin-bottom:24px}.civic-section-head h2{font-size:1.8rem}
  .civic-story-grid{grid-template-columns:1fr;gap:32px}.civic-feature-copy h3{font-size:1.55rem}.civic-reading-row h3{font-size:1.2rem}.civic-reading-row{gap:10px;grid-template-columns:28px 1fr}
  .civic-reading-guide>div{grid-template-columns:1fr;gap:0}.civic-reading-guide h2{font-size:1.65rem}
- .civic-home .hero-grid{grid-template-columns:104px minmax(0,1fr);gap:20px}.civic-home .hero-portrait{width:104px}.civic-home .hero-copy h2{font-size:1.5rem}.civic-home .hero-line{display:block;margin:0}.civic-home .hero-copy .eyebrow{font-size:.7rem}.civic-home .hero-election-status{grid-column:1/-1;font-size:.75rem;gap:6px}.civic-home .hero-intro{font-size:.85rem}.civic-home .hero-portrait figcaption{display:none}
+ .civic-home .hero{padding:24px 0}
+ .civic-home .hero-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:0 20px}
+ .civic-home .hero-portrait{width:100%;grid-row:1/3}
+ .civic-home .hero-copy h1{grid-column:2;grid-row:2;font-size:clamp(1.8rem,7.5vw,3.2rem);line-height:1.4;align-self:start}
+ .civic-home .hero-copy .eyebrow{font-size:.75rem;margin-bottom:10px;align-self:end}
+ .civic-home .hero-election-status{grid-column:1/-1;font-size:.8rem;gap:7px;margin-top:20px}
+ .civic-home .hero-intro{font-size:.9rem;margin-top:14px}.civic-home .hero-portrait figcaption{display:none}
  .civic-service-routes{grid-template-columns:1fr}.civic-service-routes a{border-right:0;border-bottom:1px solid var(--civic-line);padding:18px 0}.civic-service-routes a:last-child{border:0}
  .civic-article-nav{gap:4px 20px}.civic-article-nav span{width:100%;margin-left:0;padding-bottom:6px}.civic-list-only #case-list{grid-template-columns:1fr}
  body .page-head{padding:32px 0 24px}body .case-card{padding:20px}body .case-body>p{font-size:1rem}

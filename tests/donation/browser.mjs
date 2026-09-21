@@ -148,25 +148,26 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: civic entry, retained profile and CLS`, async () => {
+    await check(`homepage ${width}px: portrait first, civic entry and CLS`, async () => {
       await page.goto(base + 'index.html');
       await page.waitForFunction(() => /^\d+$/.test(document.querySelector('#campaign-countdown')?.textContent || ''));
       const electionStatus = page.locator('.hero-election-status');
       assert.match(await electionStatus.innerText(), /勝選倒數/);
       assert.match(await electionStatus.innerText(), /2026\.11\.28/);
       assert.doesNotMatch(await page.locator('main').innerText(), /候選人姓名號次抽籤|10\/23/);
-      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H2');
+      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
       const box = await img.boundingBox();
-      const heading = await page.locator('.hero-copy h2').boundingBox();
+      const heading = await page.locator('.hero-copy h1').boundingBox();
       assert.equal(await page.locator('h1').count(),1);
       assert(await page.locator('.civic-search').isVisible());
-      assert((await page.locator('.civic-lead').boundingBox()).y < (await page.locator('.hero').boundingBox()).y);
+      assert.equal(await page.locator('main > section').first().getAttribute('class'), 'hero');
+      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.civic-lead').boundingBox()).y);
       assert(box && heading);
       assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
       assert(box.x + box.width <= heading.x);
-      if (width === 390) assert(box.width >= 100 && box.width <= 120);
+      if (width === 390) assert(box.width >= 140 && box.width <= 160);
       const hero = await page.locator('.hero-grid').boundingBox();
       const header = await page.locator('.site-header').boundingBox();
       assert(hero && header);
