@@ -56,9 +56,9 @@ for c in public_items:
   photos='<div class="case-photos">'+''.join(figures)+'</div>'
  location=('、'.join(c['villages']) or c['scope'])
  info=facts_html(c,village_by_key)
- content=('<h2>重點說明</h2>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])) if c['paragraphs'] else ''
- history=('<section class="history-section"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h else ''
- sources=('<section class="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
+ content=('<h2 id="case-overview">重點說明</h2>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])) if c['paragraphs'] else ''
+ history=('<section class="history-section" id="case-history"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h else ''
+ sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
  article='<article class="case-body">'+content+photos+history+sources+'</article>' if content or photos or history or sources else ''
  layout_class='case-layout' if article else 'case-layout case-layout-compact'
  description=c['summary'] or f'「{c["title"]}」政績與服務紀錄｜陳慧文服務處'
@@ -66,7 +66,9 @@ for c in public_items:
  if c['related']:
   related_ids=[id for id in c['related'] if id in byid]
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
- body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">政績地圖</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head"><div class="wrap"><p class="eyebrow">政績與服務</p><div class="case-tags">{main_tags(c)}</div>{('<div class="case-subtags">'+sub_tags(c)+'</div>') if c.get('subcategories') else ''}<h1>{E(c['title'])}</h1>{('<p>'+E(c['summary'])+'</p>') if c['summary'] else ''}</div></section><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到政績列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
+ reading_links = [('case-overview','重點說明',bool(content)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
+ reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容更新 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
+ body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">政績地圖</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head"><div class="wrap"><p class="eyebrow">政績與服務</p><div class="case-tags">{main_tags(c)}</div>{('<div class="case-subtags">'+sub_tags(c)+'</div>') if c.get('subcategories') else ''}<h1>{E(c['title'])}</h1>{('<p>'+E(c['summary'])+'</p>') if c['summary'] else ''}</div></section>{reading_nav}<div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到政績列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
  organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
  structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
  if c.get('published'):

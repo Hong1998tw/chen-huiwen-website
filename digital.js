@@ -1,5 +1,6 @@
 'use strict';
 (() => {
+  const assetBase = new URL('.', document.currentScript.src);
   const VERSION = '20260912-p0-v2';
   const TOPICS = new Set(['交通與基建','教育與文化','環境與綠地','社福與衛環','經濟與產業']);
   const STATIC_PAGES = [
@@ -24,7 +25,7 @@
     if (!document.querySelector('link[rel="manifest"]')) {
       const manifest = document.createElement('link');
       manifest.rel = 'manifest';
-      manifest.href = `manifest.webmanifest?v=${VERSION}`;
+      manifest.href = new URL(`manifest.webmanifest?v=${VERSION}`, assetBase).href;
       document.head.append(manifest);
     }
     if (!document.querySelector('meta[name="application-name"]')) {
@@ -38,7 +39,7 @@
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
     if (['localhost','127.0.0.1'].includes(location.hostname)) return;
-    window.addEventListener('load', () => navigator.serviceWorker.register(`sw.js?v=${VERSION}`).catch(() => {}), {once:true});
+    window.addEventListener('load', () => navigator.serviceWorker.register(new URL(`sw.js?v=${VERSION}`,assetBase).href).catch(() => {}), {once:true});
   }
 
   function installTimelineReveal() {
@@ -109,7 +110,7 @@
   async function loadSearchIndex() {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch('data/search-index.json', {signal:controller.signal});
+      const response = await fetch(new URL('data/search-index.json',assetBase), {signal:controller.signal});
       if (!response.ok) throw Error('index unavailable');
       const payload = await response.json();
       if (!Array.isArray(payload.items) || !payload.items.length) throw Error('invalid index');
@@ -118,7 +119,7 @@
       const items = payload.items.filter(item => {
         if (!item || typeof item.title !== 'string' || typeof item.url !== 'string') return false;
         try {
-          const url = new URL(item.url, document.baseURI);
+          const url = new URL(item.url, assetBase);
           return ['http:', 'https:'].includes(url.protocol) && url.origin === location.origin && !url.username && !url.password;
         } catch { return false; }
       });
@@ -145,12 +146,12 @@
       const item=visible.find(c=>c.id===selectedId);
       if(item){
         const latest=item.history.at(-1);
-        insight.innerHTML=`<div class="insight-top"><p class="eyebrow">SELECTED PLACE</p><button type="button" class="insight-clear" aria-label="取消地圖選取">取消選取 ×</button></div><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.summary)}</p><div class="insight-breakdown"><span>${escapeHTML(item.status)}</span><span>${escapeHTML(item.villages.join('、')||item.scope)}</span></div>${latest?`<p class="insight-history">最後一筆歷程 · ${escapeHTML(latest.date)}<br>${escapeHTML(latest.title)}</p>`:''}<p class="insight-location">${escapeHTML(item.locationNote||'點位為代表位置，不是工程範圍。')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄與來源 →</a>${groupIds.length>1?'<div class="insight-group"><h4>附近的其他專題</h4></div>':''}`;
+        insight.innerHTML=`<div class="insight-top"><p class="eyebrow">SELECTED PLACE</p><button type="button" class="insight-clear" aria-label="取消地圖選取">取消選取 ×</button></div><h2>${escapeHTML(item.title)}</h2><p>${escapeHTML(item.summary)}</p><div class="insight-breakdown"><span>${escapeHTML(item.status)}</span><span>${escapeHTML(item.villages.join('、')||item.scope)}</span></div>${latest?`<p class="insight-history">最後一筆歷程 · ${escapeHTML(latest.date)}<br>${escapeHTML(latest.title)}</p>`:''}<p class="insight-location">${escapeHTML(item.locationNote||'點位為代表位置，不是工程範圍。')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄與來源 →</a>${groupIds.length>1?'<div class="insight-group"><h3>附近的其他專題</h3></div>':''}`;
         insight.querySelector('.insight-clear').addEventListener('click',()=>{api.clearSelection();document.getElementById('map-fit').focus();});
         if(groupIds.length>1) for(const id of groupIds){const c=visible.find(c=>c.id===id);if(!c||id===selectedId)continue;const button=document.createElement('button');button.type='button';button.textContent=c.title;button.addEventListener('click',()=>api.selectCase(id,groupIds));insight.querySelector('.insight-group').append(button);}
       }else{
         const village=filters.village.startsWith('v:')?filters.village.slice(2):null;
-        insight.innerHTML=`<p class="eyebrow">LIVE MAP VIEW</p><h3>${escapeHTML(village||'目前篩選結果')}：${visible.length} 筆</h3><p>${mapped} 筆有代表點位，${visible.length-mapped} 筆由列表閱讀。</p><p>點選里界可篩選，點選點位或「地圖定位」可查看專題進度。</p><a href="#case-results">查看目前結果 ↓</a>`;
+        insight.innerHTML=`<p class="eyebrow">LIVE MAP VIEW</p><h2>${escapeHTML(village||'目前篩選結果')}：${visible.length} 筆</h2><p>${mapped} 筆有代表點位，${visible.length-mapped} 筆由列表閱讀。</p><p>點選里界可篩選，點選點位或「地圖定位」可查看專題進度。</p><a href="#case-results">查看目前結果 ↓</a>`;
       }
     }
     document.addEventListener('huiwen:cases-change',render);
@@ -184,7 +185,7 @@
       const all=payload.items.map(item=>({...item,score:scoreResult(item,query)})).filter(item=>query?item.score>0:item.priority>0).sort((a,b)=>b.score-a.score||b.priority-a.priority);
       box.replaceChildren();
       all.slice(0,limit).forEach((item,i)=>{
-        const link=document.createElement('a');link.href=item.url;link.id=`global-result-${i}`;link.className='global-search-result';link.setAttribute('role','option');
+        const link=document.createElement('a');link.href=new URL(item.url,assetBase).href;link.id=`global-result-${i}`;link.className='global-search-result';link.setAttribute('role','option');
         let snippet=item.description||item.url;
         if(query&&!normalize(snippet).includes(query.split(' ')[0])){const body=String(item.keywords||'');const offset=normalize(body).indexOf(query.split(' ')[0]);if(offset>=0)snippet=(offset>22?'…':'')+body.slice(Math.max(0,offset-22),offset+95);}
         link.innerHTML=`<span class="global-search-type">${escapeHTML(item.type)}</span><span class="global-search-result-copy"><strong>${highlight(item.title,query)}</strong><small>${highlight(snippet,query)}</small></span><span aria-hidden="true">→</span>`;
@@ -198,7 +199,7 @@
     function ensure(){
       if(dialog)return;
       dialog=document.createElement('dialog');dialog.id='global-search-dialog';dialog.className='global-search-dialog';dialog.setAttribute('aria-label','全站搜尋');
-      dialog.innerHTML=`<div class="global-search-shell" role="search"><div class="global-search-input-row"><span aria-hidden="true">⌕</span><input type="search" autocomplete="off" spellcheck="false" aria-label="搜尋陳慧文官網" aria-controls="global-search-results" aria-autocomplete="list" placeholder="搜尋政績、新聞、政見、里別……"><button type="button" class="global-search-close" aria-label="關閉搜尋">Esc</button></div><div class="global-search-status" role="status">搜尋資料載入中…</div><div class="global-search-results" id="global-search-results" role="listbox" aria-label="搜尋結果"></div><div class="search-extra"><button type="button" data-search-more hidden>顯示更多結果</button><button type="button" data-search-retry hidden>重新載入搜尋資料</button></div><div class="global-search-footer"><span>↑↓ 選擇 · Enter 開啟 · Esc 關閉</span><a href="explore.html">進階探索 →</a></div></div>`;
+      dialog.innerHTML=`<div class="global-search-shell" role="search"><div class="global-search-input-row"><span aria-hidden="true">⌕</span><input type="search" autocomplete="off" spellcheck="false" aria-label="搜尋陳慧文官網" aria-controls="global-search-results" aria-autocomplete="list" placeholder="搜尋政績、新聞、政見、里別……"><button type="button" class="global-search-close" aria-label="關閉搜尋">Esc</button></div><div class="global-search-status" role="status">搜尋資料載入中…</div><div class="global-search-results" id="global-search-results" role="listbox" aria-label="搜尋結果"></div><div class="search-extra"><button type="button" data-search-more hidden>顯示更多結果</button><button type="button" data-search-retry hidden>重新載入搜尋資料</button></div><div class="global-search-footer"><span>↑↓ 選擇 · Enter 開啟 · Esc 關閉</span><a href="${new URL('explore.html',assetBase).href}">進階探索 →</a></div></div>`;
       document.body.append(dialog);input=dialog.querySelector('input');box=dialog.querySelector('.global-search-results');status=dialog.querySelector('.global-search-status');more=dialog.querySelector('[data-search-more]');retry=dialog.querySelector('[data-search-retry]');
       input.addEventListener('input',e=>{limit=12;if(!e.isComposing)render();});input.addEventListener('compositionend',()=>render());
       more.addEventListener('click',()=>{limit+=12;render();});retry.addEventListener('click',()=>{indexPromise=null;status.textContent='重新載入中…';render();});
@@ -213,8 +214,12 @@
         if(e.key==='Enter'){e.preventDefault();buttons[active]?.click();}
       });
     }
-    const open=()=>{document.dispatchEvent(new Event('site:close-menu'));ensure();returnFocus=document.activeElement;dialog.showModal();document.body.classList.add('search-open');input.focus();render();};
+    const open=(query)=>{document.dispatchEvent(new Event('site:close-menu'));ensure();returnFocus=document.activeElement;dialog.showModal();document.body.classList.add('search-open');if(typeof query==='string'){input.value=query.slice(0,300);limit=12;}input.focus();render();};
     trigger.addEventListener('click',open);
+    document.addEventListener('huiwen:search', event => {
+      if (typeof event.detail?.query !== 'string') return;
+      open(event.detail.query);
+    });
     document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();dialog?.open?close():open();}});
     if(!/Mac|iPhone|iPad/.test(navigator.platform))trigger.querySelector('kbd').textContent='Ctrl K';
   }

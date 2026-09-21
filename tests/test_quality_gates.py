@@ -63,6 +63,20 @@ class QualityMutationTests(unittest.TestCase):
         for builder in ('build_cases.py','build_search.py'):self.assertEqual(self.gate(builder).returncode,0)
         for name in ('achievements.html','achievement-'+rows[0]['id']+'.html','data/search-index.json'):
             self.assertIn('Fixture synchronized title',(self.root/name).read_text())
+    def test_home_rejects_unpublished_record(self):
+        rows=json.loads((self.root/'data/achievements.json').read_text())
+        unpublished=next(r['id'] for r in rows if r['status']=='待核驗')
+        config=self.root/'data/civic-home.json'; data=json.loads(config.read_text());data['featured']=unpublished;config.write_text(json.dumps(data))
+        self.reject('build_civic.py','unique public records')
+    def test_home_derives_escaped_content_from_canonical_record(self):
+        config=json.loads((self.root/'data/civic-home.json').read_text())
+        path=self.root/'data/achievements.json'; rows=json.loads(path.read_text())
+        row=next(r for r in rows if r['id']==config['featured']);row['title']='Fixture <script>alert(1)</script> title'
+        path.write_text(json.dumps(rows))
+        self.assertEqual(self.gate('build_civic.py').returncode,0)
+        text=(self.root/'index.html').read_text()
+        self.assertIn('Fixture &lt;script&gt;alert(1)&lt;/script&gt; title',text)
+        self.assertNotIn('Fixture <script>alert(1)</script> title',text)
     def test_media_news_text_propagates_to_search(self):
         self.edit('news.html','</main>','<article><h2>Fixture uniquely searchable media event</h2></article></main>')
         self.assertEqual(self.gate('build_search.py').returncode,0)

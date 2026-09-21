@@ -57,7 +57,7 @@ for name,doc in pages.items():
  for el in doc.select('[href],[src]'):
   raw=el.get('href',el.get('src'));u=urlsplit(raw)
   if u.scheme or u.netloc:continue
-  path=unquote(u.path);target=R/path if path else R/name
+  path=unquote(u.path);target=R/path.lstrip("/") if path else R/name
   if target.is_dir():target=target/'index.html'
   require(target.is_file(),f'{name}: missing {raw}')
   if u.fragment and target.name in pages:require(bool(pages[target.name].find(id=unquote(u.fragment))),f'{name}: missing fragment {raw}')

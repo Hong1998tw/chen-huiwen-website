@@ -38,11 +38,11 @@ try {
     await dialog.waitFor({ state: 'visible' });
     const input = dialog.getByRole('searchbox', { name: '搜尋陳慧文官網' });
     await input.fill('文德國小');
-    const result = dialog.locator('a[href="achievement-wende-school-center.html"]');
+    const result = dialog.locator('a[href$="/achievement-wende-school-center.html"]');
     await result.waitFor({ state: 'visible' });
     assert.match(await result.textContent(), /文德國小活動中心/);
     await input.fill('寵物');
-    const petResult = dialog.locator('a[href="achievement-consumer-dudu.html"]');
+    const petResult = dialog.locator('a[href$="/achievement-consumer-dudu.html"]');
     await petResult.waitFor({ state: 'visible' });
     assert.match(await petResult.textContent(), /毛動力嘟嘟車消費爭議協助/);
     await page.keyboard.press('Escape');

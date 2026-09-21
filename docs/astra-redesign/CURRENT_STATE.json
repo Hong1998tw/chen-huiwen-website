@@ -1,0 +1,72 @@
+{
+  "status": "COMPLETE",
+  "scope": "LOCAL_BUILD_ONLY",
+  "updated": "2026-09-22",
+  "phase": "delivery",
+  "branch": "astra/huiwen-redesign-202609",
+  "baseline": "5aeddfd1c1517fd35c5ea62627fbd4fac1d739d6",
+  "latest_safe_commit": "31a111db337bd3ca6aa1ac07101e099c920f630e",
+  "final_checkpoint_ref": "astra/huiwen-redesign-202609",
+  "final_checkpoint_note": "Final documentation commit contains this state. Resolve exact HEAD; external delivery receipt records its SHA without a self-referential hash.",
+  "completed": [
+    "Current source/Drive/Notion/production audit",
+    "Six-category benchmark and pattern library",
+    "15 concepts plus five wild concepts and reality filter",
+    "Product thesis, IA, design and data architecture",
+    "Real public-content implementation",
+    "Desktop and 390px visual review",
+    "Functional, regression, accessibility, SEO and performance QA",
+    "Privacy boundary and original checkout preservation"
+  ],
+  "current_tasks": [],
+  "remaining": [],
+  "blocked": [],
+  "changed_files": [
+    "civic.css",
+    "civic.js",
+    "data/civic-home.json",
+    "scripts/build_civic.py",
+    "scripts/build_cases.py",
+    "scripts/build_search.py",
+    "index.html",
+    "service.html",
+    "404.html",
+    "site.js",
+    "digital.js",
+    "sw.js",
+    "generated HTML and search index",
+    "validators and browser/unit tests",
+    "docs/astra-redesign"
+  ],
+  "tests": {
+    "passed": [
+      "53 unit tests + 4 event tests",
+      "All seven validators; two-build byte consistency",
+      "Six existing browser suites, complete quality command exit 0",
+      "61 final civic checks; no page errors",
+      "13 lifecycle checks including service 200% text",
+      "Four representative Lighthouse pages meet thresholds",
+      "git diff --check"
+    ],
+    "failed": []
+  },
+  "visual_qa": {
+    "completed": [
+      "1440x960",
+      "390x844",
+      "home, reading, map, list, detail, service, news, exploration, intake, 404"
+    ],
+    "remaining": []
+  },
+  "not_performed": [
+    "push",
+    "PR",
+    "merge",
+    "deploy",
+    "DNS changes",
+    "Notion writes",
+    "Drive original edits",
+    "forms/payment submission"
+  ],
+  "next_action": "Review local candidate and evidence; any release needs a separate explicit instruction."
+}

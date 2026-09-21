@@ -1,4 +1,5 @@
 'use strict';
+const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
   const toggle = document.querySelector('.menu-toggle');
@@ -9,18 +10,18 @@
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
   backdrop.setAttribute('aria-label', '關閉選單');
   document.body.append(backdrop);
-  if (!navigation.querySelector('a[href="election.html"]')) {
+  if (!navigation.querySelector('a[href="election.html"],a[href="/election.html"]')) {
     const election = document.createElement('a');
     election.href = 'election.html';
     election.textContent = '2026選舉';
-    const donation = navigation.querySelector('a[href="political-donation.html"]');
+    const donation = navigation.querySelector('a[href="political-donation.html"],a[href="/political-donation.html"]');
     if (donation) donation.after(election); else navigation.append(election);
   }
-  if (!navigation.querySelector('a[href="service.html#monthly-heading"]')) {
+  if (!navigation.querySelector('a[href="service.html#monthly-heading"],a[href="/service.html#monthly-heading"]')) {
     const lawyer = document.createElement('a');
     lawyer.href = 'service.html#monthly-heading';
     lawyer.textContent = '律師時間表';
-    const election = navigation.querySelector('a[href="election.html"]');
+    const election = navigation.querySelector('a[href="election.html"],a[href="/election.html"]');
     if (election) election.after(lawyer); else navigation.append(lawyer);
   }
   const links = [...navigation.querySelectorAll('a')];
@@ -130,13 +131,13 @@
   if (!document.querySelector(`link[data-digital-civic="${VERSION}"]`)) {
     const style = document.createElement('link');
     style.rel = 'stylesheet';
-    style.href = `digital.css?v=${VERSION}`;
+    style.href = new URL(`digital.css?v=${VERSION}`, HUIWEN_ASSET_BASE).href;
     style.dataset.digitalCivic = VERSION;
     document.head.append(style);
   }
   if (!document.querySelector(`script[data-digital-civic="${VERSION}"]`)) {
     const script = document.createElement('script');
-    script.src = `digital.js?v=${VERSION}`;
+    script.src = new URL(`digital.js?v=${VERSION}`, HUIWEN_ASSET_BASE).href;
     script.async = false;
     script.dataset.digitalCivic = VERSION;
     document.body.append(script);

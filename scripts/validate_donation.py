@@ -41,15 +41,15 @@ files=sorted(R.glob('*.html'))
 refs=0
 for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
- require(len(doc.select('#navigation a[href="political-donation.html"]'))==1,f'{f.name}: header entry')
- require(doc.select('#navigation a')[1]['href']=='political-donation.html',f'{f.name}: donation second')
- require(len(doc.select('footer a[href="political-donation.html"]'))==1,f'{f.name}: footer entry')
+ require(len(doc.select('#navigation a[href="political-donation.html"],#navigation a[href="/political-donation.html"]'))==1,f'{f.name}: header entry')
+ require(doc.select('#navigation a')[1]['href'].lstrip('/')=='political-donation.html',f'{f.name}: donation second')
+ require(len(doc.select('footer a[href="political-donation.html"],footer a[href="/political-donation.html"]'))==1,f'{f.name}: footer entry')
  ids=[el['id'] for el in doc.select('[id]')]
  require(len(ids)==len(set(ids)),f'{f.name}: duplicate IDs')
  for el in doc.select('[href],[src]'):
   raw=el.get('href',el.get('src'));u=urlsplit(raw)
   if u.scheme or u.netloc:continue
-  target=R/unquote(u.path) if u.path else f
+  target=R/unquote(u.path).lstrip("/") if u.path else f
   require(target.exists(),f'{f.name}: missing local target {raw}')
   if u.fragment and target.suffix=='.html' and target.exists():
    targetdoc=BeautifulSoup(target.read_text(),'html.parser')

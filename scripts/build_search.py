@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from bs4 import BeautifulSoup
 R = Path(__file__).resolve().parents[1]
+from build_civic import build as build_civic
+build_civic()
 items = []
 paths = sorted(R.glob('*.html')) + sorted(R.glob('*/index.html'))
 for path in paths:

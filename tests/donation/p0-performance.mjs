@@ -1,8 +1,9 @@
+import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
 import {writeFile,readFile,mkdir} from 'node:fs/promises';
 import {gzipSync} from 'node:zlib';
-const root=new URL('../../',import.meta.url).pathname;
+const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=new URL('./results/',import.meta.url);await mkdir(out,{recursive:true});
 const reports=[];const browser=await chromium.launch({headless:true});
 try{

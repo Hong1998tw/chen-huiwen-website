@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 
-const root=new URL('../../',import.meta.url).pathname;
+const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=root+'tests/donation/results/';await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server','8789','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const base='http://127.0.0.1:8789/';
@@ -109,7 +110,7 @@ try{
    assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),expected);
    assert(!await page.locator('body').textContent().then(t=>t.includes('現任里長')));
    await page.keyboard.press('Control+k');const input=page.locator('#global-search-dialog input');await input.fill(q);
-   await page.locator('.global-search-result[href="achievement-mingfeng-12-gongyuan-road.html"]').waitFor();await page.keyboard.press('Escape');
+   await page.locator('.global-search-result[href$="/achievement-mingfeng-12-gongyuan-road.html"]').waitFor();await page.keyboard.press('Escape');
    await page.locator('#reset-map-filters').click();
   });
 
