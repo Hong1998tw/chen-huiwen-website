@@ -4,9 +4,12 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
 (() => {
   const header = document.querySelector('.site-header');
   if (!header) return;
-  const syncHeight = () => document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
-  syncHeight();
-  new ResizeObserver(syncHeight).observe(header);
+  // ResizeObserver supplies the completed layout size; avoid forcing a full
+  // page reflow during startup, especially on the long achievement index.
+  new ResizeObserver(([entry]) => {
+    const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
+    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
+  }).observe(header, {box:'border-box'});
 })();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
