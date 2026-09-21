@@ -215,6 +215,10 @@
     }
     const open=()=>{document.dispatchEvent(new Event('site:close-menu'));ensure();returnFocus=document.activeElement;dialog.showModal();document.body.classList.add('search-open');input.focus();render();};
     trigger.addEventListener('click',open);
+    document.addEventListener('huiwen:search', event => {
+      if (typeof event.detail?.query !== 'string') return;
+      open(); input.value=event.detail.query.slice(0,300); limit=12; render();
+    });
     document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!e.isComposing){e.preventDefault();dialog?.open?close():open();}});
     if(!/Mac|iPhone|iPad/.test(navigator.platform))trigger.querySelector('kbd').textContent='Ctrl K';
   }

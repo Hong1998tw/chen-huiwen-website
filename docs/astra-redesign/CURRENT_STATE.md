@@ -1,9 +1,9 @@
 # CURRENT STATE
 
 Updated: 2026-09-22
-Current Phase: Baseline audit
+Current Phase: Implementation
 Current Branch: astra/huiwen-redesign-202609
-Latest Safe Commit: 5aeddfd1c1517fd35c5ea62627fbd4fac1d739d6
+Latest Safe Commit: 6f94c52
 
 ## Mission
 Local-only public-information and service redesign. No push, PR, merge, deployment or external writes.
@@ -42,4 +42,4 @@ Production parity and current data capabilities require inspection.
 Do not touch original SEO checkout or its untracked .ai directory. Do not import Drive legacy website bytes.
 
 ## Resume From
-Exact next action: capture baseline and inspect source.
+Exact next action: implement civic discovery, map/list and detail reading anchors.
