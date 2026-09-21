@@ -2,6 +2,7 @@
 (() => {
   const assetBase = new URL('.', document.currentScript.src);
   const VERSION = '20260912-p0-v2';
+  const SERVICE_WORKER_VERSION = '20260922-sticky-nav-v10';
   const TOPICS = new Set(['交通與基建','教育與文化','環境與綠地','社福與衛環','經濟與產業']);
   const STATIC_PAGES = [
     ['首頁','./','服務處、問政與官網入口','頁面'],
@@ -39,7 +40,7 @@
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
     if (['localhost','127.0.0.1'].includes(location.hostname)) return;
-    window.addEventListener('load', () => navigator.serviceWorker.register(new URL(`sw.js?v=${VERSION}`,assetBase).href).catch(() => {}), {once:true});
+    window.addEventListener('load', () => navigator.serviceWorker.register(new URL(`sw.js?v=${SERVICE_WORKER_VERSION}`,assetBase).href).catch(() => {}), {once:true});
   }
 
   function installTimelineReveal() {
