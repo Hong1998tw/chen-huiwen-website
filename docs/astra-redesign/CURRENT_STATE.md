@@ -1,12 +1,26 @@
 # CURRENT STATE
 
+BUILD STATUS: COMPLETE — local build only.
 Updated: 2026-09-22
-Phase: Final QA
 Branch: astra/huiwen-redesign-202609
-Last runnable checkpoint: eb6bfe7
+Baseline: 5aeddfd1c1517fd35c5ea62627fbd4fac1d739d6
+Verified implementation checkpoint: 31a111db337bd3ca6aa1ac07101e099c920f630e
+Final documentation checkpoint: resolve `git rev-parse HEAD`; exact final SHA is recorded in the separate delivery receipt to avoid a self-referential commit hash.
 
-Audit, six benchmark categories, 20 concepts, thesis, IA, data, design and implementation complete. Desktop and 390px visual review complete. Core data, hosting configuration and original checkout preserved.
+## Completed
+Audit, six-category benchmark, pattern library, 15 concepts plus 5 wild concepts, reality filter, thesis, IA, data architecture, design system, public-content implementation and desktop/390px review.
 
-53 unit + 4 event tests, five core browser suites, and 61 civic checks passed. Full run identified service-card overflow at 200% text; CSS fix applied, lifecycle rerun in progress. Initial mobile Lighthouse scores 92–99, SEO 100; map headings and home accessible name corrected.
+## Verification
+Full `../qa-venv/bin/python scripts/quality.py --baseline-ref origin/main --browser` exit 0: seven validators, two-build equality, 53 unit + 4 event tests, six browser suites. `ROUND=final node tests/donation/astra.mjs`: 61 PASS, no failures/page errors. Lifecycle: 13 PASS. Four final mobile Lighthouse pages: performance 98/92/99/98; accessibility, best practices and SEO all 100. No field-CWV or production-edge claim.
 
-Next: finish full regression and Lighthouse recheck, package receipts/screenshots, finalize recovery and commit. No push/PR/merge/deploy/external writes. Do not repeat audit or import legacy/Notion private bytes. See 09–13 for implementation and QA boundaries.
+## Decisions and boundaries
+Thesis: 鳳山公共資訊誌. Preserve public source data and URLs; generate home previews from reviewed IDs; search/service first, map optional, dates retain meaning. No new production dependency, private content, fabricated geometry or stronger political claims.
+
+## Remaining / blockers
+No local-build blocker. Historical source warnings and external-provider/real-device limitations remain in 13_OPEN_ISSUES.md. No remote release was requested or performed.
+
+## Do not redo
+Do not repeat audit/concept work. Do not touch the original SEO checkout or its untracked .ai directory. Do not import legacy Drive bytes or private Notion records. Preserve this worktree and delivery evidence before cleanup.
+
+## Resume
+Read RECOVERY.md and 09–13. Review the local preview; follow separate release authorization if later provided.

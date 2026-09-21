@@ -12,3 +12,5 @@
 - Browser, axe and mobile round in progress. No production effect.
 
 CP-09/10: corrected visual issues, same-origin nested 404, public-link root resolution and filesystem URL decoding. All original canonical achievement/platform/event bytes remain unchanged. Header search now handles nested routes safely. Added mutation tests and civic browser tests; no test gate removed. Lighthouse representative initial scores 92–99, SEO 100. Final evidence collection in progress.
+
+Final acceptance: verified source checkpoint 31a111db337bd3ca6aa1ac07101e099c920f630e; all full quality/browser gates, 61 civic checks and four Lighthouse thresholds passed. Service 200% text overflow and homepage accessible-name mismatch fixed. Final docs/recovery checkpoint follows; exact final SHA recorded outside the commit. No remote mutation.

@@ -14,3 +14,7 @@ Map heading-order warning subsequently corrected (sidebar h2, nested group h3). 
 Semantic heading/source navigation, labels, visible focus, keyboard dialog and menu, text status, 44px controls, reduced-motion, no-JS list fallback and print rules. 390px and text resizing tested. Not a WCAG conformance certification; no real assistive-device session.
 
 All existing indexed route names retained. Canonical/OG/Twitter/JSON-LD/sitemap validators retained. Search rebuilt from final HTML; metadata claims unchanged. 404 keeps noindex and now recovers same-origin at nested paths. No Search Console or remote indexing claim.
+
+## Final acceptance
+
+After heading-order and accessible-name corrections: home 98/100/100/100; achievements 92/100/100/100; service 99/100/100/100; detail 98/100/100/100 (performance/accessibility/best practices/SEO). One cold mobile run per page. CLS: home 0.000086, achievements 0.01066, service/detail 0. No runtime errors; prior label/heading findings resolved. No production service-worker or edge measurement. Raw final receipts are separate from initial measurements.
