@@ -1,6 +1,6 @@
 # Recovery
 
-BUILD STATUS: COMPLETE (local-only candidate).
+BUILD STATUS: COMPLETE (release candidate; deployment state is recorded in the release receipt).
 Branch: `astra/huiwen-redesign-202609`
 Baseline: `5aeddfd1c1517fd35c5ea62627fbd4fac1d739d6`
 Verified implementation checkpoint: `31a111db337bd3ca6aa1ac07101e099c920f630e`
@@ -29,4 +29,4 @@ Acceptance: quality-complete.log final PASS; qa-final.json 61 PASS; four Lightho
 
 Bundle is incremental from the exact baseline above, not a complete clone. In an existing repository containing that baseline: `git bundle verify /path/to/huiwen-redesign.bundle`, then fetch the named branch from that local file into a new recovery branch/worktree. Do not reset the original checkout. Verify receipt SHA and checksums first.
 
-Next action: review candidate/evidence. No push, PR, merge, deploy, DNS, registry edits or external submissions authorized by this build task.
+Next action: use the release receipt for the current deployment and Notion closeout. No DNS, registry edits or external submissions are implied by this website release.

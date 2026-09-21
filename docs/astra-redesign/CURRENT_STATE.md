@@ -17,7 +17,7 @@ Full `../qa-venv/bin/python scripts/quality.py --baseline-ref origin/main --brow
 Thesis: 鳳山公共資訊誌. Preserve public source data and URLs; generate home previews from reviewed IDs; search/service first, map optional, dates retain meaning. No new production dependency, private content, fabricated geometry or stronger political claims.
 
 ## Remaining / blockers
-No local-build blocker. Historical source warnings and external-provider/real-device limitations remain in 13_OPEN_ISSUES.md. No remote release was requested or performed.
+No local-build blocker. Historical source warnings and external-provider/real-device limitations remain in 13_OPEN_ISSUES.md. Deployment state is tracked separately after the authorized GitHub Pages release.
 
 ## Do not redo
 Do not repeat audit/concept work. Do not touch the original SEO checkout or its untracked .ai directory. Do not import legacy Drive bytes or private Notion records. Preserve this worktree and delivery evidence before cleanup.
