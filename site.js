@@ -148,7 +148,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   }
   if (!document.querySelector(`script[data-digital-civic="${VERSION}"]`)) {
     const script = document.createElement('script');
-    script.src = new URL(`digital.js?v=${VERSION}`, HUIWEN_ASSET_BASE).href;
+    script.src = new URL('digital.js?v=20260922-sticky-nav-v10', HUIWEN_ASSET_BASE).href;
     script.async = false;
     script.dataset.digitalCivic = VERSION;
     document.body.append(script);
