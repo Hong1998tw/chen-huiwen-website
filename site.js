@@ -1,5 +1,16 @@
 'use strict';
 const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
+// Reserve the actual sticky header height for hash links and keyboard scrolling.
+(() => {
+  const header = document.querySelector('.site-header');
+  if (!header) return;
+  // ResizeObserver supplies the completed layout size; avoid forcing a full
+  // page reflow during startup, especially on the long achievement index.
+  new ResizeObserver(([entry]) => {
+    const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
+    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
+  }).observe(header, {box:'border-box'});
+})();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
   const toggle = document.querySelector('.menu-toggle');
@@ -37,7 +48,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     toggle.setAttribute('aria-expanded', 'false'); backdrop.hidden = true;
     toggle.setAttribute('aria-label', '開啟主要選單');
     inertBefore.forEach(([node, value]) => { node.inert = value; }); inertBefore = [];
-    if (returnFocus) toggle.focus();
+    if (returnFocus) toggle.focus({preventScroll:true});
   }
   function openMenu() {
     positionMenu();
@@ -47,7 +58,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     inertBefore = background.map(node => [node, node.inert]);
     background.forEach(node => { node.inert = true; });
     const search = navigation.querySelector('.global-search-trigger');
-    (search || links.find(link => link.getClientRects().length))?.focus();
+    (search || links.find(link => link.getClientRects().length))?.focus({preventScroll:true});
   }
   toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu(true) : openMenu());
   backdrop.addEventListener('click', () => closeMenu(true));
@@ -58,7 +69,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
       const search = navigation.querySelector('.global-search-trigger');
       const focusable = [toggle, ...navigation.querySelectorAll('a, button')].filter(node => node.getClientRects().length && !node.disabled); const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({preventScroll:true}); }
     }
   });
   window.matchMedia('(min-width: 781px)').addEventListener('change', event => { if (event.matches) closeMenu(); });
