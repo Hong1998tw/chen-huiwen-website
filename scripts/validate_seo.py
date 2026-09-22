@@ -183,7 +183,7 @@ def main() -> int:
     def fail(message: str) -> None:
         errors.append(message)
 
-    page_paths = sorted(root.glob("*.html")) + sorted(root.glob("*/index.html"))
+    page_paths = sorted(root.glob("*.html")) + sorted(p for p in root.glob("*/index.html") if not p.parent.name.startswith(("_", ".")))
     pages = {p.relative_to(root).as_posix(): parse(p)[0] for p in page_paths}
     indexable: dict[str, Document] = {}
     canonicals: dict[str, str] = {}
@@ -196,9 +196,9 @@ def main() -> int:
         robots = " ".join(meta_values(doc, "name", "robots")).lower()
         if "noindex" not in robots:
             indexable[name] = doc
-        if name == "404.html" and "noindex" not in robots:
+        if name in ("404.html", "offline.html") and "noindex" not in robots:
             fail("404.html: missing robots noindex")
-        if name != "404.html" and "noindex" in robots:
+        if name not in ("404.html", "offline.html") and "noindex" in robots:
             # Root-level directory stubs are intentional migration fallbacks. They
             # must canonicalize away from themselves and remain followable until
             # the Cloudflare edge redirect has fully replaced legacy discovery.

@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.huiwen.tw/schema/public-achievement.schema.json",
+  "title": "Public achievement projection v1",
+  "description": "Only reviewed public records and explicit public fields; no editorialReview, verification, verifiedAt or villageMethod. The raw canonical source remains in Git.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "title": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "scope": {
+        "type": "string"
+      },
+      "district": {
+        "type": "string"
+      },
+      "locationName": {
+        "type": "string"
+      },
+      "locationNote": {
+        "type": "string"
+      },
+      "updated": {
+        "type": "string"
+      },
+      "budget": {
+        "type": "string"
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "subcategories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "villages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "paragraphs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "notes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "images": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "related": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "持續追蹤",
+          "爭取規劃",
+          "政策實施",
+          "已完成"
+        ]
+      },
+      "coordinates": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "published": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "history": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "date": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "date",
+            "title",
+            "text"
+          ]
+        }
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "sourceType": {
+              "type": "string"
+            },
+            "sourceDate": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "title",
+            "url"
+          ]
+        }
+      },
+      "imageDimensions": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "imageMetadata": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "alt": {
+              "type": "string"
+            },
+            "caption": {
+              "type": "string"
+            },
+            "credit": {
+              "type": "string"
+            },
+            "sourceUrl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "alt",
+            "caption",
+            "credit",
+            "sourceUrl"
+          ]
+        }
+      },
+      "villageHeadPartners": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "village": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://"
+                },
+                "sourceType": {
+                  "type": "string"
+                },
+                "sourceDate": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "title",
+                "url"
+              ]
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "required": [
+      "id",
+      "title",
+      "summary",
+      "status",
+      "categories",
+      "updated",
+      "sources",
+      "history"
+    ]
+  }
+}

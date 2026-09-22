@@ -18,7 +18,7 @@
 
   async function load() {
     const responses = await Promise.all([
-      fetch('data/achievements.json',{cache:'no-store'}),
+      fetch('data/achievements-public.json',{cache:'no-store'}),
       fetch('data/platforms.json',{cache:'no-store'}),
       fetch('news.html',{cache:'no-store'})
     ]);

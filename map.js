@@ -13,9 +13,8 @@
     data=await response.json();
     if(!Array.isArray(data)||!data.length)throw Error('invalid records');
   } catch {
-    const notice=document.createElement('p');notice.className='case-live-summary';notice.setAttribute('role','status');
+    const notice=document.querySelector('.case-live-summary');
     notice.textContent='篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。';
-    document.querySelector('.map-controls').append(notice);
     root.textContent='互動地圖暫時無法載入。';
     document.getElementById('map-message').textContent='地圖資料暫時無法載入，請直接閱讀專題列表。';
     return;
@@ -39,7 +38,7 @@
   pagination.setAttribute('aria-label', '建設與服務紀錄分頁');
   pagination.dataset.pageSize = String(PAGE_SIZE);
   list.after(pagination);
-  const live=document.createElement('p');live.className='case-live-summary';live.setAttribute('role','status');document.querySelector('.map-controls').append(live);
+  const live=document.querySelector('.case-live-summary');
   const params = () => Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value]));
   function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage }; }
   function announce() { document.dispatchEvent(new CustomEvent('huiwen:cases-change', { detail: getState() })); }

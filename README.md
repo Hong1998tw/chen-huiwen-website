@@ -27,7 +27,7 @@
 
 ## 維護與發布
 
-GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 建立工作 branch；修改完成後先 build、測試與檢查 diff，再經 review 進入 `main`。重大版面、資料或流程變更優先使用 Pull Request，不以 Google Drive candidate 直接覆寫 production。
+GitHub Pages 由 `main` 的 `Deploy public Pages artifact` workflow 發布經品質檢查與白名單產生的 `_site/`；不發布 repository root。首次切換的實際設定與結果以 release receipt 為準。一般更新應從最新 `main` 建立工作 branch；修改完成後先 build、測試與檢查 diff，再經 review 進入 `main`。重大版面、資料或流程變更優先使用 Pull Request，不以 Google Drive candidate 直接覆寫 production。
 
 可用 `python3 -m http.server 8000` 在本機預覽。各頁採相對連結，可在 GitHub Pages 專案子路徑運作。
 
@@ -47,7 +47,9 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 ## 每月公益律師時間表
 
-首頁連結至站內服務頁，服務頁嵌入 Canva 公開檢視版時間表。時間表由服務處在 Canva 維護，網站不複製容易過期的月份與時段。
+服務處 Canva 公開圖卡為原始時段來源；`data/legal-schedule.json` 是逐次核對後的本站文字轉錄，`scripts/build_service.py` 產生可搜尋、可閱讀的表格。兩者不會自動同步，也不是即時名額系統。更新圖卡後須由維護者核對文字表、`observedAt`、`validThrough` 與 `nextReviewAt`，再 build／發布；過月資料不可當成當月安排。
+
+`scripts/check_content_freshness.py` 以 Asia/Taipei 檢查月份與維護期限，輸出機器可讀待辦；不會自行產生下月時段。維護責任人目前**未指定**，到期提醒不能代替內容核實。流程及變更通知界線見 [維護 runbook](docs/MAINTENANCE.md)。
 
 2026-09-08：完成第二版視覺設計，採墨綠、萊姆綠、浮動導覽與編輯式大字版型。
 
@@ -89,6 +91,13 @@ GitHub Pages 從 `main` 分支根目錄發布。一般更新應從最新 `main` 
 
 `python3 scripts/quality.py --baseline-ref origin/main` 執行既有 validators、兩次生成一致性與正向／負向測試；加 `--browser` 執行互動回歸。首次安裝方式與完整維護索引見 [維護 runbook](docs/MAINTENANCE.md)。
 
+## 內容身分與維護期限
+
+- 政見原文維持 `data/platforms.json` 的 `sections.items` 字串；`itemsById` 以「年份＋完整原文」對應穩定 ID、既有公開紀錄及待補資訊。重排不改 ID，未同步核對的改文會在 build 失敗。跨屆對照只表示相近主題，未確認延續或完成。
+- `data/events.json` 支援 `scheduled`、`rescheduled`、`cancelled`。改期／取消需公開來源、異動說明及更新日，改期另保留原時間；取消仍保留固定網址，不再提供報名／加入日曆。Google 日曆連結儲存的是當下副本，不會自動追蹤變更。
+- `data/site-profile.json` 保存人物身分資料截止日與後續核對期限，`scripts/build_profile.py` 投影到關於頁；不得依倒數或日期推定當選、續任、卸任。
+- `data/content-governance.json` 保存維護角色與檢查契約；目前角色皆未指定。GitHub 每日內容期限 workflow 僅讀取公開來源 metadata，不替人做事實判定，不建立 Issue 或對外傳訊。實際執行及提醒狀態以 workflow run 為準。
+
 ## 2026-09 civic reading candidate
 
-`data/civic-home.json` selects existing public stable IDs only. `scripts/build_civic.py` generates homepage previews and shared civic asset references; it runs automatically at the start of `build_search.py`. Finish every build with `build_search.py`. Do not hand-edit the homepage `civic-stories` generated region. New browser regression: `node tests/donation/astra.mjs` against a server on 127.0.0.1:8766. Recovery and design decisions: `docs/astra-redesign/`. The redesign candidate is released through the normal branch/PR/CI/Pages workflow; this README does not claim deployment until the release receipt records it.
+`data/civic-home.json` selects existing public stable IDs only. `scripts/build_civic.py` generates only homepage previews. Run `python3 scripts/build_all.py` for the explicit build graph: public projection → source-driven pages → profile/home → shared chrome and asset hashes → search → content-dated sitemap. `build_search.py` has no hidden rendering side effects. Header/footer and navigation are owned by `templates/site-*.html` and `data/navigation.json`; generated shared regions must not be edited per page. Do not hand-edit the homepage `civic-stories` generated region. New browser regression: `node tests/donation/astra.mjs` against a server on 127.0.0.1:8766. Recovery and design decisions: `docs/astra-redesign/`. The redesign candidate is released through the normal branch/PR/CI/Pages workflow; this README does not claim deployment until the release receipt records it.

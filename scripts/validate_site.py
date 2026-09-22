@@ -40,6 +40,11 @@ for name,doc in pages.items():
  parser=html5lib.HTMLParser();parser.parse((R/name).read_text());require(not parser.errors,f'{name}: HTML5 errors {parser.errors}')
  require(doc.html.get('lang')=='zh-Hant-TW',f'{name}: language')
  require(len(doc.select('h1'))==1 and len(doc.select('main'))==1,f'{name}: main/headings')
+ if name=='offline.html':
+  require(doc.select_one('meta[name=robots]') and doc.select_one('meta[name=robots]').get('content')=='noindex','offline.html: must stay noindex')
+  require(not doc.select('script[src],link[rel=stylesheet],img'),'offline.html: must work without remote resources')
+  require(bool(doc.select_one('a[href="tel:+88678212536"]')),'offline.html: usable contact fallback')
+  continue
  require(bool(doc.select_one('.skip-link')),f'{name}: skip link')
  for sel in ['title','meta[name="description"]','link[rel="canonical"]','meta[property="og:title"]','meta[property="og:description"]','meta[property="og:url"]','meta[property="og:image"]','meta[name="twitter:card"]']:
   require(bool(doc.select_one(sel)),f'{name}: {sel}')
@@ -135,7 +140,7 @@ for runtime_path in ['data/achievements.json','data/achievement-map.json','data/
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
 for name,doc in pages.items():
- if name!='404.html':require(doc.select_one('link[rel="canonical"]')['href'] in locs,f'{name}: sitemap canonical')
+ if name not in ('404.html','offline.html'):require(doc.select_one('link[rel="canonical"]')['href'] in locs,f'{name}: sitemap canonical')
 for p in (R/'data').glob('*.json'):json.loads(p.read_text())
 for width in [240,480,800]:
  for fmt in ['avif','webp']:require((R/f'assets/chen-huiwen-{width}.{fmt}').stat().st_size<100000,'portrait size budget')

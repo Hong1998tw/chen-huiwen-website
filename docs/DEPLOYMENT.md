@@ -15,14 +15,16 @@
 4. 政績資料變更時，優先編輯 `data/achievements.json`，再執行：
 
    ```bash
-   python3 scripts/build_cases.py
+   python3 scripts/build_all.py
+   python3 scripts/quality.py --baseline-ref origin/main
+   python3 scripts/build_public.py
    ```
 
 5. 檢查 `git diff`，確認沒有非預期輸出、placeholder、token、私人資料或內部網址。
 6. 完成 `docs/TEST-CHECKLIST.md` 的必要項目。
 7. 建立 Pull Request，讓 CI 與必要 browser／Accessibility QA 驗證修改。
 8. 依下方「預設直接部署；有疑慮才等待」規則處理，不再對例行安全修改逐次詢問是否部署。
-9. 合併至 `main` 後，由 GitHub Pages 發布。
+9. 合併至 `main` 後，由 `Deploy public Pages artifact` 重新驗證並只發布 `_site/`；repository Pages 設定須為 workflow source。
 10. 部署完成後重新檢查 production，而不是只確認 GitHub commit 成功。
 11. 需要正式 release／收尾時，將 release artifact、commit SHA、測試摘要歸檔至 Google Drive `03_releases/`；重大決策或流程變更更新 Notion。
 
@@ -101,3 +103,12 @@
 - Drive release artifact 位置（若本次執行正式 release／收尾）
 
 最後更新：2026-09-16。
+
+
+## 2026-09-22 Pages artifact 切換與回滾
+
+本次全面改善把 branch/root 發布改為 Git-driven public artifact。首次切換：PR current-head checks 通過 → 記錄既有 Pages build_type/source/domain → 設 Pages build_type=workflow（保留網域與HTTPS）→ merge → 等待 pages.yml build/deploy → read-back Pages設定、成品白名單、正式sanitized資料与排除路徑。不得把 source.yml存在宣告成已啟用；正式設定/run ID 寫在外部release receipt。
+
+`Production live verification` 在 Pages workflow 成功後，以同一 head_sha 執行。HTTP核對電話/tel/address/hours/account/dates等 exact critical contract；normalized snapshot browser 與不攔截任何資源的 direct native smoke 分開報告。edge阻擋exit2=BLOCKED，不能冒充通過；可用另一個有實際可達能力的原生瀏覽器補直接證據，仍須記錄被阻擋環境。
+
+回滾優先建立新的PR：**保留新的 public projection / pages.yml / workflow-source 設定與安全發布邊界，只回退有問題的內容或樣式**，重新生成並跑 quality／CI。不能直接整筆revert此次架構PR並假設舊branch部署仍會運作。若確需撤銷整個artifact架構，必須同時協調Pages source回branch，且會恢復舊root公開邊界；此路徑不作自動回滾預設，也未在Production演練。

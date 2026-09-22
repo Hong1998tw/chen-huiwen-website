@@ -35,6 +35,9 @@ CORE_PAGES = (
     "petition.html",
     "political-donation.html",
     "terms.html",
+    "achievement-metro-green-line.html",
+    "achievement-wende-school-center.html",
+    "achievement-school-case-review.html",
 )
 STATIC_FILES = (
     "robots.txt",
@@ -42,10 +45,14 @@ STATIC_FILES = (
     "manifest.webmanifest",
     "data/election-2026.json",
     "data/achievements.json",
+    "data/achievements-public.json",
     "data/achievement-map.json",
     "data/platforms.json",
     "data/search-index.json",
     "data/events.json",
+    "data/site-profile.json",
+    "sw.js",
+    "offline.html",
     "assets/fengshan-villages.geojson",
     "assets/vendor/leaflet.css",
     "assets/vendor/leaflet.js",
@@ -142,6 +149,112 @@ class PageParser(HTMLParser):
         return normalize_space(" ".join(self.visible_fragments))
 
 
+class CriticalParser(HTMLParser):
+    """Exact public-service facts, independent of broad prose coverage.
+
+    Classes identify source-owned fact blocks. Text, times and link destinations
+    are compared, while harmless Cloudflare email obfuscation is normalized.
+    This is not fact checking: it proves the deployed facts match reviewed source.
+    """
+    CLASSES = {'footer-grid', 'contact-card', 'hours-card', 'schedule-text',
+               'donation-account', 'donation-period', 'home-account',
+               'civic-service-desk', 'campaign-keydates', 'case-latest', 'case-facts'}
+    IDS = {'campaign-number-draw', 'campaign-vote-date', 'campaign-election-source'}
+    VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.facts = {}
+        self.contact_links = []
+        self.structured_data = []
+
+    def append_text(self, text):
+        for frame in self.stack:
+            if frame['key']:
+                frame['parts'].append(text)
+
+    def handle_starttag(self, tag, attrs):
+        data = dict(attrs)
+        href = data.get('href', '')
+        decoded = decode_cfemail(data.get('data-cfemail', ''))
+        if href.startswith('/cdn-cgi/l/email-protection#'):
+            address = decode_cfemail(href.split('#', 1)[1])
+            if address:
+                href = 'mailto:' + address
+        if href.startswith(('tel:', 'mailto:')):
+            self.contact_links.append(href)
+        markers = sorted(self.CLASSES.intersection(data.get('class', '').split()))
+        if data.get('id') in self.IDS:
+            markers.append('#' + data['id'])
+        if tag == 'time':
+            markers.append('time:' + data.get('datetime', ''))
+        if href.startswith('tel:'):
+            markers.append('telephone:' + href)
+        key = '|'.join(markers)
+        if href and any(frame['key'] for frame in self.stack):
+            self.append_text('href=' + href)
+        if tag in self.VOID:
+            self.append_text(' ')
+            return
+        self.stack.append({'tag': tag, 'key': key, 'parts': [],
+                           'cfemail': bool(decoded), 'jsonld': tag == 'script' and data.get('type') == 'application/ld+json',
+                           'json': []})
+        if decoded:
+            self.append_text(decoded)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID:
+            return
+        index = next((i for i in range(len(self.stack)-1, -1, -1) if self.stack[i]['tag'] == tag), None)
+        if index is None:
+            return
+        for frame in self.stack[index:]:
+            if frame['key']:
+                self.facts.setdefault(frame['key'], []).append(normalize_space(' '.join(frame['parts'])))
+            if frame['jsonld']:
+                try:
+                    self.structured_data.append(json.dumps(json.loads(''.join(frame['json'])), ensure_ascii=False, sort_keys=True))
+                except ValueError:
+                    self.structured_data.append('INVALID_JSON_LD')
+        del self.stack[index:]
+
+    def handle_data(self, data):
+        if self.stack and self.stack[-1]['jsonld']:
+            self.stack[-1]['json'].append(data)
+        if any(frame['tag'] in ('script', 'style') or frame['cfemail'] for frame in self.stack):
+            return
+        self.append_text(data)
+
+    def contract(self):
+        return {'facts': {key: sorted(values) for key, values in sorted(self.facts.items())},
+                'contactLinks': sorted(self.contact_links), 'structuredData': sorted(self.structured_data)}
+
+
+def critical_contract(html):
+    parser = CriticalParser()
+    parser.feed(html)
+    return parser.contract()
+
+
+def critical_differences(local_html, remote_html):
+    local, remote = critical_contract(local_html), critical_contract(remote_html)
+    # Report only field labels, never echo changed account/contact values.
+    return [key for key in local if local[key] != remote[key]]
+
+
+def canonical_bytes(local_path):
+    # The legacy public JSON URL serves sanitized data after the artifact cutover.
+    # Never compare it to, or snapshot it from, raw canonical editorial source.
+    path = ROOT / ('data/achievements-public.json' if local_path == 'data/achievements.json' else local_path)
+    return path.read_bytes()
+
+
 def normalize_text_bytes(data: bytes) -> bytes:
     text = data.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     return text.rstrip().encode("utf-8")
@@ -209,7 +322,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             failures.append(f"{local_path}: missing canonical source")
             continue
 
-        local = source_path.read_bytes()
+        local = canonical_bytes(local_path)
         cache_key = verification_cache_key(local, run_cache_key, attempt)
         try:
             status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
@@ -239,14 +352,18 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                 page_failures.append("live lang is not zh-Hant-TW")
             if not remote_parser.title or remote_parser.title != local_parser.title:
                 page_failures.append("live title mismatch")
-            if not remote_parser.description or remote_parser.description != local_parser.description:
+            if remote_parser.description != local_parser.description:
                 page_failures.append("live description mismatch")
-            if not remote_parser.canonical or remote_parser.canonical != local_parser.canonical:
+            if remote_parser.canonical != local_parser.canonical:
                 page_failures.append("live canonical mismatch")
 
             missing_assets = sorted(local_parser.local_assets - remote_parser.local_assets)
             if missing_assets:
                 page_failures.append("canonical asset references missing: " + ", ".join(missing_assets))
+
+            critical = critical_differences(local.decode('utf-8-sig'), remote.decode('utf-8-sig'))
+            if critical:
+                page_failures.append('critical public facts differ: ' + ', '.join(critical))
 
             coverage = visible_text_coverage(local_parser, remote_parser)
             if coverage < MIN_TEXT_COVERAGE:
@@ -264,6 +381,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                     "edgeTransformed": not raw_parity,
                     "visibleTextCoverage": round(coverage, 4),
                     "expectedAssetsPresent": not missing_assets,
+                    "criticalFactsMatch": not critical,
                     "localSha256": digest(local),
                     "remoteSha256": digest(remote),
                 }

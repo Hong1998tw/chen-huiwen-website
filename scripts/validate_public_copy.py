@@ -41,7 +41,7 @@ if not hero_status:
     failures.append("index.html: homepage election status must sit directly inside the hero copy")
 else:
     status_text = hero_status.get_text(" ", strip=True)
-    if "勝選倒數" not in status_text or "2026.11.28" not in status_text:
+    if "距離投票日" not in status_text or "2026.11.28" not in status_text:
         failures.append("index.html: hero election status must show the countdown and election date")
     if "10/23" in status_text or "候選人姓名號次抽籤" in status_text:
         failures.append("index.html: hero election status must not include the candidate-number draw")

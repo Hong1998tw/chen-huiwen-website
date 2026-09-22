@@ -19,6 +19,7 @@ class SeoValidatorRegressionTests(unittest.TestCase):
         for path in ROOT.glob("*.html"):
             copy2(path, temp_root / path.name)
         for path in ROOT.glob("*/index.html"):
+            if path.parent.name.startswith(("_", ".")): continue
             target = temp_root / path.relative_to(ROOT)
             target.parent.mkdir(parents=True, exist_ok=True)
             copy2(path, target)
@@ -136,9 +137,10 @@ class SeoValidatorRegressionTests(unittest.TestCase):
         expected_locs = {
             BASE if path.name == "index.html" else BASE + path.name
             for path in ROOT.glob("*.html")
-            if path.name != "404.html"
+            if path.name not in ("404.html", "offline.html")
         }
         for path in ROOT.glob("*/index.html"):
+            if path.parent.name.startswith(("_", ".")): continue
             text = path.read_text(encoding="utf-8")
             if 'name="robots" content="noindex' not in text:
                 expected_locs.add(BASE + path.parent.name + "/")

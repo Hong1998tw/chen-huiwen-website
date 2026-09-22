@@ -128,14 +128,16 @@ try {
   await page.goto(base + 'achievement-wende-school-center.html');
   await check('achievement public copy uses council action and city response', async () => {
     const mainText = await page.locator('main').innerText();
-    assert.match(mainText, /陳慧文議員於2025年5月14日市政總質詢/);
+    assert.match(mainText, /陳慧文議員再次提出文德國小/);
     assert.match(mainText, /教育局回應/);
     assert(!/這件事，為什麼重要？|STEP BY STEP|官方公開紀錄/.test(mainText));
-    assert.match(mainText, /重點說明/);
-    assert.match(mainText, /重要進度/);
+    assert.equal(await page.locator('.case-latest h2').count(), 1);
+    assert.match(mainText, /2025-05-14/);
     assert.match(mainText, /資料來源/);
   });
   await check('achievement timeline progressive reveal and related exploration', async () => {
+    assert.equal(await page.locator('.case-timeline > li').count(), 0, 'single event is not repeated as a second timeline');
+    await page.goto(base + 'achievement-metro-green-line.html');
     const timeline = page.locator('.case-timeline > li');
     assert((await timeline.count()) > 0);
     await timeline.first().scrollIntoViewIfNeeded();
@@ -143,6 +145,7 @@ try {
     assert.equal(await page.locator('.cross-content-explore').count(), 1);
   });
   await check('achievement OG remains content-specific', async () => {
+    await page.goto(base + 'achievement-wende-school-center.html');
     assert.match(await page.locator('meta[property="og:title"]').getAttribute('content'), /文德國小活動中心/);
     assert.match(await page.locator('meta[property="og:url"]').getAttribute('content'), /achievement-wende-school-center\.html$/);
     assert.match(await page.locator('meta[property="og:image"]').getAttribute('content'), /^https:\/\/www\.huiwen\.tw\/assets\//);
@@ -157,8 +160,14 @@ try {
     const swResponse = await fetch(base + 'sw.js');
     assert.equal(swResponse.ok, true);
     const sw = await swResponse.text();
-    assert.match(sw, /networkFirst/);
-    assert.match(sw, /staleWhileRevalidate/);
+    assert.doesNotThrow(() => new Function(sw), 'service worker must be syntactically valid JavaScript');
+    assert.match(sw, /huiwen-digital-v\d+-/);
+    const offlineResponse = await fetch(base + 'offline.html');
+    assert.equal(offlineResponse.status, 200);
+    const offline = await offlineResponse.text();
+    assert.match(offline, /<meta name="robots" content="noindex">/);
+    assert.match(offline, /這一頁尚未儲存/);
+    assert.doesNotMatch(offline, /hero-portrait/);
   });
 
   await check('view transition enhancement is present', async () => {

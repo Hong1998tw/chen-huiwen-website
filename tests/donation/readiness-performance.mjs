@@ -13,7 +13,7 @@ const root=resolve(process.env.ROOT_DIR || fileURLToPath(new URL('../../',import
 const label=process.env.LABEL || 'candidate';
 const out=resolve(process.env.EVIDENCE_DIR || fileURLToPath(new URL('./results/readiness/',import.meta.url)),label+'-lighthouse');
 const runs=Number(process.env.RUNS || 3);
-const pages=(process.env.PAGES || 'index.html,about.html,achievements.html,vision.html,news.html,news-20260915-special-education-nurse.html,political-donation.html').split(',');
+const pages=(process.env.PAGES || 'index.html,about.html,achievements.html,vision.html,news.html,news-20260915-special-education-nurse.html,political-donation.html,election.html').split(',');
 const port=Number(process.env.PORT || 8820);
 await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
