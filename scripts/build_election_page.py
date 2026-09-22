@@ -19,7 +19,7 @@ def render_tracking(items):
         if event:
             attr=f' datetime="{e(event["date"])}"' if re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',event['date']) else ''
             when=f'<time{attr}>{e(event["date"])}</time>'
-        search=' '.join(str(v) for v in [item['title'],item.get('summary',''),item['status'],*item.get('categories',[]),*item.get('subcategories',[]),*item.get('villages',[]),*(v for h in item.get('history',[]) for v in h.values())])
+        search=' '.join(str(v) for v in [*item.get('categories',[]),*item.get('subcategories',[]),*item.get('villages',[]),*(v for h in item.get('history',[]) for v in h.values())])
         href=source['url'] if source else url+'#case-sources';external=' target="_blank" rel="noopener noreferrer"' if source else ''
         cards.append(f'<article class="campaign-data-card campaign-searchable campaign-tracking-card" data-search="{e(search)}"><p class="campaign-kicker">紀錄所載狀態 · {e(item["status"])}</p><h3><a href="{url}">{e(item["title"])}</a></h3><p>{e(item.get("summary",""))}</p><p class="campaign-record"><span>最新收錄事件 · {when}</span>{"<strong>"+e(event["title"])+"</strong>" if event else ""}</p><p class="campaign-note">歷史紀錄；目前狀態請核對最新公告。</p><div class="campaign-actions"><a class="text-link" href="{url}">完整歷程 →</a><a class="text-link" href="{e(href)}"{external}>{"此階段來源 ↗" if source else "全部來源 →"}</a></div></article>')
     return ''.join(cards)

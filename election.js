@@ -59,7 +59,7 @@
   function filter() {
     const term=normalize(q('#campaign-search')?.value.trim()||'');let total=0,tracking=0;
     qa('.campaign-searchable').forEach(card=>{
-      const match=!term||normalize(card.dataset.search||card.textContent).includes(term);
+      const match=!term||normalize(`${card.textContent} ${card.dataset.search||''}`).includes(term);
       let shown=match;
       if(card.classList.contains('campaign-tracking-card')&&match){tracking++;if(!term&&!expanded&&tracking>8)shown=false;}
       card.hidden=!shown;card.classList.toggle('campaign-filter-hidden',!shown);if(match)total++;
@@ -76,7 +76,17 @@
     q('#campaign-tracking-more')?.removeAttribute('hidden');filter();
     // Each request updates its own section immediately; a stalled source never gates the others.
     const sources=[['data/election-2026.json',d=>window.HuiwenCampaign?.apply(d),'#campaign-date-error'],['data/platforms.json',renderPlatforms,'#campaign-platform-error'],['data/achievements-public.json',renderTracking,'#campaign-tracking-error'],['data/events.json',renderEvents,'#campaign-events-error']];
-    for(const [url,render,status] of sources) loadJSON(url).then(data=>{render(data);filter();q(status)?.setAttribute('hidden','');}).catch(()=>{const n=q(status);if(n){n.hidden=false;n.textContent='更新資料暫時無法載入；以下保留發布時的公開紀錄，請核對來源日期。';}});
+    const refresh=()=>{for(const [url,render,status] of sources) loadJSON(url).then(data=>{render(data);filter();q(status)?.setAttribute('hidden','');}).catch(()=>{const n=q(status);if(n){n.hidden=false;n.textContent='更新資料暫時無法載入；以下保留發布時的公開紀錄，請核對來源日期。';}});};
+    // The generated index is already complete and interactive. Refresh after critical
+    // rendering; cap both idle waiting and a stalled load event so refresh always starts.
+    let refreshQueued=false;
+    const queueRefresh=()=>{
+      if(refreshQueued)return;refreshQueued=true;clearTimeout(loadFallback);
+      if('requestIdleCallback' in window)window.requestIdleCallback(refresh,{timeout:1000});
+      else setTimeout(refresh,200);
+    };
+    const loadFallback=setTimeout(queueRefresh,2000);
+    if(document.readyState==='complete')queueRefresh();else window.addEventListener('load',queueRefresh,{once:true});
     window.HuiwenElection=Object.freeze({filter,ready:true});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

@@ -119,6 +119,7 @@ try {
         page.on('requestfailed', onFailed);
         await page.goto(base + file);
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
+        if (file !== 'offline.html') {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
         assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
@@ -130,11 +131,16 @@ try {
         for (const href of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) {
           assert(await page.locator('footer a').evaluateAll((els, target) => els.some(a => a.href === new URL(target,document.baseURI).href), href), `${file}: footer ${href}`);
         }
+        } else {
+          assert.equal(await page.locator('meta[name=robots]').getAttribute('content'),'noindex');
+          assert.match(await page.locator('h1').innerText(),/目前離線/);
+          assert.equal(await page.locator('a[href="tel:+88678212536"]').count(),1);
+        }
         if (file.startsWith('achievement-')) {
           const text = await page.locator('main').innerText();
           assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','achievement-wende-school-center.html'];
+        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','offline.html','achievement-wende-school-center.html'];
         if (core.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
           const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
