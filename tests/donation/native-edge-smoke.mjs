@@ -56,7 +56,10 @@ async function check(name, operation) {
     report.checks.push({ name, status: 'PASS' });
   } catch (error) {
     const status = error.blocked ? 'BLOCKED' : 'FAIL';
-    report.checks.push({ name, status, reason: error.message });
+    // Playwright request failures append HTTP headers, including session cookies.
+    // Keep the actionable reason; never persist the request call log.
+    const reason = String(error.message).split(/\r?\nCall log:/, 1)[0];
+    report.checks.push({ name, status, reason });
     if (status === 'FAIL' || report.status === 'PASS') report.status = status;
     return false;
   }
