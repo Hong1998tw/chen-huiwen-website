@@ -14,7 +14,7 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.
 const browser=await chromium.launch();const report={browser:browser.version(),observed_at:new Date().toISOString(),method:'Local actual source; external requests blocked; synthetic negative fixtures',checks:[]};
 async function localContext(options){const ctx=await browser.newContext(options);await ctx.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());return ctx;}
 async function check(id,fn){console.log('start '+id);try{await fn();report.checks.push({id,status:'PASS'});}catch(e){report.checks.push({id,status:'FAIL',reason:String(e)});}}
-async function geometry(page){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'MOBILE_OVERFLOW');}
+async function geometry(page){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'MOBILE_OVERFLOW '+await page.evaluate(()=>JSON.stringify({path:location.pathname,elements:[...document.querySelectorAll('main *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,class:el.className,width:el.getBoundingClientRect().width})).slice(0,8)})));}
 async function a11y(page){const r=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();assert.equal(r.violations.length,0,'A11Y_VIOLATION');}
 try{
  const ctx=await localContext({viewport:{width:390,height:844},reducedMotion:'reduce'});

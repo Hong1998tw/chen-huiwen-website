@@ -31,6 +31,7 @@ jobs:
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/sticky-navigation.mjs
+      - run: node tests/donation/public-service-audit.mjs
       - run: node tests/donation/digital-civic.mjs
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs

@@ -2,7 +2,7 @@
 (() => {
   const assetBase = new URL('.', document.currentScript.src);
   const VERSION = '20260912-p0-v2';
-  const SERVICE_WORKER_VERSION = '20260922-sticky-nav-v10';
+  const SERVICE_WORKER_VERSION = '20260922-public-service-v11';
   const TOPICS = new Set(['交通與基建','教育與文化','環境與綠地','社福與衛環','經濟與產業']);
   const STATIC_PAGES = [
     ['首頁','./','服務處、問政與官網入口','頁面'],
@@ -86,7 +86,7 @@
     const layout = document.querySelector('.case-layout');
     if (!head || !layout || document.querySelector('.cross-content-explore')) return;
     const labels = [...head.querySelectorAll('.case-tags span')].map(el => el.textContent.trim());
-    const topic = labels.find(label => TOPICS.has(label));
+    const topic = TOPICS.has(head.dataset.topic) ? head.dataset.topic : labels.find(label => TOPICS.has(label));
     const villages = labels.filter(label => label.endsWith('里') && !TOPICS.has(label));
     if (!topic && !villages.length) return;
     const links = [];
@@ -95,7 +95,7 @@
     const section = document.createElement('section');
     section.className = 'wrap cross-content-explore';
     section.setAttribute('aria-labelledby','cross-content-heading');
-    section.innerHTML = `<p class="eyebrow">CONNECTED CONTENT</p><h2 id="cross-content-heading">延伸探索</h2><p>依里別與共同主題串連政績、新聞與政見，方便一次閱讀相關內容。</p><div class="explore-chip-list">${links.join('')}</div><button type="button" class="share-current-page">分享這一頁</button>`;
+    section.innerHTML = `<p class="eyebrow">延伸閱讀</p><h2 id="cross-content-heading">延伸探索</h2><p>依里別與共同主題串連政績、新聞與政見，方便一次閱讀相關內容。</p><div class="explore-chip-list">${links.join('')}</div><button type="button" class="share-current-page">分享這一頁</button>`;
     layout.after(section);
     section.querySelector('.share-current-page')?.addEventListener('click',shareCurrentPage);
   }
@@ -105,7 +105,8 @@
     const title = normalize(item.title), text = normalize(`${item.title} ${item.description || ''} ${item.keywords || ''}`);
     const tokens = query.split(' ').filter(Boolean);
     if (!tokens.every(token => text.includes(token))) return 0;
-    return 20 + (title === query ? 120 : title.startsWith(query) ? 70 : title.includes(query) ? 45 : 0) + tokens.filter(token => title.includes(token)).length * 15;
+    const serviceIntent = (item.intents || []).some(intent => normalize(intent) === query);
+    return (serviceIntent ? 300 : 0) + 20 + (title === query ? 120 : title.startsWith(query) ? 70 : title.includes(query) ? 45 : 0) + tokens.filter(token => title.includes(token)).length * 15;
   }
 
   async function loadSearchIndex() {
@@ -173,7 +174,9 @@
       if(!query)return span.innerHTML;
       // Highlight exact matched words using text nodes; never interpret search input as HTML.
       const tokens=query.split(' ').filter(Boolean).sort((a,b)=>b.length-a.length);
-      const value=String(text), lower=normalize(value);let pos=0;
+      // Keep offsets in the original string: NFKC/whitespace normalization changes
+      // string lengths and used to highlight the characters AFTER the match.
+      const value=String(text), lower=value.toLocaleLowerCase('zh-Hant-TW');let pos=0;
       span.replaceChildren();
       while(pos<value.length){let best=-1,token='';for(const t of tokens){const i=lower.indexOf(t,pos);if(i>=0&&(best<0||i<best)){best=i;token=t;}}if(best<0){span.append(document.createTextNode(value.slice(pos)));break;}span.append(document.createTextNode(value.slice(pos,best)));const mark=document.createElement('mark');mark.textContent=value.slice(best,best+token.length);span.append(mark);pos=best+token.length;}
       return span.innerHTML;
@@ -188,7 +191,7 @@
       all.slice(0,limit).forEach((item,i)=>{
         const link=document.createElement('a');link.href=new URL(item.url,assetBase).href;link.id=`global-result-${i}`;link.className='global-search-result';link.setAttribute('role','option');
         let snippet=item.description||item.url;
-        if(query&&!normalize(snippet).includes(query.split(' ')[0])){const body=String(item.keywords||'');const offset=normalize(body).indexOf(query.split(' ')[0]);if(offset>=0)snippet=(offset>22?'…':'')+body.slice(Math.max(0,offset-22),offset+95);}
+        if(query&&item.type!=='服務'&&!normalize(snippet).includes(query.split(' ')[0])){const body=String(item.keywords||'');const offset=body.toLocaleLowerCase('zh-Hant-TW').indexOf(query.split(' ')[0]);if(offset>=0)snippet=(offset>22?'…':'')+body.slice(Math.max(0,offset-22),offset+95);}
         link.innerHTML=`<span class="global-search-type">${escapeHTML(item.type)}</span><span class="global-search-result-copy"><strong>${highlight(item.title,query)}</strong><small>${highlight(snippet,query)}</small></span><span aria-hidden="true">→</span>`;
         box.append(link);
       });

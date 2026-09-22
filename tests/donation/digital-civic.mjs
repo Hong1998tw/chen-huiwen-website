@@ -72,6 +72,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
 
   await page.goto(base + 'achievements.html');
+  await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
   await check('achievement statistics overview is removed while map insight remains', async () => {
     assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(), 0);
     assert.doesNotMatch(await page.locator('main').innerText(), /政績統計總覽/);
@@ -89,6 +90,7 @@ try {
     const select = page.locator('#subcategory-filter');
     assert.equal(await select.count(), 1);
     assert((await select.locator('option').allTextContents()).includes('寵物'));
+    await page.locator('.advanced-filters > summary').click();
     await select.selectOption({ label: '寵物' });
     await page.waitForFunction(() => document.querySelector('#case-count')?.textContent.includes('共 1 個專題'));
     const visible = page.locator('#case-list .case-card:not([hidden])');

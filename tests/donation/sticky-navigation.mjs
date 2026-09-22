@@ -96,6 +96,8 @@ try {
     const context=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
     const page=await context.newPage();
     await page.goto(base);
+    assert(await page.locator('#navigation .nav-group summary').first().isVisible());
+    await page.locator('#navigation .nav-group summary').first().click();
     assert(await page.locator('#navigation a').first().isVisible());
     assert.equal(await page.locator('.site-header').evaluate(el=>getComputedStyle(el).position),'relative');
     await context.close();

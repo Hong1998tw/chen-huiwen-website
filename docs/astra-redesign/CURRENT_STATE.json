@@ -1,25 +1,25 @@
 {
-  "status": "COMPLETE",
-  "scope": "LOCAL_BUILD_ONLY",
+  "status": "IN_PROGRESS",
+  "scope": "PUBLIC_SERVICE_AUDIT_RELEASE",
   "updated": "2026-09-22",
-  "phase": "delivery",
-  "branch": "astra/huiwen-redesign-202609",
-  "baseline": "5aeddfd1c1517fd35c5ea62627fbd4fac1d739d6",
-  "latest_safe_commit": "31a111db337bd3ca6aa1ac07101e099c920f630e",
-  "final_checkpoint_ref": "astra/huiwen-redesign-202609",
+  "phase": "release_gates",
+  "branch": "fix/public-service-audit-20260922",
+  "baseline": "8319451a6e104dbebe5ca2a4b359185247abd90a",
+  "latest_safe_commit": "8319451a6e104dbebe5ca2a4b359185247abd90a",
+  "final_checkpoint_ref": "fix/public-service-audit-20260922",
   "final_checkpoint_note": "Final documentation commit contains this state. Resolve exact HEAD; external delivery receipt records its SHA without a self-referential hash.",
   "completed": [
-    "Current source/Drive/Notion/production audit",
-    "Six-category benchmark and pattern library",
-    "15 concepts plus five wild concepts and reality filter",
-    "Product thesis, IA, design and data architecture",
-    "Real public-content implementation",
-    "Desktop and 390px visual review",
-    "Functional, regression, accessibility, SEO and performance QA",
-    "Privacy boundary and original checkout preservation"
+    "Audit rows 1–4 and 6–10 implemented",
+    "Candidate browser/accessibility/visual/quality checks passed"
   ],
-  "current_tasks": [],
-  "remaining": [],
+  "current_tasks": [
+    "PR and CI"
+  ],
+  "remaining": [
+    "Merge and Pages",
+    "Live Production verification",
+    "Drive archive and Notion read-back"
+  ],
   "blocked": [],
   "changed_files": [
     "civic.css",
@@ -40,13 +40,11 @@
   ],
   "tests": {
     "passed": [
-      "53 unit tests + 4 event tests",
-      "All seven validators; two-build byte consistency",
-      "Six existing browser suites, complete quality command exit 0",
-      "61 final civic checks; no page errors",
-      "13 lifecycle checks including service 200% text",
-      "Four representative Lighthouse pages meet thresholds",
-      "git diff --check"
+      "7 validators; deterministic rebuild; 53 unit + 4 event",
+      "41 full-site browser checks; 24 public-service checks",
+      "26 sticky checks; lifecycle 200% and no-JS",
+      "60/60 five-width readiness",
+      "Seven-page Lighthouse threshold pass"
     ],
     "failed": []
   },
@@ -59,14 +57,8 @@
     "remaining": []
   },
   "not_performed": [
-    "push",
-    "PR",
-    "merge",
-    "deploy",
-    "DNS changes",
-    "Notion writes",
-    "Drive original edits",
-    "forms/payment submission"
+    "Current release push/PR/merge/deploy",
+    "Current release Notion write/Drive upload"
   ],
-  "next_action": "Review local candidate and evidence; any release needs a separate explicit instruction."
+  "next_action": "Follow docs/RELEASE-2026-09-22-PUBLIC-SERVICE.md. Deployment authorized. Keep audit row 5 unchanged."
 }

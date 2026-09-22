@@ -2,6 +2,7 @@
 """Check that the shipped index, structured records and PNG metadata stay in sync."""
 import hashlib, json, struct
 from pathlib import Path
+from urllib.parse import urlsplit, unquote
 from bs4 import BeautifulSoup
 R=Path(__file__).resolve().parents[1]
 source=json.loads((R/'data/achievements.json').read_text())
@@ -10,9 +11,12 @@ index=json.loads((R/'data/search-index.json').read_text())
 assert index['count']==len(index['items'])
 assert len({c['url'] for c in index['items']})==len(index['items'])
 for c in index['items']:
- path=R/c['url']; path=path/'index.html' if path.is_dir() else path
+ url=urlsplit(c['url']); assert not url.scheme and not url.netloc,c['url']
+ path=R/unquote(url.path); path=path/'index.html' if path.is_dir() else path
  assert path.exists() and R in path.resolve().parents,c['url']
- doc=BeautifulSoup(path.read_text(),'html.parser');assert not doc.select_one('meta[name=robots][content*=noindex]')
+ doc=BeautifulSoup(path.read_text(),'html.parser')
+ if url.fragment: assert doc.find(id=unquote(url.fragment)), c['url']
+ assert not doc.select_one('meta[name=robots][content*=noindex]')
 assert {c['url'] for c in index['items'] if c['type']=='政績'}=={'achievement-'+c['id']+'.html' for c in public}
 manifest=json.loads((R/'assets/og/manifest.json').read_text())
 for c in public:

@@ -21,21 +21,32 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
   backdrop.setAttribute('aria-label', '關閉選單');
   document.body.append(backdrop);
-  if (!navigation.querySelector('a[href="election.html"],a[href="/election.html"]')) {
+  if (!navigation.querySelector('.nav-group') && !navigation.querySelector('a[href="election.html"],a[href="/election.html"]')) {
     const election = document.createElement('a');
     election.href = 'election.html';
     election.textContent = '2026選舉';
     const donation = navigation.querySelector('a[href="political-donation.html"],a[href="/political-donation.html"]');
     if (donation) donation.after(election); else navigation.append(election);
   }
-  if (!navigation.querySelector('a[href="service.html#monthly-heading"],a[href="/service.html#monthly-heading"]')) {
+  if (!navigation.querySelector('.nav-group') && !navigation.querySelector('a[href="service.html#monthly-heading"],a[href="/service.html#monthly-heading"]')) {
     const lawyer = document.createElement('a');
     lawyer.href = 'service.html#monthly-heading';
     lawyer.textContent = '律師時間表';
     const election = navigation.querySelector('a[href="election.html"],a[href="/election.html"]');
     if (election) election.after(lawyer); else navigation.append(lawyer);
   }
+  toggle.setAttribute('aria-label', '開啟主要選單');
   const links = [...navigation.querySelectorAll('a')];
+  const groups = [...navigation.querySelectorAll('.nav-group')];
+  const mobile = window.matchMedia('(max-width: 780px)');
+  const arrangeGroups = () => groups.forEach(group => { group.open = mobile.matches; });
+  arrangeGroups(); mobile.addEventListener('change', arrangeGroups);
+  groups.forEach(group => group.addEventListener('toggle', () => {
+    if (group.open && !mobile.matches) groups.filter(other => other !== group).forEach(other => { other.open = false; });
+  }));
+  document.addEventListener('click', event => {
+    if (!mobile.matches && !navigation.contains(event.target)) groups.forEach(group => { group.open = false; });
+  });
   const background = [...document.body.children].filter(node =>
     node !== backdrop && !node.contains(toggle) && !['SCRIPT', 'STYLE', 'DIALOG'].includes(node.tagName));
   let inertBefore = [];
@@ -64,10 +75,14 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   backdrop.addEventListener('click', () => closeMenu(true));
   navigation.addEventListener('click', event => { if (event.target.closest('a') || event.target.closest('.global-search-trigger')) closeMenu(); });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !mobile.matches) {
+      const open = groups.find(group => group.open);
+      if (open) { open.open = false; open.querySelector('summary').focus({preventScroll:true}); }
+    }
     if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') closeMenu(true);
     if (event.key === 'Tab' && toggle.getAttribute('aria-expanded') === 'true') {
       const search = navigation.querySelector('.global-search-trigger');
-      const focusable = [toggle, ...navigation.querySelectorAll('a, button')].filter(node => node.getClientRects().length && !node.disabled); const first = focusable[0], last = focusable.at(-1);
+      const focusable = [toggle, ...navigation.querySelectorAll('a, button, summary')].filter(node => node.getClientRects().length && !node.disabled); const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({preventScroll:true}); }
     }
@@ -148,7 +163,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   }
   if (!document.querySelector(`script[data-digital-civic="${VERSION}"]`)) {
     const script = document.createElement('script');
-    script.src = new URL('digital.js?v=20260922-sticky-nav-v10', HUIWEN_ASSET_BASE).href;
+    script.src = new URL('digital.js?v=20260922-public-service-v11', HUIWEN_ASSET_BASE).href;
     script.async = false;
     script.dataset.digitalCivic = VERSION;
     document.body.append(script);
