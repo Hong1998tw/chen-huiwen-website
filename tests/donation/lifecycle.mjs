@@ -36,7 +36,7 @@ try{
   await input.fill('不存在的資料'.repeat(80));await page.waitForTimeout(300);assert.equal(await page.locator('.global-search-result').count(),0);await geometry(page);await page.keyboard.press('Escape');
  });
  await check('timeline-visible-with-inactive-observer',async()=>{
-  const c=await localContext({viewport:{width:390,height:844}});await c.addInitScript(()=>{window.IntersectionObserver=class{observe(){}unobserve(){}disconnect(){}};});const p=await c.newPage();await p.goto(base+'achievement-wende-school-center.html');const items=p.locator('.case-timeline > li');assert((await items.count())>0);assert(await items.evaluateAll(xs=>xs.every(x=>getComputedStyle(x).opacity!=='0'&&getComputedStyle(x).visibility!=='hidden')));await c.close();
+  const c=await localContext({viewport:{width:390,height:844}});await c.addInitScript(()=>{window.IntersectionObserver=class{observe(){}unobserve(){}disconnect(){}};});const p=await c.newPage();await p.goto(base+'achievement-metro-green-line.html');const items=p.locator('.case-timeline > li');assert((await items.count())>0);assert(await items.evaluateAll(xs=>xs.every(x=>getComputedStyle(x).opacity!=='0'&&getComputedStyle(x).visibility!=='hidden')));await c.close();
  });
  await check('image-failure-keeps-service-entry',async()=>{await page.route('**/assets/**',r=>r.abort());await page.goto(base+'index.html');assert((await page.locator('a[href="tel:+88678212536"]').count())>0);await geometry(page);await page.unroute('**/assets/**');});
  await check('text-resize-200-percent',async()=>{
