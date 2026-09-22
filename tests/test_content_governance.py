@@ -1,6 +1,6 @@
 """Regression tests for source identity, lifecycle safety and time-sensitive review."""
 import copy
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import json
 from pathlib import Path
 import re
@@ -101,7 +101,7 @@ class ContentReviewTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         (self.root / 'data').mkdir()
-        for name in ('content-governance.json', 'legal-schedule.json', 'events.json', 'platforms.json', 'site-profile.json'):
+        for name in ('content-governance.json', 'legal-schedule.json', 'events.json', 'platforms.json', 'site-profile.json', 'achievements.json'):
             shutil.copyfile(ROOT / 'data' / name, self.root / 'data' / name)
 
     def tearDown(self):
@@ -176,6 +176,54 @@ class ContentReviewTests(unittest.TestCase):
         self.assertIn('2026-09-22', rendered)
         self.assertIn('後續任期與任職狀態請核對', rendered)
         self.assertNotIn('已當選', rendered)
+
+    def review_record_fixtures(self, records, previous=None):
+        (self.root / 'data/achievements.json').write_text(json.dumps(records))
+        result = evaluate(self.root, '2026-09-22', previous=previous)
+        rows = [row for row in result['findings'] if row['id'].startswith('public-record-freshness:')]
+        return result, rows
+
+    def test_records_fixed_clock_respects_strict_180_day_review_boundary(self):
+        today = date(2026, 9, 22)
+        records = [{'id': name, 'title': name, 'status': '持續追蹤',
+                    'history': [{'date': (today - timedelta(days=days)).isoformat()}]}
+                   for name, days in [('boundary', 180), ('older', 181), ('recent', 10)]]
+        result, rows = self.review_record_fixtures(records)
+        self.assertEqual([row['id'] for row in rows], ['public-record-freshness:older'])
+        self.assertEqual(rows[0]['severity'], 'backlog')
+        self.assertFalse(result['alert'])
+
+    def test_editorial_updated_date_cannot_clear_a_record_review_reminder(self):
+        record = {'id': 'old-record', 'title': 'Old record fixture', 'status': '爭取規劃',
+                  'history': [{'date': '2021-10-19'}], 'updated': '2026-09-01'}
+        first, original = self.review_record_fixtures([record])
+        record['updated'] = '2026-09-22'
+        second, refreshed = self.review_record_fixtures([record], previous=first)
+        self.assertEqual(original, refreshed)
+        self.assertFalse(second['alert'])
+
+    def test_records_without_dates_need_manual_review_but_unpublished_records_are_excluded(self):
+        records = [{'id': name, 'title': name, 'status': status, 'history': [{'date': '2026'}]}
+                   for name, status in [('public-undated', '持續追蹤'), ('not-public', '待核驗'), ('done', '已完成')]]
+        result, rows = self.review_record_fixtures(records)
+        self.assertEqual([row['id'] for row in rows], ['public-record-freshness:public-undated'])
+        self.assertEqual(rows[0]['state'], 'record_event_date_missing')
+        self.assertEqual(rows[0]['ownerAssignment'], 'unassigned')
+        self.assertFalse(result['alert'])
+
+    def test_record_review_uses_latest_event_and_month_end_without_daily_alerts(self):
+        records = [{'id': 'latest', 'title': 'Latest fixture', 'status': '持續追蹤',
+                    'history': [{'date': '2026-09-01'}, {'date': '2019-01-01'}]},
+                   {'id': 'month', 'title': 'Month fixture', 'status': '政策實施',
+                    'history': [{'date': '2026-03'}]},
+                   {'id': 'old', 'title': 'Old fixture', 'status': '持續追蹤',
+                    'history': [{'date': '2019-01-01'}]}]
+        first, rows = self.review_record_fixtures(records)
+        second, repeated = self.review_record_fixtures(records, previous=first)
+        self.assertEqual([row['id'] for row in rows], ['public-record-freshness:old'])
+        self.assertEqual(rows, repeated)
+        self.assertFalse(second['changed'])
+        self.assertFalse(second['alert'])
 
 
 if __name__ == '__main__':

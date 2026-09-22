@@ -46,7 +46,7 @@ python3 scripts/audit_external_links.py /path/outside/repository/external-links.
 | --- | --- | --- | --- | --- |
 | 品質／來源差異 | repo 維護者（人員未指派） | GitHub Actions | 每次 PR／main push，既有 workflow | current-head CI／有失敗才處理 |
 | 發布驗證 | repo 維護者（人員未指派） | GitHub Actions | main push／手動觸發，既有 workflow | HTTP parity + 同輪 live snapshot browser；失敗阻擋發布完成判定 |
-| 服務月份／活動複查／身分期限 | 服務資訊與公開紀錄 owner（未指派） | GitHub Actions；content-freshness.yml | repo 已定義每日台灣時間 08:35 與手動觸發；排程可能延遲 | 產生 JSON／Markdown 待辦；只對新增或變更的到期問題標記 run failure，未變狀態不重複告警，恢復只寫報告 |
+| 服務月份／活動與工程紀錄複查／身分期限 | 服務資訊與公開紀錄 owner（未指派） | GitHub Actions；content-freshness.yml | repo 已定義每日台灣時間 08:35 與手動觸發；排程可能延遲 | 產生 JSON／Markdown 待辦；只對新增或變更的到期問題標記 run failure，未變狀態不重複告警，恢復只寫報告 |
 | 新聞增量／候選覆蓋 | 內容編輯（未指派） | 未指定；未啟用 | 每週；新聞以 90 天範圍起始 | 原文 receipts、合併／排除理由；新增缺口才通知 |
 | 聯絡／律師／來源／GSC／套件 | 內容＋工程 owner（未指派） | 未指定；未啟用 | 每月 | 服務及 sitemap／索引差異、漏洞與到期 |
 | UX／a11y／rights／備份還原 | UX＋素材＋repo owner（未指派） | 未指定；未啟用 | 每季 | 固定環境對照、權利審閱、離線還原 receipts |
@@ -67,6 +67,8 @@ python3 -m unittest discover -s tests -p test_content_governance.py
 第二條是固定時鐘演練，不得把未來日期結果冒充今天狀態。daily job 以 cache 保存上一輪 fingerprint，先保存觀測再針對新到期事項失敗；同一到期條件下次仍在 JSON 待辦但不再失敗。cache 被清除／淘汰後首次執行會重新提示仍到期的事項，不能宣稱永久恰一次通知。成果 artifact 保留 14 天；長期收尾另按 release 歸檔。
 
 `backlog` 表示待補來源或責任未指定；`due` 表示尚有效但應複查；`expired` 表示當月服務缺版、仍未結束的活動超過複查期，或人物身分到複查日。狀態只針對維護期限，不聲稱來源事實錯誤。已結束／取消活動保留歷史，不因時間過去判定其內容無效。`reviewDueAt`／`nextReviewAt` 是人工維護期限，不能改寫 `verifiedAt` 或 `observedAt` 來消除告警；應實際核對來源後更新。
+
+`public-record-freshness` 另對公開且狀態為「持續追蹤／爭取規劃／政策實施」的紀錄建立人工複查 backlog：使用 history 中最近可判讀的事件日期，嚴格超過 180 天或沒有可判讀日期時列待辦。180 天是內容維護門檻，不是工程時效判定；不推定停工、過期或完成。日期只到月份時以月底作保守計算，僅有年份／學期而無其他可判讀日期者列日期待補；updated 編輯日與 verifiedAt 欄位不會替代歷程日期或清除提醒。未公開待核驗資料與已完成紀錄不列本項追蹤複查。這些項目是 backlog，不觸發每日到期告警；同一條件持續保留，來源更新後再重新評估。公開紀錄維護角色仍未指定。
 
 截至本次資料紀錄，3 個 owner role 均為 unassigned，`person`／`backupPerson` 保持 null。責任未指定、政見欠量化目標及跨屆關聯待核實都列入機器可讀待辦，但不能因工程發布成功標完成。
 

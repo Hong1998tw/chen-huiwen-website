@@ -42,6 +42,15 @@
       "reviewTask": "核對近期公開行程的時間、取消或改期及原公告。"
     },
     {
+      "id": "public-record-freshness",
+      "kind": "records",
+      "source": "data/achievements.json",
+      "ownerId": "public-records",
+      "reviewAgeDays": 180,
+      "statuses": ["持續追蹤", "爭取規劃", "政策實施"],
+      "reviewTask": "請人工核對主管機關最新公開資料，補充可追溯的事件與來源；這是資料複查提醒，不判定工程過期、停工或完成，也不以網站整理日期代替核實。"
+    },
+    {
       "id": "profile-identity",
       "kind": "profile",
       "source": "data/site-profile.json",

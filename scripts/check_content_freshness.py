@@ -7,7 +7,9 @@ import argparse
 import calendar
 import hashlib
 import json
+import re
 import sys
+from achievement_metadata import is_public
 
 ROOT = Path(__file__).resolve().parents[1]
 TAIPEI = ZoneInfo('Asia/Taipei')
@@ -27,6 +29,20 @@ def local_date(value=None):
     if isinstance(value, date):
         return value
     return date.fromisoformat(value)
+
+
+def record_date_upper_bound(value):
+    """Use event date precision, never the site's editorial updated date."""
+    value = str(value or '').strip()
+    try:
+        if re.fullmatch(r'\d{4}-\d{2}-\d{2}(?:[ T].+)?', value):
+            return date.fromisoformat(value[:10])
+        if re.fullmatch(r'\d{4}-\d{2}', value):
+            year, month = map(int, value.split('-'))
+            return date(year, month, calendar.monthrange(year, month)[1])
+    except ValueError:
+        pass
+    return None
 
 
 def evaluate(root=ROOT, as_of=None, previous=None):
@@ -96,6 +112,25 @@ def evaluate(root=ROOT, as_of=None, previous=None):
                 elif today >= date.fromisoformat(due_value):
                     add(check['id'] + ':' + event['id'], 'expired', 'reconfirmation_due', source,
                         owner_id, action, due_value + ':' + event.get('updatedAt', 'unknown'))
+        elif kind == 'records':
+            threshold = check['reviewAgeDays']
+            if not isinstance(threshold, int) or threshold < 1:
+                raise ValueError('Record reviewAgeDays must be a positive integer')
+            for record in payload:
+                if not is_public(record) or record.get('status') not in check['statuses']:
+                    continue
+                candidates = [(record_date_upper_bound(event.get('date')), event.get('date'))
+                              for event in record.get('history', [])]
+                candidates = [(upper, raw) for upper, raw in candidates if upper is not None]
+                latest = max(candidates, key=lambda item: item[0]) if candidates else None
+                item_id = check['id'] + ':' + record['id']
+                if latest is None:
+                    add(item_id, 'backlog', 'record_event_date_missing', source, owner_id,
+                        f'〈{record["title"]}〉尚缺可判讀的歷程日期。' + action, 'undated')
+                elif (today - latest[0]).days > threshold:
+                    add(item_id, 'backlog', 'record_evidence_review_due', source, owner_id,
+                        f'〈{record["title"]}〉收錄的最近具日期歷程為 {latest[1]}，已超過 {threshold} 天的人工複查門檻。' + action,
+                        str(latest[1]) + ':' + str(threshold))
         elif kind == 'profile':
             identity = payload['identity']
             if today >= date.fromisoformat(identity['reviewAfter']):
