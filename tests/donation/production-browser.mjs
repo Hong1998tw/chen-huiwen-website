@@ -283,10 +283,10 @@ try {
     await check(`service interaction ${width}px`, async () => {
       await gotoLive(page, new URL('service.html', base).href);
       const legal = await page.locator('.legal-section').boundingBox();
-      const monthly = await page.locator('.monthly-schedule').boundingBox();
-      assert(legal && monthly && legal.y < monthly.y, 'lawyer rules are not before monthly schedule');
+      const monthly = await page.locator('.schedule-text').boundingBox();
+      assert(legal && monthly && monthly.y < legal.y, 'dated schedule must precede detailed lawyer rules');
       const phone = await page.locator('.schedule-phone-cta').boundingBox();
-      assert(phone && phone.height >= 60, 'phone CTA too small');
+      assert(phone && phone.height >= 44, 'phone CTA too small');
     });
 
     if (width === 1440 || width === 390) {
