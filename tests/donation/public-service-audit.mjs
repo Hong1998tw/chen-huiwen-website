@@ -55,6 +55,7 @@ try{
   });
   await page.goto(base+'achievements.html');
   await page.screenshot({path:fileURLToPath(new URL('list-'+width+'.png',out))});
+  await page.waitForFunction(()=>!!window.HuiwenCases);
   await check(width+' list first and progressively disclosed filters',async()=>{
    assert(await page.locator('.map-panel').isHidden());assert.equal(await page.locator('.advanced-filters').getAttribute('open'),null);
    const cards=page.locator('#case-list [data-case]:visible');assert.equal(await cards.count(),10);
@@ -97,6 +98,10 @@ try{
   const ctx=await browser.newContext({viewport:{width:390,height:844}});const page=await ctx.newPage();await page.clock.install({time:new Date(time)});await page.goto(base+'service.html');
   await check('schedule '+label,async()=>{assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month'){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),13);}else assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
  }
+ await check('map data failure preserves static public records',async()=>{
+  const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
+  await page.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。').waitFor();assert.equal(await page.locator('#case-list [data-case]:visible').count(),54);assert(await page.locator('#case-search').isDisabled());assert(await page.locator('#case-list a').first().isVisible());await ctx.close();
+ });
  if(!process.env.BASE_URL)await check('excluded petition main unchanged',async()=>{
   const old=execFileSync('git',['show','8319451a6e104dbebe5ca2a4b359185247abd90a:petition.html'],{cwd:root,encoding:'utf8'});
   const current=await readFile(root+'petition.html','utf8');

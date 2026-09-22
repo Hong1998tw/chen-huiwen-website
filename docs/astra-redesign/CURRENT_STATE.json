@@ -41,7 +41,7 @@
   "tests": {
     "passed": [
       "7 validators; deterministic rebuild; 53 unit + 4 event",
-      "41 full-site browser checks; 24 public-service checks",
+      "41 full-site browser checks; 25 public-service checks",
       "26 sticky checks; lifecycle 200% and no-JS",
       "60/60 five-width readiness",
       "Seven-page Lighthouse threshold pass"

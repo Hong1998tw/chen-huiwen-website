@@ -7,7 +7,7 @@ BUILDERS=('build_cases.py','build_platforms.py','build_events.py','build_search.
 VALIDATORS=('validate_achievements.py','validate_site.py','validate_donation.py','validate_seo.py','validate_p0.py','validate_public_copy.py','validate_domain_migration.py')
 
 def snapshot(root):
-    paths=list(root.glob('*.html'))+[root/'data/search-index.json']
+    paths=list(root.glob('*.html'))+[root/'data/search-index.json',root/'data/achievement-map.json']
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
 def run(root,args):

@@ -42,6 +42,7 @@ STATIC_FILES = (
     "manifest.webmanifest",
     "data/election-2026.json",
     "data/achievements.json",
+    "data/achievement-map.json",
     "data/platforms.json",
     "data/search-index.json",
     "data/events.json",

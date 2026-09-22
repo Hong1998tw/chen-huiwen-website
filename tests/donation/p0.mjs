@@ -16,7 +16,7 @@ const ctx=await browser.newContext({viewport:{width:1440,height:1000}});
 await ctx.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
 const page=await ctx.newPage();page.setDefaultTimeout(6000);
 const data=JSON.parse(await readFile(root+'data/achievements.json')).filter(c=>c.status!=='待核驗');
-const go=async(path='achievements.html')=>{await page.goto(base+path);await page.locator('.global-search-trigger').waitFor({state:'attached'});if(path.startsWith('achievements.html'))await page.getByRole('button',{name:'地圖與列表',exact:true}).click();};
+const go=async(path='achievements.html')=>{await page.goto(base+path);await page.locator('.global-search-trigger').waitFor({state:'attached'});if(path.startsWith('achievements.html')){await page.waitForFunction(()=>!!window.HuiwenCases);await page.getByRole('button',{name:'地圖與列表',exact:true}).click();}};
 const count=async(n)=>page.waitForFunction(n=>document.querySelector('#case-count').textContent.startsWith(`共 ${n} 個`),n);
 try{
  await go('index.html');

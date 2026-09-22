@@ -185,6 +185,7 @@ try {
     await check(`achievement search filters and pagination ${width}px`, async () => {
       await page.goto(base + 'achievements.html');
   await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
+      await page.waitForFunction(()=>!!window.HuiwenCases);
       const visible = () => page.locator('[data-case]:visible').count();
       assert.equal(await visible(), Math.min(10, items.length));
       await page.locator('#case-search').fill('文龍');

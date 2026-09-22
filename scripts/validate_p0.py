@@ -30,6 +30,7 @@ for key,meta in manifest.items():
  assert og==tw=='https://www.huiwen.tw/assets/og/'+key+'.png'
  assert doc.select_one('meta[property="og:image:type"]')['content']=='image/png'
  assert meta['title'] in doc.select_one('meta[property="og:image:alt"]')['content']
-mapdata=json.loads(BeautifulSoup((R/'achievements.html').read_text(),'html.parser').select_one('#map-data').string)
+mapconfig=json.loads(BeautifulSoup((R/'achievements.html').read_text(),'html.parser').select_one('#map-data').string)
+mapdata=json.loads((R/urlsplit(mapconfig['url']).path).read_text())
 assert {c['id'] for c in mapdata}=={c['id'] for c in public}
 print(f'P0 validated: {len(index["items"])} indexed public pages; {len(public)} public records; {len(manifest)} PNG share cards')
