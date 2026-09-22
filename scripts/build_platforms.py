@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 data = json.loads((ROOT / 'data/platforms.json').read_text())
 e = lambda value: escape(str(value), quote=True)
 
-body = '<section class="page-head"><div class="wrap"><p class="eyebrow">ELECTION PLATFORMS</p><h1>歷屆政見與願景</h1><p>閱讀2026最新政見與歷屆選舉政見。</p></div></section><div class="wrap platforms-wrap"><div class="platform-timeline">'
+body = '<section class="page-head"><div class="wrap"><p class="eyebrow">政見原文與公開紀錄</p><h1>歷屆政見與願景</h1><p>閱讀 2026 政見原文，對照相關紀錄；歷屆政見依年份保留。</p></div></section><div class="wrap platforms-wrap"><div class="platform-timeline">'
 entries = [(x['year'], x['election'], x) for x in data['elections']]
 
 # Keep research gaps in source; publish empty content without asserting completeness.
@@ -34,18 +34,34 @@ for year, title, item in sorted(entries, key=lambda x: x[0], reverse=True):
                 body += f'<p>{" · ".join(meta)}</p>'
 
             image = item.get('image')
+            if year == 2026:
+                body += '<aside class="platform-accountability"><h3>這些方向，如何追蹤？</h3><p>原文尚未逐項列出量化目標、完成期限與執行分工。下列連結供核對既有紀錄，不表示 2026 政見已完成。</p></aside>'
             if image:
                 body += (
-                    '<figure class="platform-poster">'
+                    '<details class="platform-original"><summary>查看原始政見圖卡</summary><figure class="platform-poster">'
                     f'<a href="{e(image["path"])}" target="_blank" rel="noopener noreferrer" aria-label="開啟{e(image.get("caption", "政見圖卡"))}原圖">'
                     f'<img src="{e(image["path"])}" alt="{e(image["alt"])}" width="{e(image["width"])}" height="{e(image["height"])}" loading="lazy" decoding="async">'
                     '</a>'
                     f'<figcaption>{e(image.get("caption", "政見圖卡"))}（點圖可放大）</figcaption>'
-                    '</figure>'
+                    '</figure></details>'
                 )
 
-            for section in item['sections']:
-                body += f'<h3>{e(section["heading"])}</h3><ol>' + ''.join(f'<li>{e(text)}</li>' for text in section['items']) + '</ol>'
+            references = {
+                (0,1): [('station-walkway','車站步行環境'),('school-crossing-flags','校園通學安全')],
+                (0,2): [('bade-detention','八德滯洪池與防汛整備')],
+                (1,1): [('fengshan-second-market','鳳山第二公有市場')],
+                (2,2): [('after-school-care','身障學生照顧支持')],
+                (3,0): [('school-case-review','校事會議制度檢討'),('school-administration','高中行政減壓')],
+            }
+            for section_index,section in enumerate(item['sections']):
+                body += f'<section class="platform-theme" id="platform-{year}-theme-{section_index+1}"><h3>{e(section["heading"])}</h3><ol>'
+                for point_index,text in enumerate(section['items']):
+                    body += f'<li><p>{e(text)}</p>'
+                    if year == 2026:
+                        links=references.get((section_index,point_index),[])
+                        body += '<div class="platform-evidence">' + ('相關公開紀錄：'+ '、'.join(f'<a href="achievement-{id}.html">{e(label)} →</a>' for id,label in links) if links else '本站尚未為此項連結對應專題。') + '</div>'
+                    body += '</li>'
+                body += '</ol></section>'
 
             body += (
                 '<p class="source-note">'

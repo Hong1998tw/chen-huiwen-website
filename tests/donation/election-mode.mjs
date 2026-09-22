@@ -78,11 +78,11 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto(base + 'index.html');
   await page.waitForFunction(() => document.querySelector('.global-search-trigger'));
-  const navYs = await page.locator('#navigation > a').evaluateAll(links => links
+  const navYs = await page.locator('#navigation .nav-group > summary').evaluateAll(links => links
     .map(link => link.getBoundingClientRect())
     .filter(rect => rect.width > 0 && rect.height > 0)
     .map(rect => Math.round(rect.y)));
-  assert(navYs.length >= 10);
+  assert(navYs.length === 5);
   assert(Math.max(...navYs) - Math.min(...navYs) <= 4, `desktop navigation wrapped: ${navYs.join(',')}`);
   const desktopAccount = await page.locator('.home-account').boundingBox();
   const desktopContact = await page.locator('.home-contact').boundingBox();

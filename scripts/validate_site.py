@@ -130,7 +130,7 @@ require('LIVE_SNAPSHOT_DIR: /tmp/huiwen-production-snapshot' in workflow,'produc
 require('live-preflight:start' in prod_browser,'production browser: live preflight missing')
 require('live-check:start' in prod_browser,'production browser: progress logging missing')
 verify_source=(R/'scripts/verify_production.py').read_text()
-for runtime_path in ['data/achievements.json','data/search-index.json','data/events.json','data/platforms.json','assets/fengshan-villages.geojson']:
+for runtime_path in ['data/achievements.json','data/achievement-map.json','data/search-index.json','data/events.json','data/platforms.json','assets/fengshan-villages.geojson']:
  require(runtime_path in verify_source,f'production verification: runtime live data snapshot missing {runtime_path}')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')

@@ -16,7 +16,7 @@ const ctx=await browser.newContext({viewport:{width:1440,height:1000}});
 await ctx.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
 const page=await ctx.newPage();page.setDefaultTimeout(6000);
 const data=JSON.parse(await readFile(root+'data/achievements.json')).filter(c=>c.status!=='待核驗');
-const go=async(path='achievements.html')=>{await page.goto(base+path);await page.locator('.global-search-trigger').waitFor({state:'attached'});};
+const go=async(path='achievements.html')=>{await page.goto(base+path);await page.locator('.global-search-trigger').waitFor({state:'attached'});if(path.startsWith('achievements.html')){await page.waitForFunction(()=>!!window.HuiwenCases);await page.getByRole('button',{name:'地圖與列表',exact:true}).click();}};
 const count=async(n)=>page.waitForFunction(n=>document.querySelector('#case-count').textContent.startsWith(`共 ${n} 個`),n);
 try{
  await go('index.html');
@@ -39,6 +39,7 @@ try{
  await check('Statistics overview is absent and status filter stays distinct',async()=>{
   await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
   assert.doesNotMatch(await page.locator('main').innerText(),/政績統計總覽/);
+  if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
   await page.locator('#status-filter').selectOption('已完成');await count(data.filter(c=>c.status==='已完成').length);
   assert.equal(await page.locator('#status-filter').inputValue(),'已完成');await page.locator('#reset-map-filters').click();
  });
@@ -50,7 +51,9 @@ try{
  });
  await check('Year filter uses history dates and handles missing years',async()=>{
   await page.locator('#reset-map-filters').click();
+  if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
   const runtime=await page.evaluate(()=>window.HuiwenCases.getState().data.map(c=>({id:c.id,years:c.years}))); const in2013=runtime.filter(c=>c.years.includes('2013')); await page.locator('#year-filter').selectOption('2013'); await count(in2013.length); assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),in2013.map(c=>c.id));
+  if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
   const undated=runtime.filter(c=>c.years.length===0); await page.locator('#year-filter').selectOption('undated'); await count(undated.length); assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),undated.map(c=>c.id)); await page.locator('#reset-map-filters').click();
  });
  await check('Grouped map point exposes every topic and selection never leaks through filters',async()=>{
@@ -60,12 +63,13 @@ try{
   assert((await page.locator('.insight-group button').count())>=5);
   await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h2').textContent(),/智慧停車/);
   assert(new URL(page.url()).searchParams.get('case')==='station-parking');
+  if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
   await page.locator('#category-filter').selectOption('社福與衛環');await count(data.filter(c=>c.categories.includes('社福與衛環')).length);
   assert.equal(await page.locator('.insight-group').count(),0);assert(!new URL(page.url()).searchParams.has('case'));
   await page.locator('#reset-map-filters').click();
  });
  await check('Shared query reload, deep case links and invalid query resilience',async()=>{
-  await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.map-insight-panel').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
+  await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.map-insight-panel').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.getByRole('button',{name:'地圖與列表',exact:true}).click();await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
   await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h2').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });

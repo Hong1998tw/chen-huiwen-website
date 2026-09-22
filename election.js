@@ -51,16 +51,19 @@
   function renderTracking(items) {
     const root = q('#campaign-tracking');
     if (!root) return [];
-    const trackable = (items || []).filter(item => item.status && item.status !== '待核驗' && item.status !== '已完成' && (item.sources || []).length)
+    const trackable = (items || []).filter(item => ['持續追蹤','爭取規劃','政策實施'].includes(item.status) && (item.sources || []).length)
       .sort((a,b) => String(b.updated || '').localeCompare(String(a.updated || ''))).slice(0,8);
     if (!trackable.length) { root.innerHTML = '<p class="campaign-empty">目前沒有進行中的公開追蹤項目。</p>'; return []; }
     trackable.forEach(item => {
       const article = document.createElement('article');
       article.className = 'campaign-data-card campaign-searchable';
       article.dataset.search = normalize([item.title,item.summary,item.status,...(item.categories || []),...(item.subcategories || []),...(item.villages || [])].join(' '));
-      const source = item.sources?.[0];
-      const updated = item.updated ? `<p class="campaign-note">最近更新：${esc(item.updated)}</p>` : '';
-      article.innerHTML = `<div class="campaign-badges"><span class="campaign-badge">${esc(item.status)}</span>${(item.subcategories || []).slice(0,2).map(tag => `<span class="campaign-badge">${esc(tag)}</span>`).join('')}</div><h3>${esc(item.title)}</h3><p>${esc(item.summary || '查看完整紀錄與資料來源。')}</p>${updated}<div class="campaign-actions"><a class="text-link" href="achievement-${encodeURIComponent(item.id)}.html">查看完整內容 →</a>${source ? `<a class="text-link" href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">資料來源 ↗</a>` : ''}</div>`;
+      const latest = [...(item.history || [])].sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
+      const source = latest && (item.sources || []).filter(s => s.sourceDate === latest.date).at(-1);
+      const recordDate = latest && /^\d{4}-\d{2}(?:-\d{2})?$/.test(latest.date) ? ` datetime="${esc(latest.date)}"` : '';
+      const record = latest ? `<p class="campaign-record"><span>收錄的最新歷程 · <time${recordDate}>${esc(latest.date)}</time></span><strong>${esc(latest.title)}</strong></p>` : '<p class="campaign-note">尚未收錄具日期的歷程。</p>';
+      const updated = item.updated ? `<p class="campaign-note">內容整理：${esc(item.updated)}</p>` : '';
+      article.innerHTML = `<div class="campaign-badges"><span class="campaign-badge">${esc(item.status)}</span>${(item.subcategories || []).slice(0,2).map(tag => `<span class="campaign-badge">${esc(tag)}</span>`).join('')}</div><h3>${esc(item.title)}</h3><p>${esc(item.summary || '查看完整紀錄與資料來源。')}</p>${record}${updated}<div class="campaign-actions"><a class="text-link" href="achievement-${encodeURIComponent(item.id)}.html">查看完整內容 →</a>${source ? `<a class="text-link" href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">此階段來源 ↗</a>` : `<a class="text-link" href="achievement-${encodeURIComponent(item.id)}.html#case-sources">查看完整來源 →</a>`}</div>`;
       root.append(article);
     });
     q('#campaign-tracking-count')?.replaceChildren(document.createTextNode(String(trackable.length)));

@@ -1,9 +1,26 @@
 'use strict';
-(() => {
+(async () => {
   const root = document.getElementById('achievement-map');
   if (!root) return;
   root.classList.add('leaflet-container');
-  const data = JSON.parse(document.getElementById('map-data').textContent);
+  const config = JSON.parse(document.getElementById('map-data').textContent);
+  const interactive = [...document.querySelectorAll('.map-controls input,.map-controls select,.map-controls button,[data-locate]')];
+  interactive.forEach(control=>{control.disabled=true;});
+  let data;
+  try {
+    const response=await fetch(config.url,{signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error('records unavailable');
+    data=await response.json();
+    if(!Array.isArray(data)||!data.length)throw Error('invalid records');
+  } catch {
+    const notice=document.createElement('p');notice.className='case-live-summary';notice.setAttribute('role','status');
+    notice.textContent='篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。';
+    document.querySelector('.map-controls').append(notice);
+    root.textContent='互動地圖暫時無法載入。';
+    document.getElementById('map-message').textContent='地圖資料暫時無法載入，請直接閱讀專題列表。';
+    return;
+  }
+  interactive.forEach(control=>{control.disabled=false;});
   const PAGE_SIZE = 10;
   const controls = Object.fromEntries(['q','village','category','subcategory','status','year'].map((key, i) => [key, document.getElementById(['case-search','village-filter','category-filter','subcategory-filter','status-filter','year-filter'][i])]));
   const list = document.getElementById('case-list');

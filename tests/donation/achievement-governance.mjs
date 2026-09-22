@@ -71,7 +71,7 @@ try{
   page.on('pageerror',e=>browserErrors.push(`pageerror: ${e}`));
   page.on('console',msg=>{if(msg.type()==='error')browserErrors.push(`console: ${msg.text()}`);});
   page.on('response',res=>{const u=new URL(res.url());if(u.hostname==='127.0.0.1'&&res.status()>=400)browserErrors.push(`HTTP ${res.status()}: ${u.pathname}`);});
-  const go=async path=>{await page.goto(base+path,{waitUntil:'domcontentloaded'});};
+  const go=async path=>{await page.goto(base+path,{waitUntil:'domcontentloaded'});if(path.startsWith('achievements.html'))await page.getByRole('button',{name:'地圖與列表',exact:true}).click();};
   const waitCases=async()=>page.waitForFunction(()=>!!window.HuiwenCases);
   const count=async n=>page.waitForFunction(n=>window.HuiwenCases?.getState().visible.length===n,n);
 
@@ -94,8 +94,10 @@ try{
    await page.locator('#case-search').fill(search);await count(expectedSearch.length);
    assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),expectedSearch);
    await page.locator('#reset-map-filters').click();
+   if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    const completed=source.filter(c=>c.status==='已完成');await page.locator('#status-filter').selectOption('已完成');await count(completed.length);
    await page.locator('#reset-map-filters').click();
+   if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    const traffic=source.filter(c=>(c.categories||[]).includes('交通與基建'));await page.locator('#category-filter').selectOption('交通與基建');await count(traffic.length);
    await page.locator('#reset-map-filters').click();
    const village='大德里';const byVillage=source.filter(c=>(c.villages||[]).includes(village));
@@ -118,6 +120,7 @@ try{
    await go('achievements.html?case=dingbao-bridge');await waitCases();await page.locator('.map-insight-panel').waitFor();
    assert.equal(new URL(page.url()).searchParams.get('case'),'dingbao-bridge');
    assert(await page.locator('.case-card.is-selected').isVisible());
+   if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    await page.locator('#category-filter').selectOption('社福與衛環');
    const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await count(expected.length);
    assert.equal(await page.locator('.case-card.is-selected').count(),0);assert.equal(await page.locator('.insight-clear').count(),0);assert(await page.locator('.map-insight-panel').isVisible());assert(!new URL(page.url()).searchParams.has('case'));

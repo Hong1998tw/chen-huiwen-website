@@ -147,3 +147,102 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
 /* Keep contact details readable when users enlarge text to 200%. */
 .service-grid>div{min-width:0}
 .contact-card a{overflow-wrap:anywhere}
+
+/* Public-service audit: quieter hierarchy, task-first navigation and evidence. */
+body .site-header nav .nav-group{border:0;margin:0;padding:0;border-radius:0;background:transparent;position:relative;min-width:0}
+body .site-header nav .nav-group>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 14px;cursor:pointer;font-size:.9rem;font-weight:700;border-radius:3px;color:var(--civic-ink)}
+body .site-header nav .nav-group>summary::-webkit-details-marker{display:none}
+body .site-header nav .nav-group>summary::after{content:'⌄';font-size:.8rem;position:static;transform:none}
+body .site-header nav .nav-group[open]>summary{background:#eaf0e6}
+body .site-header nav .nav-group[open]>summary::after{content:'⌃'}
+body .site-header nav .nav-group-links{padding:8px;min-width:200px;background:var(--civic-paper);border:1px solid var(--civic-line);border-radius:4px}
+body .site-header nav .nav-group-links>a{display:flex;align-items:center;min-height:44px;padding:10px 12px;white-space:normal;line-height:1.5;font-size:.88rem}
+body .site-header nav .nav-group-links>a:hover,body .site-header nav .nav-group-links>a[aria-current=page]{background:#eaf0e6;color:#163e32}
+body .site-header nav .nav-group-links>a[aria-current=page]{box-shadow:inset 3px 0 #163e32}
+.hero-actions{gap:12px;margin-top:22px}
+.civic-home .hero-actions .button{border-radius:4px;min-height:48px;font-size:.95rem;padding:12px 22px}
+.civic-lead h2{font-size:clamp(2rem,3.4vw,3.25rem)}
+.civic-lead{padding-block:42px;gap:48px}
+body .button,body input,body select{border-radius:4px}
+body .eyebrow{letter-spacing:.08em}
+body .page-head h1,body .platform-election h2,body .about-work h2{font-family:var(--civic-serif)}
+.schedule-text{padding:28px;background:#fff;border:1px solid var(--civic-line);border-top:3px solid #163e32;border-radius:4px}
+.schedule-text h2{font-family:var(--civic-serif);font-size:clamp(1.6rem,3vw,2.2rem);margin:0 0 16px}
+.schedule-text p{line-height:1.8}
+.schedule-period-note{font-size:.85rem;color:#506259;border-left:3px solid #75957d;padding-left:12px}
+.schedule-call{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin:20px 0 28px}
+.schedule-text table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.schedule-text caption{text-align:left;font-weight:700;padding:0 0 12px;line-height:1.6}
+.schedule-text th,.schedule-text td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--civic-line)}
+.schedule-text thead{background:#eaf0e6}.schedule-text tbody th{font-weight:500}.schedule-text .source-note{display:block!important;font-size:.8rem;color:#506259;margin-top:20px}
+.schedule-original{margin-top:20px;border:1px solid var(--civic-line);padding:0 20px;border-radius:4px}
+.schedule-original>summary,.platform-original>summary{padding:16px 0;cursor:pointer;font-weight:700;min-height:48px}
+.phone-number{white-space:nowrap;overflow-wrap:normal!important;font-variant-numeric:tabular-nums}
+.contact-card .big-phone{display:flex;flex-wrap:wrap;gap:8px;font-size:clamp(1.4rem,3vw,2.3rem);letter-spacing:0;word-break:normal}
+.contact-card,.hours-card{border-radius:4px!important}
+body .map-controls{display:grid;grid-template-columns:2fr 1fr auto;gap:16px;padding:22px}
+.advanced-filters{grid-column:1/-1;grid-row:2;border:0;border-top:1px solid var(--civic-line);background:transparent;border-radius:0;padding:0;margin:0}
+.advanced-filters>summary{cursor:pointer;padding:12px 0;font-weight:700;font-size:.9rem;min-height:44px}
+.advanced-filter-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding-bottom:8px}
+body .map-controls #reset-map-filters{grid-column:3;grid-row:1;align-self:end;min-height:44px;margin:0}
+body .map-controls>.map-live-status{grid-column:1/-1}
+.case-latest-wrap{margin-bottom:32px!important}
+.case-latest{border-left:4px solid #75957d;background:#eaf0e6;padding:24px 28px;max-width:850px}
+.case-latest h2{font-family:var(--civic-serif);font-size:clamp(1.3rem,2.5vw,1.7rem);line-height:1.5;margin:0 0 14px}
+.case-latest p{line-height:1.85;margin-block:10px}
+.case-latest>a{display:inline-flex;align-items:center;min-height:44px;font-weight:700;text-decoration:underline;text-underline-offset:4px}
+.case-latest .record-boundary,.record-boundary{font-size:.8rem;color:#506259}
+.campaign-record{border-block:1px solid var(--civic-line);padding:14px 0;line-height:1.7}
+.campaign-record span{display:block;font-size:.8rem;color:#506259;margin-bottom:6px}.campaign-record strong{font-weight:600}
+.campaign-record-note{font-size:.9rem;color:#506259;line-height:1.8;max-width:70ch}
+body .campaign-data-card,body .campaign-panel{border-radius:4px;box-shadow:none}
+body .platform-toggle{display:none}
+.platform-election>summary::after{content:'＋';flex:none;position:static;font-size:1.2rem}
+.platform-election[open]>summary::after{content:'−'}
+body .platform-content>.source-note{display:block!important;font-size:.85rem;line-height:1.8;border-top:1px solid var(--civic-line);padding-top:16px}
+.platform-accountability{padding:22px;background:#eaf0e6;border-left:3px solid #75957d;margin-bottom:24px}
+.platform-accountability h3{margin-top:0!important}.platform-accountability p{font-size:.9rem;line-height:1.9}
+.platform-original{border-bottom:1px solid var(--civic-line);margin-bottom:28px}
+.platform-theme{margin-block:28px}.platform-theme h3{font-family:var(--civic-serif);line-height:1.6}
+.platform-theme li{padding-block:8px 16px;border-bottom:1px solid var(--civic-line)}
+.platform-theme li>p{margin:0 0 6px}.platform-evidence{font-size:.82rem;line-height:1.8;color:#506259}.platform-evidence a{text-decoration:underline;text-underline-offset:3px}
+.about-work{padding-block:32px 48px;border-top:1px solid var(--civic-line)}
+.about-work>p:not(.civic-kicker){max-width:65ch;line-height:1.9;color:#506259}
+.about-work-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:28px}
+.about-work-grid article{border-top:3px solid #75957d;padding:22px 0}.about-work-grid article>span{font-size:.82rem;color:#506259}.about-work-grid h3{font-family:var(--civic-serif);font-size:1.25rem;line-height:1.5;margin:14px 0}.about-work-grid p{font-size:.95rem;line-height:1.85}.about-work-grid a{display:inline-flex;align-items:center;min-height:44px}
+@media(min-width:781px){
+ body .site-header .nav-wrap{grid-template-columns:auto 1fr auto;grid-template-areas:'brand nav search';min-height:88px;gap:20px}
+ body .site-header nav{justify-content:flex-end;flex-wrap:nowrap;gap:2px;padding:0;border:0;margin:0}
+ body .site-header .nav-group-links{position:absolute;top:100%;left:0;box-shadow:0 12px 28px #163e3214;z-index:2}
+ body .site-header .nav-group:last-child .nav-group-links{left:auto;right:0}
+ body .brand-role{display:none}
+}
+@media(min-width:781px) and (max-width:1100px){body .site-header .nav-wrap{gap:8px}body .site-header nav .nav-group>summary{padding-inline:7px;font-size:.82rem}body .brand-name{font-size:1.3rem}body .brand-mark{width:36px;height:36px;font-size:1.5rem}}
+@media(max-width:780px){
+ body .site-header nav{grid-template-columns:1fr 1fr!important;gap:20px 12px!important;align-content:start;padding:20px!important}
+ body .site-header nav .nav-group>summary{padding:0 0 8px;min-height:36px;font-size:.84rem;border-bottom:1px solid var(--civic-line);background:transparent!important}
+ body .site-header nav .nav-group-links{border:0;min-width:0;padding:6px 0 0;background:transparent}
+ body .site-header nav .nav-group-links>a{padding:8px 4px;font-size:.85rem}
+ .civic-home .hero-actions{grid-column:1/-1;grid-row:4;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+ .civic-home .hero-actions .button{padding:12px 8px;font-size:.88rem;justify-content:center}
+ .civic-home .hero-intro{grid-row:5}.civic-home .hero-election-status{grid-row:3}
+ .civic-lead{gap:28px;padding-block:28px}.civic-lead h2{font-size:2rem}.civic-deck{font-size:.92rem}
+ .schedule-text{padding:20px 16px}.schedule-text th,.schedule-text td{padding:12px 10px}.schedule-text table{font-size:.95rem}.schedule-call{gap:8px}.schedule-call .button{padding-inline:14px;font-size:.88rem}
+ body .map-controls{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:18px}
+ body .map-controls>div:first-child{grid-column:1/-1}.map-controls>div:nth-child(2){grid-row:2}
+ body .map-controls #reset-map-filters{grid-column:2;grid-row:2;padding-inline:10px}
+ .advanced-filters{grid-row:3}.advanced-filter-fields{grid-template-columns:1fr 1fr;gap:12px}
+ .case-latest{padding:18px}.case-latest .civic-kicker{font-size:.72rem;letter-spacing:.03em}
+ .about-work-grid{grid-template-columns:1fr;gap:8px}
+ body .platform-row{grid-template-columns:1fr;gap:8px}.platform-year{font-size:1rem!important;text-align:left!important;padding:0!important}.platform-election>summary{padding:18px!important}.platform-election h2{font-size:1.4rem!important}.platform-content{padding:0 18px 20px!important}.platform-accountability{padding:16px}.platform-theme ol{padding-left:22px}
+}
+#monthly-heading,#contact,#legal{scroll-margin-top:16px}
+.schedule-history-toggle{min-height:44px;padding:8px 12px;margin-bottom:16px;border:1px solid #799382;background:transparent;color:var(--civic-ink);font:inherit;font-size:.85rem;border-radius:4px;cursor:pointer}
+.civic-home .hero-actions .button-outline{border:1px solid #799382}
+body .map-controls :is(input,select,button),body .map-quick-links a,body .global-search-trigger{border-radius:4px}
+body .platform-election,body .profile-block,body .social-card{border-radius:4px}
+body .platform-original{padding:0;margin-block:16px 24px}
+body .platform-original>summary{padding:12px 0;min-height:48px;font-size:.9rem}
+body .platform-original>summary::after{content:'＋'}body .platform-original[open]>summary::after{content:'−'}
+@media(max-width:780px){.platform-row::before{display:none}.contact-card .phone-number{white-space:normal}.schedule-period-note{margin-top:12px}}
+.civic-service-desk h2{font-size:1.65rem}

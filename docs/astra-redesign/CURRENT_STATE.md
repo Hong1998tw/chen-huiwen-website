@@ -1,3 +1,13 @@
+# Current checkpoint｜2026-09-22 public-service audit
+
+User authorized rows 1–4 and 6–10, production release and archive/Notion alignment. Row 5 is excluded. Candidate passes local gates; PR/CI, deployment, live verification and external closeout remain.
+
+Branch `fix/public-service-audit-20260922`; baseline `8319451a6e104dbebe5ca2a4b359185247abd90a`. See [release checkpoint](../RELEASE-2026-09-22-PUBLIC-SERVICE.md). Do not repeat the original full redesign or modify petition main content.
+
+---
+
+## Previous build checkpoint (historical)
+
 # CURRENT STATE
 
 BUILD STATUS: COMPLETE — local build only.

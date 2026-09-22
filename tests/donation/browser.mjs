@@ -59,9 +59,9 @@ try {
       assert.equal(await page.locator('.donation-portrait,picture').count(), 0);
       const account = await page.locator('.donation-account-number').boundingBox();
       assert(account && account.y + account.height < 844);
-      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'political-donation.html');
-      assert.equal(await page.locator('#navigation a').nth(2).getAttribute('href'), 'election.html');
-      assert.equal(await page.locator('#navigation a').nth(3).getAttribute('href'), 'service.html#monthly-heading');
+      assert.equal(await page.locator('#navigation .nav-group').count(), 5);
+      assert.equal(await page.locator('#navigation a').first().getAttribute('href'), 'service.html');
+      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'service.html#monthly-heading');
     });
 
     await check(`donation ${width}px: no horizontal overflow`, async () => {
@@ -69,10 +69,10 @@ try {
     });
 
     await check(`donation ${width}px: keyboard FAQ and focus`, async () => {
-      const summary = page.locator('summary').first();
+      const summary = page.locator('main summary').first();
       await summary.focus();
       await page.keyboard.press('Enter');
-      assert.equal(await page.locator('details').first().getAttribute('open'), '');
+      assert.equal(await page.locator('main details').first().getAttribute('open'), '');
       assert(await summary.evaluate(el => getComputedStyle(el).outlineStyle !== 'none'));
       await page.keyboard.press('Enter');
     });
@@ -99,7 +99,7 @@ try {
     });
 
     await check(`donation ${width}px: axe WCAG2 A/AA`, async () => {
-      for (const summary of await page.locator('summary').all()) await summary.click();
+      for (const summary of await page.locator('main summary').all()) await summary.click();
       const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
       await writeFile(new URL(`axe-donation-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
@@ -122,11 +122,11 @@ try {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
         assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
-        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'political-donation.html', `${file}: donation order`);
-        assert.equal((await page.locator('#navigation a').nth(2).getAttribute('href')).replace(/^\//,''), 'election.html', `${file}: election order`);
-        assert.equal((await page.locator('#navigation a').nth(3).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order`);
+        assert.equal(await page.locator('#navigation .nav-group').count(),5,`${file}: grouped navigation`);
+        assert.equal((await page.locator('#navigation a').first().getAttribute('href')).replace(/^\//,''), 'service.html', `${file}: service first`);
+        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order`);
         assert.equal(await page.locator('#navigation a[href$="gallery.html"]').count(), 0, `${file}: gallery nav`);
-        assert.equal(await page.locator('#navigation a[href$="activities.html"]').innerText(), '公開行程與活動', `${file}: activities nav`);
+        assert.equal(await page.locator('#navigation a[href$="activities.html"]').textContent(), '公開行程與活動', `${file}: activities nav`);
         for (const href of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) {
           assert(await page.locator('footer a').evaluateAll((els, target) => els.some(a => a.href === new URL(target,document.baseURI).href), href), `${file}: footer ${href}`);
         }
@@ -184,6 +184,8 @@ try {
 
     await check(`achievement search filters and pagination ${width}px`, async () => {
       await page.goto(base + 'achievements.html');
+  await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
+      await page.waitForFunction(()=>!!window.HuiwenCases);
       const visible = () => page.locator('[data-case]:visible').count();
       assert.equal(await visible(), Math.min(10, items.length));
       await page.locator('#case-search').fill('文龍');
@@ -193,6 +195,7 @@ try {
       await page.locator('#village-filter').selectOption('v:' + village);
       assert.equal(await visible(), Math.min(10, items.filter(item => item.villages.includes(village)).length));
       await page.locator('#reset-map-filters').click();
+      if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
       await page.locator('#subcategory-filter').selectOption({ label: '寵物' });
       assert((await visible()) > 0);
       await page.locator('#reset-map-filters').click();
@@ -200,6 +203,8 @@ try {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
       }
+      if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
+      await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({state:'visible'});
       assert(await page.locator('.leaflet-container').isVisible());
@@ -255,16 +260,17 @@ try {
     await check(`service/about/activities regressions ${width}px`, async () => {
       await page.goto(base + 'service.html');
       const legal = await page.locator('.legal-section').boundingBox();
-      const monthly = await page.locator('.monthly-schedule').boundingBox();
-      assert(legal && monthly && legal.y < monthly.y);
+      const monthly = await page.locator('.schedule-text').boundingBox();
+      assert(legal && monthly && monthly.y < legal.y);
       assert.equal(await page.locator('.monthly-schedule a[href*="canva.com"]').count(), 0);
+      await page.locator('.schedule-original > summary').click();
       await page.locator('.schedule-auto-embed').scrollIntoViewIfNeeded();
       await page.locator('.schedule-auto-embed iframe').waitFor({ state: 'attached' });
       assert.equal(await page.locator('.schedule-auto-embed iframe').count(), 1, 'lawyer schedule should auto-load when it enters the viewport');
       assert.equal(await page.locator('.schedule-auto-embed iframe').getAttribute('title'), '每月公益律師諮詢時間表');
       assert.equal(await page.locator('.schedule-auto-embed a[href^="https://www.canva.com/design/"]').count(), 1, 'lawyer schedule keeps a direct-link fallback');
       assert(await page.locator('.schedule-auto-embed [data-embed-load]').isVisible(), 'lawyer schedule keeps a reload fallback');
-      assert((await page.locator('.schedule-phone-cta').boundingBox()).height >= 60);
+      assert((await page.locator('.schedule-phone-cta').boundingBox()).height >= 44);
       await page.goto(base + 'about.html');
       for (const href of ['https://www.facebook.com/hwcfs/','https://www.threads.com/@huiwen.ifs','https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028']) assert.equal(await page.locator(`.social-grid a[href="${href}"]`).count(), 1);
       assert.equal(await page.locator('.social-grid a').count(), 3);
@@ -286,9 +292,9 @@ try {
   const nojsPage = await nojs.newPage();
   await check('no JavaScript: political donation remains readable', async () => {
     await nojsPage.goto(base + 'political-donation.html');
-    assert(await nojsPage.locator('#navigation a[href="./"]').isVisible());
-    await nojsPage.locator('summary').first().click();
-    assert.equal(await nojsPage.locator('details').first().getAttribute('open'), '');
+    assert(await nojsPage.locator('.brand[href="./"]').isVisible());
+    await nojsPage.locator('main summary').first().click();
+    assert.equal(await nojsPage.locator('main details').first().getAttribute('open'), '');
     assert(await nojsPage.getByText('752200636579', { exact: true }).isVisible());
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
     assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
