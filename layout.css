@@ -19,7 +19,7 @@
 .platform-content{padding:0 24px 24px}.platform-content h3{font-size:1.1rem;margin-top:28px}.platform-content li{margin-block:14px}.platform-content:empty{min-height:24px}
 .platform-poster{margin:18px 0 28px}.platform-poster a{display:block;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff}.platform-poster img{display:block;width:100%;height:auto}.platform-poster figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}
 /* Keep provenance in structured source, but do not present verification/source notes as campaign-page copy. */
-.platform-content>.source-note:last-child{display:none}
+
 /* Do not reintroduce the legacy wrapping/centering behavior after mobile.css. */
 @media(max-width:780px){
  .activities-page .wrap,.platforms-wrap{width:calc(100% - 40px)}.activities-page .content-grid{grid-template-columns:1fr;gap:20px}.activities-page .page-head{padding-block:30px}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "timezone": "Asia/Taipei",
+  "recordedAt": "2026-09-22",
+  "scope": "公開內容維護；工程發布成功不代表內容仍在有效期。",
+  "owners": [
+    {
+      "id": "service-information",
+      "role": "服務資訊維護",
+      "assignmentStatus": "unassigned",
+      "person": null,
+      "backupPerson": null
+    },
+    {
+      "id": "public-records",
+      "role": "公開紀錄與政見編輯",
+      "assignmentStatus": "unassigned",
+      "person": null,
+      "backupPerson": null
+    },
+    {
+      "id": "release-maintenance",
+      "role": "網站工程維護",
+      "assignmentStatus": "unassigned",
+      "person": null,
+      "backupPerson": null
+    }
+  ],
+  "checks": [
+    {
+      "id": "legal-schedule-month",
+      "kind": "monthly_schedule",
+      "source": "data/legal-schedule.json",
+      "ownerId": "service-information",
+      "reviewTask": "核對服務處原始圖卡，更新文字時間表與核對日期；不得推定名額。"
+    },
+    {
+      "id": "event-lifecycle",
+      "kind": "events",
+      "source": "data/events.json",
+      "ownerId": "service-information",
+      "reviewTask": "核對近期公開行程的時間、取消或改期及原公告。"
+    },
+    {
+      "id": "profile-identity",
+      "kind": "profile",
+      "source": "data/site-profile.json",
+      "ownerId": "public-records",
+      "reviewTask": "依官方資訊重新確認任職狀態；不可依日曆自動推定結果。"
+    },
+    {
+      "id": "platform-accountability",
+      "kind": "platforms",
+      "source": "data/platforms.json",
+      "ownerId": "public-records",
+      "reviewTask": "由本人或獲授權團隊補充政見目標、期限、權責及跨屆關聯；未知維持未知。"
+    }
+  ],
+  "notificationPolicy": {
+    "onlyNewOrChangedExpiredFindings": true,
+    "onRecovery": "report_only",
+    "unassignedOwner": "report_without_repeated_alert",
+    "delivery": "GitHub Actions run status and summary only; no issue, email or chat sender"
+  }
+}

@@ -4,10 +4,8 @@ import json
 from pathlib import Path
 from bs4 import BeautifulSoup
 R = Path(__file__).resolve().parents[1]
-from build_civic import build as build_civic
-build_civic()
 items = []
-paths = sorted(R.glob('*.html')) + sorted(R.glob('*/index.html'))
+paths = sorted(R.glob('*.html')) + sorted(p for p in R.glob('*/index.html') if not p.parent.name.startswith(('_','.')) )
 for path in paths:
     soup = BeautifulSoup(path.read_text(), 'html.parser')
     robots = soup.find('meta', attrs={'name': 'robots'})

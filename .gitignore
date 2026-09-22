@@ -17,3 +17,5 @@ service-cases*.csv
 schedule-private*.xlsx
 
 artifacts/astra-redesign/
+
+/_site/

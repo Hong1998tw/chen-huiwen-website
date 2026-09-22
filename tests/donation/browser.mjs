@@ -152,7 +152,7 @@ try {
       await page.goto(base + 'index.html');
       await page.waitForFunction(() => /^\d+$/.test(document.querySelector('#campaign-countdown')?.textContent || ''));
       const electionStatus = page.locator('.hero-election-status');
-      assert.match(await electionStatus.innerText(), /勝選倒數/);
+      assert.match(await electionStatus.innerText(), /距離投票日/);
       assert.match(await electionStatus.innerText(), /2026\.11\.28/);
       assert.doesNotMatch(await page.locator('main').innerText(), /候選人姓名號次抽籤|10\/23/);
       assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "person": {
+    "name": "陳慧文",
+    "displayRole": "高雄市議員",
+    "district": "鳳山區"
+  },
+  "identity": {
+    "recordAsOf": "2026-09-22",
+    "confirmedRole": "第4屆高雄市議員",
+    "sourceUrl": "https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028",
+    "sourceNote": "依官網既有議會公開介紹整理；此日期為資料記錄截止日，不是重新查證任職或學歷的宣告。",
+    "reviewAfter": "2026-11-29",
+    "nextTermStatus": "unverified",
+    "result": null
+  },
+  "editorialRule": "投票日期、倒數結束或時間經過不能推定當選、卸任或續任；須核對官方來源後更新身分。"
+}

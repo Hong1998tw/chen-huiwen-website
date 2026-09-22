@@ -25,7 +25,7 @@ try {
   await page.goto(base + 'index.html');
   const heroStatus = page.locator('.hero-copy > .hero-election-status');
   assert.equal(await heroStatus.count(), 1);
-  assert.match(await heroStatus.innerText(), /勝選倒數/);
+  assert.match(await heroStatus.innerText(), /距離投票日/);
   assert.match(await heroStatus.innerText(), /2026\.11\.28/);
   assert.doesNotMatch(await page.locator('main').innerText(), /10\/23|候選人姓名號次抽籤/);
   assert.equal(await page.locator('.campaign-entry-compact').count(), 0);

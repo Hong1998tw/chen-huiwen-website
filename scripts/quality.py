@@ -3,11 +3,12 @@
 import argparse, hashlib, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-BUILDERS=('build_cases.py','build_platforms.py','build_events.py','build_search.py')
+BUILDERS=('build_all.py',)
 VALIDATORS=('validate_achievements.py','validate_site.py','validate_donation.py','validate_seo.py','validate_p0.py','validate_public_copy.py','validate_domain_migration.py')
 
 def snapshot(root):
-    paths=list(root.glob('*.html'))+[root/'data/search-index.json',root/'data/achievement-map.json']
+    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/achievements-public.json','sitemap.xml')]
+    paths=[p for p in paths if p.exists()]
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
 def run(root,args):
@@ -31,11 +32,12 @@ def main():
                 extra=['--baseline-ref',a.baseline_ref] if name=='validate_achievements.py' and a.baseline_ref else []
                 run(root,[sys.executable,'scripts/'+name,*extra])
         generated(root)
+        run(root,[sys.executable,'scripts/build_public.py','--check'])
         if not a.generated_only:
             run(root,[sys.executable,'-m','unittest','discover','-s','tests','-p','test_*.py'])
             run(root,[sys.executable,'-m','unittest','discover','-s','tests/events'])
         if a.browser:
-            for name in ('browser','digital-civic','p0','achievement-governance','election-mode','lifecycle'):
+            for name in ('browser','digital-civic','p0','achievement-governance','election-mode','lifecycle','runtime-maturity','site-maturity'):
                 run(root,['node','tests/donation/'+name+'.mjs'])
         print('PASS: deterministic quality'+(' and browser regression' if a.browser else ''))
         return 0

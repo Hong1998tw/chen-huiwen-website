@@ -41,6 +41,7 @@ files=sorted(R.glob('*.html'))
 refs=0
 for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
+ if f.name=='offline.html':continue  # Standalone, no-network recovery document validated by validate_site.
  require(len(doc.select('#navigation a[href="political-donation.html"],#navigation a[href="/political-donation.html"]'))==1,f'{f.name}: header entry')
  require(doc.select_one('#navigation .nav-group summary').get_text(strip=True)=='市民服務',f'{f.name}: service-first navigation')
  require(len(doc.select('footer a[href="political-donation.html"],footer a[href="/political-donation.html"]'))==1,f'{f.name}: footer entry')

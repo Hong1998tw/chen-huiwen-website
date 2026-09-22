@@ -274,5 +274,536 @@
       "status": "中選會資料庫確認第1選舉區、17號、當選；政見公報全文尚未取得。",
       "sourceUrl": "https://db.cec.gov.tw/ElecTable/Election/ElecTickets?areaCode=00&cityCode=012&dataLevel=A&dataType=tickets&deptCode=000&legisId=T1&liCode=0000&prvCode=01&subjectId=T2&themeId=8178fcf3d7aabd51203614f208b75031&typeId=ELC"
     }
+  ],
+  "schemaVersion": 2,
+  "itemIdContract": "sections.items 保留原文字串；itemsById 以 year + sourceText 精確對應穩定 ID。重排不改 ID；改原文須人工核對來源並更新同一 ID，不重新編號。relatedRecordIds 僅供核對既有資料，不表示政見已履行。",
+  "itemsById": {
+    "2005-item-001": {
+      "year": 2005,
+      "sourceText": "改善警政、增設監視器、改善治安。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-002": {
+      "year": 2005,
+      "sourceText": "督促政府整頓交通、增設停車場、改善交通品質。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-003": {
+      "year": 2005,
+      "sourceText": "促進產業升級轉型、發展具有地方特色、企業結合觀光產業、增加就業機會。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-004": {
+      "year": 2005,
+      "sourceText": "堅持環境保護、水土保持、決不讓大地再遭蹂躪。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-005": {
+      "year": 2005,
+      "sourceText": "加強高雄縣文化藝文活動、提昇人民的心靈知識。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-006": {
+      "year": 2005,
+      "sourceText": "落實婦幼政策、保障婦幼權利。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-007": {
+      "year": 2005,
+      "sourceText": "加強社會福利、照顧弱勢團體。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2005-item-008": {
+      "year": 2005,
+      "sourceText": "監督縣政、捍衛人民福祉。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-001": {
+      "year": 2010,
+      "sourceText": "推動電動公車及低排碳大眾運輸，邁向無碳城市目標。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-002": {
+      "year": 2010,
+      "sourceText": "提高生育、托育補助津貼，鼓勵生兒育女。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-003": {
+      "year": 2010,
+      "sourceText": "推動高雄市國中小全面免費營養午餐。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-004": {
+      "year": 2010,
+      "sourceText": "降低國中小班級人數、增加教師需求量。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-005": {
+      "year": 2010,
+      "sourceText": "單親、中低收入、隔代教養、等弱勢家庭提供免費安親課輔。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-006": {
+      "year": 2010,
+      "sourceText": "廣設社區老人關懷據點，老吾老以及人之老。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-007": {
+      "year": 2010,
+      "sourceText": "將鳳山市區招牌更換成節能精緻減碳招牌。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-008": {
+      "year": 2010,
+      "sourceText": "鳳山溪以北沿岸及曹公圳整治美化並加強管理維護。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-009": {
+      "year": 2010,
+      "sourceText": "建立農產品的行銷通路，使鳳山成為農產品的行銷集散地。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-010": {
+      "year": 2010,
+      "sourceText": "促進高雄投資環境、增加就業機會。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-011": {
+      "year": 2010,
+      "sourceText": "推動社區營造，將國有或閒置空地綠化，優質我們的生活環境。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-012": {
+      "year": 2010,
+      "sourceText": "主張以臺灣名義加入聯合國，ECFA要公投，人民做主。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2010-item-013": {
+      "year": 2010,
+      "sourceText": "打造文化、觀光、產業的鳳山城。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-001": {
+      "year": 2014,
+      "sourceText": "爭取經費優先開闢鳳山消防救災不易之計畫道路。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-002": {
+      "year": 2014,
+      "sourceText": "爭取經費裝設監視器，以保障市民生命財產安全。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-003": {
+      "year": 2014,
+      "sourceText": "促進產業升級轉型、發展具有地方特色、企業結合觀光產業、增加就業機會。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-004": {
+      "year": 2014,
+      "sourceText": "督促高雄市第77期市地重劃區儘速完成，興建公園綠地道路等公共設施，強化其生活機能。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-005": {
+      "year": 2014,
+      "sourceText": "督促高雄市鳳山區五甲路東側區段徵收進度，爭取公共設施用地興建多功能活動中心，提升社區生活品質，鄰近5里有集會空間。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-006": {
+      "year": 2014,
+      "sourceText": "加強高雄市文化藝文活動，提升人民心靈知識。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-007": {
+      "year": 2014,
+      "sourceText": "落實婦幼政策，保障婦女權利。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-008": {
+      "year": 2014,
+      "sourceText": "加強社會福利，照顧弱勢團體。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-009": {
+      "year": 2014,
+      "sourceText": "鳳山溪沿岸及曹公圳整治美化，並加強管理維護。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-010": {
+      "year": 2014,
+      "sourceText": "主張「台灣中國，一邊一國」。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-011": {
+      "year": 2014,
+      "sourceText": "「扁案」是政治事件，應予平反。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2014-item-012": {
+      "year": 2014,
+      "sourceText": "傾聽民意，為民服務。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-001": {
+      "year": 2018,
+      "sourceText": "鳳山車站專區發展，鐵路地下化景觀動線重新盤整，帶動整體商圈發展。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-002": {
+      "year": 2018,
+      "sourceText": "啟動交通動能，設環城自行車道，配合鐵路、捷運與輕軌，強化轉運功能。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-003": {
+      "year": 2018,
+      "sourceText": "高雄向東發展，都市更新再造，綠色生態與公設就位，並催生鳳山新影城。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-004": {
+      "year": 2018,
+      "sourceText": "閒置空間再造，眷村懷舊探索、工業區轉型，成立鳳山創意產業育成中心。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-005": {
+      "year": 2018,
+      "sourceText": "世代共生，老青聯網，推動社區老幼弱照護據點，爭取生托育幼最優補助。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-006": {
+      "year": 2018,
+      "sourceText": "傳統市場街區創新改善，包裝行銷，辦理在地節慶活動，營造鳳山印象。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-007": {
+      "year": 2018,
+      "sourceText": "設旅遊中心，整合旅遊景點，串聯藝文，市場與街區，包裝鳳山城市美學。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-008": {
+      "year": 2018,
+      "sourceText": "落實社區運動空間，爭取國民運動中心，推多元運動型態，開發運動經濟。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-009": {
+      "year": 2018,
+      "sourceText": "主張台灣中國，一邊一國。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2018-item-010": {
+      "year": 2018,
+      "sourceText": "扁案是政治事件，應予平反。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-carbon-city": {
+      "year": 2022,
+      "sourceText": "監督市府碳中和計畫，嚴格要求市府以身作則，作為典範。加速推動大眾運輸與私人車電動化。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-carbon-agriculture": {
+      "year": 2022,
+      "sourceText": "推動農業達成「碳中和」，並轉型為碳權產業，增加附加價值，與企業互利互助，提供碳權交易，促使農民、企業、生態三贏的契機。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-road-equality": {
+      "year": 2022,
+      "sourceText": "全面盤點、改善不合時宜的用路環境。推動合適路口機車左轉，支持用路平權。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-transit-integration": {
+      "year": 2022,
+      "sourceText": "推動捷運、輕軌、公車大眾運輸路網整合與改善，朝人本交通方向邁進。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-smart-care": {
+      "year": 2022,
+      "sourceText": "推動智慧照護中心與社區視訊診所，省時省力又安心。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-public-benefit-space": {
+      "year": 2022,
+      "sourceText": "推動以容積獎勵為誘因，鼓勵建商提供空間作為社福公益使用，達成「取之於社會，用之於社會。」之精神。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-care-integration": {
+      "year": 2022,
+      "sourceText": "完善社會長照、日照、托兒服務，並推動資源整合，減少社會成本的浪費。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-bilingual-teachers": {
+      "year": 2022,
+      "sourceText": "完善雙語教育，增加雙語外師，培養學生語言能力。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-school-traffic-enforcement": {
+      "year": 2022,
+      "sourceText": "推動學校周圍增設科技執法，減少導護志工人力，「開心上下學、平安接送。」",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-city-office-relocation": {
+      "year": 2022,
+      "sourceText": "推動東高雄發展，打造高雄中城計畫，市府整合遷鳳山，節省行政成本。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2022-east-wujia-smart-city": {
+      "year": 2022,
+      "sourceText": "推動五甲路以東作為碳中和未來經濟區，結合無人車、智慧號誌、智慧消防、綠能建設、智慧照護、智慧醫療，創造出未來城市的模樣。",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed"
+    },
+    "2026-yellow-line-local-benefit": {
+      "year": 2026,
+      "sourceText": "監督捷運黃線、聯開回饋在地",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-pedestrian-safety": {
+      "year": 2026,
+      "sourceText": "推動新一代交通改善、人行友善",
+      "relatedRecordIds": [
+        "station-walkway",
+        "school-crossing-flags"
+      ],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-climate-resilience": {
+      "year": 2026,
+      "sourceText": "推動極端氣候防災，積淹水熱點減少 + 高溫應對",
+      "relatedRecordIds": [
+        "bade-detention"
+      ],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-shopping-night-economy": {
+      "year": 2026,
+      "sourceText": "鳳山商圈與夜間經濟振興",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-market-renewal": {
+      "year": 2026,
+      "sourceText": "傳統市場現代化、市場用地轉型新生",
+      "relatedRecordIds": [
+        "fengshan-second-market"
+      ],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-heritage-tourism": {
+      "year": 2026,
+      "sourceText": "鳳山文史觀光廊帶",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-youth-enterprise": {
+      "year": 2026,
+      "sourceText": "青年創業與扎根支援",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-extended-childcare": {
+      "year": 2026,
+      "sourceText": "擴大延長托育",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-employment-family-care": {
+      "year": 2026,
+      "sourceText": "中高齡就業促進與「照顧不離職」",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-disability-rights": {
+      "year": 2026,
+      "sourceText": "身障權益保障",
+      "relatedRecordIds": [
+        "after-school-care"
+      ],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-pet-friendly": {
+      "year": 2026,
+      "sourceText": "推動寵物友善城市",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-school-administration": {
+      "year": 2026,
+      "sourceText": "校事會議改革、高中行政減壓",
+      "relatedRecordIds": [
+        "school-case-review",
+        "school-administration"
+      ],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    },
+    "2026-child-deepfake-protection": {
+      "year": 2026,
+      "sourceText": "AI 深偽兒少保護",
+      "relatedRecordIds": [],
+      "reviewStatus": "source_transcribed",
+      "accountability": {
+        "target": null,
+        "deadline": null,
+        "responsibleAuthority": null,
+        "councilAction": null,
+        "assessmentStatus": "not_specified_in_source"
+      }
+    }
+  },
+  "crossTermComparisons": [
+    {
+      "id": "transit-2022-2026",
+      "title": "大眾運輸與在地交通",
+      "fromItemId": "2022-transit-integration",
+      "toItemId": "2026-yellow-line-local-benefit",
+      "relationType": "topic_comparison",
+      "relationshipStatus": "needs_confirmation",
+      "outcomeStatus": "not_assessed",
+      "note": "兩份原文均涉及捷運或大眾運輸；本表只提供原文對讀，尚未確認是否為同一承諾的延續，也未判定完成情形。"
+    },
+    {
+      "id": "childcare-2022-2026",
+      "title": "托育與照顧服務",
+      "fromItemId": "2022-care-integration",
+      "toItemId": "2026-extended-childcare",
+      "relationType": "topic_comparison",
+      "relationshipStatus": "needs_confirmation",
+      "outcomeStatus": "not_assessed",
+      "note": "2022 原文包含托兒服務，2026 原文提出延長托育；服務範圍、量化目標與延續關係仍須補充核實。"
+    }
   ]
 }
