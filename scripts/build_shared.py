@@ -18,7 +18,22 @@ def region(text, name, body):
     return before + start + '\n' + body.strip() + '\n' + end + after
 
 
+def sync_digital_assets(root):
+    """Version dynamic dependencies before the enclosing site.js gets its own hash."""
+    path = root / 'site.js'
+    text = path.read_text()
+    for constant, asset in [('DIGITAL_SCRIPT_VERSION', 'digital.js'), ('DIGITAL_STYLE_VERSION', 'digital.css')]:
+        version = hashlib.sha256((root / asset).read_bytes()).hexdigest()[:12]
+        text, count = re.subn(r"(const " + constant + r" = ')[^']+(')",
+                             lambda match: match[1] + version + match[2], text)
+        if count != 1:
+            raise ValueError(f'Exactly one generated {constant} required in site.js')
+    if path.read_text() != text:
+        path.write_text(text)
+
+
 def build(root=ROOT):
+    sync_digital_assets(root)
     groups = json.loads((root / 'data/navigation.json').read_text())
     header = (root / 'templates/site-header.html').read_text()
     footer = (root / 'templates/site-footer.html').read_text()

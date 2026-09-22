@@ -1,15 +1,22 @@
 /** Real browser-to-edge smoke. No routing, snapshots, resource blocking or DOM rewriting. */
 import { chromium } from 'playwright';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
 const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, '/');
+// Match the reviewed checkout, not whichever cached registration happens to be
+// active. Keep the version in the same source that registers the site's worker.
+const registrationSource = await readFile(new URL('../../digital.js', import.meta.url), 'utf8');
+const expectedWorkerVersion = registrationSource.match(/\bconst\s+SERVICE_WORKER_VERSION\s*=\s*(['"])([^'"]+)\1\s*;/)?.[2];
+assert(expectedWorkerVersion, 'Cannot read the reviewed service worker version from digital.js');
+const expectedWorkerURL = new URL(`sw.js?v=${encodeURIComponent(expectedWorkerVersion)}`, base).href;
 const output = new URL('./results/native-edge/', import.meta.url);
 await mkdir(output, { recursive: true });
 const report = {
   scope: 'Native edge smoke; direct browser, all resources allowed, service workers allowed',
   baseUrl: base, observedAt: new Date().toISOString(), status: 'PASS', checks: [],
+  expectedServiceWorker: { scriptURL: expectedWorkerURL, version: expectedWorkerVersion, state: 'activated' },
   limits: ['Chromium automation is not a real iPhone/Safari or assistive-technology audit.',
     'No forms, appointments, messages, payments or calendar events are submitted.'],
 };
@@ -115,8 +122,24 @@ try {
     if (new URL(base).protocol === 'https:') {
       await check('Real service worker activation', async () => {
         await navigate('');
-        await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), null, { timeout: 12000 });
-        report.serviceWorker = await page.evaluate(() => ({ scriptURL: navigator.serviceWorker.controller.scriptURL, state: navigator.serviceWorker.controller.state }));
+        // A fresh registration can take over asynchronously; wait at most 30s
+        // for that natural transition without forcing an update or unregistering.
+        try {
+          await page.waitForFunction(expectedURL => {
+            const worker = navigator.serviceWorker?.controller;
+            return worker?.state === 'activated' && worker.scriptURL === expectedURL;
+          }, expectedWorkerURL, { timeout: 30000 });
+        } catch (error) {
+          if (error.name !== 'TimeoutError') throw error;
+        } finally {
+          report.serviceWorker = await page.evaluate(() => {
+            const worker = navigator.serviceWorker?.controller;
+            return worker ? { scriptURL: worker.scriptURL, state: worker.state } : null;
+          });
+        }
+        assert.equal(report.serviceWorker?.state, 'activated', 'Expected service worker did not activate within 30 seconds');
+        assert.equal(report.serviceWorker?.scriptURL, expectedWorkerURL,
+          'Active service worker differs from the reviewed checkout after 30 seconds');
       });
     } else {
       report.checks.push({ name: 'Real service worker activation', status: 'NOT_TESTED', reason: 'Local HTTP smoke; production HTTPS required.' });
