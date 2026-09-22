@@ -95,8 +95,8 @@ try{
   await ctx.close();
  }
  for(const [time,label,expected] of [['2026-09-22T12:00:00+08:00','current month',4],['2026-10-01T12:00:00+08:00','expired month',13]]){
-  const ctx=await browser.newContext({viewport:{width:390,height:844}});const page=await ctx.newPage();await page.clock.install({time:new Date(time)});await page.goto(base+'service.html');
-  await check('schedule '+label,async()=>{assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month'){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),13);}else assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
+  const ctx=await browser.newContext({viewport:{width:390,height:844}});const page=await ctx.newPage();await page.clock.setFixedTime(new Date(time));await page.goto(base+'service.html');
+  await check('schedule '+label,async()=>{if(label==='current month')await page.locator('.schedule-history-toggle').waitFor();else await page.waitForFunction(()=>document.querySelector('.schedule-period-note')?.textContent.includes('歷史時間表'));assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month'){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),13);}else assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
  }
  await check('map data failure preserves static public records',async()=>{
   const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
