@@ -328,5 +328,11 @@
     "status": "持續追蹤",
     "place": "鳳山區",
     "sha256": "7c365ebf249af25f543bcc55006a52ab97c314810f7dfc15ea9ae0ec366236a3"
+  },
+  "achievement-boai-card-rehab-bus-points": {
+    "title": "推動博愛卡900點折抵復康巴士車資",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "17501a1d913cb90f9045bd841e2bd7f54160d534fadca61e634f357ac07d32d7"
   }
 }

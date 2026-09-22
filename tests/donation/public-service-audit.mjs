@@ -6,6 +6,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
+const publicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
 const base=process.env.BASE_URL||'http://127.0.0.1:8769/';
 const server=process.env.BASE_URL?null:spawn('python3',['-m','http.server','8769','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const browser=await chromium.launch();
@@ -100,7 +101,7 @@ try{
  }
  await check('map data failure preserves static public records',async()=>{
   const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
-  await page.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。').waitFor();assert.equal(await page.locator('#case-list [data-case]:visible').count(),54);assert(await page.locator('#case-search').isDisabled());assert(await page.locator('#case-list a').first().isVisible());await ctx.close();
+  await page.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。').waitFor();assert.equal(await page.locator('#case-list [data-case]:visible').count(),publicRecordCount);assert(await page.locator('#case-search').isDisabled());assert(await page.locator('#case-list a').first().isVisible());await ctx.close();
  });
  if(!process.env.BASE_URL)await check('excluded petition main unchanged',async()=>{
   const old=execFileSync('git',['show','8319451a6e104dbebe5ca2a4b359185247abd90a:petition.html'],{cwd:root,encoding:'utf8'});
