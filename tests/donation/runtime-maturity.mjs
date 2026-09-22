@@ -5,15 +5,21 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {resolve,extname} from 'node:path';
+import {createHash} from 'node:crypto';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 let failOptional=false,failRequired=false,disconnected=false;
 const server=createServer(async(req,res)=>{
   if(disconnected){req.socket.destroy();return;}
   const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
   if((failRequired&&pathname==='/offline.html')||(failOptional&&/\.(css|svg)$/.test(pathname))){res.writeHead(503);res.end('fixture unavailable');return;}
-  const path=resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
+  const path=resolve(root,'.'+(pathname==='/'||pathname==='/without-markers.html'?'/index.html':pathname));
   if(!path.startsWith(root)){res.writeHead(403);res.end();return;}
-  try{const data=await readFile(path);res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'})[extname(path)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}
+  try{let data=await readFile(path);
+    if(pathname==='/without-markers.html')data=Buffer.from(data.toString().replace(/ data-digital-civic="[^"]+"/g,''));
+    // Reproduce an edge retaining the previous release under its old immutable URL.
+    if(pathname==='/digital.js'&&req.url.includes('v=20260922-public-service-v11'))data=Buffer.from(data.toString().replace(/const SERVICE_WORKER_VERSION = '[^']+'/,"const SERVICE_WORKER_VERSION = '20260922-public-service-v11'"));
+    if(pathname==='/sw.js'&&req.url.includes('v=20260922-public-service-v11'))data=Buffer.from("self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));");
+    res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'})[extname(path)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}
   catch{res.writeHead(404,{'Content-Type':'text/html'});res.end('<h1>Not found</h1>');}
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -95,6 +101,27 @@ try{
   await p.evaluate(async()=>{const r=await navigator.serviceWorker.register('sw.js');const w=r.installing;if(!w)return;await new Promise(resolve=>{w.addEventListener('statechange',()=>{if(w.state==='redundant'||w.state==='activated')resolve();});});});
   assert.equal(await p.evaluate(()=>Boolean(navigator.serviceWorker.controller)),false);assert((await p.evaluate(()=>caches.keys())).includes('huiwen-digital-v11-fixture'));
   failRequired=false;await broken.close();
+ });
+ await check('explicit and injected digital assets agree across navigation without worker downgrade',async()=>{
+  // *.localhost is a secure loopback context, while exercising the production registration path.
+  const nativeBase=base.replace('127.0.0.1','huiwen.localhost');
+  const native=await browser.newContext(),nativePage=await native.newPage();nativePage.setDefaultTimeout(12000);
+  await native.route('**/*',route=>new URL(route.request().url()).origin===new URL(nativeBase).origin?route.continue():route.abort());
+  await nativePage.addInitScript(()=>{window.registeredWorkerURLs=[];const original=navigator.serviceWorker.register.bind(navigator.serviceWorker);navigator.serviceWorker.register=(url,options)=>{window.registeredWorkerURLs.push(String(url));return original(url,options);};});
+  const assets={};for(const asset of ['digital.js','digital.css'])assets[asset]=createHash('sha256').update(await readFile(resolve(root,asset))).digest('hex').slice(0,12);
+  const source=await readFile(resolve(root,'digital.js'),'utf8'),version=source.match(/const SERVICE_WORKER_VERSION = '([^']+)'/)[1];
+  for(const path of ['index.html','election.html','without-markers.html']){
+   await nativePage.goto(nativeBase+path);
+   await nativePage.waitForFunction(()=>window.registeredWorkerURLs.length>0);
+   await nativePage.evaluate(async()=>{await navigator.serviceWorker.ready;});
+   await nativePage.waitForFunction(()=>!!navigator.serviceWorker.controller);
+   const state=await nativePage.evaluate(()=>({registered:window.registeredWorkerURLs,controller:navigator.serviceWorker.controller.scriptURL,scripts:[...document.scripts].map(s=>s.src).filter(src=>/\/digital\.js\?/.test(src)),styles:[...document.querySelectorAll('link[rel="stylesheet"]')].map(s=>s.href).filter(src=>/\/digital\.css\?/.test(src))}));
+   assert.deepEqual(state.scripts,[nativeBase+'digital.js?v='+assets['digital.js']],path+' has exactly one current script');
+   assert.deepEqual(state.styles,[nativeBase+'digital.css?v='+assets['digital.css']],path+' has exactly one current stylesheet');
+   assert.deepEqual(state.registered,[nativeBase+'sw.js?v='+version],path+' never requests the legacy worker');
+   assert.equal(state.controller,nativeBase+'sw.js?v='+version,path+' remains on the current worker');
+  }
+  await native.close();
  });
 }finally{
  await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));
