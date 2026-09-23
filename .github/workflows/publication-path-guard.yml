@@ -1,0 +1,45 @@
+name: Publication path guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  publication-path-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted base revision (PR code is never executed here)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Fetch PR head objects without checking them out
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+
+      - name: Enforce executor path allowlist from the base revision
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PUBLISHER_APP_LOGIN: ${{ vars.PUBLISHER_APP_LOGIN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ ! -f scripts/publication_path_guard.py ]; then
+            echo "Bootstrap: the trusted base revision has no guard yet; nothing to enforce."
+            exit 0
+          fi
+          git diff --name-only "${BASE_SHA}...${HEAD_SHA}" | python scripts/publication_path_guard.py

@@ -165,7 +165,11 @@ class ContentReviewTests(unittest.TestCase):
     def test_cancelled_and_past_events_do_not_require_reconfirmation(self):
         path = self.root / 'data/events.json'
         data = json.loads(path.read_text())
-        data['events'][0]['status'] = 'cancelled'
+        # Independent of the published event count (WP0.4): a future fixture plus every real event.
+        data['events'].append({'id': 'fixture-future', 'name': '測試', 'start': '2026-12-01T10:00:00+08:00',
+                               'end': '2026-12-01T11:00:00+08:00', 'reviewDueAt': '2026-10-01'})
+        for event in data['events']:
+            event['status'] = 'cancelled'
         path.write_text(json.dumps(data))
         result = evaluate(self.root, '2026-10-02')
         self.assertFalse(any(row['id'].startswith('event-lifecycle:') for row in result['findings']))

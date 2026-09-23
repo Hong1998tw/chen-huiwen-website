@@ -7,6 +7,16 @@ import {spawn,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const publicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
+// Schedule expectations are derived from the published data so a monthly update never breaks CI (WP0.4).
+const legal=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
+const sessions=legal.sessions,sessionTotal=sessions.length;
+assert(sessionTotal>=2,'schedule regression needs at least two published sessions');
+const midDate=sessions[Math.floor(sessionTotal/2)].date,currentVisible=sessions.filter(s=>s.date>=midDate).length;
+const [legalYear,legalMonth]=legal.month.split('-').map(Number);
+const nextMonthStart=`${legalMonth===12?legalYear+1:legalYear}-${String(legalMonth===12?1:legalMonth+1).padStart(2,'0')}-01`;
+const lastSession=sessions.at(-1),lastWeekday='日一二三四五六'[new Date(lastSession.date+'T12:00:00+08:00').getUTCDay()];
+const escapeRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const lastSessionPattern=new RegExp(escapeRe(`${Number(lastSession.date.slice(5,7))}/${Number(lastSession.date.slice(8,10))}（${lastWeekday}）`)+'.*'+escapeRe(`${lastSession.start}–${lastSession.end}`),'s');
 const base=process.env.BASE_URL||'http://127.0.0.1:8769/';
 const server=process.env.BASE_URL?null:spawn('python3',['-m','http.server','8769','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const browser=await chromium.launch();
@@ -48,9 +58,9 @@ try{
   await page.goto(base+'service.html#monthly-heading');
   await page.screenshot({path:fileURLToPath(new URL('service-'+width+'.png',out))});
   await check(width+' dated accessible schedule and intact booking rules',async()=>{
-   assert.equal(await page.locator('.schedule-text tbody tr').count(),13);
+   assert.equal(await page.locator('.schedule-text tbody tr').count(),sessionTotal);
    assert.match(await page.locator('.schedule-text').innerText(),/非即時名額/);
-   assert.match(await page.locator('.schedule-text tbody tr').last().innerText(),/9\/30（三）.*10:00–11:30/s);
+   assert.match(await page.locator('.schedule-text tbody tr').last().innerText(),lastSessionPattern);
    assert.match(await page.locator('#legal').innerText(),/未經許可，全程禁止錄音錄影/);
    const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(a.violations.map(v=>v.id),[]);
   });
@@ -95,9 +105,9 @@ try{
   });
   await ctx.close();
  }
- for(const [time,label,expected] of [['2026-09-22T12:00:00+08:00','current month',4],['2026-10-01T12:00:00+08:00','expired month',13]]){
+ for(const [time,label,expected] of [[midDate+'T12:00:00+08:00','current month',currentVisible],[nextMonthStart+'T12:00:00+08:00','expired month',sessionTotal]]){
   const ctx=await browser.newContext({viewport:{width:390,height:844}});const page=await ctx.newPage();await page.clock.setFixedTime(new Date(time));await page.goto(base+'service.html');
-  await check('schedule '+label,async()=>{if(label==='current month')await page.locator('.schedule-history-toggle').waitFor();else await page.waitForFunction(()=>document.querySelector('.schedule-period-note')?.textContent.includes('歷史時間表'));assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month'){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),13);}else assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
+  await check('schedule '+label,async()=>{if(label==='current month')await page.locator('.schedule-history-toggle').waitFor();else await page.waitForFunction(()=>document.querySelector('.schedule-period-note')?.textContent.includes('歷史時間表'));assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month'){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),sessionTotal);}else assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
  }
  await check('map data failure preserves static public records',async()=>{
   const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
@@ -109,6 +119,6 @@ try{
   assert.equal(current.match(/<main[\s\S]*?<\/main>/)[0],old.match(/<main[\s\S]*?<\/main>/)[0]);
  });
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'service.html');
- await check('no JS schedule and original available',async()=>{assert.equal(await page.locator('.schedule-text tbody tr').count(),13);await page.locator('.schedule-original > summary').click();assert(await page.locator('.schedule-auto-embed a').isVisible());});await ctx.close();
+ await check('no JS schedule and original available',async()=>{assert.equal(await page.locator('.schedule-text tbody tr').count(),sessionTotal);await page.locator('.schedule-original > summary').click();assert(await page.locator('.schedule-auto-embed a').isVisible());});await ctx.close();
 }finally{await browser.close();server?.kill();await writeFile(new URL('report.json',out),JSON.stringify(report,null,2));}
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
