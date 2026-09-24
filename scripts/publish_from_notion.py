@@ -894,7 +894,7 @@ EVENT_PROPS = {'name': '活動名稱', 'start': '開始', 'end': '結束', 'cont
 LEGAL_PROPS = {'month': '月份', 'sourceUrl': '來源圖卡網址', 'sourceTitle': '圖卡標題', 'observedAt': '核對日',
                'nextReviewAt': '下次核對'}
 SESSION_PROPS = {'date': '日期', 'start': '開始', 'end': '結束'}
-SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '要求發布', 'state': '執行狀態',
+SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '發布', 'state': '執行狀態',
                 'siteId': '網站 ID', 'baseHash': 'GitHub 基準雜湊', 'candidateDigest': '候選內容雜湊',
                 'syncedHash': '上次同步雜湊', 'preview': '白話預覽', 'result': '發布結果', 'prUrl': 'PR 連結',
                 'layers': '驗證層級', 'lastRun': '最後執行'}
@@ -1097,7 +1097,7 @@ def dry_run(source, repo, domain, row, *, build=True, quality=True):
                 files = materialize(cand, wt, quality=quality)
         values = {'state': '可核准' if cand.changed else '無需發布', 'preview': cand.preview,
                   'candidateDigest': cand.digest, 'baseHash': cand.base_hash, 'requestPreview': False,
-                  'result': '預覽完成；請確認上方白話預覽後，再勾選「要求發布」。' if cand.changed else '與網站目前版本相同。',
+                  'result': '工程預覽完成；日常操作直接使用「發布」。' if cand.changed else '與網站目前版本相同。',
                   'lastRun': now_iso()}
         if domain == 'events' and not row.get('system', {}).get('siteId'):
             values['siteId'] = cand.record_key
