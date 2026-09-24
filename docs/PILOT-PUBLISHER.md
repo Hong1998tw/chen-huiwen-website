@@ -6,7 +6,7 @@
 
 日常後台只保留兩個動作：
 
-1. **發布**：內容有變更時勾選「要求發布」。
+1. **發布**：內容有變更時直接勾選「發布」。
 2. **重新部署正式站**：內容不變，只想把 current `main` 重新 build / deploy。
 
 「要求預覽」與「白話預覽」保留為 legacy/internal 欄位，不再是日常流程，也不是發布前置條件。
@@ -15,7 +15,7 @@
 
 ```
 Notion 編輯
-→ 勾「要求發布」
+→ 勾「發布」
 → fresh-read Notion + current main
 → schema / validation / candidate digest
 → throwaway worktree build + full quality + path allowlist
@@ -36,11 +36,11 @@ Publisher 程式仍拒絕 direct merge endpoint；唯一允許的是對合法 `n
 
 ## 3. 發布授權語意
 
-Notion 的「要求發布」現在是 **Production authorization signal**。
+Notion 的「發布」現在是 **Production authorization signal**。
 
 因此：
 
-> 能編輯並勾選「要求發布」的人，就具備該內容 domain 的正式發布權。
+> 能編輯並勾選「發布」的人，就具備該內容 domain 的正式發布權。
 
 資料庫只應授權可信任的 Editor / Publisher 使用。
 
