@@ -4,18 +4,22 @@
 
 ## 1. 使用者操作
 
-日常後台只保留兩個動作：
+日常後台只保留兩個內容動作：
 
-1. **發布**：內容有變更時直接勾選「發布」。
-2. **重新部署正式站**：內容不變，只想把 current `main` 重新 build / deploy。
+1. **發布**：第一次把新內容正式上線。
+2. **重新發布**：已上線內容在 Notion 更新後，再把最新版重新發布到網站。
+
+兩者都走同一套 fresh-read / build / required CI / auto-merge / Pages 流程；成功或取消後系統會把兩個 trigger 都清回 NO。
 
 「要求預覽」與「白話預覽」保留為 legacy/internal 欄位，不再是日常流程，也不是發布前置條件。
+
+「重新部署正式站」是工程控制，只重跑 current `main` deployment，不等於「重新發布」。
 
 ## 2. 發布流程
 
 ```
 Notion 編輯
-→ 勾「發布」
+→ 首次上線勾「發布」／已上線內容更新後勾「重新發布」
 → fresh-read Notion + current main
 → schema / validation / candidate digest
 → throwaway worktree build + full quality + path allowlist
@@ -36,11 +40,11 @@ Publisher 程式仍拒絕 direct merge endpoint；唯一允許的是對合法 `n
 
 ## 3. 發布授權語意
 
-Notion 的「發布」現在是 **Production authorization signal**。
+Notion 的「發布」與「重新發布」都是 **Production authorization signal**。
 
 因此：
 
-> 能編輯並勾選「發布」的人，就具備該內容 domain 的正式發布權。
+> 能編輯並勾選「發布／重新發布」的人，就具備該內容 domain 的正式發布權。
 
 資料庫只應授權可信任的 Editor / Publisher 使用。
 
@@ -87,11 +91,11 @@ Canonical published source：`data/legal-schedule.json`
 
 仍以既有 Notion 政績資料庫為唯一 authoring authority，之後若接入同一 Publisher，新增 `achievements` domain adapter，而不是複製 rows 到活動／律師 DB。
 
-## 6. 重新部署正式站
+## 6. 工程控制：重新部署正式站
 
-Publishing Center 內有「官網發布控制｜正式站」一列。
+這不是日常內容「重新發布」。
 
-勾選「重新部署正式站」：
+工程需要在內容不變的情況下重跑 current `main` deployment 時，才使用「官網發布控制｜正式站」：
 
 ```
 current main

@@ -499,18 +499,33 @@ def prepare_legal(row, main_text):
 PREPARE = {'events': prepare_event, 'legal-schedule': prepare_legal}
 
 
-def verify_publish_snapshot(candidate, fresh_row, current_text):
-    """Bind one click-to-publish request to a stable fresh snapshot without a preview step.
+def publish_requested(row):
+    system = row.get('system', {})
+    return bool(system.get('requestPublish') or system.get('requestRepublish'))
 
-    The publisher reads the row once, builds/tests that candidate, then fresh-reads again
-    immediately before pushing. Any managed-field or base change fails closed and requires
-    the user to press publish again.
-    """
+
+def publish_action(row):
+    return '重新發布' if row.get('system', {}).get('requestRepublish') else '發布'
+
+
+def requested_publish_rows(source, domain):
+    seen = set()
+    for key in ('requestPublish', 'requestRepublish'):
+        flt = {'property': SYSTEM_PROPS[key], 'checkbox': {'equals': True}}
+        for row in source.rows(domain, flt):
+            if row['pageId'] in seen or not publish_requested(row):
+                continue
+            seen.add(row['pageId'])
+            yield row
+
+
+def verify_publish_snapshot(candidate, fresh_row, current_text):
+    """Bind publish/republish to one stable fresh snapshot without a preview step."""
     fresh = PREPARE[candidate.domain](fresh_row, current_text)
     if fresh.errors:
         raise PublishError('VALIDATION', fresh.errors)
-    if not fresh_row.get('system', {}).get('requestPublish'):
-        raise PublishError('PUBLISH_CHANGED_DURING_RUN', ['發布要求已取消'])
+    if not publish_requested(fresh_row):
+        raise PublishError('PUBLISH_CHANGED_DURING_RUN', ['發布／重新發布要求已取消'])
     if fresh.base_hash != candidate.base_hash or fresh.digest != candidate.digest:
         raise PublishError('PUBLISH_CHANGED_DURING_RUN', ['發布處理期間內容或網站基準已變更'])
     return True
@@ -894,7 +909,7 @@ EVENT_PROPS = {'name': '活動名稱', 'start': '開始', 'end': '結束', 'cont
 LEGAL_PROPS = {'month': '月份', 'sourceUrl': '來源圖卡網址', 'sourceTitle': '圖卡標題', 'observedAt': '核對日',
                'nextReviewAt': '下次核對'}
 SESSION_PROPS = {'date': '日期', 'start': '開始', 'end': '結束'}
-SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '發布', 'state': '執行狀態',
+SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '發布', 'requestRepublish': '重新發布', 'state': '執行狀態',
                 'siteId': '網站 ID', 'baseHash': 'GitHub 基準雜湊', 'candidateDigest': '候選內容雜湊',
                 'syncedHash': '上次同步雜湊', 'preview': '白話預覽', 'result': '發布結果', 'prUrl': 'PR 連結',
                 'layers': '驗證層級', 'lastRun': '最後執行'}
@@ -979,7 +994,7 @@ class Notion:
         props = {}
         for key, value in values.items():
             name = SYSTEM_PROPS[key]
-            if key in ('requestPreview', 'requestPublish'):
+            if key in ('requestPreview', 'requestPublish', 'requestRepublish'):
                 props[name] = {'checkbox': bool(value)}
             elif key == 'state':
                 props[name] = {'select': {'name': value}}
@@ -1116,7 +1131,7 @@ def pr_body(cand, base_sha):
         f'- Domain：`{cand.domain}`', f'- Record：`{cand.record_key}`',
         f'- Candidate digest：`{cand.digest}`', f'- Git base：`{base_sha}`（record base `{cand.base_hash}`）',
         f'- 建立時間：{now_iso()}', '',
-        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
+        '本 PR 由 Notion「發布／重新發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
         '**不得繞過 required checks。** GitHub auto-merge 只會在既有 ruleset 條件全數滿足後合併。',
         '合併後由 Pages 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 
@@ -1128,20 +1143,22 @@ def publish(source, repo, domain, row, gh, push, *, build=True, single_maintaine
         gate_preflight(gh, single_maintainer=single_maintainer, auto_publish=auto_publish)
         current_text = main_text(repo, domain)
         fresh_row = source.fresh(domain, page)
-        if not fresh_row.get('system', {}).get('requestPublish'):
+        if not publish_requested(fresh_row):
             return {'pageId': page, 'domain': domain, 'outcome': 'SKIPPED_NOT_REQUESTED'}
+        action = publish_action(fresh_row)
         cand = PREPARE[domain](fresh_row, current_text)
         if cand.errors:
             raise PublishError('VALIDATION', cand.errors)
         if not cand.changed:
             source.write(page, state='已完成',
-                         result='內容與網站目前版本相同；如需重跑正式站部署，請使用「重新部署正式站」。',
-                         requestPublish=False, candidateDigest=cand.digest, baseHash=cand.base_hash,
+                         result='內容與網站目前版本相同，沒有新的內容可發布。',
+                         requestPublish=False, requestRepublish=False,
+                         candidateDigest=cand.digest, baseHash=cand.base_hash,
                          lastRun=now_iso())
-            return {'pageId': page, 'domain': domain, 'outcome': 'NO_CHANGE'}
+            return {'pageId': page, 'domain': domain, 'outcome': 'NO_CHANGE', 'action': action}
         base_sha = run(['git', 'rev-parse', 'HEAD'], repo).stdout.strip()
         source.write(page, state='發布中', candidateDigest=cand.digest, baseHash=cand.base_hash,
-                     result='正在建置與檢查；必要檢查全數通過後會自動上線。', lastRun=now_iso())
+                     result=f'正在{action}：建置與檢查中；必要檢查全數通過後會自動上線。', lastRun=now_iso())
         title = f"Notion CMS：{'活動' if domain == 'events' else '律師時間表'} {cand.record_key}"
         with Worktree(repo, base_sha) as wt:
             files = materialize(cand, wt, quality=build) if build else []
@@ -1156,11 +1173,12 @@ def publish(source, repo, domain, row, gh, push, *, build=True, single_maintaine
                 head_sha = gh.branch_sha(cand.branch)
                 auto_merge = gh.enable_auto_merge(pr.get('number'), expected_head_sha=head_sha)
         state = '已合併待部署' if outcome == 'ALREADY_MERGED' else '自動發布中'
-        source.write(page, state=state, prUrl=pr.get('html_url'), requestPublish=False, lastRun=now_iso(),
+        source.write(page, state=state, prUrl=pr.get('html_url'),
+                     requestPublish=False, requestRepublish=False, lastRun=now_iso(),
                      result=('已合併，等待正式站部署。' if outcome == 'ALREADY_MERGED' else
-                             f'已建立發布請求並啟用自動合併（{auto_merge}）；必要檢查全數通過後會自動上線。'))
+                             f'已建立{action}請求並啟用自動合併（{auto_merge}）；必要檢查全數通過後會自動上線。'))
         return {'pageId': page, 'domain': domain, 'outcome': outcome, 'pr': pr.get('number'), 'files': files,
-                'digest': cand.digest, 'autoMerge': auto_merge}
+                'digest': cand.digest, 'autoMerge': auto_merge, 'action': action}
     except PublishError as exc:
         state = {'PUBLISH_CHANGED_DURING_RUN': '需重新發布', 'PR_CLOSED': '需重新發布',
                  'GITHUB_NEWER': 'GitHub 較新待回填'}.get(exc.code, '發布失敗')
@@ -1168,6 +1186,7 @@ def publish(source, repo, domain, row, gh, push, *, build=True, single_maintaine
         values = {'state': state, 'result': exc.plain(), 'lastRun': now_iso()}
         if clear:
             values['requestPublish'] = False
+            values['requestRepublish'] = False
         source.write(page, **values)
         return {'pageId': page, 'domain': domain, 'outcome': exc.code, 'retryable': exc.retryable}
 
@@ -1345,12 +1364,11 @@ def main(argv=None):
                         if row['system'].get('requestPreview'):
                             results.append(dry_run(source, a.repo, domain, row, build=not a.skip_build))
                 elif mode == 'publish':
-                    for row in source.rows(domain, {'property': SYSTEM_PROPS['requestPublish'], 'checkbox': {'equals': True}}):
-                        if row['system'].get('requestPublish'):
-                            results.append(publish(source, a.repo, domain, row, gh, git_push(env.get('GH_TOKEN', '')),
-                                                   build=not a.skip_build,
-                                                   single_maintainer=single_maintainer,
-                                                   auto_publish=auto_publish))
+                    for row in requested_publish_rows(source, domain):
+                        results.append(publish(source, a.repo, domain, row, gh, git_push(env.get('GH_TOKEN', '')),
+                                               build=not a.skip_build,
+                                               single_maintainer=single_maintainer,
+                                               auto_publish=auto_publish))
                 elif mode == 'verify':
                     for row in source.rows(domain, {'property': SYSTEM_PROPS['state'], 'select': {'is_not_empty': True}}):
                         if row['system'].get('state') not in ('自動發布中', '已開 PR 待審', '已合併待部署', '已部署待驗證') or not row['system'].get('prUrl'):
