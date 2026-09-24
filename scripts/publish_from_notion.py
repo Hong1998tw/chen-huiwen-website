@@ -32,7 +32,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -53,9 +53,8 @@ ALLOWED_PATHS = {
 }
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
-# Pilot rule ADR-007: auto-merge is forbidden before this Asia/Taipei date and is never enabled here.
-AUTO_MERGE_EMBARGO_UNTIL = date(2026, 11, 29)
-FORBIDDEN_GITHUB = re.compile(r'/pulls/\d+/merge\b|/merges\b|auto[-_]?merge|enablePullRequestAutoMerge', re.I)
+# Direct merge endpoints are forbidden. Auto-merge may be enabled only through the guarded helper below.
+FORBIDDEN_GITHUB = re.compile(r'/pulls/\d+/merge\b|/merges\b|mergePullRequest', re.I)
 EVENT_FIELDS = ('name', 'start', 'end', 'content', 'registration', 'sourceUrl', 'verifiedAt',
                 'status', 'changeNote', 'updatedAt', 'reviewDueAt')
 NEW_EVENT_ORDER = ('id', 'name', 'start', 'end', 'content', 'registration', 'sourceUrl', 'verifiedAt',
@@ -91,7 +90,10 @@ ERROR_MESSAGES = {
     'REMOTE_UNKNOWN': '連線逾時且遠端結果未知，系統會先對帳，不會重複建立。',
     'PR_CLOSED': '先前的發布請求已被關閉，請重新預覽並重新核准。',
     'BRANCH_DIVERGED': '發布分支內容與本次核准版本不同，系統已停止，請通知網站工程維護。',
-    'MERGE_FORBIDDEN': 'Pilot 期間系統不得合併或啟用自動合併；合併必須由人在 GitHub 審核後執行。',
+    'MERGE_FORBIDDEN': '系統禁止直接合併；只能使用 GitHub auto-merge 等待必要檢查全數通過。',
+    'AUTO_MERGE_FAILED': '已建立發布請求，但無法啟用自動合併；系統會保留請求並稍後重試。',
+    'PUBLISH_CHANGED_DURING_RUN': '按下發布後內容又被修改，本次已停止；請確認最新內容後重新按發布。',
+    'REDEPLOY_FAILED': '重新部署正式站失敗；網站目前版本未被修改，可再次按「重新部署正式站」。',
     'CONFIG': '執行器設定不完整，未執行任何寫入。',
     'STALE_CHECKOUT': '網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。',
 }
@@ -497,18 +499,20 @@ def prepare_legal(row, main_text):
 PREPARE = {'events': prepare_event, 'legal-schedule': prepare_legal}
 
 
-def verify_approval(fresh, row):
-    """Gate 3: approved digest must equal the fresh recomputation; base drift invalidates approval."""
-    system = row.get('system', {})
-    approved, approved_base = system.get('candidateDigest'), system.get('baseHash')
+def verify_publish_snapshot(candidate, fresh_row, current_text):
+    """Bind one click-to-publish request to a stable fresh snapshot without a preview step.
+
+    The publisher reads the row once, builds/tests that candidate, then fresh-reads again
+    immediately before pushing. Any managed-field or base change fails closed and requires
+    the user to press publish again.
+    """
+    fresh = PREPARE[candidate.domain](fresh_row, current_text)
     if fresh.errors:
         raise PublishError('VALIDATION', fresh.errors)
-    if not approved:
-        raise PublishError('NOT_PREVIEWED')
-    if approved_base and approved_base != fresh.base_hash:
-        raise PublishError('BASE_DRIFT', ['預覽時的網站版本與目前不同'])
-    if approved != fresh.digest:
-        raise PublishError('DIGEST_MISMATCH', ['預覽後受管欄位或網站基準已改變'])
+    if not fresh_row.get('system', {}).get('requestPublish'):
+        raise PublishError('PUBLISH_CHANGED_DURING_RUN', ['發布要求已取消'])
+    if fresh.base_hash != candidate.base_hash or fresh.digest != candidate.digest:
+        raise PublishError('PUBLISH_CHANGED_DURING_RUN', ['發布處理期間內容或網站基準已變更'])
     return True
 
 
@@ -645,6 +649,53 @@ class GitHub:
                 return existing
         raise PublishError('GITHUB_BUSY', [f'PR 建立回應 {status}'], retryable=status in (403, 429))
 
+    def dispatch_workflow(self, workflow, ref='main'):
+        status, _ = self.request('POST', f'/actions/workflows/{workflow}/dispatches', {'ref': ref})
+        if status != 204:
+            raise PublishError('REDEPLOY_FAILED', [f'{workflow} dispatch 回應 {status}'], retryable=status in (403, 429))
+        return True
+
+    def workflow_runs(self, workflow, event=None, branch='main'):
+        query = f'?per_page=20&branch={branch}' + (f'&event={event}' if event else '')
+        status, out = self.request('GET', f'/actions/workflows/{workflow}/runs{query}')
+        if status != 200:
+            raise PublishError('GITHUB_BUSY', [f'{workflow} runs 回應 {status}'], retryable=True)
+        return (out or {}).get('workflow_runs', [])
+
+    def action_run(self, run_id):
+        status, out = self.request('GET', f'/actions/runs/{run_id}')
+        if status != 200:
+            raise PublishError('GITHUB_BUSY', [f'Actions run {run_id} 回應 {status}'], retryable=True)
+        return out
+
+    def enable_auto_merge(self, pr_number, expected_head_sha=None):
+        """Enable GitHub-native squash auto-merge; required rules/checks still decide when merge occurs."""
+        status, pr = self.request('GET', f'/pulls/{pr_number}')
+        if status != 200 or not pr:
+            raise PublishError('AUTO_MERGE_FAILED', [f'PR #{pr_number} 無法讀取'], retryable=True)
+        if pr.get('merged_at'):
+            return 'ALREADY_MERGED'
+        head = pr.get('head') or {}
+        base = pr.get('base') or {}
+        if not str(head.get('ref') or '').startswith(BRANCH_PREFIX) or base.get('ref') != 'main':
+            raise PublishError('AUTO_MERGE_FAILED', ['只允許 notion-publish/* → main'])
+        if expected_head_sha and head.get('sha') != expected_head_sha:
+            raise PublishError('AUTO_MERGE_FAILED', ['PR head SHA 與本次候選版本不同'])
+        if pr.get('auto_merge'):
+            return 'ALREADY_ENABLED'
+        node_id = pr.get('node_id')
+        if not node_id:
+            raise PublishError('AUTO_MERGE_FAILED', ['PR 缺少 node_id'])
+        query = ('mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH})'
+                 '{pullRequest{number autoMergeRequest{enabledAt}}}}')
+        status, out = self.request('POST', 'https://api.github.com/graphql',
+                                   {'query': query, 'variables': {'id': node_id}})
+        errors = (out or {}).get('errors') if isinstance(out, dict) else None
+        if status == 200 and not errors:
+            return 'ENABLED'
+        details = [e.get('message', 'GitHub auto-merge error') for e in (errors or [])][:3]
+        raise PublishError('AUTO_MERGE_FAILED', details or [f'GraphQL 回應 {status}'], retryable=True)
+
 
 def ensure_pull_request(gh, candidate, push, title, body):
     """Idempotent: reuse an existing PR/branch for the same digest; reconcile after timeouts."""
@@ -670,12 +721,11 @@ def ensure_pull_request(gh, candidate, push, title, body):
         raise PublishError('REMOTE_UNKNOWN', retryable=True)
 
 
-def evaluate_gate(rules, repo_settings=None, *, single_maintainer=False):
+def evaluate_gate(rules, repo_settings=None, *, single_maintainer=False, auto_publish=False):
     """Gate 2 preflight from GET /rules/branches/main. Missing enforcement => fail closed.
 
-    Dual-review mode requires a distinct approving reviewer. Single-maintainer mode instead
-    requires PR + trusted checks + no direct/force/delete + auto-merge disabled; the executor
-    still has no merge path and Production authorization is the human merge action itself.
+    Auto-publish still requires a PR, trusted checks, and no direct/force/delete bypass.
+    GitHub-native auto-merge is permitted only when explicitly enabled for this CMS mode.
     """
     by_type = {}
     for rule in rules or []:
@@ -701,16 +751,20 @@ def evaluate_gate(rules, repo_settings=None, *, single_maintainer=False):
         problems.append('未禁止 force push')
     if 'deletion' not in by_type:
         problems.append('未禁止刪除 main')
-    if repo_settings and repo_settings.get('allow_auto_merge'):
-        problems.append('repository 允許 auto-merge；Pilot 期間必須關閉')
+    if repo_settings:
+        enabled = bool(repo_settings.get('allow_auto_merge'))
+        if auto_publish and not enabled:
+            problems.append('CMS 自動發布需要 repository allow_auto_merge=true')
+        if not auto_publish and enabled:
+            problems.append('非自動發布模式不應啟用 repository auto-merge')
     return (not problems), problems
 
 
-def gate_preflight(gh, *, single_maintainer=False):
+def gate_preflight(gh, *, single_maintainer=False, auto_publish=False):
     status, rules = gh.request('GET', '/rules/branches/main')
     _, settings = gh.request('GET', '')
     ok, problems = evaluate_gate(rules if status == 200 else [], settings or {},
-                                 single_maintainer=single_maintainer)
+                                 single_maintainer=single_maintainer, auto_publish=auto_publish)
     if not ok:
         raise PublishError('GATE_NOT_ENFORCED', problems)
     return True
@@ -720,7 +774,7 @@ def gate_preflight(gh, *, single_maintainer=False):
 # Layered production verification (Gate 4). Every layer is reported separately; BLOCKED != PASS.
 LAYERS = ('pr_created', 'ci_passed', 'review_approved', 'merged', 'deployed',
           'http_verified', 'snapshot_verified', 'native_verified')
-LAYER_ZH = {'pr_created': '已建立 PR', 'ci_passed': 'CI 通過', 'review_approved': '人工授權', 'merged': '已合併',
+LAYER_ZH = {'pr_created': '已建立 PR', 'ci_passed': 'CI 通過', 'review_approved': '發布授權', 'merged': '已合併',
             'deployed': '已部署', 'http_verified': 'HTTP 驗證', 'snapshot_verified': 'Snapshot 驗證',
             'native_verified': 'Native 驗證'}
 
@@ -774,7 +828,7 @@ def http_check(domain, record_key, record_name=None, fetch=None):
     return 'PASS' if ok else 'FAIL'
 
 
-def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None, *, single_maintainer=False):
+def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None, *, single_maintainer=False, auto_publish=False, publisher_login=''):
     layers = {k: 'PENDING' for k in LAYERS}
     revision = {}
     _, pr = gh.request('GET', f'/pulls/{pr_number}')
@@ -789,10 +843,16 @@ def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=No
     human = [r for r in reviews or [] if r.get('state') == 'APPROVED' and r.get('user', {}).get('type') != 'Bot'
              and r.get('commit_id') == head]
     layers['review_approved'] = 'PASS' if human else 'PENDING'
-    if single_maintainer and pr.get('merged_at') and (pr.get('merged_by') or {}).get('type') != 'Bot' \
+    if auto_publish:
+        head_ref = (pr.get('head') or {}).get('ref', '')
+        author = (pr.get('user') or {}).get('login', '')
+        author_type = (pr.get('user') or {}).get('type', '')
+        publisher_pr = head_ref.startswith(BRANCH_PREFIX) and (
+            author_type == 'Bot' or (publisher_login and author == publisher_login))
+        if publisher_pr:
+            layers['review_approved'] = 'PASS'
+    elif single_maintainer and pr.get('merged_at') and (pr.get('merged_by') or {}).get('type') != 'Bot' \
             and layers['ci_passed'] == 'PASS':
-        # Single-maintainer contract: deliberate human merge after successful CI is the
-        # Production authorization. It is not represented as a second-person review.
         layers['review_approved'] = 'PASS'
     if not pr.get('merged_at'):
         if pr.get('state') == 'closed':
@@ -838,6 +898,8 @@ SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '要求發�
                 'siteId': '網站 ID', 'baseHash': 'GitHub 基準雜湊', 'candidateDigest': '候選內容雜湊',
                 'syncedHash': '上次同步雜湊', 'preview': '白話預覽', 'result': '發布結果', 'prUrl': 'PR 連結',
                 'layers': '驗證層級', 'lastRun': '最後執行'}
+DEPLOY_CONTROL_PROPS = {'requestRedeploy': '重新部署正式站', 'state': '執行狀態',
+                        'result': '部署結果', 'runId': '部署 Run ID', 'lastRun': '最後執行'}
 
 
 def prop_value(page, name):
@@ -866,6 +928,10 @@ def page_to_row(page, props, sessions=None):
     if sessions is not None:
         row['sessions'] = sessions
     return row
+
+
+def deploy_control_row(page):
+    return {'pageId': page['id'], **{k: prop_value(page, v) for k, v in DEPLOY_CONTROL_PROPS.items()}}
 
 
 def rich(text):
@@ -925,6 +991,20 @@ class Notion:
                 props[name] = rich(value)
         return self.call('PATCH', f'/pages/{page_id}', {'properties': props})
 
+    def update_deploy_control(self, page_id, values):
+        props = {}
+        for key, value in values.items():
+            name = DEPLOY_CONTROL_PROPS[key]
+            if key == 'requestRedeploy':
+                props[name] = {'checkbox': bool(value)}
+            elif key == 'state':
+                props[name] = {'select': {'name': value}}
+            elif key == 'lastRun':
+                props[name] = {'date': {'start': value}}
+            else:
+                props[name] = rich(value)
+        return self.call('PATCH', f'/pages/{page_id}', {'properties': props})
+
 
 class NotionSource:
     """Fresh reads from Notion. Data source IDs come from environment variables (never the repo)."""
@@ -932,8 +1012,8 @@ class NotionSource:
     def __init__(self, notion, env):
         self.n = notion
         self.ds = {'events': env.get('NOTION_EVENTS_DS'), 'legal-schedule': env.get('NOTION_LEGAL_MONTH_DS'),
-                   'sessions': env.get('NOTION_LEGAL_SESSION_DS')}
-        if not all(self.ds.values()):
+                   'sessions': env.get('NOTION_LEGAL_SESSION_DS'), 'deploy': env.get('NOTION_DEPLOY_CONTROL_DS')}
+        if not all(self.ds[k] for k in ('events', 'legal-schedule', 'sessions')):
             raise PublishError('CONFIG', ['缺少 Notion data source 設定'])
 
     def _sessions(self, page_id):
@@ -953,6 +1033,14 @@ class NotionSource:
 
     def write(self, page_id, **values):
         return self.n.update(page_id, values)
+
+    def deploy_rows(self, flt=None):
+        if not self.ds.get('deploy'):
+            raise PublishError('CONFIG', ['缺少 NOTION_DEPLOY_CONTROL_DS'])
+        return [deploy_control_row(p) for p in self.n.query(self.ds['deploy'], flt)]
+
+    def deploy_write(self, page_id, **values):
+        return self.n.update_deploy_control(page_id, values)
 
 
 class FileSource:
@@ -976,6 +1064,15 @@ class FileSource:
             for row in self.data.get(key, []):
                 if row['pageId'] == page_id:
                     row.setdefault('system', {}).update(values)
+
+    def deploy_rows(self, flt=None):
+        return copy.deepcopy(self.data.get('deployControls', []))
+
+    def deploy_write(self, page_id, **values):
+        self.writes.append({'pageId': page_id, **values})
+        for row in self.data.get('deployControls', []):
+            if row['pageId'] == page_id:
+                row.update(values)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1015,48 +1112,59 @@ def dry_run(source, repo, domain, row, *, build=True, quality=True):
 
 def pr_body(cand, base_sha):
     return '\n'.join([
-        '## Notion Pilot 發布請求（PR-only）', '',
+        '## Notion CMS 自動發布', '',
         f'- Domain：`{cand.domain}`', f'- Record：`{cand.record_key}`',
         f'- Candidate digest：`{cand.digest}`', f'- Git base：`{base_sha}`（record base `{cand.base_hash}`）',
         f'- 建立時間：{now_iso()}', '',
-        '本 PR 由發布執行器依已核准的 candidate digest 建立；**執行器不會 merge**。',
-        '請於 GitHub 比對 diff 與 Notion 白話預覽，確認必要檢查通過後由真人帳號合併。',
+        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
+        '**不得繞過 required checks。** GitHub auto-merge 只會在既有 ruleset 條件全數滿足後合併。',
         '合併後由 Pages 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 
 
-def publish(source, repo, domain, row, gh, push, *, build=True, single_maintainer=False):
-    """PR-only publish. Requires: enforced gate, fresh digest match, allowed paths. Never merges."""
+def publish(source, repo, domain, row, gh, push, *, build=True, single_maintainer=False, auto_publish=False):
+    """One-click publish: snapshot, build/test, re-read, PR, then GitHub-native auto-merge."""
     page = row['pageId']
     try:
-        gate_preflight(gh, single_maintainer=single_maintainer)
+        gate_preflight(gh, single_maintainer=single_maintainer, auto_publish=auto_publish)
+        current_text = main_text(repo, domain)
         fresh_row = source.fresh(domain, page)
         if not fresh_row.get('system', {}).get('requestPublish'):
             return {'pageId': page, 'domain': domain, 'outcome': 'SKIPPED_NOT_REQUESTED'}
-        cand = PREPARE[domain](fresh_row, main_text(repo, domain))
-        verify_approval(cand, fresh_row)
+        cand = PREPARE[domain](fresh_row, current_text)
+        if cand.errors:
+            raise PublishError('VALIDATION', cand.errors)
         if not cand.changed:
-            source.write(page, state='已完成', result='與網站目前版本相同，無需發布。', requestPublish=False, lastRun=now_iso())
+            source.write(page, state='已完成',
+                         result='內容與網站目前版本相同；如需重跑正式站部署，請使用「重新部署正式站」。',
+                         requestPublish=False, candidateDigest=cand.digest, baseHash=cand.base_hash,
+                         lastRun=now_iso())
             return {'pageId': page, 'domain': domain, 'outcome': 'NO_CHANGE'}
         base_sha = run(['git', 'rev-parse', 'HEAD'], repo).stdout.strip()
-        source.write(page, state='發布中', lastRun=now_iso())
-        title = f"Notion Pilot：{'活動' if domain == 'events' else '律師時間表'} {cand.record_key}"
+        source.write(page, state='發布中', candidateDigest=cand.digest, baseHash=cand.base_hash,
+                     result='正在建置與檢查；必要檢查全數通過後會自動上線。', lastRun=now_iso())
+        title = f"Notion CMS：{'活動' if domain == 'events' else '律師時間表'} {cand.record_key}"
         with Worktree(repo, base_sha) as wt:
             files = materialize(cand, wt, quality=build) if build else []
+            # Bind the click to this exact snapshot. Any edit while build/tests run invalidates it.
+            verify_publish_snapshot(cand, source.fresh(domain, page), current_text)
             remote_main = gh.branch_sha('main')
             if remote_main and remote_main != base_sha:
                 raise PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = ensure_pull_request(gh, cand, lambda: push(wt, cand, title), title, pr_body(cand, base_sha))
-        state = '已合併待部署' if outcome == 'ALREADY_MERGED' else '已開 PR 待審'
-        wait_text = ('等待 GitHub 人工允許 PR CI 執行並完成合併；尚未上線。' if single_maintainer else
-                     '等待 GitHub 人工審核與合併；尚未上線。')
+            auto_merge = 'ALREADY_MERGED'
+            if outcome != 'ALREADY_MERGED':
+                head_sha = gh.branch_sha(cand.branch)
+                auto_merge = gh.enable_auto_merge(pr.get('number'), expected_head_sha=head_sha)
+        state = '已合併待部署' if outcome == 'ALREADY_MERGED' else '自動發布中'
         source.write(page, state=state, prUrl=pr.get('html_url'), requestPublish=False, lastRun=now_iso(),
-                     result=f'已建立發布請求（{outcome}），{wait_text}')
+                     result=('已合併，等待正式站部署。' if outcome == 'ALREADY_MERGED' else
+                             f'已建立發布請求並啟用自動合併（{auto_merge}）；必要檢查全數通過後會自動上線。'))
         return {'pageId': page, 'domain': domain, 'outcome': outcome, 'pr': pr.get('number'), 'files': files,
-                'digest': cand.digest}
+                'digest': cand.digest, 'autoMerge': auto_merge}
     except PublishError as exc:
-        state = {'DIGEST_MISMATCH': '需重新核准', 'BASE_DRIFT': '需重新核准', 'NOT_PREVIEWED': '需重新核准',
-                 'PR_CLOSED': '需重新核准', 'GITHUB_NEWER': 'GitHub 較新待回填'}.get(exc.code, '發布失敗')
-        clear = exc.code in ('DIGEST_MISMATCH', 'BASE_DRIFT', 'NOT_PREVIEWED', 'PR_CLOSED')
+        state = {'PUBLISH_CHANGED_DURING_RUN': '需重新發布', 'PR_CLOSED': '需重新發布',
+                 'GITHUB_NEWER': 'GitHub 較新待回填'}.get(exc.code, '發布失敗')
+        clear = exc.code in ('PUBLISH_CHANGED_DURING_RUN', 'PR_CLOSED')
         values = {'state': state, 'result': exc.plain(), 'lastRun': now_iso()}
         if clear:
             values['requestPublish'] = False
@@ -1077,6 +1185,78 @@ def git_push(token):
              'commit', '-m', title, '-m', f'Candidate digest: {cand.digest}'], worktree)
         run(['git', 'push', 'origin', f'HEAD:refs/heads/{cand.branch}'], worktree, env=env)
     return push
+
+
+def _iso_dt(value):
+    if not value:
+        return None
+    return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+
+def _latest_redeploy_run(actions_gh, since):
+    since_dt = _iso_dt(since)
+    if since_dt and since_dt.tzinfo is None:
+        since_dt = since_dt.replace(tzinfo=TAIPEI)
+    for run_info in actions_gh.workflow_runs('pages.yml', event='workflow_dispatch'):
+        created = _iso_dt(run_info.get('created_at'))
+        if not created:
+            continue
+        if since_dt and created < since_dt.astimezone(timezone.utc) - timedelta(minutes=2):
+            continue
+        return run_info
+    return None
+
+
+def request_redeploy(source, actions_gh, row):
+    page = row['pageId']
+    requested_at = now_iso()
+    try:
+        source.deploy_write(page, state='重新部署中', result='正在重新 build／deploy current main。',
+                            requestRedeploy=False, runId='', lastRun=requested_at)
+        actions_gh.dispatch_workflow('pages.yml', ref='main')
+        found = None
+        for _ in range(3):
+            found = _latest_redeploy_run(actions_gh, requested_at)
+            if found:
+                break
+            actions_gh.sleep(1)
+        if found:
+            source.deploy_write(page, runId=str(found.get('id') or ''),
+                                result=f"已送出重新部署（run {found.get('id')}），等待完成。")
+        return {'pageId': page, 'outcome': 'REDEPLOY_DISPATCHED', 'run': (found or {}).get('id')}
+    except PublishError as exc:
+        source.deploy_write(page, state='重新部署失敗', result=exc.plain(),
+                            requestRedeploy=False, lastRun=now_iso())
+        return {'pageId': page, 'outcome': exc.code, 'retryable': exc.retryable}
+
+
+def verify_redeploy(source, actions_gh, row):
+    if row.get('state') != '重新部署中':
+        return {'pageId': row['pageId'], 'outcome': 'REDEPLOY_SKIPPED'}
+    run_id = row.get('runId')
+    run_info = None
+    try:
+        if run_id:
+            run_info = actions_gh.action_run(run_id)
+        else:
+            run_info = _latest_redeploy_run(actions_gh, row.get('lastRun'))
+        if not run_info:
+            return {'pageId': row['pageId'], 'outcome': 'REDEPLOY_PENDING'}
+        run_id = str(run_info.get('id') or run_id or '')
+        if run_info.get('status') != 'completed':
+            source.deploy_write(row['pageId'], runId=run_id,
+                                result=f'重新部署執行中（run {run_id}）。', lastRun=now_iso())
+            return {'pageId': row['pageId'], 'outcome': 'REDEPLOY_PENDING', 'run': run_id}
+        if run_info.get('conclusion') == 'success':
+            source.deploy_write(row['pageId'], state='重新部署完成', runId=run_id,
+                                result=f'正式站重新部署完成（run {run_id}）。', lastRun=now_iso())
+            return {'pageId': row['pageId'], 'outcome': 'REDEPLOYED', 'run': run_id}
+        source.deploy_write(row['pageId'], state='重新部署失敗', runId=run_id,
+                            result=f"重新部署失敗（run {run_id}／{run_info.get('conclusion')}）。", lastRun=now_iso())
+        return {'pageId': row['pageId'], 'outcome': 'REDEPLOY_FAILED', 'run': run_id}
+    except PublishError as exc:
+        source.deploy_write(row['pageId'], state='重新部署失敗', result=exc.plain(), lastRun=now_iso())
+        return {'pageId': row['pageId'], 'outcome': exc.code, 'retryable': exc.retryable}
 
 
 def synced_hash_after_merge(domain, row, text):
@@ -1124,7 +1304,7 @@ def shadow_compare(repo, rows):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument('mode', choices=['dry-run', 'publish', 'verify', 'cycle', 'gate-check', 'export-rows', 'shadow-compare'])
+    p.add_argument('mode', choices=['dry-run', 'publish', 'verify', 'redeploy', 'cycle', 'gate-check', 'export-rows', 'shadow-compare'])
     p.add_argument('--repo', type=Path, default=ROOT)
     p.add_argument('--rows', type=Path, help='normalized rows JSON (offline/shadow source)')
     p.add_argument('--domain', choices=['events', 'legal-schedule', 'all'], default='all')
@@ -1133,6 +1313,8 @@ def main(argv=None):
     a = p.parse_args(argv)
     env = os.environ
     single_maintainer = env.get('PUBLISHER_SINGLE_MAINTAINER') == 'true'
+    auto_publish = env.get('PUBLISHER_AUTO_PUBLISH') == 'true'
+    publisher_login = env.get('PUBLISHER_APP_LOGIN', '')
     domains = ['events', 'legal-schedule'] if a.domain == 'all' else [a.domain]
     results = []
     try:
@@ -1144,16 +1326,18 @@ def main(argv=None):
             ok = all(r['identical'] for r in results)
             print(json.dumps({'identical': ok, 'records': len(results)}, ensure_ascii=False))
             return 0 if ok else 1
-        gh = GitHub(env.get('GH_TOKEN', ''), env.get('GITHUB_REPOSITORY', 'Hong1998tw/chen-huiwen-website'))
+        repo_name = env.get('GITHUB_REPOSITORY', 'Hong1998tw/chen-huiwen-website')
+        gh = GitHub(env.get('GH_TOKEN', ''), repo_name)
+        actions_gh = GitHub(env.get('ACTIONS_TOKEN', ''), repo_name)
         if a.mode == 'gate-check':
             status, rules = gh.request('GET', '/rules/branches/main')
             _, settings = gh.request('GET', '')
             ok, problems = evaluate_gate(rules if status == 200 else [], settings or {},
-                                         single_maintainer=single_maintainer)
+                                         single_maintainer=single_maintainer, auto_publish=auto_publish)
             print(json.dumps({'gate': 'ENFORCED' if ok else 'NOT_ENFORCED', 'problems': problems}, ensure_ascii=False))
             return 0 if ok else 1
         source = FileSource(a.rows) if a.rows else NotionSource(Notion(env.get('NOTION_TOKEN', '')), env)
-        modes = ['dry-run', 'publish', 'verify'] if a.mode == 'cycle' else [a.mode]
+        modes = ['publish', 'verify'] if a.mode == 'cycle' else ([] if a.mode == 'redeploy' else [a.mode])
         for mode in modes:
             for domain in domains:
                 if mode == 'dry-run':
@@ -1165,15 +1349,18 @@ def main(argv=None):
                         if row['system'].get('requestPublish'):
                             results.append(publish(source, a.repo, domain, row, gh, git_push(env.get('GH_TOKEN', '')),
                                                    build=not a.skip_build,
-                                                   single_maintainer=single_maintainer))
+                                                   single_maintainer=single_maintainer,
+                                                   auto_publish=auto_publish))
                 elif mode == 'verify':
                     for row in source.rows(domain, {'property': SYSTEM_PROPS['state'], 'select': {'is_not_empty': True}}):
-                        if row['system'].get('state') not in ('已開 PR 待審', '已合併待部署', '已部署待驗證') or not row['system'].get('prUrl'):
+                        if row['system'].get('state') not in ('自動發布中', '已開 PR 待審', '已合併待部署', '已部署待驗證') or not row['system'].get('prUrl'):
                             continue
                         number = int(str(row['system']['prUrl']).rstrip('/').split('/')[-1])
                         key = row['system'].get('siteId') if domain == 'events' else row['fields'].get('month')
                         layers, revision = layered_status(gh, number, domain, key, row['fields'].get('name'),
-                                                         single_maintainer=single_maintainer)
+                                                         single_maintainer=single_maintainer,
+                                                         auto_publish=auto_publish,
+                                                         publisher_login=publisher_login)
                         verdict, state = overall(layers)
                         summary = '；'.join(f'{LAYER_ZH[k]}：{layers[k]}' for k in LAYERS)
                         if revision:
@@ -1187,6 +1374,14 @@ def main(argv=None):
                                 values['result'] = '已上線，但網站目前版本與 Notion 不一致，需由工程回填基準。'
                         source.write(row['pageId'], **values)
                         results.append({'pageId': row['pageId'], 'domain': domain, 'outcome': verdict})
+
+        if a.mode in ('cycle', 'redeploy'):
+            for row in source.deploy_rows({'property': DEPLOY_CONTROL_PROPS['requestRedeploy'], 'checkbox': {'equals': True}}):
+                if row.get('requestRedeploy'):
+                    results.append(request_redeploy(source, actions_gh, row))
+            for row in source.deploy_rows({'property': DEPLOY_CONTROL_PROPS['state'], 'select': {'equals': '重新部署中'}}):
+                if row.get('state') == '重新部署中':
+                    results.append(verify_redeploy(source, actions_gh, row))
     except PublishError as exc:
         print(json.dumps({'error': exc.code}, ensure_ascii=False), file=sys.stderr)
         return 2
@@ -1198,7 +1393,9 @@ def main(argv=None):
                                        ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return 1 if any(r.get('outcome') not in ('PREVIEWED', 'CREATED', 'ALREADY_OPEN', 'ALREADY_MERGED', 'RECONCILED',
                                               'NO_CHANGE', 'PASS', 'PENDING', 'DEPLOYED_UNVERIFIED',
-                                              'MERGED_NOT_DEPLOYED', 'SKIPPED_NOT_REQUESTED') for r in results) else 0
+                                              'MERGED_NOT_DEPLOYED', 'SKIPPED_NOT_REQUESTED',
+                                              'REDEPLOY_DISPATCHED', 'REDEPLOY_PENDING', 'REDEPLOYED',
+                                              'REDEPLOY_SKIPPED') for r in results) else 0
 
 
 if __name__ == '__main__':

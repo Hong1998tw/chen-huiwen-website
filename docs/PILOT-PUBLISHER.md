@@ -1,71 +1,171 @@
-# huiwen.tw Notion Pilot 發布執行器（PR-only）
+# huiwen.tw Notion CMS 發布執行器
 
-本文件是 GitHub 端的工程 runbook；施工契約、狀態與 Decision Log 以私有 Notion「現行施工計畫（Pilot）」為準。
-本 repo 不保存任何 secret 實值、私人 Notion／Drive 網址或人員識別資料。
+本文件是 GitHub 端工程 runbook。GitHub `main` 是網站程式與發布正本；Notion 是各內容 domain 的 authoring surface。
 
-## 1. 範圍與安全契約
+## 1. 使用者操作
 
-| 項目 | 規則 |
-| --- | --- |
-| Domain | 只處理活動（`data/events.json`）與律師時間表（`data/legal-schedule.json`）。政績維持既有 Notion 政績資料庫＋SKILL-218，執行器不寫入政績。 |
-| 發布正本 | GitHub `main`。Notion 只是 authoring state。 |
-| 執行器 | `scripts/publish_from_notion.py`；workflow `.github/workflows/publish-executor.yml`。 |
-| Merge | **執行器沒有 merge 路徑**，並拒絕 merge／auto-merge endpoint（`MERGE_FORBIDDEN`）。單人 Pilot 由 GitHub 的 workflow approval＋required checks＋真人帳號 manual merge 把關；有第二位 reviewer 後可重新啟用 second-person review。 |
-| Auto-merge | 2026-11-29（Asia/Taipei）以前禁止；之後仍需 shadow acceptance、MVP gates、WP0.7 身分綁定、Gate 修訂與權責人另一次明確裁定，不自動啟用。 |
-| Schema | 只寫入已知 `schemaVersion`（兩者皆為 2）；未知版本 `UNKNOWN_SCHEMA` fail closed。資料檔若不是 serializer 會產生的格式則 `FORMAT_DRIFT` fail closed。 |
-| 未管理欄位 | 依 stable `id` 逐筆 patch；Notion 未管理但 builder 合法的欄位（例如 `location`、`registrationUrl`）原樣保留。 |
-| 版本綁定 | dry-run 產生白話預覽與 `candidate_content_digest`；建立 PR 前 fresh-read Notion＋`main` 重算，不一致即拒絕並要求重新核准。 |
-| 身分綁定 | Notion 勾選者不是 Production authorization。單人 Pilot 的 Production authorization 是 required CI 通過後，由真人 GitHub 帳號執行 merge；Bot merge 不計為人工授權。 |
-| 發布保護 preflight | 建 PR 前讀 `GET /rules/branches/main`。單人模式要求 PR＋四個必要檢查＋禁止 force push／刪除＋auto-merge 關閉；dual-review 模式另要求第二人核准。任一必要控制未 enforce 時 `GATE_NOT_ENFORCED`，不建立 PR。 |
-| 路徑 allowlist | 執行器與 CI（`publication-path-guard`，從 base revision 執行）都限制 PR 只能改該 domain 的資料檔與產出檔。 |
-| Log | 不輸出內容本文、私人網址或 secret；PR 內文只含 domain、record、digest、base SHA 與時間。 |
+日常後台只保留兩個動作：
 
-## 2. 流程
+1. **發布**：內容有變更時勾選「要求發布」。
+2. **重新部署正式站**：內容不變，只想把 current `main` 重新 build / deploy。
+
+「要求預覽」與「白話預覽」保留為 legacy/internal 欄位，不再是日常流程，也不是發布前置條件。
+
+## 2. 發布流程
 
 ```
-Notion 編輯 → 勾選「要求預覽」→ dry-run（fresh-read、schema、Git base hash、candidate digest、
-白話預覽、worktree build＋quality、allowlist；不 push、不開 PR、不產生 artifact）→ 回寫 Notion
-→ 人看白話預覽 → 勾選「要求發布」→ gate preflight → fresh-read＋digest 重算＋base drift 檢查
-→ worktree build＋quality → branch `notion-publish/<domain>/<record>-<digest8>` → PR（不 merge）
-→ GitHub 顯示 workflow approval required → 人工批准 CI 執行 → CI（validate／browser／secrets／publication-path-guard）→ 人工檢視 diff → human merge
-→ Pages → 分層驗證（verify）→ 回寫 receipt
+Notion 編輯
+→ 勾「要求發布」
+→ fresh-read Notion + current main
+→ schema / validation / candidate digest
+→ throwaway worktree build + full quality + path allowlist
+→ 第二次 fresh-read（防止建置期間內容被改）
+→ branch notion-publish/<domain>/<record>-<digest8>
+→ GitHub App 建 PR
+→ GitHub native auto-merge enabled
+→ required checks: validate / browser / secrets / publication-path-guard
+→ 全綠後 GitHub 自動 squash merge
+→ Pages deploy
+→ HTTP / snapshot / native 分層驗證
+→ 回寫 Notion
 ```
 
-執行模式：`dry-run`、`publish`、`verify`、`cycle`（排程：依序三者）、`gate-check`、`export-rows`（main → rows，供首次匯入）、`shadow-compare`（rows → 與 main 逐 byte 比對）。
+任何一個 required check 失敗，GitHub 不得 merge。
 
-## 3. Notion 欄位契約
+Publisher 程式仍拒絕 direct merge endpoint；唯一允許的是對合法 `notion-publish/* → main` PR 啟用 GitHub native auto-merge。
 
-活動 DB：活動名稱（title）、開始、結束（含時刻）、活動說明、報名方式、來源網址（https）、來源核對日、狀態（排定／改期／取消）、異動說明、來源更新日、下次複查。
+## 3. 發布授權語意
 
-律師時間表：月表 DB（月份 `YYYY-MM`、來源圖卡網址、圖卡標題、核對日、下次核對）＋時段 DB（日期、開始 `HH:MM`、結束 `HH:MM`、relation「月份」）。`validThrough` 由執行器依月份計算；`availability` 固定為須電話確認。網站目前格式每天只能有一個時段。
+Notion 的「要求發布」現在是 **Production authorization signal**。
 
-系統欄位（兩個 DB 共用名稱）：要求預覽、要求發布、執行狀態、網站 ID、GitHub 基準雜湊、候選內容雜湊、上次同步雜湊、白話預覽、發布結果、PR 連結、驗證層級、最後執行。候選內容雜湊只涵蓋受管欄位＋Git base，執行器回寫系統欄位不會改變它。
+因此：
 
-## 4. 分層 Production Verification
+> 能編輯並勾選「要求發布」的人，就具備該內容 domain 的正式發布權。
 
-`verify` 分別回報 `pr_created`、`ci_passed`、`review_approved`（UI 顯示為「人工授權」）、`merged`、`deployed`、`http_verified`、`snapshot_verified`、`native_verified`。Dual-review 模式以有效 human APPROVED review 作為人工授權；single-maintainer 模式則只在 required CI 已 PASS 且 `merged_by` 為真人帳號時把人工授權標 PASS，Bot merge 不算。只有全部 PASS 才是「已完成」；任何 BLOCKED 最多是「已部署待驗證」。Production revision 以 Pages deployment run 的 head SHA＋`github-pages` artifact digest 表示，不使用 `main` HEAD。
+資料庫只應授權可信任的 Editor / Publisher 使用。
 
-## 5. 需要 owner／Secret owner 執行的步驟（BLOCKED_EXTERNAL_ACTION）
+發布按下後，系統會綁定第一次 fresh-read 的 candidate digest；build / quality 結束前會再 fresh-read 一次。若受管欄位或網站基準已變更，本次發布 fail closed，狀態改為「需重新發布」，不 push、不建 PR。
 
-以下需 repository admin 或 Secret owner 權限，執行器與本 PR 都沒有、也不應有這些權限。
+## 4. GitHub identity / merge safety
 
-1. **WP0.1 rulesets**：依 `docs/pilot/main-rulesets.json` 維護兩個 ruleset。`main-publication-gate` 必須 active：PR 必要、四個必要檢查、禁止 force push 與刪除，**bypass 為空**。`main-human-review` 保留完整 second-person 規格但在單人 Pilot 為 **disabled standby**；新增第二位 reviewer 後再改回 active。單人模式不建立 admin bypass。
-   - 驗證：`python scripts/publish_from_notion.py gate-check` 回報 `ENFORCED`；以測試 branch 嘗試 direct push `main` 應被拒；ruleset 詳細頁確認 bypass 名單為空。單人模式不宣稱存在 second-person approval。
-2. **WP0.6 設定**：開啟「Automatically delete head branches」；確認「Allow auto-merge」為關閉。
-3. **WP0.2 GitHub identity**：不建立長期 GitHub App 私鑰。`publish-executor.yml` 使用每個 job 自動產生、job 結束即失效的 repo-scoped `GITHUB_TOKEN`，權限只開 `contents: write`、`pull-requests: write`、`actions: read`、`checks: read`。GitHub 對這個 token 建立／更新的 PR 會把 `pull_request` workflows 放入人工 approval-required 狀態；這是單人 Pilot 的額外人為閘門。
-4. **Environment `notion-publisher`**：Deployment branches 只允許 `main`；唯一必要 secret 是 `NOTION_PUBLISH_TOKEN`。GitHub 不保存 PAT／OAuth token／App private key。
-5. **Repository variables**：`NOTION_EVENTS_DS`、`NOTION_LEGAL_MONTH_DS`、`NOTION_LEGAL_SESSION_DS`（Notion data source ID，私有 locator 記在 Notion 發布中心）、`PUBLISHER_GIT_NAME`／`PUBLISHER_GIT_EMAIL`；完成 Notion secret、gate-check 與 smoke test 後最後才設定 `NOTION_PUBLISHER_ENABLED=true`。
-6. **Notion integration**：只分享活動 DB、律師月表 DB、時段 DB（不分享政績資料庫）。
-7. 驗證 WP0.2：從非 `main` branch 手動觸發 workflow，job 應被 `if` 與 environment branch policy 擋下；在 main 用 `gate-check` 驗 repo token 可讀有效規則。建立 executor PR 後必須觀察 pull_request CI 處於 approval-required，人工批准後四個 required checks 才可執行。
+Publisher 使用專用 GitHub App，只安裝在本 repository。
 
-## 6. Rollback／Recovery
+App 權限：
+- Contents: write
+- Pull requests: write
+- Actions: read
+- Checks: read
+- Metadata: read
 
-- 內容錯誤：開 revert PR（或以 `export-rows` 前的 Notion 值重新核准一版還原內容）→ CI → 人工檢視 → human merge → Pages → 分層驗證。
-- 執行器異常：把 `NOTION_PUBLISHER_ENABLED` 改為非 `true`（排程立即變成 no-op），改回既有工程 PR 流程；不需修改內容。
-- Credential 疑似外洩：停用 publisher、輪替／撤銷 Notion integration token，檢查期間內的 PR 與 commit。GitHub side 使用 job-scoped `GITHUB_TOKEN`，不保存長期 GitHub credential。
-- Notion 或 GitHub 故障：正式站不受影響；恢復後排程自動重試（有退避與上限），不會重複建立 PR（branch 名稱綁 digest，先對帳再建立）。
+禁止：
+- Administration
+- Workflows
+- ruleset bypass
+- direct merge endpoint
 
-## 7. WP0.6 Branch 清理政策
+Repository：
+- `main-publication-gate` 必須 active
+- PR required
+- required checks：`validate` / `browser` / `secrets` / `publication-path-guard`
+- force push / deletion 禁止
+- bypass actors 空白
+- `allow_auto_merge=true`
+- `main-human-review` 保留 disabled standby；未來若改回雙人治理可再啟用
 
-- 2026-09-23 盤點：遠端 95 個 branch；65 個已是 `main` 的祖先（可列為清理候選）；29 個不是祖先（多數可能為 squash merge，需逐一比對 tree 後再決定）。
-- 規則：刪除任何 branch 前先列清單並取得 owner 明確授權；`backup/*` 不在一般清理範圍；執行器 branch（`notion-publish/*`）在 PR 合併後由「自動刪除 head branch」處理，未合併者保留以便稽核。
+## 5. Domain ownership
+
+### 活動
+Authoring：活動 Pilot DB
+Canonical published source：`data/events.json`
+
+### 律師時間表
+Authoring：月表 + 時段 DB
+Canonical published source：`data/legal-schedule.json`
+
+### 政績
+**不搬資料。**
+
+仍以既有 Notion 政績資料庫為唯一 authoring authority，之後若接入同一 Publisher，新增 `achievements` domain adapter，而不是複製 rows 到活動／律師 DB。
+
+## 6. 重新部署正式站
+
+Publishing Center 內有「官網發布控制｜正式站」一列。
+
+勾選「重新部署正式站」：
+
+```
+current main
+→ dispatch pages.yml@main
+→ full quality
+→ build public artifact
+→ GitHub Pages deploy
+→ 狀態回寫
+```
+
+這條流程：
+- 不修改 source
+- 不建立假 commit
+- 不建立內容 PR
+- 不變更 Notion 內容資料
+
+狀態：
+- 待命
+- 重新部署中
+- 重新部署完成
+- 重新部署失敗
+
+## 7. Runtime configuration
+
+Environment：`notion-publisher`，只允許 `main`。
+
+Secrets：
+- `NOTION_PUBLISH_TOKEN`
+- `HUIWEN_PUBLISH_APP_ID`
+- `HUIWEN_PUBLISH_APP_KEY`
+
+Repository variables：
+- `NOTION_EVENTS_DS`
+- `NOTION_LEGAL_MONTH_DS`
+- `NOTION_LEGAL_SESSION_DS`
+- `NOTION_DEPLOY_CONTROL_DS`
+- `PUBLISHER_GIT_NAME`
+- `PUBLISHER_GIT_EMAIL`
+- `PUBLISHER_APP_LOGIN`
+- `PUBLISHER_SINGLE_MAINTAINER=true`
+- `PUBLISHER_AUTO_PUBLISH=true`
+- `NOTION_PUBLISHER_ENABLED=true`
+
+Notion connection `huiwen-publisher` 只分享：
+- 活動 DB
+- 律師月表 DB
+- 律師時段 DB
+- 官網發布控制｜正式站
+
+政績 DB 在 achievements adapter 實作前不要分享給此 Publisher。
+
+## 8. Verification
+
+`verify` 分層回報：
+- pr_created
+- ci_passed
+- review_approved（UI 語意為「發布授權」）
+- merged
+- deployed
+- http_verified
+- snapshot_verified
+- native_verified
+
+Auto-publish 模式下，發布授權只對 Publisher App 建立的 `notion-publish/*` PR 算 PASS。
+
+`BLOCKED != PASS`。Native edge 若因 Cloudflare 403 為 BLOCKED，必須原樣保留。
+
+## 9. Rollback
+
+Publisher 異常時：
+1. 設 `NOTION_PUBLISHER_ENABLED=false`。
+2. 已建立但未 merge 的 PR 可直接關閉。
+3. 已 merge 的內容以正常 revert PR 回滾。
+4. 不關閉 `main-publication-gate`。
+5. 不用搬移或還原政績資料庫。
+
+Pre-auto-publish rollback baseline 已封存在 Notion Archive；變更前 `main` 為 `4ad71945245be22163827d2ef8abb654924f2196`。

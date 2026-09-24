@@ -211,30 +211,34 @@ class GoldenFixtureTests(unittest.TestCase):
 
 
 class ApprovalBindingTests(unittest.TestCase):
-    def test_unchanged_after_dry_run_matches(self):
+    def test_one_click_snapshot_matches_when_unchanged(self):
         row = new_event_row()
+        row['system']['requestPublish'] = True
         cand = P.prepare_event(row, EVENTS_TEXT)
-        approved = approve(row, cand)
-        self.assertTrue(P.verify_approval(P.prepare_event(approved, EVENTS_TEXT), approved))
+        self.assertTrue(P.verify_publish_snapshot(cand, row, EVENTS_TEXT))
 
-    def test_one_character_edit_after_preview_is_rejected(self):
+    def test_one_character_edit_during_publish_is_rejected(self):
         row = new_event_row()
-        approved = approve(row, P.prepare_event(row, EVENTS_TEXT))
-        approved['fields']['content'] += '。'
+        row['system']['requestPublish'] = True
+        cand = P.prepare_event(row, EVENTS_TEXT)
+        changed = copy.deepcopy(row)
+        changed['fields']['content'] += '。'
         with self.assertRaises(P.PublishError) as ctx:
-            P.verify_approval(P.prepare_event(approved, EVENTS_TEXT), approved)
-        self.assertEqual(ctx.exception.code, 'DIGEST_MISMATCH')
+            P.verify_publish_snapshot(cand, changed, EVENTS_TEXT)
+        self.assertEqual(ctx.exception.code, 'PUBLISH_CHANGED_DURING_RUN')
 
-    def test_git_base_change_is_rejected(self):
-        row = legal_row(sourceTitle='更新標題')
-        approved = approve(row, P.prepare_legal(row, LEGAL_TEXT))
-        drifted = json.loads(LEGAL_TEXT)
-        drifted['sessions'][0]['start'] = '19:00'
+    def test_cancelled_publish_is_rejected(self):
+        row = new_event_row()
+        row['system']['requestPublish'] = True
+        cand = P.prepare_event(row, EVENTS_TEXT)
+        row['system']['requestPublish'] = False
         with self.assertRaises(P.PublishError) as ctx:
-            P.verify_approval(P.prepare_legal(approved, P.dump_legal(drifted)), approved)
-        self.assertEqual(ctx.exception.code, 'BASE_DRIFT')
+            P.verify_publish_snapshot(cand, row, EVENTS_TEXT)
+        self.assertEqual(ctx.exception.code, 'PUBLISH_CHANGED_DURING_RUN')
+
+    def test_git_newer_still_fails_closed(self):
         rows = rows_from(EVENTS_TEXT)
-        if rows:  # an event edited directly in Git after the Notion baseline => GitHub newer, fail closed
+        if rows:
             data = json.loads(EVENTS_TEXT)
             data['events'][0]['content'] += '（工程直接修改）'
             with self.assertRaises(P.PublishError) as ctx:
@@ -249,12 +253,6 @@ class ApprovalBindingTests(unittest.TestCase):
         source.write('page-new', state='發布中', result='處理中', lastRun='2026-09-23T10:00:00+08:00', layers='x', prUrl=None)
         after_row = source.fresh('events', 'page-new')
         self.assertEqual(P.prepare_event({**after_row, 'system': {**after_row['system'], 'siteId': None}}, EVENTS_TEXT).digest, before)
-
-    def test_publish_without_preview_is_rejected(self):
-        row = new_event_row()
-        with self.assertRaises(P.PublishError) as ctx:
-            P.verify_approval(P.prepare_event(row, EVENTS_TEXT), row)
-        self.assertEqual(ctx.exception.code, 'NOT_PREVIEWED')
 
 
 class GitHubBehaviourTests(unittest.TestCase):
@@ -314,44 +312,60 @@ class GitHubBehaviourTests(unittest.TestCase):
             gh.branch_sha('main')
         self.assertEqual((ctx.exception.code, ctx.exception.retryable), ('GITHUB_BUSY', True))
 
-    def test_merge_and_auto_merge_endpoints_are_refused(self):
+    def test_direct_merge_endpoints_are_refused(self):
         gh, fake = self.gh([])
         for method, path, body in (('PUT', '/pulls/7/merge', None), ('POST', '/merges', {'base': 'main'}),
-                                   ('POST', 'https://api.github.com/graphql', {'query': 'mutation{enablePullRequestAutoMerge}'})):
+                                   ('POST', 'https://api.github.com/graphql', {'query': 'mutation{mergePullRequest}'})):
             with self.assertRaises(P.PublishError) as ctx:
                 gh.request(method, path, body)
             self.assertEqual(ctx.exception.code, 'MERGE_FORBIDDEN')
         self.assertEqual(fake.calls, [])
 
-    def test_no_merge_code_path_in_executor_or_workflow(self):
+    def test_auto_merge_only_for_publisher_branch_and_expected_sha(self):
+        pr = {'number': 7, 'node_id': 'PR_node', 'merged_at': None, 'auto_merge': None,
+              'head': {'ref': 'notion-publish/events/x-1234', 'sha': 'h' * 40},
+              'base': {'ref': 'main'}}
+        gh, fake = self.gh([
+            ('GET', r'/pulls/7$', (200, {}, pr)),
+            ('POST', r'api.github.com/graphql', (200, {}, {'data': {'enablePullRequestAutoMerge': {'pullRequest': {'number': 7}}}}))
+        ])
+        self.assertEqual(gh.enable_auto_merge(7, expected_head_sha='h' * 40), 'ENABLED')
+        self.assertEqual(fake.count('POST', r'graphql'), 1)
+        bad = copy.deepcopy(pr)
+        bad['head']['ref'] = 'feature/not-publisher'
+        gh, _ = self.gh([('GET', r'/pulls/7$', (200, {}, bad))])
+        with self.assertRaises(P.PublishError) as ctx:
+            gh.enable_auto_merge(7)
+        self.assertEqual(ctx.exception.code, 'AUTO_MERGE_FAILED')
+
+    def test_auto_publish_workflow_uses_scoped_app_and_has_no_direct_merge(self):
         code = (ROOT / 'scripts/publish_from_notion.py').read_text(encoding='utf-8')
         workflow = (ROOT / '.github/workflows/publish-executor.yml').read_text(encoding='utf-8')
         runtime = re.sub(r'FORBIDDEN_GITHUB = .*', '', code)
-        for pattern in (r"request\('PUT'", r'/merge[\'"]', r'gh pr merge', r'enable_?auto'):
+        for pattern in (r"request\('PUT'.*/merge", r'gh pr merge', r'mergePullRequest'):
             self.assertIsNone(re.search(pattern, runtime), pattern)
-        for pattern in (r'gh pr merge', r'auto-merge:', r'merge_method', r'permission-administration',
-                        r'permission-workflows', r'create-github-app-token', r'HUIWEN_PUBLISH_APP_KEY'):
-            self.assertNotIn(pattern.replace('\\', ''), workflow)
-        self.assertIn('GH_TOKEN: ${{ github.token }}', workflow)
-        self.assertIn('PUBLISHER_SINGLE_MAINTAINER: ${{ vars.PUBLISHER_SINGLE_MAINTAINER }}', workflow)
-        self.assertEqual(P.AUTO_MERGE_EMBARGO_UNTIL.isoformat(), '2026-11-29')
+        for forbidden in ('permission-administration', 'permission-workflows', 'gh pr merge'):
+            self.assertNotIn(forbidden, workflow)
+        self.assertIn('actions/create-github-app-token@', workflow)
+        self.assertIn('HUIWEN_PUBLISH_APP_ID', workflow)
+        self.assertIn('HUIWEN_PUBLISH_APP_KEY', workflow)
+        self.assertIn('GH_TOKEN: ${{ steps.app-token.outputs.token }}', workflow)
+        self.assertIn('PUBLISHER_AUTO_PUBLISH: ${{ vars.PUBLISHER_AUTO_PUBLISH }}', workflow)
 
-    def test_gate_supports_dual_review_and_single_maintainer_modes(self):
-        self.assertEqual(P.evaluate_gate(FULL_RULES, {'allow_auto_merge': False}), (True, []))
-        ok, problems = P.evaluate_gate([], {})
-        self.assertFalse(ok)
-        self.assertEqual(len(problems), 4)
-        no_review = copy.deepcopy(FULL_RULES)
-        no_review[0]['parameters']['required_approving_review_count'] = 0
-        self.assertIn('main 未要求至少 1 位人工核准', P.evaluate_gate(no_review)[1])
-        self.assertEqual(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': False},
-                                         single_maintainer=True), (True, []))
-        self.assertFalse(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': True},
-                                         single_maintainer=True)[0])
-        no_guard = copy.deepcopy(FULL_RULES)
+    def test_gate_supports_auto_publish_without_bypassing_checks(self):
+        self.assertEqual(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': True},
+                                         single_maintainer=True, auto_publish=True), (True, []))
+        self.assertFalse(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': False},
+                                         single_maintainer=True, auto_publish=True)[0])
+        no_guard = copy.deepcopy(SINGLE_MAINTAINER_RULES)
         no_guard[1]['parameters']['required_status_checks'] = [{'context': 'validate'}]
-        self.assertTrue(any('publication-path-guard' in p for p in P.evaluate_gate(no_guard)[1]))
-        self.assertIn('repository 允許 auto-merge；Pilot 期間必須關閉', P.evaluate_gate(FULL_RULES, {'allow_auto_merge': True})[1])
+        self.assertTrue(any('publication-path-guard' in p for p in
+                            P.evaluate_gate(no_guard, {'allow_auto_merge': True},
+                                            single_maintainer=True, auto_publish=True)[1]))
+        ok, problems = P.evaluate_gate([], {'allow_auto_merge': True},
+                                       single_maintainer=True, auto_publish=True)
+        self.assertFalse(ok)
+        self.assertGreaterEqual(len(problems), 3)
 
 
 class DisposableRepo(unittest.TestCase):
@@ -381,15 +395,28 @@ class DisposableRepo(unittest.TestCase):
         s.data, s.writes = rows, []
         return s
 
-    def gh(self, main_sha, rules=FULL_RULES, created=None):
+    def gh(self, main_sha, rules=SINGLE_MAINTAINER_RULES, created=None, allow_auto_merge=True):
         created = created if created is not None else []
+        head_sha = 'c' * 40
+        pr_full = {'number': 100, 'node_id': 'PR_100', 'state': 'open', 'merged_at': None,
+                   'auto_merge': None, 'html_url': 'https://github.com/x/pull/100',
+                   'head': {'ref': 'notion-publish/events/test-digest', 'sha': head_sha},
+                   'base': {'ref': 'main'}, 'user': {'login': 'huiwen-publisher[bot]', 'type': 'Bot'}}
         def create():
             created.append(1)
-            return 201, {}, {'number': 100, 'state': 'open', 'merged_at': None, 'html_url': 'https://github.com/x/pull/100'}
-        fake = Fake([('GET', r'/rules/branches/main', (200, {}, rules)), ('GET', r'chen-huiwen-website$', (200, {}, {'allow_auto_merge': False})),
-                     ('GET', r'/git/ref/heads/main', (200, {}, {'object': {'sha': main_sha}})),
-                     ('GET', r'/pulls\?', (200, {}, [])), ('GET', r'/git/ref/heads/notion', (404, {}, {})),
-                     ('POST', r'/pulls$', create)])
+            return 201, {}, {'number': 100, 'node_id': 'PR_100', 'state': 'open', 'merged_at': None,
+                             'html_url': 'https://github.com/x/pull/100'}
+        fake = Fake([
+            ('GET', r'/rules/branches/main', (200, {}, rules)),
+            ('GET', r'chen-huiwen-website$', (200, {}, {'allow_auto_merge': allow_auto_merge})),
+            ('GET', r'/git/ref/heads/main', (200, {}, {'object': {'sha': main_sha}})),
+            ('GET', r'/pulls\?', (200, {}, [])),
+            ('GET', r'/git/ref/heads/notion', [(404, {}, {}), (200, {}, {'object': {'sha': head_sha}})]),
+            ('POST', r'/pulls$', create),
+            ('GET', r'/pulls/100$', (200, {}, pr_full)),
+            ('POST', r'api.github.com/graphql',
+             (200, {}, {'data': {'enablePullRequestAutoMerge': {'pullRequest': {'number': 100}}}}))
+        ])
         return P.GitHub('t', 'Hong1998tw/chen-huiwen-website', transport=fake, sleep=lambda s: None), fake
 
     def assert_clean(self):
@@ -418,49 +445,123 @@ class DryRunAndPublishTests(DisposableRepo):
         self.assertIn('不可包含 HTML', src.writes[-1]['result'])
         self.assertNotRegex(src.writes[-1]['result'], r'\b\d{8,}\b')  # never only a run number
 
-    def test_pr_only_publish_happy_path_and_idempotent_receipt(self):
-        src = self.source({'events': [new_event_row()]})
-        P.dry_run(src, self.repo, 'events', src.data['events'][0], build=False)
-        src.data['events'][0]['system']['requestPublish'] = True
+    def test_one_click_publish_enables_auto_merge_without_preview(self):
+        row = new_event_row()
+        row['system']['requestPublish'] = True
+        src = self.source({'events': [row]})
         gh, fake = self.gh(self.head)
         pushed = []
-        result = P.publish(src, self.repo, 'events', src.data['events'][0], gh, lambda wt, c, t: pushed.append(c.branch), build=False)
-        self.assertEqual((result['outcome'], len(pushed)), ('CREATED', 1))
-        self.assertEqual(src.writes[-1]['state'], '已開 PR 待審')
+        result = P.publish(src, self.repo, 'events', row, gh,
+                           lambda wt, c, t: pushed.append(c.branch), build=False,
+                           single_maintainer=True, auto_publish=True)
+        self.assertEqual((result['outcome'], result['autoMerge'], len(pushed)), ('CREATED', 'ENABLED', 1))
+        self.assertEqual(src.writes[-1]['state'], '自動發布中')
         self.assertFalse(src.writes[-1]['requestPublish'])
-        self.assertIn('尚未上線', src.writes[-1]['result'])
-        self.assertEqual(fake.count('PUT', r'merge'), 0)
+        self.assertIn('自動合併', src.writes[-1]['result'])
+        self.assertEqual(fake.count('POST', r'graphql'), 1)
+        self.assertEqual(fake.count('PUT', r'/merge'), 0)
         self.assert_clean()
 
+    def test_no_change_publish_points_to_redeploy(self):
+        row = rows_from(EVENTS_TEXT)[0]
+        row['system']['requestPublish'] = True
+        src = self.source({'events': [row]})
+        gh, _ = self.gh(self.head)
+        result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'),
+                           build=False, single_maintainer=True, auto_publish=True)
+        self.assertEqual(result['outcome'], 'NO_CHANGE')
+        self.assertIn('重新部署正式站', src.writes[-1]['result'])
+        self.assertFalse(src.writes[-1]['requestPublish'])
+
     def test_publish_refused_when_gate_not_enforced(self):
-        src = self.source({'events': [new_event_row()]})
-        P.dry_run(src, self.repo, 'events', src.data['events'][0], build=False)
-        src.data['events'][0]['system']['requestPublish'] = True
+        row = new_event_row()
+        row['system']['requestPublish'] = True
+        src = self.source({'events': [row]})
         created = []
-        gh, fake = self.gh(self.head, rules=[], created=created)
-        result = P.publish(src, self.repo, 'events', src.data['events'][0], gh, lambda *a: created.append('push'), build=False)
+        gh, _ = self.gh(self.head, rules=[], created=created)
+        result = P.publish(src, self.repo, 'events', row, gh, lambda *a: created.append('push'),
+                           build=False, single_maintainer=True, auto_publish=True)
         self.assertEqual((result['outcome'], created), ('GATE_NOT_ENFORCED', []))
         self.assertIn('尚未生效', src.writes[-1]['result'])
-        self.assertTrue(src.data['events'][0]['system']['requestPublish'])  # request kept, not silently dropped
+        self.assertTrue(src.data['events'][0]['system']['requestPublish'])
 
-    def test_edit_after_approval_clears_request_and_needs_reapproval(self):
-        src = self.source({'events': [new_event_row()]})
-        P.dry_run(src, self.repo, 'events', src.data['events'][0], build=False)
-        row = src.data['events'][0]
+    def test_edit_during_publish_clears_request_and_does_not_push(self):
+        row = new_event_row()
         row['system']['requestPublish'] = True
-        row['fields']['name'] += '！'
+        src = self.source({'events': [row]})
+        original_fresh = src.fresh
+        calls = {'n': 0}
+        def fresh(domain, page_id):
+            calls['n'] += 1
+            got = original_fresh(domain, page_id)
+            if calls['n'] >= 2:
+                got['fields']['name'] += '！'
+            return got
+        src.fresh = fresh
         gh, _ = self.gh(self.head)
-        result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'), build=False)
-        self.assertEqual(result['outcome'], 'DIGEST_MISMATCH')
-        self.assertEqual((src.writes[-1]['state'], src.writes[-1]['requestPublish']), ('需重新核准', False))
+        result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'),
+                           build=False, single_maintainer=True, auto_publish=True)
+        self.assertEqual(result['outcome'], 'PUBLISH_CHANGED_DURING_RUN')
+        self.assertEqual((src.writes[-1]['state'], src.writes[-1]['requestPublish']), ('需重新發布', False))
 
     def test_stale_checkout_blocks_pr(self):
-        src = self.source({'events': [new_event_row()]})
-        P.dry_run(src, self.repo, 'events', src.data['events'][0], build=False)
-        src.data['events'][0]['system']['requestPublish'] = True
+        row = new_event_row()
+        row['system']['requestPublish'] = True
+        src = self.source({'events': [row]})
         gh, _ = self.gh('f' * 40)
-        result = P.publish(src, self.repo, 'events', src.data['events'][0], gh, lambda *a: self.fail('must not push'), build=False)
+        result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'),
+                           build=False, single_maintainer=True, auto_publish=True)
         self.assertEqual((result['outcome'], result['retryable']), ('STALE_CHECKOUT', True))
+
+
+class RedeployTests(unittest.TestCase):
+    def source(self):
+        s = P.FileSource.__new__(P.FileSource)
+        s.data = {'deployControls': [{
+            'pageId': 'deploy-page', 'requestRedeploy': True, 'state': '待命',
+            'result': '', 'runId': '', 'lastRun': None
+        }]}
+        s.writes = []
+        return s
+
+    def gh(self, routes):
+        fake = Fake(routes)
+        return P.GitHub('actions-token', 'Hong1998tw/chen-huiwen-website',
+                        transport=fake, sleep=lambda s: None), fake
+
+    def test_redeploy_dispatches_pages_without_content_mutation(self):
+        src = self.source()
+        created = P.datetime.now(P.timezone.utc).isoformat().replace('+00:00', 'Z')
+        gh, fake = self.gh([
+            ('POST', r'/actions/workflows/pages.yml/dispatches$', (204, {}, None)),
+            ('GET', r'/actions/workflows/pages.yml/runs', (200, {}, {'workflow_runs': [
+                {'id': 123, 'status': 'queued', 'conclusion': None, 'created_at': created}
+            ]}))
+        ])
+        result = P.request_redeploy(src, gh, src.data['deployControls'][0])
+        self.assertEqual((result['outcome'], result['run']), ('REDEPLOY_DISPATCHED', 123))
+        row = src.data['deployControls'][0]
+        self.assertFalse(row['requestRedeploy'])
+        self.assertEqual((row['state'], row['runId']), ('重新部署中', '123'))
+        self.assertEqual(fake.count('POST', r'pages.yml/dispatches'), 1)
+
+    def test_redeploy_verification_writes_success_or_failure(self):
+        src = self.source()
+        row = src.data['deployControls'][0]
+        row.update(requestRedeploy=False, state='重新部署中', runId='123',
+                   lastRun='2026-09-24T21:00:00+08:00')
+        gh, _ = self.gh([('GET', r'/actions/runs/123$', (200, {}, {
+            'id': 123, 'status': 'completed', 'conclusion': 'success'}))])
+        result = P.verify_redeploy(src, gh, row)
+        self.assertEqual(result['outcome'], 'REDEPLOYED')
+        self.assertEqual(src.data['deployControls'][0]['state'], '重新部署完成')
+
+        src.data['deployControls'][0].update(state='重新部署中', runId='124')
+        gh, _ = self.gh([('GET', r'/actions/runs/124$', (200, {}, {
+            'id': 124, 'status': 'completed', 'conclusion': 'failure'}))])
+        result = P.verify_redeploy(src, gh, src.data['deployControls'][0])
+        self.assertEqual(result['outcome'], 'REDEPLOY_FAILED')
+        self.assertEqual(src.data['deployControls'][0]['state'], '重新部署失敗')
 
 
 class SecurityTests(unittest.TestCase):
