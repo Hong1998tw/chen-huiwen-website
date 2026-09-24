@@ -1,10 +1,11 @@
 name: Notion publish executor (Pilot, PR-only)
 
 # Disabled until the owner sets repository variable NOTION_PUBLISHER_ENABLED=true AND the
-# notion-publisher environment (main-only) holds the App and Notion secrets.
-# Pilot rule ADR-007: this workflow only creates pull requests. It never merges and never
-# enables auto-merge; auto-merge is forbidden before 2026-11-29 (Asia/Taipei) and needs a
-# separate explicit decision afterwards.
+# notion-publisher environment (main-only) holds the Notion secret.
+# Single-maintainer Pilot: use the job-scoped GITHUB_TOKEN only to create/update candidate
+# branches and PRs. GitHub requires human approval before pull_request CI created by this token
+# can run. This workflow never merges and never enables auto-merge; auto-merge is forbidden
+# before 2026-11-29 (Asia/Taipei) and needs a separate explicit decision afterwards.
 on:
   schedule:
     - cron: '*/15 * * * *'
@@ -17,7 +18,10 @@ on:
         default: dry-run
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  actions: read
+  checks: read
 
 concurrency:
   group: publish-executor
@@ -44,27 +48,15 @@ jobs:
       - name: Install validator dependencies
         run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
 
-      - name: Mint short-lived, down-scoped installation token (single repository)
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.HUIWEN_PUBLISH_APP_ID }}
-          private-key: ${{ secrets.HUIWEN_PUBLISH_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-actions: read
-          permission-checks: read
-
       - name: Run executor (no merge path exists)
         env:
           MODE: ${{ github.event_name == 'schedule' && 'cycle' || inputs.mode }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           NOTION_TOKEN: ${{ secrets.NOTION_PUBLISH_TOKEN }}
           NOTION_EVENTS_DS: ${{ vars.NOTION_EVENTS_DS }}
           NOTION_LEGAL_MONTH_DS: ${{ vars.NOTION_LEGAL_MONTH_DS }}
           NOTION_LEGAL_SESSION_DS: ${{ vars.NOTION_LEGAL_SESSION_DS }}
           PUBLISHER_GIT_NAME: ${{ vars.PUBLISHER_GIT_NAME }}
           PUBLISHER_GIT_EMAIL: ${{ vars.PUBLISHER_GIT_EMAIL }}
+          PUBLISHER_SINGLE_MAINTAINER: ${{ vars.PUBLISHER_SINGLE_MAINTAINER }}
         run: python scripts/publish_from_notion.py "$MODE"
