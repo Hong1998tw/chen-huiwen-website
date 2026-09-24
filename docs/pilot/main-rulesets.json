@@ -1,5 +1,5 @@
 {
-  "_comment": "Single-maintainer Pilot: main-publication-gate is active and unbypassable; main-human-review is retained disabled for one-step re-enable when a second reviewer exists.",
+  "_comment": "Notion CMS auto-publish: main-publication-gate stays active and unbypassable; GitHub native auto-merge may merge only after all required checks pass. main-human-review remains disabled standby until dual-review governance is reintroduced.",
   "rulesets": [
     {
       "name": "main-publication-gate",
