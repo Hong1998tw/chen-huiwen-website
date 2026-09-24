@@ -340,5 +340,11 @@
     "status": "持續追蹤",
     "place": "鳳山區",
     "sha256": "eae0c6f37d1d97f92456e6a2f7b607b106fc00caba799759be0fe6e9903d396c"
+  },
+  "achievement-asbestos-waste-removal-subsidy-acceleration": {
+    "title": "督促環保局加速石綿瓦廢棄物清運補助並向中央爭取拆除費用納補",
+    "status": "政策實施",
+    "place": "全市政策",
+    "sha256": "82badf49c8964b80c63157b44bf15e9437d8ae27b87e23f1425c5ebab01d391f"
   }
 }
