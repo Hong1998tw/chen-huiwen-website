@@ -1,5 +1,5 @@
 {
-  "_comment": "Import each object under rulesets[] via Settings > Rules > Rulesets > New ruleset > Import. Pilot spec for WP0.1; see docs/PILOT-PUBLISHER.md. Values are not secrets.",
+  "_comment": "Single-maintainer Pilot: main-publication-gate is active and unbypassable; main-human-review is retained disabled for one-step re-enable when a second reviewer exists.",
   "rulesets": [
     {
       "name": "main-publication-gate",
@@ -17,7 +17,7 @@
     {
       "name": "main-human-review",
       "target": "branch",
-      "enforcement": "active",
+      "enforcement": "disabled",
       "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
       "bypass_actors": [],
       "rules": [

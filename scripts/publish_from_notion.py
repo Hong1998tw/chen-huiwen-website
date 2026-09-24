@@ -7,7 +7,7 @@ Safety contract (docs/PILOT-PUBLISHER.md):
 * Unknown schemaVersion fails closed. Valid keys that Notion does not manage are preserved.
 * The approved candidate digest must equal a fresh recomputation (Notion + current main)
   immediately before a PR is created; otherwise nothing is pushed and re-approval is required.
-* The live GitHub rules for main must enforce PR + required checks + human approval before any PR.
+* The live GitHub rules for main must enforce PR + required checks; dual-review mode also requires a distinct reviewer.
 * Logs, reports and PR bodies never contain content bodies, private URLs or secrets.
 """
 from __future__ import annotations
@@ -83,7 +83,7 @@ ERROR_MESSAGES = {
     'DIGEST_MISMATCH': '核准後內容已變更，請重新預覽並重新核准。',
     'BASE_DRIFT': '網站資料已由其他管道更新，需要先對齊；請重新預覽並重新核准。',
     'GITHUB_NEWER': '網站資料已由其他管道更新，需由網站工程維護回填 Notion 後再核准。',
-    'GATE_NOT_ENFORCED': '網站發布保護（必要檢查與人工審核）尚未生效，系統不會建立發布請求。',
+    'GATE_NOT_ENFORCED': '網站發布保護（PR、必要檢查與禁止繞過）尚未生效，系統不會建立發布請求。',
     'PATH_NOT_ALLOWED': '發布內容影響了不該變更的網站檔案，系統已停止，請通知網站工程維護。',
     'BUILD_FAILED': '網站產生或品質檢查失敗，未建立發布請求。',
     'GITHUB_BUSY': '網站系統忙碌，稍後自動重試；內容不會遺失。',
@@ -670,8 +670,13 @@ def ensure_pull_request(gh, candidate, push, title, body):
         raise PublishError('REMOTE_UNKNOWN', retryable=True)
 
 
-def evaluate_gate(rules, repo_settings=None):
-    """Gate 2 preflight from GET /rules/branches/main. Missing enforcement => fail closed."""
+def evaluate_gate(rules, repo_settings=None, *, single_maintainer=False):
+    """Gate 2 preflight from GET /rules/branches/main. Missing enforcement => fail closed.
+
+    Dual-review mode requires a distinct approving reviewer. Single-maintainer mode instead
+    requires PR + trusted checks + no direct/force/delete + auto-merge disabled; the executor
+    still has no merge path and Production authorization is the human merge action itself.
+    """
     by_type = {}
     for rule in rules or []:
         by_type.setdefault(rule.get('type'), []).append(rule.get('parameters') or {})
@@ -679,7 +684,7 @@ def evaluate_gate(rules, repo_settings=None):
     prs = by_type.get('pull_request', [])
     if not prs:
         problems.append('main 未要求 Pull Request')
-    else:
+    elif not single_maintainer:
         p = max(prs, key=lambda x: x.get('required_approving_review_count', 0))
         if p.get('required_approving_review_count', 0) < 1:
             problems.append('main 未要求至少 1 位人工核准')
@@ -701,10 +706,11 @@ def evaluate_gate(rules, repo_settings=None):
     return (not problems), problems
 
 
-def gate_preflight(gh):
+def gate_preflight(gh, *, single_maintainer=False):
     status, rules = gh.request('GET', '/rules/branches/main')
     _, settings = gh.request('GET', '')
-    ok, problems = evaluate_gate(rules if status == 200 else [], settings or {})
+    ok, problems = evaluate_gate(rules if status == 200 else [], settings or {},
+                                 single_maintainer=single_maintainer)
     if not ok:
         raise PublishError('GATE_NOT_ENFORCED', problems)
     return True
@@ -714,7 +720,7 @@ def gate_preflight(gh):
 # Layered production verification (Gate 4). Every layer is reported separately; BLOCKED != PASS.
 LAYERS = ('pr_created', 'ci_passed', 'review_approved', 'merged', 'deployed',
           'http_verified', 'snapshot_verified', 'native_verified')
-LAYER_ZH = {'pr_created': '已建立 PR', 'ci_passed': 'CI 通過', 'review_approved': '人工核准', 'merged': '已合併',
+LAYER_ZH = {'pr_created': '已建立 PR', 'ci_passed': 'CI 通過', 'review_approved': '人工授權', 'merged': '已合併',
             'deployed': '已部署', 'http_verified': 'HTTP 驗證', 'snapshot_verified': 'Snapshot 驗證',
             'native_verified': 'Native 驗證'}
 
@@ -768,7 +774,7 @@ def http_check(domain, record_key, record_name=None, fetch=None):
     return 'PASS' if ok else 'FAIL'
 
 
-def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None):
+def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None, *, single_maintainer=False):
     layers = {k: 'PENDING' for k in LAYERS}
     revision = {}
     _, pr = gh.request('GET', f'/pulls/{pr_number}')
@@ -783,6 +789,11 @@ def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=No
     human = [r for r in reviews or [] if r.get('state') == 'APPROVED' and r.get('user', {}).get('type') != 'Bot'
              and r.get('commit_id') == head]
     layers['review_approved'] = 'PASS' if human else 'PENDING'
+    if single_maintainer and pr.get('merged_at') and (pr.get('merged_by') or {}).get('type') != 'Bot' \
+            and layers['ci_passed'] == 'PASS':
+        # Single-maintainer contract: deliberate human merge after successful CI is the
+        # Production authorization. It is not represented as a second-person review.
+        layers['review_approved'] = 'PASS'
     if not pr.get('merged_at'):
         if pr.get('state') == 'closed':
             layers['merged'] = 'FAIL'
@@ -1009,15 +1020,15 @@ def pr_body(cand, base_sha):
         f'- Candidate digest：`{cand.digest}`', f'- Git base：`{base_sha}`（record base `{cand.base_hash}`）',
         f'- 建立時間：{now_iso()}', '',
         '本 PR 由發布執行器依已核准的 candidate digest 建立；**執行器不會 merge**。',
-        '請於 GitHub 比對 diff 與 Notion 白話預覽後，由人工核准並合併。',
+        '請於 GitHub 比對 diff 與 Notion 白話預覽，確認必要檢查通過後由真人帳號合併。',
         '合併後由 Pages 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 
 
-def publish(source, repo, domain, row, gh, push, *, build=True):
+def publish(source, repo, domain, row, gh, push, *, build=True, single_maintainer=False):
     """PR-only publish. Requires: enforced gate, fresh digest match, allowed paths. Never merges."""
     page = row['pageId']
     try:
-        gate_preflight(gh)
+        gate_preflight(gh, single_maintainer=single_maintainer)
         fresh_row = source.fresh(domain, page)
         if not fresh_row.get('system', {}).get('requestPublish'):
             return {'pageId': page, 'domain': domain, 'outcome': 'SKIPPED_NOT_REQUESTED'}
@@ -1036,8 +1047,10 @@ def publish(source, repo, domain, row, gh, push, *, build=True):
                 raise PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = ensure_pull_request(gh, cand, lambda: push(wt, cand, title), title, pr_body(cand, base_sha))
         state = '已合併待部署' if outcome == 'ALREADY_MERGED' else '已開 PR 待審'
+        wait_text = ('等待 GitHub 人工允許 PR CI 執行並完成合併；尚未上線。' if single_maintainer else
+                     '等待 GitHub 人工審核與合併；尚未上線。')
         source.write(page, state=state, prUrl=pr.get('html_url'), requestPublish=False, lastRun=now_iso(),
-                     result=f'已建立發布請求（{outcome}），等待 GitHub 人工審核與合併；尚未上線。')
+                     result=f'已建立發布請求（{outcome}），{wait_text}')
         return {'pageId': page, 'domain': domain, 'outcome': outcome, 'pr': pr.get('number'), 'files': files,
                 'digest': cand.digest}
     except PublishError as exc:
@@ -1119,6 +1132,7 @@ def main(argv=None):
     p.add_argument('--report', type=Path)
     a = p.parse_args(argv)
     env = os.environ
+    single_maintainer = env.get('PUBLISHER_SINGLE_MAINTAINER') == 'true'
     domains = ['events', 'legal-schedule'] if a.domain == 'all' else [a.domain]
     results = []
     try:
@@ -1134,7 +1148,8 @@ def main(argv=None):
         if a.mode == 'gate-check':
             status, rules = gh.request('GET', '/rules/branches/main')
             _, settings = gh.request('GET', '')
-            ok, problems = evaluate_gate(rules if status == 200 else [], settings or {})
+            ok, problems = evaluate_gate(rules if status == 200 else [], settings or {},
+                                         single_maintainer=single_maintainer)
             print(json.dumps({'gate': 'ENFORCED' if ok else 'NOT_ENFORCED', 'problems': problems}, ensure_ascii=False))
             return 0 if ok else 1
         source = FileSource(a.rows) if a.rows else NotionSource(Notion(env.get('NOTION_TOKEN', '')), env)
@@ -1149,14 +1164,16 @@ def main(argv=None):
                     for row in source.rows(domain, {'property': SYSTEM_PROPS['requestPublish'], 'checkbox': {'equals': True}}):
                         if row['system'].get('requestPublish'):
                             results.append(publish(source, a.repo, domain, row, gh, git_push(env.get('GH_TOKEN', '')),
-                                                   build=not a.skip_build))
+                                                   build=not a.skip_build,
+                                                   single_maintainer=single_maintainer))
                 elif mode == 'verify':
                     for row in source.rows(domain, {'property': SYSTEM_PROPS['state'], 'select': {'is_not_empty': True}}):
                         if row['system'].get('state') not in ('已開 PR 待審', '已合併待部署', '已部署待驗證') or not row['system'].get('prUrl'):
                             continue
                         number = int(str(row['system']['prUrl']).rstrip('/').split('/')[-1])
                         key = row['system'].get('siteId') if domain == 'events' else row['fields'].get('month')
-                        layers, revision = layered_status(gh, number, domain, key, row['fields'].get('name'))
+                        layers, revision = layered_status(gh, number, domain, key, row['fields'].get('name'),
+                                                         single_maintainer=single_maintainer)
                         verdict, state = overall(layers)
                         summary = '；'.join(f'{LAYER_ZH[k]}：{layers[k]}' for k in LAYERS)
                         if revision:

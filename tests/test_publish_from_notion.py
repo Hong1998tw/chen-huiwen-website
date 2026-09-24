@@ -82,6 +82,12 @@ FULL_RULES = [
     {'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': c} for c in P.REQUIRED_CHECKS]}},
     {'type': 'non_fast_forward'}, {'type': 'deletion'}]
 
+SINGLE_MAINTAINER_RULES = [
+    {'type': 'pull_request', 'parameters': {'required_approving_review_count': 0, 'dismiss_stale_reviews_on_push': True,
+                                            'require_last_push_approval': False}},
+    {'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': c} for c in P.REQUIRED_CHECKS]}},
+    {'type': 'non_fast_forward'}, {'type': 'deletion'}]
+
 
 class UnitTests(unittest.TestCase):
     def test_canonicalization_nfc_crlf_and_digest(self):
@@ -323,11 +329,14 @@ class GitHubBehaviourTests(unittest.TestCase):
         runtime = re.sub(r'FORBIDDEN_GITHUB = .*', '', code)
         for pattern in (r"request\('PUT'", r'/merge[\'"]', r'gh pr merge', r'enable_?auto'):
             self.assertIsNone(re.search(pattern, runtime), pattern)
-        for pattern in (r'gh pr merge', r'auto-merge:', r'merge_method', r'permission-administration', r'permission-workflows'):
+        for pattern in (r'gh pr merge', r'auto-merge:', r'merge_method', r'permission-administration',
+                        r'permission-workflows', r'create-github-app-token', r'HUIWEN_PUBLISH_APP_KEY'):
             self.assertNotIn(pattern.replace('\\', ''), workflow)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', workflow)
+        self.assertIn('PUBLISHER_SINGLE_MAINTAINER: ${{ vars.PUBLISHER_SINGLE_MAINTAINER }}', workflow)
         self.assertEqual(P.AUTO_MERGE_EMBARGO_UNTIL.isoformat(), '2026-11-29')
 
-    def test_gate_requires_pr_checks_human_review_and_blocks_force_push(self):
+    def test_gate_supports_dual_review_and_single_maintainer_modes(self):
         self.assertEqual(P.evaluate_gate(FULL_RULES, {'allow_auto_merge': False}), (True, []))
         ok, problems = P.evaluate_gate([], {})
         self.assertFalse(ok)
@@ -335,6 +344,10 @@ class GitHubBehaviourTests(unittest.TestCase):
         no_review = copy.deepcopy(FULL_RULES)
         no_review[0]['parameters']['required_approving_review_count'] = 0
         self.assertIn('main 未要求至少 1 位人工核准', P.evaluate_gate(no_review)[1])
+        self.assertEqual(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': False},
+                                         single_maintainer=True), (True, []))
+        self.assertFalse(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': True},
+                                         single_maintainer=True)[0])
         no_guard = copy.deepcopy(FULL_RULES)
         no_guard[1]['parameters']['required_status_checks'] = [{'context': 'validate'}]
         self.assertTrue(any('publication-path-guard' in p for p in P.evaluate_gate(no_guard)[1]))
@@ -516,9 +529,10 @@ class RecoveryAndVerificationTests(unittest.TestCase):
             zf.writestr('native-edge/report.json', json.dumps({'status': native}))
         return buf.getvalue()
 
-    def fake(self, *, deploy='success', native='BLOCKED', review=True, merged=True):
+    def fake(self, *, deploy='success', native='BLOCKED', review=True, merged=True, merged_by_type='User'):
         pr = {'number': 7, 'state': 'closed' if merged else 'open', 'head': {'sha': 'h' * 40},
-              'merged_at': '2026-09-24T01:00:00Z' if merged else None, 'merge_commit_sha': 'm' * 40}
+              'merged_at': '2026-09-24T01:00:00Z' if merged else None, 'merge_commit_sha': 'm' * 40,
+              'merged_by': {'type': merged_by_type} if merged else None}
         checks = {'check_runs': [{'name': n, 'conclusion': 'success'} for n in P.REQUIRED_CHECKS]}
         reviews = [{'state': 'APPROVED', 'user': {'type': 'User'}, 'commit_id': 'h' * 40}] if review else []
         return Fake([('GET', r'/pulls/7$', (200, {}, pr)), ('GET', r'/check-runs', (200, {}, checks)),
@@ -529,9 +543,10 @@ class RecoveryAndVerificationTests(unittest.TestCase):
                      ('GET', r'/runs/12/artifacts', (200, {}, {'artifacts': [{'id': 99, 'name': 'production-live-verification'}]})),
                      ('GET', r'/artifacts/99/zip', (200, {}, self.verification_zip(native)))])
 
-    def status(self, fake, html='<article id="event-x">名稱</article>'):
+    def status(self, fake, html='<article id="event-x">名稱</article>', *, single_maintainer=False):
         gh = P.GitHub('t', 'o/r', transport=fake, sleep=lambda s: None)
-        return P.layered_status(gh, 7, 'events', 'x', '名稱', fetch=lambda url: html)
+        return P.layered_status(gh, 7, 'events', 'x', '名稱', fetch=lambda url: html,
+                                single_maintainer=single_maintainer)
 
     def test_native_blocked_is_not_pass_and_revision_is_deployment_not_main(self):
         layers, revision = self.status(self.fake(native='BLOCKED'))
@@ -550,8 +565,21 @@ class RecoveryAndVerificationTests(unittest.TestCase):
         self.assertEqual((layers['http_verified'], P.overall(layers)[0]), ('FAIL', 'FAIL'))
 
     def test_unreviewed_unmerged_pr_is_pending(self):
-        layers, revision = self.status(self.fake(review=False, merged=False))
-        self.assertEqual((layers['review_approved'], layers['merged'], P.overall(layers)[0], revision), ('PENDING', 'PENDING', 'PENDING', {}))
+        layers, revision = self.status(self.fake(review=False, merged=False), single_maintainer=True)
+        self.assertEqual((layers['review_approved'], layers['merged'], P.overall(layers)[0], revision),
+                         ('PENDING', 'PENDING', 'PENDING', {}))
+
+    def test_single_maintainer_human_merge_is_authorization_after_ci(self):
+        layers, _ = self.status(self.fake(native='PASS', review=False, merged=True, merged_by_type='User'),
+                                single_maintainer=True)
+        self.assertEqual((layers['ci_passed'], layers['review_approved'], layers['merged']),
+                         ('PASS', 'PASS', 'PASS'))
+
+    def test_single_maintainer_bot_merge_is_not_human_authorization(self):
+        layers, _ = self.status(self.fake(native='PASS', review=False, merged=True, merged_by_type='Bot'),
+                                single_maintainer=True)
+        self.assertEqual(layers['review_approved'], 'PENDING')
+        self.assertNotEqual(P.overall(layers)[0], 'PASS')
 
 
 class PathGuardTests(unittest.TestCase):
