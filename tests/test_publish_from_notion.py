@@ -217,6 +217,13 @@ class ApprovalBindingTests(unittest.TestCase):
         cand = P.prepare_event(row, EVENTS_TEXT)
         self.assertTrue(P.verify_publish_snapshot(cand, row, EVENTS_TEXT))
 
+    def test_republish_snapshot_matches_when_unchanged(self):
+        row = new_event_row()
+        row['system']['requestRepublish'] = True
+        cand = P.prepare_event(row, EVENTS_TEXT)
+        self.assertTrue(P.verify_publish_snapshot(cand, row, EVENTS_TEXT))
+        self.assertEqual(P.publish_action(row), '重新發布')
+
     def test_one_character_edit_during_publish_is_rejected(self):
         row = new_event_row()
         row['system']['requestPublish'] = True
@@ -462,7 +469,7 @@ class DryRunAndPublishTests(DisposableRepo):
         self.assertEqual(fake.count('PUT', r'/merge'), 0)
         self.assert_clean()
 
-    def test_no_change_publish_points_to_redeploy(self):
+    def test_no_change_publish_reports_no_new_content(self):
         row = rows_from(EVENTS_TEXT)[0]
         row['system']['requestPublish'] = True
         src = self.source({'events': [row]})
@@ -470,8 +477,25 @@ class DryRunAndPublishTests(DisposableRepo):
         result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'),
                            build=False, single_maintainer=True, auto_publish=True)
         self.assertEqual(result['outcome'], 'NO_CHANGE')
-        self.assertIn('重新部署正式站', src.writes[-1]['result'])
+        self.assertIn('沒有新的內容可發布', src.writes[-1]['result'])
         self.assertFalse(src.writes[-1]['requestPublish'])
+        self.assertFalse(src.writes[-1]['requestRepublish'])
+
+    def test_republish_uses_same_guarded_pipeline_and_clears_both_triggers(self):
+        row = new_event_row()
+        row['system']['requestRepublish'] = True
+        src = self.source({'events': [row]})
+        gh, fake = self.gh(self.head)
+        pushed = []
+        result = P.publish(src, self.repo, 'events', row, gh,
+                           lambda wt, c, t: pushed.append(c.branch), build=False,
+                           single_maintainer=True, auto_publish=True)
+        self.assertEqual((result['outcome'], result['action'], result['autoMerge'], len(pushed)),
+                         ('CREATED', '重新發布', 'ENABLED', 1))
+        self.assertFalse(src.writes[-1]['requestPublish'])
+        self.assertFalse(src.writes[-1]['requestRepublish'])
+        self.assertIn('重新發布請求', src.writes[-1]['result'])
+        self.assertEqual(fake.count('POST', r'graphql'), 1)
 
     def test_publish_refused_when_gate_not_enforced(self):
         row = new_event_row()
@@ -502,7 +526,8 @@ class DryRunAndPublishTests(DisposableRepo):
         result = P.publish(src, self.repo, 'events', row, gh, lambda *a: self.fail('must not push'),
                            build=False, single_maintainer=True, auto_publish=True)
         self.assertEqual(result['outcome'], 'PUBLISH_CHANGED_DURING_RUN')
-        self.assertEqual((src.writes[-1]['state'], src.writes[-1]['requestPublish']), ('需重新發布', False))
+        self.assertEqual((src.writes[-1]['state'], src.writes[-1]['requestPublish'],
+                          src.writes[-1]['requestRepublish']), ('需重新發布', False, False))
 
     def test_stale_checkout_blocks_pr(self):
         row = new_event_row()
