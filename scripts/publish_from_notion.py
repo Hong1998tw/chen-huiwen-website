@@ -894,7 +894,7 @@ EVENT_PROPS = {'name': '活動名稱', 'start': '開始', 'end': '結束', 'cont
 LEGAL_PROPS = {'month': '月份', 'sourceUrl': '來源圖卡網址', 'sourceTitle': '圖卡標題', 'observedAt': '核對日',
                'nextReviewAt': '下次核對'}
 SESSION_PROPS = {'date': '日期', 'start': '開始', 'end': '結束'}
-SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '要求發布', 'state': '執行狀態',
+SYSTEM_PROPS = {'requestPreview': '要求預覽', 'requestPublish': '發布', 'state': '執行狀態',
                 'siteId': '網站 ID', 'baseHash': 'GitHub 基準雜湊', 'candidateDigest': '候選內容雜湊',
                 'syncedHash': '上次同步雜湊', 'preview': '白話預覽', 'result': '發布結果', 'prUrl': 'PR 連結',
                 'layers': '驗證層級', 'lastRun': '最後執行'}
