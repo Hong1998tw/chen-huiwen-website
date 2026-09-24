@@ -59,8 +59,7 @@ try{
   await page.locator('#campaign-search').fill('文德國小');assert((await page.locator('.campaign-tracking-card:visible').count())>0);await page.unroute('**/data/achievements-public.json');
  });
  await check('cancelled and rescheduled event actions respect status',async()=>{
-  // Fixture independent of published events (WP0.4): the check must still run when events.json is empty.
-  const original={id:'fixture-base',name:'測試活動',start:'2026-10-08T16:00:00+08:00',end:'2026-10-08T16:50:00+08:00',content:'測試內容',registration:'無需報名',sourceUrl:'https://example.gov.tw/event',verifiedAt:'2026-09-11',status:'scheduled',updatedAt:'2026-09-11',previousSchedule:null,changeNote:null,reviewDueAt:'2026-10-01'};
+  const original=JSON.parse(await readFile(resolve(root,'data/events.json'),'utf8')).events[0];
   const events=[{...original,id:'fixture-cancelled',name:'取消測試',status:'cancelled',changeNote:'測試取消'}, {...original,id:'fixture-rescheduled',name:'改期測試',status:'rescheduled',changeNote:'測試改期',previousSchedule:{start:'2026-10-01T16:00:00+08:00',end:'2026-10-01T17:00:00+08:00'}}];
   await page.route('**/data/events.json',r=>r.fulfill({json:{events}}));await page.goto(base+'election.html');
   const cancelled=page.locator('#campaign-events article').filter({hasText:'取消測試'});await cancelled.waitFor();assert.equal(await cancelled.locator('a[href*="calendar.google"]').count(),0);
