@@ -1097,7 +1097,7 @@ def dry_run(source, repo, domain, row, *, build=True, quality=True):
                 files = materialize(cand, wt, quality=quality)
         values = {'state': '可核准' if cand.changed else '無需發布', 'preview': cand.preview,
                   'candidateDigest': cand.digest, 'baseHash': cand.base_hash, 'requestPreview': False,
-                  'result': '預覽完成；請確認上方白話預覽後，再勾選「要求發布」。' if cand.changed else '與網站目前版本相同。',
+                  'result': '工程預覽完成；如要上線請勾選「發布」。' if cand.changed else '與網站目前版本相同。',
                   'lastRun': now_iso()}
         if domain == 'events' and not row.get('system', {}).get('siteId'):
             values['siteId'] = cand.record_key
