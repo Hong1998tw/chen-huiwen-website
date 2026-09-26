@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 import publish_from_notion as engine
+from page_authority import catalog
 
 ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,7 +112,7 @@ def reconcile(item, gh):
 
 def main():
     commit = engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
-    api('/internal/sync',{'commit':commit,'sources':sources(ROOT)})
+    api('/internal/sync',{'commit':commit,'sources':sources(ROOT),'pages':catalog(ROOT)})
     gh=engine.GitHub(os.environ['GH_TOKEN'],os.environ['GITHUB_REPOSITORY'])
     for item in api('/internal/pending',{})['publications']:
         api('/internal/receipt',reconcile(item,gh))

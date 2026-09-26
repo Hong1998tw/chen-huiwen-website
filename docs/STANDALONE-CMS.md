@@ -11,6 +11,12 @@ Owner decision (2026-09-27): independent website backend; initially only the own
 - `SITE_CMS_AUTHORING=standalone` is the explicit events/legal authoring cutover. It disables the legacy Notion executor and enables queue consumption. `CMS_ENABLED=true` enables source sync/reconciliation. Before cutover, only sync runs. Notion is a status projection after cutover; do not edit it as a second source.
 - Original excluded petition/Notion intake scope remains unchanged.
 
+## Full-site deployment catalogue
+
+The publisher derives every public HTML route from the same reviewed allowlist used by the Pages artifact builder. `scripts/page_authority.py` assigns each route a source file and an honest editor scope. The authenticated backend lists this catalogue with public and source links. It currently has 104 routes, including five historical redirects, 404, offline and the excluded petition page. New routes must receive an explicit source classification before the catalogue sync succeeds.
+
+`/internal/sync` updates this read-only D1 projection after GitHub OIDC verification. The page list is committed-source metadata, not a new authoring authority; syncing it cannot change any public page. `none` means there is no backend editor for that page. `partial` means at least one source feeding the page is editable through the existing activities or legal-schedule editor; other text and sources still require their own reviewed authoring workflow. Composite pages use a primary source link for navigation, with other build inputs defined by `scripts/build_all.py` and its builders. The petition intake flow remains excluded.
+
 ## Deployment
 
 Worker metadata, Access application, D1 and GitHub repository connection were provisioned for this named backend only. The named `huiwen-cms.lihong.workers.dev` origin is enabled for authenticated machine calls only; preview URLs are disabled. Its root, assets and admin API paths return 404. Main → Workers Builds runs checks, additive D1 migrations, and Worker deployment. No local production Wrangler deployment or deploy token is used. Cloudflare Build credential remains in Cloudflare.

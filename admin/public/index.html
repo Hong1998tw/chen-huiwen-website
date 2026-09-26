@@ -81,6 +81,16 @@
           </details>
         </section>
       </div>
+      <section class="page-inventory" aria-labelledby="page-inventory-title">
+        <details id="page-inventory-panel">
+          <summary id="page-inventory-title">全站頁面目錄 <span id="page-count" class="badge">載入中</span></summary>
+          <p class="hint">這裡列出正式發布包的頁面、內容來源與目前編輯範圍。頁面在發布包內，不代表所有文字都能在此後台修改。</p>
+          <label class="field" for="page-filter">搜尋頁面或來源
+            <input id="page-filter" type="search" placeholder="頁面名稱、網址、來源檔案" autocomplete="off" />
+          </label>
+          <div id="page-list" class="page-list" aria-live="polite"></div>
+        </details>
+      </section>
       <section class="publications" aria-labelledby="publication-title">
         <div class="section-head">
           <div>
