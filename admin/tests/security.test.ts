@@ -10,7 +10,7 @@ const env = {
   GITHUB_REPOSITORY: "Hong1998tw/chen-huiwen-website",
   GITHUB_REPOSITORY_ID: "1360942570",
   GITHUB_OWNER_ID: "126787497",
-  PUBLISHER_ORIGIN: "https://cms-publisher.huiwen.tw",
+  PUBLISHER_ORIGIN: "https://huiwen-cms.lihong.workers.dev",
 };
 const { privateKey, publicKey } = await generateKeyPair("RS256");
 const key = async () => publicKey;
@@ -194,7 +194,7 @@ test("monthly schedule rejects duplicate days and out-of-month appointments", ()
   );
 });
 
-import {canAdvancePublication} from '../src/index.ts';
+import worker, {canAdvancePublication} from '../src/index.ts';
 test('publication polling accepts a completed deployment between polls without permitting regression',()=>{
  assert(canAdvancePublication('pr_created','deployed'));
  assert(canAdvancePublication('pr_created','verified'));
@@ -202,4 +202,13 @@ test('publication polling accepts a completed deployment between polls without p
  assert(!canAdvancePublication('deployed','pr_created'));
  assert(!canAdvancePublication('verified','processing'));
  assert(!canAdvancePublication('closed','merged'));
+});
+
+test('machine origin never serves management UI or assets, and requires OIDC', async()=>{
+ const config={...env,ADMIN_ORIGIN:'https://admin.huiwen.tw',ASSETS:{fetch(){throw new Error('must not expose assets')}}};
+ for(const path of ['/','/app.js','/style.css','/api/session','/api/documents']) {
+  assert.equal((await worker.fetch(new Request(env.PUBLISHER_ORIGIN+path),config)).status,404,path);
+ }
+ assert.equal((await worker.fetch(new Request(env.PUBLISHER_ORIGIN+'/internal/sync',{method:'POST'}),config)).status,401);
+ assert.equal((await worker.fetch(new Request('https://unknown.example/api/session'),config)).status,404);
 });

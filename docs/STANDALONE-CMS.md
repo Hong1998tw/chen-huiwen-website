@@ -13,9 +13,9 @@ Owner decision (2026-09-27): independent website backend; initially only Hong199
 
 ## Deployment
 
-Worker metadata, Access application, D1 and GitHub repository connection were provisioned for this named backend only. `workers_dev` and preview URLs are disabled. Main → Workers Builds runs checks, additive D1 migrations, and Worker deployment. No local production Wrangler deployment or deploy token is used. Cloudflare Build credential remains in Cloudflare.
+Worker metadata, Access application, D1 and GitHub repository connection were provisioned for this named backend only. The named `huiwen-cms.lihong.workers.dev` origin is enabled for authenticated machine calls only; preview URLs are disabled. Its root, assets and admin API paths return 404. Main → Workers Builds runs checks, additive D1 migrations, and Worker deployment. No local production Wrangler deployment or deploy token is used. Cloudflare Build credential remains in Cloudflare.
 
-`cms-publisher.huiwen.tw` only accepts `/internal/*` with GitHub Actions OIDC: exact issuer, audience, repository and owner numeric IDs, main ref, `cms-publisher.yml`, environment `notion-publisher`, and schedule/manual event. It serves no UI or public data. The Worker holds no GitHub App private key. The existing repository-scoped App remains inside GitHub Actions.
+`huiwen-cms.lihong.workers.dev` only accepts `/internal/*` with GitHub Actions OIDC: exact issuer, audience, repository and owner numeric IDs, main ref, `cms-publisher.yml`, environment `notion-publisher`, and schedule/manual event. It serves no UI or public data. The Worker holds no GitHub App private key. The existing repository-scoped App remains inside GitHub Actions.
 
 Every 15 minutes (GitHub scheduling may delay), the job imports main snapshots, reconciles pending publications, and consumes at most one immutable request. A 30-minute lease protects each request; a crashed job retries the same content-derived PR. Stale source hashes fail closed and require loading the current published version. No direct merge API exists. GitHub auto-merge still requires repository rules and checks.
 
@@ -30,3 +30,7 @@ Status boundaries: saved draft → queued → building → PR/checks → merged 
 `npm ci --ignore-scripts --prefix admin`; `npm run check --prefix admin`; `npm test --prefix admin`; `node admin/tests/integration.mjs`; `python -m unittest discover -s tests -p test_standalone_cms.py`.
 
 Local integration uses synthetic signing keys, local Worker/D1 and exact migration; it tests authentication, asset protection, CSRF, persistence, version conflict, restore and immutable publication snapshots. Synthetic tests are not evidence of real GitHub owner login. Closeout must separately record native owner login, real D1 readback, OIDC job, Worker build/deployment and public-site release.
+
+## Initial deployment incident
+
+The first source sync to `cms-publisher.huiwen.tw` returned HTTP 403. Cloudflare native Security Events identified `botFight` managed challenges at `/internal/sync`. The machine endpoint uses this Worker’s dedicated workers.dev origin, with the same strict signed OIDC checks; admin UI remains only on Access-protected `admin.huiwen.tw`. No zone bot protection, WAF, Access policy, or GitHub permission was disabled or widened. [Cloudflare documents that Bot Fight Mode cannot be skipped with custom rules](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/).

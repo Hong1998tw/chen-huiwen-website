@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 import publish_from_notion as engine
 
-ORIGIN = 'https://cms-publisher.huiwen.tw'
+ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
 ROOT = Path(__file__).resolve().parents[1]
 
 
