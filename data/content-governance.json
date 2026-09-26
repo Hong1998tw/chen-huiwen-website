@@ -26,6 +26,33 @@
       "backupPerson": null
     }
   ],
+  "publishingRoles": {
+    "scope": "Notion Pilot（活動、律師時間表）發布角色；只記錄是否已指定，人員識別資料只保存在私有 Notion 發布中心，不寫入公開 repo。",
+    "productionAuthorization": "Pilot 期間 Notion「要求發布」只是發布請求與候選版本核准；Production merge 由 GitHub human review 把關。",
+    "identityBinding": "WP0.7 未通過前，不以 Notion last_edited_by 或勾選者宣稱 Editor／Publisher 分權已 enforce。",
+    "roles": [
+      {
+        "id": "pilot-editor",
+        "role": "Editor：編輯活動與律師時間表",
+        "assignmentStatus": "unassigned"
+      },
+      {
+        "id": "pilot-publisher",
+        "role": "Publisher：確認白話預覽並勾選要求發布（候選版本核准）",
+        "assignmentStatus": "unassigned"
+      },
+      {
+        "id": "pilot-publisher-backup",
+        "role": "Publisher 代理人",
+        "assignmentStatus": "unassigned"
+      },
+      {
+        "id": "pilot-github-reviewer",
+        "role": "GitHub human reviewer：Pilot 期間最終 Production 授權（審核並合併 PR）",
+        "assignmentStatus": "unassigned"
+      }
+    ]
+  },
   "checks": [
     {
       "id": "legal-schedule-month",

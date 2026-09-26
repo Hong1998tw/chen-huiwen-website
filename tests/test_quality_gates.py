@@ -88,6 +88,8 @@ class QualityMutationTests(unittest.TestCase):
         self.edit('news.html',old,'共 999 筆</p>')
         self.reject('validate_site.py','static news count mismatch')
     def test_invalid_event_end(self):
-        p=self.root/'data/events.json';d=json.loads(p.read_text());d['events'][0]['end']='2000-01-01T00:00:00+08:00';p.write_text(json.dumps(d))
+        # Independent of how many events are published (WP0.4): append a fixture with a bad end.
+        p=self.root/'data/events.json';d=json.loads(p.read_text())
+        d['events'].append(dict(id='fixture-bad-end',name='測試',start='2026-10-01T10:00:00+08:00',end='2000-01-01T00:00:00+08:00',content='測試',registration='無需報名'));p.write_text(json.dumps(d))
         self.reject('build_events.py','end')
 if __name__=='__main__':unittest.main()

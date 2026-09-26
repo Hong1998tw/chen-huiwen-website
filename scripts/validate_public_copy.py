@@ -18,6 +18,15 @@ BANNED = [
     r"依本站已收到並核對",
     r"本頁保留議題索引",
     r"尚未取得足以核對",
+    # Internal editorial / Evidence-QA meta-language must never leak into PUBLIC COPY.
+    r"可定位來源",
+    r"可驗證角色",
+    r"Evidence／QA",
+    r"Evidence QA",
+    r"PUBLIC COPY",
+    r"內部查核",
+    r"不作單一人物(?:獨占|獨力)?歸因",
+    r"不把跨機關、跨層級工程改寫成單一人物獨力完成",
 ]
 PATTERN = re.compile("|".join(BANNED))
 

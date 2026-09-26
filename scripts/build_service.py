@@ -3,9 +3,19 @@ import json, re
 from pathlib import Path
 from datetime import date, time
 from html import escape as e
+from urllib.parse import urlsplit
 R=Path(__file__).resolve().parents[1]
+def validate_schedule(data):
+    """Reject values the renderer would place into attributes/links unsafely (defence in depth)."""
+    if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])',str(data.get('month',''))):
+        raise ValueError('Legal schedule month must be YYYY-MM')
+    u=urlsplit(str(data.get('sourceUrl','')))
+    if u.scheme!='https' or not u.hostname or u.username or u.password:
+        raise ValueError('Legal schedule sourceUrl must be public HTTPS')
+    date.fromisoformat(data['observedAt'])
+    return data
 def build():
-    data=json.loads((R/'data/legal-schedule.json').read_text())
+    data=validate_schedule(json.loads((R/'data/legal-schedule.json').read_text()))
     year,month=map(int,data['month'].split('-'))
     month_label=f'{year} 年 {month} 月'
     rows=[]

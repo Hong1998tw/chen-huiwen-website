@@ -1,0 +1,74 @@
+name: Notion CMS publisher
+
+# One-click CMS publishing. A repository-scoped GitHub App token creates the candidate PR and
+# enables GitHub-native auto-merge. The App has no ruleset bypass: required checks still gate
+# merge, and direct merge endpoints remain forbidden in the publisher code.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'publish | redeploy | verify | cycle | gate-check | dry-run(engineering)'
+        type: choice
+        options: [cycle, publish, redeploy, verify, gate-check, dry-run]
+        default: dry-run
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: publish-executor
+  cancel-in-progress: false
+
+jobs:
+  executor:
+    if: github.ref == 'refs/heads/main' && (vars.NOTION_PUBLISHER_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'gate-check' || inputs.mode == 'dry-run')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: notion-publisher
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install validator dependencies
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+
+      - name: Mint repository-scoped publisher token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.HUIWEN_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.HUIWEN_PUBLISH_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: read
+          permission-checks: read
+
+      - name: Run CMS publisher
+        env:
+          MODE: ${{ github.event_name == 'schedule' && 'cycle' || inputs.mode }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACTIONS_TOKEN: ${{ github.token }}
+          NOTION_TOKEN: ${{ secrets.NOTION_PUBLISH_TOKEN }}
+          NOTION_EVENTS_DS: ${{ vars.NOTION_EVENTS_DS }}
+          NOTION_LEGAL_MONTH_DS: ${{ vars.NOTION_LEGAL_MONTH_DS }}
+          NOTION_LEGAL_SESSION_DS: ${{ vars.NOTION_LEGAL_SESSION_DS }}
+          NOTION_DEPLOY_CONTROL_DS: ${{ vars.NOTION_DEPLOY_CONTROL_DS }}
+          PUBLISHER_GIT_NAME: ${{ vars.PUBLISHER_GIT_NAME }}
+          PUBLISHER_GIT_EMAIL: ${{ vars.PUBLISHER_GIT_EMAIL }}
+          PUBLISHER_SINGLE_MAINTAINER: ${{ vars.PUBLISHER_SINGLE_MAINTAINER }}
+          PUBLISHER_AUTO_PUBLISH: ${{ vars.PUBLISHER_AUTO_PUBLISH }}
+          PUBLISHER_APP_LOGIN: ${{ vars.PUBLISHER_APP_LOGIN }}
+        run: python scripts/publish_from_notion.py "$MODE"
