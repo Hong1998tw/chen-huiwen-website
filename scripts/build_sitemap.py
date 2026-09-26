@@ -18,6 +18,12 @@ def build(root=ROOT):
         name = loc.removeprefix(BASE) or 'index.html'
         if name in metadata:
             entry.find('{' + NS + '}lastmod').text = metadata[name]['contentUpdated']
+    existing = {entry.find('{'+NS+'}loc').text for entry in tree.getroot()}
+    for name in ('service-guides.html', 'service-print.html', 'updates.html'):
+        if BASE + name not in existing:
+            entry = ET.SubElement(tree.getroot(), '{'+NS+'}url')
+            ET.SubElement(entry, '{'+NS+'}loc').text = BASE + name
+            ET.SubElement(entry, '{'+NS+'}lastmod').text = metadata[name]['contentUpdated']
     ET.indent(tree, space='  ')
     (root / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding='unicode') + '\n')
     print('Built sitemap from recorded content dates')

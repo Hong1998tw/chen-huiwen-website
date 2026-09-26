@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "preparedOn": "2026-09-22",
+  "cases": [
+    {
+      "recordId": "metro-green-line",
+      "question": "青線是否已確定會進鳳山火車站？",
+      "impact": {
+        "text": "這個議題關心火車站、捷運與周邊步行路線如何銜接，讓轉乘不只停留在地圖上的路線連接。",
+        "sources": ["https://www.youngnews3631.com/news_detail.php?NewsID=15527"]
+      },
+      "councillorAction": {
+        "evidenceStatus": "documented",
+        "text": "2026 年 5 月 5 日的質詢報導記錄，陳慧文追問青線銜接鳳山火車站，並要求市府說明規劃階段與步行環境的整合。",
+        "sources": ["https://www.youngnews3631.com/news_detail.php?NewsID=15527"]
+      },
+      "governmentRole": {
+        "text": "市府負責說明路網規劃與評估進度。2026 年 5 月 14 日的市府回應，將串聯鳳山火車站等建議列入可行性評估；這是當時的規劃階段。",
+        "sources": ["https://www.kcg.gov.tw/CityNews_Detail1.aspx?n=3A379BB94CA5F12D&ss=21C32F3DE36C859F"]
+      },
+      "notEstablished": ["本頁收錄資料尚不能確認路線已核定興建，也不能據此推定動工或通車日期。"],
+      "nextEvidence": ["正式可行性評估成果與路線圖說，是否納入鳳山火車站。", "後續送審、核定文件及對外說明，分辨建議、評估與核定的不同階段。"]
+    },
+    {
+      "recordId": "after-school-care",
+      "question": "照顧服務能不能接上整個假期？",
+      "impact": {
+        "text": "照顧名額、開課週數與每日結束時間能否配合家庭需要，是 2023 年議會紀錄提出的問題。服務有開班，仍須看假期中有沒有空窗。",
+        "sources": ["https://cissearch.kcc.gov.tw/System/Proposal/Detail.aspx?s=166759F65D9721EB&ct=0A42381EC11CB8EE"]
+      },
+      "councillorAction": {
+        "evidenceStatus": "documented",
+        "text": "陳慧文在 2023 年 5 月質詢要求增加寒暑假照顧量能；第 100 號教育類提案另提出服務時長、社政支援及長期課後照顧規劃。",
+        "sources": ["https://www.kcc.gov.tw/News_Content.aspx?n=47&s=14434", "https://cissearch.kcc.gov.tw/System/Proposal/Detail.aspx?s=166759F65D9721EB&ct=0A42381EC11CB8EE"]
+      },
+      "governmentRole": {
+        "text": "議會要求教育局協調社會局、衛生局支援；提案於 2023 年 6 月 21 日決議送市政府研究辦理。實際服務安排仍要核對執行單位的公告與回覆。",
+        "sources": ["https://www.kcc.gov.tw/News_Content.aspx?n=47&s=14434", "https://cissearch.kcc.gov.tw/System/Proposal/Detail.aspx?s=166759F65D9721EB&ct=0A42381EC11CB8EE"]
+      },
+      "notEstablished": ["這些議會紀錄不能證明目前已增加多少名額、開課天數或補助，也不是現行報名與資格公告。"],
+      "nextEvidence": ["最新學年度的開班、名額、服務日期與申請公告，確認服務能覆蓋哪些假期時段。", "提案的辦理回覆與執行資料，核對跨局處支援和課後照顧安排。"]
+    },
+    {
+      "recordId": "bade-detention",
+      "question": "能發揮防汛功能，是否就代表公園已完工？",
+      "impact": {
+        "text": "水利局說明，工程要在洪峰期間分擔建國路雨水下水道水量，以降低沿線積淹水與下游排水負荷。防汛能力與公園整體完工，需要分開判讀。",
+        "sources": ["https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=8c321691-3b0a-4870-9a46-cc877d2e9739"]
+      },
+      "councillorAction": {
+        "evidenceStatus": "not_collected",
+        "text": "本頁目前收錄水利局工程公告與採購資料，尚未收錄可具體指認陳慧文在本案質詢、提案或協調的紀錄。",
+        "sources": []
+      },
+      "governmentRole": {
+        "text": "水利局與施工團隊辦理工程及防汛整備。水利局 2026 年 7 月 10 日公告，池內開挖及入流渠道已完成，可發揮階段性防汛功能。",
+        "sources": ["https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=8c321691-3b0a-4870-9a46-cc877d2e9739"]
+      },
+      "notEstablished": ["階段性防汛功能不等於整體工程已完工；變更設計的履約期限也不是完工公告。"],
+      "nextEvidence": ["水利局正式完工、驗收或開放公告，確認整體工程完成到哪一步。", "變更後契約與經費說明，分清工程總經費、原採購決標與變更設計決標的口徑。"]
+    }
+  ]
+}

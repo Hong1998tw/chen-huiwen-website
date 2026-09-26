@@ -84,7 +84,8 @@ try{
   failOptional=true;
   await client.evaluate(async()=>{await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;});
   await client.waitForFunction(()=>!!navigator.serviceWorker.controller);failOptional=false;
-  const keys=await client.evaluate(()=>caches.keys());assert.deepEqual(keys,['huiwen-digital-v12-20260922-maturity']);
+  const expectedCache=(await readFile(resolve(root,'sw.js'),'utf8')).match(/const CACHE='([^']+)'/)[1];
+  const keys=await client.evaluate(()=>caches.keys());assert.deepEqual(keys,[expectedCache]);
   assert.equal(await client.evaluate(async()=>Boolean(await caches.match('data/achievements.json'))),false);
  });
  await check('cached navigation is explicit about time and non-live content',async()=>{

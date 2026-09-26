@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 import json,re,html,hashlib
 from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
 from validate_achievements import validate
+from case_context import render_case_context
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
 BASE='https://www.huiwen.tw/'
@@ -63,7 +64,8 @@ for c in public_items:
  content=('<details class="case-background"><summary id="case-overview">完整背景與說明</summary>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])+'</details>') if c['paragraphs'] else ''
  history=('<section class="history-section" id="case-history"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h and not single_event else ''
  sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+(f'<time>{E(source["sourceDate"])}</time> · ' if source.get('sourceDate') else '')+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
- article='<article class="case-body">'+content+photos+history+sources+'</article>' if content or photos or history or sources else ''
+ context=render_case_context(c['id'],R)
+ article='<article class="case-body">'+context+content+photos+history+sources+'</article>' if content or photos or history or sources else ''
  layout_class='case-layout' if article else 'case-layout case-layout-compact'
  description=c['summary'] or f'「{c["title"]}」政績與服務紀錄｜陳慧文服務處'
  related=''
@@ -77,9 +79,14 @@ for c in public_items:
  narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
  current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else '<p class="record-boundary">本專題尚未收錄具日期的推動歷程。</p>'
  if single_event: current='<div id="case-history">'+current+'</div>'
- reading_links = [('case-overview','重點說明',bool(content)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
+ reading_links = [('case-context','議題導讀',bool(context)),('case-overview','重點說明',bool(content)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
  reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容整理 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
  body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section>{reading_nav}<div class="wrap case-latest-wrap">{current}</div><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
+ if context:
+  latest_day=latest['date'] if latest else '未載明'
+  source_labels=''.join('<li>'+E(source.get('sourceDate',''))+' '+E(source['title'])+'</li>' for source in c['sources'])
+  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>收錄的最新歷程 · {E(latest_day)}</h2>{narrative}<p>上述為已收錄紀錄，並非即時工程進度；未據此推定完工、核定或新的服務名額。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。完整歷程、議題導讀、原始來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
+  body=body.replace('<div class="wrap case-latest-wrap">','<div class="wrap print-toolbar"><button class="button button-green print-page" type="button" hidden>列印單頁摘要</button><span>含資料日期與完整紀錄網址</span></div><div class="wrap case-latest-wrap">')+print_sheet
  organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
  structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
  if c.get('published'):
