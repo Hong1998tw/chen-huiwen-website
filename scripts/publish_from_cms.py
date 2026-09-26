@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -13,16 +14,30 @@ ORIGIN = 'https://cms-publisher.huiwen.tw'
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class RunnerError(Exception):
+    """Only static stage/status diagnostics, never remote bodies or token values."""
+
+
+def fetch_json(request, stage, timeout):
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        raise RunnerError(f'{stage}: HTTP {error.code}') from None
+    except urllib.error.URLError:
+        raise RunnerError(f'{stage}: network/TLS failure') from None
+    except (ValueError, KeyError):
+        raise RunnerError(f'{stage}: invalid response format') from None
+
+
 def api(path, value):
     # Short-lived OIDC JWT is requested per call, never persisted or logged.
     url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=' + urllib.parse.quote(ORIGIN, safe='')
     req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
-    with urllib.request.urlopen(req, timeout=20) as response:
-        token = json.load(response)['value']
+    token = fetch_json(req, 'GitHub OIDC', 20)['value']
     req = urllib.request.Request(ORIGIN + path, data=json.dumps(value).encode(),
                                  headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return json.load(response)
+    return fetch_json(req, 'CMS ' + path, 30)
 
 
 def sources(repo):
@@ -111,6 +126,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except RunnerError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1)
     except Exception:
         # Do not echo remote bodies, private drafts, credentials, or stack traces.
         print('CMS runner interrupted. Any leased request remains persisted and can resume after its lease expires.',file=sys.stderr)
