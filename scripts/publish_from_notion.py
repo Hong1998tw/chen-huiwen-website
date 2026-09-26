@@ -40,16 +40,22 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_events  # noqa: E402  (the current builder is the schema authority for events)
+from build_public import public_paths  # noqa: E402
+from page_authority import catalog as page_catalog  # noqa: E402
 
 TAIPEI = ZoneInfo('Asia/Taipei')
 NOTION_API = 'https://api.' + 'notion' + '.com/v1'  # split so the public-link scanner does not treat the API as content
 CONTRACT = 'huiwen-pilot-publisher/1'
 SUPPORTED_SCHEMA = {'events': {2}, 'legal-schedule': {2}}
-DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json'}
+DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json'}
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
     'legal-schedule': {'data/legal-schedule.json', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
+    'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
+        row['path'] for row in page_catalog(ROOT)
+        if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'}
+    },
 }
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
@@ -813,6 +819,28 @@ def parse_verification_artifact(zip_bytes):
 
 
 def http_check(domain, record_key, record_name=None, fetch=None):
+    if domain == 'page-copy':
+        route = '' if record_key == 'index.html' else record_key[:-10] if record_key.endswith('/index.html') else record_key
+        url = 'https://www.huiwen.tw/' + route
+        try:
+            if fetch:
+                result = fetch(url)
+                if isinstance(result, tuple):
+                    status, body = result
+                else:
+                    status, body = 200, result
+            else:
+                request = urllib.request.Request(url + '?cms-verify=' + str(int(time.time())), headers={'User-Agent': 'huiwen-cms-page-verifier'})
+                try:
+                    with urllib.request.urlopen(request, timeout=20) as response:
+                        status, body = response.status, response.read().decode(errors='replace')
+                except urllib.error.HTTPError as error:
+                    status, body = error.code, error.read().decode(errors='replace')
+        except Exception:
+            return 'FAIL'
+        if record_name in ('unpublish', 'delete'):
+            return 'PASS' if status == 404 else 'FAIL'
+        return 'PASS' if status == 200 and '<html' in body.lower() else 'FAIL'
     url = {'events': 'https://www.huiwen.tw/activities.html', 'legal-schedule': 'https://www.huiwen.tw/service.html'}[domain]
     fetch = fetch or (lambda u: urllib.request.urlopen(urllib.request.Request(
         u + '?pilot-verify=' + str(int(time.time())), headers={'User-Agent': 'huiwen-pilot-publisher'}), timeout=20).read().decode())

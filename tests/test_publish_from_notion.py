@@ -694,6 +694,14 @@ class PathGuardTests(unittest.TestCase):
         self.assertFalse(guard('notion-publish/achievements/x', 'u', 'User', '', ['data/achievements.json'])[0])
         self.assertTrue(guard('publish/boai-card-rehab-bus-20260922', 'Hong1998tw', 'User', '', ['data/achievements.json'])[0])
 
+    def test_page_copy_executor_is_limited_to_the_page_data_and_public_build(self):
+        allowed, _ = guard('notion-publish/page-copy/about.html-abcdef01', 'huiwen-publisher[bot]', 'Bot', '',
+                           ['data/page-content.json', 'about.html', 'sitemap.xml', 'data/search-index.json'])
+        self.assertTrue(allowed)
+        rejected, _ = guard('notion-publish/page-copy/about.html-abcdef01', 'huiwen-publisher[bot]', 'Bot', '',
+                            ['data/page-content.json', 'admin/src/index.ts'])
+        self.assertFalse(rejected)
+
 
 if __name__ == '__main__':
     unittest.main()

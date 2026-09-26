@@ -30,6 +30,7 @@ ROOT_FILES = (
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
     'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
+    'cms-page-editor.js',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -136,6 +137,14 @@ def write_projection(root=ROOT, check=False):
 
 def public_paths(root=ROOT):
     paths = set(ROOT_FILES) | set(PUBLIC_DATA) | set(LEGACY_PAGES)
+    state_path = root / 'data/page-content.json'
+    inactive = set()
+    if state_path.is_file():
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        if isinstance(state, dict) and isinstance(state.get('pages'), dict):
+            inactive = {name for name, entry in state['pages'].items()
+                        if isinstance(entry, dict) and entry.get('status', 'published') in {'unpublished', 'deleted'}}
+    paths.difference_update(inactive)
     # The sitemap is the reviewed page allowlist, not an arbitrary *.html glob.
     for loc in ET.parse(root / 'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc'):
         url = urlsplit(loc.text or '')
@@ -166,7 +175,10 @@ class LocalReferences(HTMLParser):
                 self.references.append(values[key])
 
 
-def validate_artifact_links(destination):
+def validate_artifact_links(destination, root=ROOT):
+    state = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8'))
+    intentionally_removed = {name for name, entry in state.get('pages', {}).items()
+                              if isinstance(entry, dict) and entry.get('status') in {'unpublished', 'deleted'}}
     for path in destination.rglob('*.html'):
         parser = LocalReferences()
         parser.feed(path.read_text())
@@ -177,6 +189,9 @@ def validate_artifact_links(destination):
                 continue
             relative = unquote(url.path).lstrip('/')
             target = destination / (relative + 'index.html' if not relative or relative.endswith('/') else relative)
+            route = relative.rstrip('/') + '/index.html' if relative.endswith('/') and relative else 'index.html' if not relative else relative
+            if route in intentionally_removed:
+                continue
             # Historical extensionless redirects are provided by the existing edge contract.
             if target.suffix and not target.is_file():
                 raise ValueError(f'Artifact reference missing: {path.name} -> {relative}')
@@ -202,7 +217,7 @@ def build(root=ROOT, destination=None):
         # Preserve the historical public endpoint for older clients, with the exact
         # same safe projection. Raw canonical data remains in Git, never in _site.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
-        validate_artifact_links(staging)
+        validate_artifact_links(staging, root)
         manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
         (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
         if destination.exists():

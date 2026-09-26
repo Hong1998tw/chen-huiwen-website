@@ -8,8 +8,30 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import publish_from_cms as cms
 import publish_from_notion as engine
+from page_copy import digest as page_digest, render as render_page_copy
 
 class StandaloneCMS(unittest.TestCase):
+    def test_visual_copy_markers_are_stable_and_text_is_escaped(self):
+        source = '<!doctype html><html><head></head><body><main><section><p>Original &amp; text</p></section></main></body></html>'
+        marked, count = render_page_copy(source, 'fixture.html')
+        self.assertEqual(count, 1)
+        self.assertIn('data-cms-edit-id="main&gt;section:nth-of-type(1)&gt;p:nth-of-type(1)"', marked)
+        field_id = 'main>section:nth-of-type(1)>p:nth-of-type(1)'
+        fields = {field_id: {'sourceHash': page_digest('Original & text'), 'value': 'Updated <script>alert(1)</script>'}}
+        edited, _ = render_page_copy(marked, 'fixture.html', fields)
+        self.assertIn('Updated &lt;script&gt;alert(1)&lt;/script&gt;', edited)
+        self.assertNotIn('<script>alert(1)</script>', edited)
+        self.assertEqual(render_page_copy(edited, 'fixture.html')[0], edited)
+
+    def test_visual_copy_source_drift_fails_closed(self):
+        source = '<html><head></head><body><main><p>Original text</p></main></body></html>'
+        marked, _ = render_page_copy(source, 'fixture.html')
+        field_id = 'main>p:nth-of-type(1)'
+        fields = {field_id: {'sourceHash': page_digest('Original text'), 'value': 'Edited text'}}
+        changed = marked.replace('Original text', 'Changed at source')
+        with self.assertRaisesRegex(ValueError, 'source changed'):
+            render_page_copy(changed, 'fixture.html', fields)
+
     def test_api_diagnostics_never_include_remote_secrets(self):
         error=urllib.error.HTTPError('https://example.test/?credential=private','401','private response',{},None)
         with patch('urllib.request.urlopen',side_effect=error):
@@ -52,5 +74,14 @@ class StandaloneCMS(unittest.TestCase):
         item={**source,'document_id':source['id'],'base_hash':source['hash'],'payload':json.dumps(source['payload'])}
         candidate=cms.prepare(item,engine.dump_events(data))
         self.assertEqual(json.loads(candidate.new_text)['events'][0]['sourceGovernance'],{'keep':True})
+
+    def test_page_unpublish_is_a_versioned_reversible_source_change(self):
+        commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
+        item={'id':'00000000-0000-4000-8000-000000000001','path':'activity-market.html',
+              'operation':'unpublish','base_commit':commit,'version':1,'payload':json.dumps({'fields':{}})}
+        candidate=cms.page_candidate(item)
+        state=json.loads(candidate.new_text)
+        self.assertEqual(state['pages']['activity-market.html']['status'],'unpublished')
+        self.assertRegex(state['pages']['activity-market.html']['lastmod'],r'^20\d\d-\d\d-\d\d$')
 
 if __name__=='__main__':unittest.main()

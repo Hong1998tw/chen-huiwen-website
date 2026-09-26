@@ -1,5 +1,5 @@
 import { owner, runner, csrf, boundedJSON, HttpError } from "./security.ts";
-import { validate } from "./validation.ts";
+import { validate, validatePageFields } from "./validation.ts";
 type Document = {
   id: string;
   domain: string;
@@ -38,7 +38,7 @@ function protect(response: Response) {
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
     "Content-Security-Policy":
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https://www.huiwen.tw; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     "X-Robots-Tag": "noindex, nofollow",
   }))
     r.headers.set(k, v);
@@ -89,17 +89,18 @@ async function internal(request: Request, env: Env, path: string) {
     }
     if (b.pages !== undefined) {
       const seen = new Set<string>();
-      const publicPath = /^(?:[a-z0-9-]+\/)?[a-z0-9-]+\.html$/;
-      const sourcePath = /^(?:data\/[a-z0-9-]+\.json|(?:[a-z0-9-]+\/)?[a-z0-9-]+\.html)$/;
+      const publicPath = /^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/;
+      const sourcePath = /^(?:data\/[a-z0-9-]+\.json|(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html)$/;
       for (const p of b.pages) {
         if (
           !p || typeof p !== "object" ||
-          Object.keys(p).some((k) => !["path", "title", "source", "kind", "editorScope"].includes(k)) ||
+          Object.keys(p).some((k) => !["path", "title", "source", "kind", "editorScope", "publicationStatus"].includes(k)) ||
           typeof p.path !== "string" || !publicPath.test(p.path) || seen.has(p.path) ||
           typeof p.title !== "string" || !p.title.trim() || p.title.length > 250 || /[\u0000-\u001f<>]/.test(p.title) ||
           typeof p.source !== "string" || !sourcePath.test(p.source) ||
           !["generated", "composite", "static", "system", "legacy-redirect", "excluded-intake"].includes(p.kind) ||
-          !["none", "partial"].includes(p.editorScope)
+          !["none", "partial"].includes(p.editorScope) ||
+          (p.publicationStatus !== undefined && !["published", "unpublished", "deleted"].includes(p.publicationStatus))
         ) throw new HttpError(400, "公開頁面目錄格式錯誤");
         seen.add(p.path);
       }
@@ -126,6 +127,23 @@ async function internal(request: Request, env: Env, path: string) {
       .first();
     return json({ publication: row });
   }
+  if (path === "/internal/claim-page") {
+    const now = Date.now(), lease = crypto.randomUUID();
+    const row = await env.DB.prepare(
+      "UPDATE page_publications SET status='processing',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM page_publications WHERE status='queued' OR (status='processing' AND lease_until<?) ORDER BY created_at LIMIT 1) RETURNING *",
+    ).bind(lease, now + 30 * 60000, iso(), now).first();
+    return json({ publication: row });
+  }
+  if (path === "/internal/queue-head") {
+    const now = Date.now();
+    const [document, page] = await Promise.all([
+      env.DB.prepare("SELECT created_at FROM publications WHERE status='queued' OR (status='processing' AND lease_until<?) ORDER BY created_at LIMIT 1")
+        .bind(now).first<{created_at:string}>(),
+      env.DB.prepare("SELECT created_at FROM page_publications WHERE status='queued' OR (status='processing' AND lease_until<?) ORDER BY created_at LIMIT 1")
+        .bind(now).first<{created_at:string}>(),
+    ]);
+    return json({ next: !document ? page ? "page" : null : !page ? "document" : document.created_at <= page.created_at ? "document" : "page" });
+  }
   if (path === "/internal/pending")
     return json({
       publications: (
@@ -134,6 +152,10 @@ async function internal(request: Request, env: Env, path: string) {
         ).all()
       ).results,
     });
+  if (path === "/internal/pending-pages")
+    return json({ publications: (await env.DB.prepare(
+      "SELECT * FROM page_publications WHERE status IN ('pr_created','merged','deployed') ORDER BY created_at LIMIT 50",
+    ).all()).results });
   if (path === "/internal/receipt") {
     const states = [
       "pr_created",
@@ -185,6 +207,26 @@ async function internal(request: Request, env: Env, path: string) {
       .run();
     return json({ saved: true });
   }
+  if (path === "/internal/receipt-page") {
+    const states = ["pr_created", "failed", "no_change", "closed", "merged", "deployed", "verified"];
+    if (!idOK(String(b.id)) || !states.includes(String(b.status)) || typeof b.message !== "string" || b.message.length > 1500 ||
+        (b.pr_number != null && (!Number.isSafeInteger(b.pr_number) || Number(b.pr_number) < 1)) ||
+        (b.commit_sha != null && !/^[a-f0-9]{40}$/.test(String(b.commit_sha))))
+      throw new HttpError(400, "頁面發布回執格式不正確");
+    const current = await env.DB.prepare("SELECT status,lease,path,operation FROM page_publications WHERE id=?")
+      .bind(b.id).first<{status:string;lease:string|null;path:string;operation:string}>();
+    if (!current) throw new HttpError(404, "找不到頁面發布要求");
+    if (current.status === "processing" && (!b.lease || b.lease !== current.lease)) throw new HttpError(409, "頁面發布租約已改變");
+    if (!canAdvancePublication(current.status, String(b.status))) throw new HttpError(409, "頁面發布狀態已改變");
+    await env.DB.batch([
+      env.DB.prepare("UPDATE page_publications SET status=?,message=?,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?")
+        .bind(b.status,b.message,b.pr_number??null,b.commit_sha??null,iso(),b.id,current.status),
+      ...(b.status === "deployed" || b.status === "verified" ? [env.DB.prepare(
+        "UPDATE page_edits SET publication_status=?,updated_at=? WHERE path=?",
+      ).bind(current.operation === "unpublish" ? "unpublished" : current.operation === "delete" ? "deleted" : "published",iso(),current.path)] : []),
+    ]);
+    return json({ saved: true });
+  }
   throw new HttpError(404, "找不到功能");
 }
 async function handle(request: Request, env: Env) {
@@ -223,14 +265,88 @@ async function handle(request: Request, env: Env) {
   if (u.pathname === "/api/pages" && request.method === "GET")
     return json({
       pages: (await env.DB.prepare(
-        "SELECT path,title,source_path,source_kind,editor_scope,commit_sha,observed_at FROM published_pages ORDER BY path",
+        "SELECT p.path,p.title,p.source_path,p.source_kind,p.editor_scope,p.commit_sha,p.observed_at,COALESCE(e.publication_status,'published') AS publication_status,COALESCE(e.version,0) AS draft_version,e.updated_at AS draft_updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path ORDER BY p.path",
       ).all()).results,
     });
+  const isEditablePage = async (path: string) => {
+    const row = await env.DB.prepare("SELECT source_kind,commit_sha FROM published_pages WHERE path=?").bind(path).first<{source_kind:string;commit_sha:string}>();
+    if (!row || ["system", "legacy-redirect", "excluded-intake"].includes(row.source_kind))
+      throw new HttpError(404, "這個頁面目前不開放內容編輯");
+    return row;
+  };
+  if (u.pathname === "/api/page-draft" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    await isEditablePage(path);
+    return json({ draft: await env.DB.prepare("SELECT path,payload,base_commit,version,publication_status,updated_at FROM page_edits WHERE path=?")
+      .bind(path).first() });
+  }
+  if (u.pathname === "/api/page-draft/history" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    await isEditablePage(path);
+    return json({ versions: (await env.DB.prepare(
+      "SELECT version,base_commit,publication_status,created_at,actor FROM page_edit_versions WHERE path=? ORDER BY version DESC LIMIT 100",
+    ).bind(path).all()).results });
+  }
+  if (u.pathname === "/api/page-draft" && request.method === "PUT") {
+    const b = await boundedJSON(request), path = String(b.path || "");
+    const page = await isEditablePage(path);
+    if (!Number.isSafeInteger(b.version) || Number(b.version) < 0 || b.baseCommit !== page.commit_sha)
+      throw new HttpError(409, "頁面版本已更新，請重新載入正式頁面");
+    const fields = validatePageFields(b.fields);
+    const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
+      .first<{payload:string;version:number}>();
+    const currentVersion = existing?.version || 0;
+    if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
+    const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
+    const merged = {...(old.fields as Record<string,unknown> || {}), ...fields};
+    const payload = JSON.stringify({fields:merged});
+    const now = iso();
+    if (existing) {
+      const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")
+        .bind(payload,page.commit_sha,now,actor.id,path,currentVersion).run();
+      if (result.meta.changes < 1) throw new HttpError(409,"另一個視窗已儲存較新草稿，請重新載入");
+    } else {
+      await env.DB.prepare("INSERT INTO page_edits(path,payload,base_commit,version,publication_status,updated_at,actor) VALUES(?,?,?,1,'published',?,?)")
+        .bind(path,payload,page.commit_sha,now,actor.id).run();
+    }
+    return json({path,version:currentVersion+1});
+  }
+  if (u.pathname === "/api/page-draft/restore" && request.method === "POST") {
+    const b = await boundedJSON(request), path = String(b.path || "");
+    await isEditablePage(path);
+    const expected = Number.isSafeInteger(b.version) && Number(b.version) >= 0 ? Number(b.version) : -1;
+    const restoreVersion = Number.isSafeInteger(b.restoreVersion) && Number(b.restoreVersion) >= 1 ? Number(b.restoreVersion) : -1;
+    if (expected < 0 || restoreVersion < 1) throw new HttpError(400, "版本還原要求格式不正確");
+    const old = await env.DB.prepare("SELECT payload,base_commit FROM page_edit_versions WHERE path=? AND version=?")
+      .bind(path,restoreVersion).first<{payload:string;base_commit:string}>();
+    if (!old) throw new HttpError(404,"找不到該頁歷史版本");
+    const current = await env.DB.prepare("SELECT version FROM page_edits WHERE path=?").bind(path).first<{version:number}>();
+    if ((current?.version || 0) !== expected) throw new HttpError(409,"草稿已有更新，請重新載入後再還原");
+    if (!current) throw new HttpError(409,"目前尚無草稿版本");
+    const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")
+      .bind(old.payload,old.base_commit,iso(),actor.id,path,expected).run();
+    if (result.meta.changes < 1) throw new HttpError(409,"另一個視窗已儲存新版本");
+    return json({path,version:expected+1});
+  }
+  const pageOperation = u.pathname === "/api/page-draft/publish" && request.method === "POST";
+  if (pageOperation) {
+    const b = await boundedJSON(request), path = String(b.path || ""), operation = String(b.operation || "publish");
+    await isEditablePage(path);
+    if (!Number.isSafeInteger(b.version) || Number(b.version)<1 || !["publish","unpublish","delete","restore"].includes(operation))
+      throw new HttpError(400,"頁面發布要求格式不正確");
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT OR IGNORE INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor) SELECT ?,path,version,payload,base_commit,?,'queued',?,?,? FROM page_edits WHERE path=? AND version=?")
+      .bind(id,operation,iso(),iso(),actor.id,path,Number(b.version)).run();
+    const receipt = await env.DB.prepare("SELECT id,status FROM page_publications WHERE path=? AND version=? AND operation=?")
+      .bind(path,Number(b.version),operation).first();
+    if (!receipt) throw new HttpError(409,"草稿版本已更新，請重新載入後發布");
+    return json(receipt,202);
+  }
   if (u.pathname === "/api/publications" && request.method === "GET")
     return json({
       publications: (
         await env.DB.prepare(
-          "SELECT id,document_id,version,status,created_at,updated_at,pr_number,message,commit_sha FROM publications ORDER BY created_at DESC LIMIT 100",
+          "SELECT id,document_id,version,status,created_at,updated_at,pr_number,message,commit_sha,NULL AS path,NULL AS operation FROM publications UNION ALL SELECT id,NULL AS document_id,version,status,created_at,updated_at,pr_number,message,commit_sha,path,operation FROM page_publications ORDER BY created_at DESC LIMIT 100",
         ).all()
       ).results,
     });

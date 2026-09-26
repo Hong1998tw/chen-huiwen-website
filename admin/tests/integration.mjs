@@ -72,7 +72,7 @@ try {
   execFileSync(
     process.execPath,
     [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
-      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','none','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
+      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
     { cwd: root, stdio: "pipe" },
   );
   server = spawn(
@@ -135,6 +135,25 @@ try {
       },
       body: JSON.stringify(body),
     });
+  assert.equal((await fetch(origin + "/api/page-draft?path=index.html", { headers })).status, 200);
+  const pageField = { id: "main>p:nth-of-type(1)", sourceHash: "a".repeat(64), value: "首頁草稿第一版" };
+  assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: 0, baseCommit: "a".repeat(40), fields: [pageField] })).status, 200);
+  assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: 0, baseCommit: "a".repeat(40), fields: [{ ...pageField, value: "首頁草稿過時寫入" }] })).status, 409);
+  const savedPage = await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(savedPage.draft.version, 1);
+  let pageHistory = await fetch(origin + "/api/page-draft/history?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(pageHistory.versions.length, 1);
+  const restoredPage = await mutate("/api/page-draft/restore", "POST", { path: "index.html", version: 1, restoreVersion: 1 }).then((r) => r.json());
+  assert.equal(restoredPage.version, 2);
+  pageHistory = await fetch(origin + "/api/page-draft/history?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(pageHistory.versions.length, 2);
+  const pagePublish = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation: "publish" }).then((r) => r.json());
+  const duplicatePagePublish = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation: "publish" }).then((r) => r.json());
+  assert.equal(pagePublish.id, duplicatePagePublish.id, "page publication requests are idempotent");
+  for (const operation of ["unpublish", "delete", "restore"]) {
+    const receipt = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation });
+    assert.equal(receipt.status, 202);
+  }
   const event = {
     name: "本機測試草稿",
     start: "2026-10-01T10:00:00+08:00",
@@ -213,8 +232,8 @@ try {
   const pending = await fetch(origin + "/api/publications", { headers }).then(
     (r) => r.json(),
   );
-  assert.equal(pending.publications.length, 1);
-  assert.equal(pending.publications[0].version, 2);
+  assert.equal(pending.publications.length, 5);
+  assert.equal(pending.publications.filter((row) => row.path === "index.html").length, 4);
   assert.equal(
     (await fetch(origin + "/internal/claim", { headers })).status,
     404,
@@ -226,15 +245,22 @@ try {
   assert.match(await html.text(), /內容管理/);
   if (process.env.CMS_BROWSER === '1') {
     const {chromium} = await import(process.env.CMS_PLAYWRIGHT_PATH || '../../tests/donation/node_modules/playwright/index.mjs');
+    console.log('CMS_BROWSER: launching Chromium');
     const browser = await chromium.launch({headless:true});
+    console.log('CMS_BROWSER: Chromium ready');
     try {
       const context=await browser.newContext({extraHTTPHeaders:headers});
       const page=await context.newPage();
+      await page.route("https://www.huiwen.tw/**", route => route.fulfill({status:200,contentType:"text/html; charset=utf-8",body:"<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><title>Test page</title></head><body><main><h1>測試正式頁面</h1></main></body></html>"}));
       for(const width of [390,1440]) {
         await page.setViewportSize({width,height:960});
         await page.goto(origin);
-        await page.locator('#page-inventory-panel summary').click();
-        assert(await page.getByRole('link',{name:'首頁',exact:true}).isVisible());
+        console.log(`CMS_BROWSER: dashboard loaded at ${width}px`);
+        await page.getByRole('button',{name:/首頁/}).click();
+        console.log('CMS_BROWSER: page selected');
+        assert(await page.getByRole('heading',{name:'首頁',exact:true}).isVisible());
+        await page.locator('#structured-records > summary').click();
+        console.log('CMS_BROWSER: structured editor opened');
         await page.getByRole('button',{name:/本機測試草稿/}).click();
         assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');

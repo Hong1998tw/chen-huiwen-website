@@ -4,7 +4,14 @@ let session,
   pages = [],
   selected = null,
   dirty = false,
-  previewVersion = null;
+  previewVersion = null,
+  selectedPage = null,
+  pageDraft = null,
+  pageFields = new Map(),
+  pageNonce = null,
+  pageReady = false,
+  pageDraftApplied = false,
+  pageDirty = false;
 const $ = (s) => document.querySelector(s);
 const statusNames = {
   queued: "等待發布",
@@ -117,41 +124,221 @@ async function load() {
   await publications();
 }
 function renderPages() {
-  const list = $("#page-list");
+  const list = $("#page-tree");
   const query = $("#page-filter").value.trim().toLocaleLowerCase();
   list.replaceChildren();
   const matching = pages.filter((p) =>
-    [p.title, p.path, p.source_path].some((s) => s.toLocaleLowerCase().includes(query)),
+    [p.title, p.path, p.source_path].some((s) => String(s || "").toLocaleLowerCase().includes(query)),
   );
-  if (!matching.length) list.append(el("p", "沒有符合的頁面。", "hint"));
+  $("#page-count").textContent = `${pages.length} 頁`;
+  if (!matching.length) {
+    list.append(el("p", "沒有符合的頁面。", "tree-empty"));
+    return;
+  }
+  const groups = new Map();
+  const groupFor = (p) => {
+    const path = p.path;
+    if (path === "index.html") return "首頁";
+    if (path.startsWith("achievement-") || ["achievements.html", "explore.html", "vision.html"].includes(path)) return "建設與政策";
+    if (path.startsWith("news-") || ["news.html", "press.html", "gallery.html", "council-records.html"].includes(path)) return "新聞、媒體與議會";
+    if (path.startsWith("activity-") || path.startsWith("history-") || path.includes("/index.html")) return "活動與主題專頁";
+    if (["service.html", "service-guides.html", "service-print.html", "activities.html", "political-donation.html"].includes(path)) return "民眾服務";
+    return "官網資訊與其他頁面";
+  };
   for (const p of matching) {
-    const card = el("article", undefined, "page-item");
-    const title = el("a", p.title);
-    title.href = `https://www.huiwen.tw/${p.path === "index.html" ? "" : p.path.endsWith("/index.html") ? p.path.slice(0, -10) : p.path}`;
-    title.target = "_blank";
-    title.rel = "noopener noreferrer";
-    const source = el("a", p.source_path);
-    source.href = `https://github.com/Hong1998tw/chen-huiwen-website/blob/main/${p.source_path}`;
-    source.target = "_blank";
-    source.rel = "noopener noreferrer";
-    const scope = p.source_kind === "excluded-intake"
-      ? "受理流程維持排除"
-      : p.editor_scope === "partial"
-        ? "部分來源可在後台編輯"
-        : p.source_kind === "legacy-redirect"
-          ? "歷史轉址"
-          : p.source_kind === "system"
-            ? "系統頁面"
-            : "目前由來源檔更新";
-    card.append(title, el("small", p.path), el("span", scope, "badge"), source);
-    list.append(card);
+    const group = groupFor(p);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(p);
+  }
+  const order = ["首頁", "建設與政策", "民眾服務", "新聞、媒體與議會", "活動與主題專頁", "官網資訊與其他頁面"];
+  for (const name of order.filter((key) => groups.has(key))) {
+    const details = el("details", undefined, "tree-group");
+    details.open = !query || name === "首頁";
+    const summary = el("summary");
+    summary.append(el("span", name), el("small", `${groups.get(name).length} 頁`));
+    const children = el("div", undefined, "tree-children");
+    for (const p of groups.get(name).sort((a, b) => a.path.localeCompare(b.path))) {
+      const button = el("button", undefined, "tree-page");
+      button.type = "button";
+      button.dataset.status = p.publication_status || "published";
+      button.setAttribute("aria-current", String(selectedPage?.path === p.path ? "page" : "false"));
+      const title = el("span", p.title || p.path);
+      const sub = p.path === "index.html" ? "/" : `/${p.path}`;
+      const state = p.publication_status === "deleted" ? "垃圾桶" : p.publication_status === "unpublished" ? "已下架" : p.draft_version ? `草稿 v${p.draft_version}` : p.editor_scope === "partial" ? "可編輯" : "僅檢視";
+      button.append(title, el("small", `${sub} · ${state}`));
+      button.onclick = () => action(() => selectPage(p));
+      children.append(button);
+    }
+    details.append(summary, children);
+    list.append(details);
   }
 }
 async function loadPages() {
   pages = (await api("/api/pages")).pages;
-  $("#page-count").textContent = `${pages.length} 頁`;
+  if (selectedPage) selectedPage = pages.find((p) => p.path === selectedPage.path) || selectedPage;
   renderPages();
+  if (selectedPage) pageControls();
 }
+const readOnlyKinds = new Set(["system", "legacy-redirect", "excluded-intake"]);
+const pageUrl = (path) => path === "index.html" ? "/" : path.endsWith("/index.html") ? `/${path.slice(0, -10)}` : `/${path}`;
+const pageRoute = (pathname) => pathname === "/" ? "index.html" : pathname.endsWith("/") ? `${pathname.slice(1)}index.html` : pathname.slice(1);
+const isPageEditable = (page) => Boolean(page && page.editor_scope === "partial" && !readOnlyKinds.has(page.source_kind));
+function pageStatusLabel(page) {
+  const status = page?.publication_status || "published";
+  return status === "deleted" ? "在垃圾桶，可還原" : status === "unpublished" ? "已下架，可還原" : "正式頁面";
+}
+function pageControls() {
+  const editable = isPageEditable(selectedPage);
+  const live = editable && (selectedPage?.publication_status || "published") === "published";
+  const removed = editable && ["deleted", "unpublished"].includes(selectedPage?.publication_status);
+  const pending = pages.some((p) => p.path === selectedPage?.path && p.pending_operation);
+  $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
+  $("#page-publish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
+  $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
+  $("#page-delete").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
+  $("#page-restore").hidden = !removed;
+  $("#page-restore").disabled = !removed || !pageDraft?.version || pageDirty || pending;
+  $("#page-open-live").href = `https://www.huiwen.tw${pageUrl(selectedPage?.path || "index.html")}`;
+  $("#page-open-live").hidden = !selectedPage;
+}
+function setPageStatus(message) {
+  $("#page-draft-status").textContent = message;
+}
+function applyDraftToFrame() {
+  if (!pageReady || !selectedPage || !pageNonce) return;
+  const fields = [...pageFields.entries()].map(([id, value]) => ({ id, ...value }));
+  const frame = $("#page-frame");
+  frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "https://www.huiwen.tw");
+}
+function applyCurrentPageEdits() {
+  const path = selectedPage?.path;
+  if (!path || !isPageEditable(selectedPage) || selectedPage.publication_status !== "published") {
+    $("#page-frame").hidden = true;
+    $("#page-editor-empty").hidden = false;
+    $("#page-editor-empty p").textContent = selectedPage
+      ? selectedPage.publication_status === "deleted" ? "此頁已在垃圾桶。可按「還原並重新發布」後再編輯。" : selectedPage.publication_status === "unpublished" ? "此頁已下架。可按「還原並重新發布」後再編輯。" : "此頁僅供檢視，原始來源不開放後台修改。"
+      : "選擇左側頁面，正式網站的版面會在這裡載入。";
+    return;
+  }
+  const frame = $("#page-frame");
+  const url = new URL(pageUrl(path), "https://www.huiwen.tw");
+  url.searchParams.set("cmsEdit", "1");
+  url.searchParams.set("cmsSession", crypto.randomUUID());
+  frame.hidden = false;
+  $("#page-editor-empty").hidden = true;
+  pageNonce = crypto.randomUUID();
+  pageReady = false;
+  pageDraftApplied = false;
+  frame.onload = () => {
+    frame.contentWindow?.postMessage({ type: "huiwen-cms-init", nonce: pageNonce }, "https://www.huiwen.tw");
+  };
+  frame.src = url.href;
+}
+async function selectPage(page) {
+  if (pageDirty && !confirm("這一頁有尚未儲存的文字，確定切換頁面？")) return;
+  selectedPage = page;
+  pageDirty = false;
+  pageDraft = null;
+  pageFields = new Map();
+  $("#page-editor-title").textContent = page.title || page.path;
+  $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
+  $("#page-status").textContent = pageStatusLabel(page);
+  setPageStatus(isPageEditable(page) ? "正在讀取此頁草稿…" : "此頁僅供檢視，無法從這裡修改來源。");
+  if (isPageEditable(page)) {
+    const result = await api(`/api/page-draft?path=${encodeURIComponent(page.path)}`);
+    pageDraft = result.draft;
+    if (pageDraft?.payload) {
+      const saved = JSON.parse(pageDraft.payload);
+      pageFields = new Map(Object.entries(saved.fields || {}));
+    }
+    const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
+    renderPageHistory(history.versions || []);
+    $("#page-history-panel").hidden = !history.versions?.length;
+    setPageStatus(pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
+  } else {
+    $("#page-history-panel").hidden = true;
+  }
+  pageControls();
+  renderPages();
+  applyCurrentPageEdits();
+}
+function renderPageHistory(versions) {
+  const target = $("#page-history");
+  target.replaceChildren();
+  for (const version of versions) {
+    const row = el("div", undefined, "history-entry");
+    row.append(el("span", `v${version.version} · ${displayDate(version.created_at)} · ${version.publication_status}`));
+    if (version.version !== pageDraft?.version) {
+      const restore = el("button", "還原此版本", "secondary");
+      restore.type = "button";
+      restore.onclick = () => action(async () => {
+        if (!confirm(`將 v${version.version} 的文字還原成新草稿？目前版本會保留。`)) return;
+        await api("/api/page-draft/restore", "POST", { path: selectedPage.path, version: pageDraft?.version || 0, restoreVersion: version.version });
+        await selectPage(selectedPage);
+        setPageStatus(`已還原為新草稿；需發布後才會更新正式頁面。`);
+      });
+      row.append(restore);
+    }
+    target.append(row);
+  }
+}
+async function savePageDraft() {
+  if (!selectedPage || !isPageEditable(selectedPage)) return;
+  const result = await api("/api/page-draft", "PUT", {
+    path: selectedPage.path,
+    version: pageDraft?.version || 0,
+    baseCommit: selectedPage.commit_sha,
+    fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
+  });
+  pageDirty = false;
+  const updated = await api(`/api/page-draft?path=${encodeURIComponent(selectedPage.path)}`);
+  pageDraft = updated.draft;
+  selectedPage.draft_version = result.version;
+  pageControls();
+  await loadPages();
+  const history = await api(`/api/page-draft/history?path=${encodeURIComponent(selectedPage.path)}`);
+  renderPageHistory(history.versions || []);
+  $("#page-history-panel").hidden = !history.versions?.length;
+  setPageStatus(`草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
+}
+async function submitPageOperation(operation) {
+  if (!selectedPage || !isPageEditable(selectedPage)) return;
+  if (pageDirty) {
+    if (!confirm("目前有未儲存的文字，先儲存草稿再繼續？")) return;
+    await savePageDraft();
+  }
+  if (!pageDraft?.version) await savePageDraft();
+  const prompts = {
+    publish: "送出這個頁面的草稿？通過必要檢查後會更新正式官網。",
+    unpublish: "將此頁從正式官網下架？原始頁面與版本紀錄保留，可再還原。",
+    delete: "將此頁移至可還原的垃圾桶？它會從正式官網下架，原始來源不會被刪除。",
+    restore: "還原此頁並重新發布？必要檢查通過後會重新出現在正式官網。",
+  };
+  if (!confirm(prompts[operation])) return;
+  const receipt = await api("/api/page-draft/publish", "POST", { path: selectedPage.path, version: pageDraft.version, operation });
+  setPageStatus(`已送出${operation === "publish" ? "發布" : operation === "unpublish" ? "下架" : operation === "delete" ? "移入垃圾桶" : "還原發布"}要求 · ${statusNames[receipt.status] || receipt.status}`);
+  await Promise.all([publications(), loadPages()]);
+  pageControls();
+}
+window.addEventListener("message", (event) => {
+  if (event.origin !== "https://www.huiwen.tw" || event.source !== $("#page-frame").contentWindow) return;
+  const data = event.data;
+  if (!data || typeof data !== "object" || typeof data.path !== "string" || data.path.length > 300 || data.nonce !== pageNonce || !selectedPage || pageRoute(data.path) !== selectedPage.path) return;
+  if (data.type === "huiwen-cms-ready" && Array.isArray(data.blocks)) {
+    pageReady = true;
+    if (!pageDraftApplied) {
+      pageDraftApplied = true;
+      applyDraftToFrame();
+    }
+    return;
+  }
+  if (data.type === "huiwen-cms-change" && data.field && typeof data.field.id === "string") {
+    pageFields.set(data.field.id, { sourceHash: data.field.sourceHash, value: data.field.value });
+    pageDirty = true;
+    setPageStatus("頁面文字有變更 · 儲存後才會進入發布流程");
+    pageControls();
+  }
+});
 async function select(d) {
   if (dirty && !confirm("尚有未儲存內容，確定離開這筆草稿？")) return;
   selected = d;
@@ -309,6 +496,7 @@ async function publications() {
     row.append(
       el("strong", statusNames[p.status] || p.status),
       el("span", `v${p.version} · ${displayDate(p.updated_at)}`, "badge"),
+      ...(p.path ? [el("p", `${p.path} · ${({ publish: "發布更新", unpublish: "下架", delete: "移至垃圾桶", restore: "還原發布" }[p.operation] || p.operation)}`)] : []),
       el("p", p.message || "已保存發布要求，等待處理。"),
     );
     if (p.pr_number) {
@@ -393,12 +581,17 @@ $("#reload").onclick = () =>
     notice("清單與發布狀態已更新；正在編輯的表單保持不變。");
   });
 window.addEventListener("beforeunload", (e) => {
-  if (dirty) {
+  if (dirty || pageDirty) {
     e.preventDefault();
     e.returnValue = "";
   }
 });
 $("#page-filter").oninput = renderPages;
+$("#page-save").onclick = () => action(savePageDraft);
+$("#page-publish").onclick = () => action(() => submitPageOperation("publish"));
+$("#page-unpublish").onclick = () => action(() => submitPageOperation("unpublish"));
+$("#page-delete").onclick = () => action(() => submitPageOperation("delete"));
+$("#page-restore").onclick = () => action(() => submitPageOperation("restore"));
 action(async () => {
   session = await api("/api/session");
   $("#identity").textContent = `${session.login} · 擁有者`;

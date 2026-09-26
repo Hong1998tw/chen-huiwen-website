@@ -131,3 +131,21 @@ export function validate(
   }
   return p;
 }
+
+const pageFieldId = /^main(?:>[a-z][a-z0-9-]*:nth-of-type\([1-9]\d{0,2}\))*$/;
+export function validatePageFields(value: unknown): Record<string, { sourceHash: string; value: string }> {
+  if (!Array.isArray(value) || value.length > 250) throw new HttpError(400, "頁面編輯內容格式不正確");
+  const fields: Record<string, { sourceHash: string; value: string }> = {};
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item) ||
+        Object.keys(item).some((key) => !["id", "sourceHash", "value"].includes(key)) ||
+        typeof item.id !== "string" || !pageFieldId.test(item.id) ||
+        typeof item.sourceHash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(`sha256:${item.sourceHash}`) ||
+        typeof item.value !== "string" || item.value.length > 4000 ||
+        /[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(item.value))
+      throw new HttpError(400, "頁面文字含不允許的欄位、標記或長度");
+    if (fields[item.id]) throw new HttpError(400, "頁面文字欄位重複");
+    fields[item.id] = { sourceHash: item.sourceHash, value: item.value.normalize("NFC") };
+  }
+  return fields;
+}
