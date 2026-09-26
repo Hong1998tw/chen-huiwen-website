@@ -12,6 +12,12 @@ from build_service_print import render
 
 
 class ServicePrintTests(unittest.TestCase):
+    def test_publisher_accepts_derived_service_pages_but_not_code(self):
+        from publish_from_notion import check_allowed, PublishError
+        check_allowed('legal-schedule', ['data/legal-schedule.json', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'])
+        with self.assertRaises(PublishError):
+            check_allowed('legal-schedule', ['scripts/build_service_print.py'])
+
     def test_handout_reads_schedule_and_contact_without_another_copy(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

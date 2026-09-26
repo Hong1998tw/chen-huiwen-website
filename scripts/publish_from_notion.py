@@ -49,7 +49,7 @@ DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedu
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
-    'legal-schedule': {'data/legal-schedule.json', 'service.html', 'data/search-index.json'},
+    'legal-schedule': {'data/legal-schedule.json', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
 }
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
