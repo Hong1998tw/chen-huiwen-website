@@ -1,6 +1,8 @@
 import json
 import sys
 import unittest
+from unittest.mock import patch
+import urllib.error
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -8,6 +10,13 @@ import publish_from_cms as cms
 import publish_from_notion as engine
 
 class StandaloneCMS(unittest.TestCase):
+    def test_api_diagnostics_never_include_remote_secrets(self):
+        error=urllib.error.HTTPError('https://example.test/?credential=private','401','private response',{},None)
+        with patch('urllib.request.urlopen',side_effect=error):
+            with self.assertRaises(cms.RunnerError) as caught:
+                cms.fetch_json(object(),'CMS /internal/sync',30)
+        self.assertEqual(str(caught.exception),'CMS /internal/sync: HTTP 401')
+
     def test_sync_and_noop_preserve_canonical_bytes(self):
         for source in cms.sources(ROOT):
             text=(ROOT/engine.DATA_FILES[source['domain']]).read_text()
