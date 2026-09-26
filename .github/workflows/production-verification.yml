@@ -51,6 +51,16 @@ jobs:
           --report tests/donation/results/production-live/http-parity.json
           --snapshot-dir /tmp/huiwen-production-snapshot
 
+      - name: Verify every reviewed public HTML page
+        id: all_pages
+        continue-on-error: true
+        run: >
+          python scripts/verify_all_pages.py
+          --base-url https://www.huiwen.tw/
+          --attempts 3
+          --timeout 20
+          --report tests/donation/results/production-live/all-pages.json
+
       - name: Install browser QA dependencies
         run: npm ci --ignore-scripts --prefix tests/donation
 
@@ -84,9 +94,10 @@ jobs:
             tests/donation/results/*.png
 
       - name: Fail production verification when a check failed
-        if: ${{ always() && (steps.http.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success') }}
+        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success') }}
         run: |
           echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
+          echo "All public pages outcome: ${{ steps.all_pages.outcome }}"
           echo "Live production browser QA outcome: ${{ steps.browser.outcome }}"
           echo "Native edge QA outcome: ${{ steps.native.outcome }} (BLOCKED is not PASS)"
           echo "Independent Production Verification failed or blocked; inspect reports."
