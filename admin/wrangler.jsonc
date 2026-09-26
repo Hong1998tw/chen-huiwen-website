@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-26",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "assets": {
     "directory": "public",
@@ -17,8 +17,7 @@
     "logs": { "enabled": true, "invocation_logs": false }
   },
   "routes": [
-    { "pattern": "admin.huiwen.tw", "custom_domain": true },
-    { "pattern": "cms-publisher.huiwen.tw", "custom_domain": true }
+    { "pattern": "admin.huiwen.tw", "custom_domain": true }
   ],
   "d1_databases": [
     {
@@ -30,7 +29,7 @@
   ],
   "vars": {
     "ADMIN_ORIGIN": "https://admin.huiwen.tw",
-    "PUBLISHER_ORIGIN": "https://cms-publisher.huiwen.tw",
+    "PUBLISHER_ORIGIN": "https://huiwen-cms.lihong.workers.dev",
     "ACCESS_ISSUER": "https://twhong.cloudflareaccess.com",
     "ACCESS_AUD": "ddbe28f9c75570ab3cb0425b556af6db373ac4d14406dca335b6333d33a906a3",
     "OWNER_EMAIL_SHA256": "80797ba10eea1189bbb3fe10aecffebda2282ba7dd28dfe6e143cec43ebe3ae0",
