@@ -9,24 +9,24 @@
   "assets": {
     "directory": "public",
     "binding": "ASSETS",
-    "run_worker_first": true,
+    "run_worker_first": true
   },
   "observability": {
     "enabled": true,
     "redact_query_string": true,
-    "logs": { "enabled": true, "invocation_logs": false },
+    "logs": { "enabled": true, "invocation_logs": false }
   },
   "routes": [
     { "pattern": "admin.huiwen.tw", "custom_domain": true },
-    { "pattern": "cms-publisher.huiwen.tw", "custom_domain": true },
+    { "pattern": "cms-publisher.huiwen.tw", "custom_domain": true }
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "huiwen-cms",
       "database_id": "a1ca9953-77b4-49af-b3b6-415533e09061",
-      "migrations_dir": "migrations",
-    },
+      "migrations_dir": "migrations"
+    }
   ],
   "vars": {
     "ADMIN_ORIGIN": "https://admin.huiwen.tw",
@@ -37,6 +37,6 @@
     "OWNER_LOGIN": "Hong1998tw",
     "GITHUB_REPOSITORY": "Hong1998tw/chen-huiwen-website",
     "GITHUB_REPOSITORY_ID": "1360942570",
-    "GITHUB_OWNER_ID": "126787497",
-  },
+    "GITHUB_OWNER_ID": "126787497"
+  }
 }

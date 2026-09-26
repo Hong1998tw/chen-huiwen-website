@@ -214,6 +214,28 @@ try {
   assert.equal(html.status, 200);
   assert.equal(html.headers.get("Cache-Control"), "no-store");
   assert.match(await html.text(), /內容管理/);
+  if (process.env.CMS_BROWSER === '1') {
+    const {chromium} = await import(process.env.CMS_PLAYWRIGHT_PATH || '../../tests/donation/node_modules/playwright/index.mjs');
+    const browser = await chromium.launch({headless:true});
+    try {
+      const context=await browser.newContext({extraHTTPHeaders:headers});
+      const page=await context.newPage();
+      for(const width of [390,1440]) {
+        await page.setViewportSize({width,height:960});
+        await page.goto(origin);
+        await page.getByRole('button',{name:/本機測試草稿/}).click();
+        assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');
+        await page.getByRole('button',{name:'預覽發布內容',exact:true}).click();
+        assert(await page.getByRole('dialog').isVisible());
+        assert(await page.getByRole('button',{name:'確認並送出發布'}).isVisible());
+        await page.getByRole('button',{name:'關閉',exact:true}).click();
+        if(process.env.CMS_SCREENSHOTS)await page.screenshot({path:process.env.CMS_SCREENSHOTS+'/'+width+'.png',fullPage:true});
+      }
+      await context.close();
+    } finally { await browser.close(); }
+    console.log('PASS: mobile and desktop editor and publication preview browser flow');
+  }
   console.log(
     "PASS: real local Worker + D1 auth, CSRF, CRUD, optimistic concurrency, restore, immutable publish snapshot, duplicate clicks and protected assets",
   );

@@ -24,6 +24,10 @@ jobs:
       - run: npm ci --ignore-scripts --prefix admin
       - run: npm run check --prefix admin
       - run: npm test --prefix admin
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node admin/tests/integration.mjs
+        env:
+          CMS_BROWSER: '1'
       - run: python -m unittest discover -s tests -p test_standalone_cms.py
       - run: npx --prefix admin wrangler deploy --config admin/wrangler.jsonc --dry-run --outdir /tmp/huiwen-cms-build
