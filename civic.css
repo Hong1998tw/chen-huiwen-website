@@ -294,7 +294,7 @@ body .about-portrait img{border-radius:var(--civic-radius)}
 }
 
 .case-context-grid{display:grid;grid-template-columns:1fr;gap:0}.case-context-sources{font-size:.875rem;color:var(--muted)}
-.updates-list{max-width:900px;margin-bottom:64px}.content-update{padding:28px 0;border-top:1px solid var(--line)}.content-update h2{font-size:1.65rem;max-width:32em}.update-dates{display:flex;gap:32px;flex-wrap:wrap;font-size:.875rem}.update-dates dt{color:var(--muted)}.update-dates dd{margin:0}.content-update nav ul{padding-left:1.2em}
+body .updates-list{max-width:900px;margin-bottom:64px}.content-update{padding:28px;border-top:1px solid var(--line)}.content-update h2{font-size:1.65rem;max-width:32em}.update-dates{display:flex;gap:32px;flex-wrap:wrap;font-size:.875rem}.update-dates dt{color:var(--muted)}.update-dates dd{margin:0}.content-update nav ul{padding-left:1.2em}
 @media print{.case-print-sheet .print-title{font-size:21pt!important}}
 
 .civic-latest-updates{display:block}.home-update-entries{display:grid;grid-template-columns:1fr 1fr;gap:32px}.home-update-entries .civic-reading-row{border:0;padding-top:12px}.home-update-entries h3{font-size:1.25rem}.home-update-entries .civic-number{display:none}.home-update-entries .civic-reading-row{grid-template-columns:1fr}.home-update-entries p{font-size:.95rem}
