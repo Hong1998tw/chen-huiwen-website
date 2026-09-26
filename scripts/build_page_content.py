@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply owner-approved plain-text page edits and mark visual editor targets."""
+"""Validate page edits and keep editor-only selectors out of public HTML."""
 from __future__ import annotations
 
 import json
@@ -29,7 +29,7 @@ def build(root=ROOT):
             page = root / route
             if page.is_file():
                 source = page.read_text(encoding='utf-8')
-                clean = re.sub(r'\sdata-cms-(?:edit-id|source-hash|value-hash)=(?:"[^"]*"|\'[^\']*\')', '', source, flags=re.I)
+                clean = re.sub(r'\sdata-cms-(?:edit-id|source-hash|value-hash)=(?:"[^"]*"|\'[^\']*\'|[^\s>]+)', '', source, flags=re.I)
                 clean = re.sub(r'<script\b[^>]*(?:data-cms-editor-loader|src=["\']/cms-page-editor\.js(?:\?[^"\']*)?["\'])[^>]*>.*?</script>\s*', '', clean, flags=re.I | re.S)
                 if clean != source:
                     page.write_text(clean, encoding='utf-8')
@@ -51,7 +51,12 @@ def build(root=ROOT):
         if not page.is_file():
             raise ValueError('PAGE_CONTENT_ROUTE: missing source ' + route)
         source = page.read_text(encoding='utf-8')
-        result, _ = render(source, route, edits)
+        # Validate saved revisions against the canonical source, but only add the
+        # conditional editor loader to tracked HTML. The public build applies copy
+        # edits and emits their selector/hash manifest as a separate sidecar.
+        if edits:
+            render(source, route, edits)
+        result, _ = render(source, route, {})
         if result != source:
             page.write_text(result, encoding='utf-8')
         seen.add(route)

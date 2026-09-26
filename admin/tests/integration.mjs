@@ -251,16 +251,22 @@ try {
     try {
       const context=await browser.newContext({extraHTTPHeaders:headers});
       const page=await context.newPage();
-      let editorRuntimeRequests=0;
-      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader>if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')document.write('<scr'+'ipt defer src="/cms-page-editor.js"></scr'+'ipt>');</script></head><body><main><h1 data-cms-edit-id="main&gt;h1:nth-of-type(1)" data-cms-source-hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-cms-value-hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">測試正式頁面</h1></main></body></html>`;
-      const editorRuntime = `(()=>{const node=document.querySelector('[data-cms-edit-id]');let nonce=null,targetOrigin=null;const send=(type,payload={})=>parent.postMessage({type,nonce,path:location.pathname,...payload},targetOrigin);addEventListener('message',event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:node.dataset.cmsEditId,sourceHash:node.dataset.cmsSourceHash,value:node.textContent}}));send('huiwen-cms-ready',{blocks:[{id:node.dataset.cmsEditId,sourceHash:node.dataset.cmsSourceHash,value:node.textContent}]});}else if(event.data?.type==='huiwen-cms-apply'&&nonce)send('huiwen-cms-ready',{blocks:[{id:node.dataset.cmsEditId,sourceHash:node.dataset.cmsSourceHash,value:node.textContent}]});});})();`;
-      page.on('request',request=>{if(new URL(request.url()).pathname==='/cms-page-editor.js')editorRuntimeRequests++;});
-      await page.route("https://www.huiwen.tw/**", route => new URL(route.request().url()).pathname==="/cms-page-editor.js"
-        ? route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime})
-        : route.fulfill({status:200,contentType:"text/html; charset=utf-8",body:editorFixture}));
+      let editorRuntimeRequests=0, editorManifestRequests=0;
+      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader>if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')document.write('<scr'+'ipt defer src="/cms-page-editor.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
+      const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
+      const editorRuntime = `(()=>{let node=null,field=null,nonce=null,targetOrigin=null;const send=(type,payload={})=>parent.postMessage({type,nonce,path:location.pathname,...payload},targetOrigin);const ready=()=>send('huiwen-cms-ready',{blocks:[{id:field.id,sourceHash:field.sourceHash,value:node.textContent}]});addEventListener('message',async event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;const manifest=await fetch('/cms-editor-manifests/index.html.json').then(response=>response.json());field=manifest.fields[0];node=document.querySelector(field.id);node.dataset.cmsEditId=field.id;node.dataset.cmsSourceHash=field.sourceHash;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:field.id,sourceHash:field.sourceHash,value:node.textContent}}));ready();}else if(event.data?.type==='huiwen-cms-apply'&&nonce)ready();});})();`;
+      page.on('request',request=>{const path=new URL(request.url()).pathname;if(path==='/cms-page-editor.js')editorRuntimeRequests++;if(path==='/cms-editor-manifests/index.html.json')editorManifestRequests++;});
+      await page.route("https://www.huiwen.tw/**", route => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === "/cms-page-editor.js") return route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime});
+        if (path === "/cms-editor-manifests/index.html.json") return route.fulfill({status:200,contentType:"application/json",body:editorManifest});
+        return route.fulfill({status:200,contentType:"text/html; charset=utf-8",body:editorFixture});
+      });
       const publicVisitor=await context.newPage();
       await publicVisitor.goto('https://www.huiwen.tw/');
       assert.equal(editorRuntimeRequests,0,'ordinary public visits must not download the CMS editor runtime');
+      assert.equal(editorManifestRequests,0,'ordinary public visits must not download editor manifests');
+      assert.equal(await publicVisitor.locator('[data-cms-edit-id]').count(),0,'public HTML must not carry editor selectors');
       await publicVisitor.close();
       for(const width of [390,1440]) {
         await page.setViewportSize({width,height:960});
@@ -273,6 +279,7 @@ try {
         const frame=page.frameLocator('#page-frame');
         await frame.locator('h1[contenteditable="true"]').waitFor();
         assert.equal(editorRuntimeRequests,priorRuntimeRequests+1,'admin iframe must load the editor runtime');
+        assert.equal(editorManifestRequests,width===390?1:2,'admin iframe must load its page-specific editor manifest');
         await frame.locator('h1[contenteditable="true"]').fill('測試已修改');
         await page.getByText('頁面文字有變更 · 儲存後才會進入發布流程',{exact:true}).waitFor();
         assert.equal(await page.locator('#page-save').isEnabled(),true,'editing the rendered page enables draft save');

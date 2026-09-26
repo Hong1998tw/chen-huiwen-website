@@ -3,6 +3,7 @@
   const params = new URLSearchParams(location.search);
   if (params.get("cmsEdit") !== "1" || window.parent === window) return;
   const ADMIN_ORIGIN = "https://admin.huiwen.tw";
+  const EDITABLE_TAGS = new Set(["h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "dt", "dd"]);
   let nonce = null;
   const text = (node) => node.textContent || "";
   function send(type, payload = {}) {
@@ -16,7 +17,34 @@
       value: text(node),
     }));
   }
-  function enable() {
+  function pageRoute() {
+    const path = location.pathname;
+    if (!path.startsWith("/") || path.includes("..")) throw new Error("invalid page path");
+    return path === "/" ? "index.html" : path.endsWith("/") ? `${path.slice(1)}index.html` : path.slice(1);
+  }
+  async function enable() {
+    try {
+      const route = pageRoute();
+      const response = await fetch(`/cms-editor-manifests/${route}.json`, { cache: "no-store" });
+      if (!response.ok) throw new Error("manifest unavailable");
+      const manifest = await response.json();
+      if (manifest.schemaVersion !== 1 || manifest.path !== route || !Array.isArray(manifest.fields)) throw new Error("manifest invalid");
+      for (const field of manifest.fields) {
+        if (!field || typeof field.id !== "string" || !/^main(?:>[a-z][a-z0-9-]*:nth-of-type\(\d+\))+$/.test(field.id)
+          || !/^[a-f0-9]{64}$/.test(field.sourceHash || "") || !/^[a-f0-9]{64}$/.test(field.valueHash || "")) {
+          throw new Error("field invalid");
+        }
+        const node = document.querySelector(field.id);
+        if (!node || !document.querySelector("main")?.contains(node) || node.children.length
+          || !EDITABLE_TAGS.has(node.tagName.toLowerCase())) throw new Error("target unavailable");
+        node.dataset.cmsEditId = field.id;
+        node.dataset.cmsSourceHash = field.sourceHash;
+        node.dataset.cmsValueHash = field.valueHash;
+      }
+    } catch {
+      send("huiwen-cms-error", { message: "無法載入此頁的編輯資料，請重新整理後再試。" });
+      return;
+    }
     const style = document.createElement("style");
     style.textContent = "[data-cms-edit-id][contenteditable=true]{outline:2px solid #579379;outline-offset:3px;border-radius:3px;cursor:text}[data-cms-edit-id][contenteditable=true]:focus{outline:3px solid #bd633e;background:#fff9e9}";
     document.head.append(style);
@@ -40,7 +68,7 @@
     if (!data || typeof data !== "object") return;
     if (data.type === "huiwen-cms-init" && typeof data.nonce === "string") {
       nonce = data.nonce;
-      enable();
+      void enable();
       return;
     }
     if (data.nonce !== nonce) return;

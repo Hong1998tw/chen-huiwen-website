@@ -8,19 +8,23 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import publish_from_cms as cms
 import publish_from_notion as engine
-from page_copy import digest as page_digest, render as render_page_copy
+from page_copy import digest as page_digest, render as render_page_copy, render_with_manifest
 
 class StandaloneCMS(unittest.TestCase):
-    def test_visual_copy_markers_are_stable_and_text_is_escaped(self):
+    def test_visual_copy_manifest_is_stable_without_public_html_markers(self):
         source = '<!doctype html><html><head></head><body><main><section><p>Original &amp; text</p></section></main></body></html>'
-        marked, count = render_page_copy(source, 'fixture.html')
+        marked, count, manifest = render_with_manifest(source, 'fixture.html')
         self.assertEqual(count, 1)
-        self.assertIn('data-cms-edit-id="main&gt;section:nth-of-type(1)&gt;p:nth-of-type(1)"', marked)
         field_id = 'main>section:nth-of-type(1)>p:nth-of-type(1)'
+        self.assertEqual(manifest, [{'id': field_id, 'sourceHash': page_digest('Original & text'), 'valueHash': page_digest('Original & text')}])
+        self.assertNotIn('data-cms-edit-id', marked)
+        self.assertIn('data-cms-editor-loader', marked)
         fields = {field_id: {'sourceHash': page_digest('Original & text'), 'value': 'Updated <script>alert(1)</script>'}}
-        edited, _ = render_page_copy(marked, 'fixture.html', fields)
+        edited, _, edited_manifest = render_with_manifest(marked, 'fixture.html', fields)
         self.assertIn('Updated &lt;script&gt;alert(1)&lt;/script&gt;', edited)
         self.assertNotIn('<script>alert(1)</script>', edited)
+        self.assertNotIn('data-cms-edit-id', edited)
+        self.assertEqual(edited_manifest[0]['valueHash'], page_digest('Updated <script>alert(1)</script>'))
         self.assertEqual(render_page_copy(edited, 'fixture.html')[0], edited)
 
     def test_visual_copy_source_drift_fails_closed(self):
@@ -41,7 +45,14 @@ class StandaloneCMS(unittest.TestCase):
         self.assertIn('window.self!==window.top', marked)
         self.assertIn("</scr'+'ipt>", marked)
         self.assertNotIn('<script src="/cms-page-editor.js" defer></script>', marked)
+        self.assertNotIn('data-cms-edit-id', marked)
         self.assertEqual(render_page_copy(marked, 'fixture.html')[0], marked)
+
+    def test_editor_manifest_retains_original_hash_from_legacy_instrumentation(self):
+        source = f'<html><head></head><body><main><p data-cms-edit-id="main&gt;p:nth-of-type(1)" data-cms-source-hash="{"a" * 64}" data-cms-value-hash="{page_digest("Copy")}">Copy</p></main></body></html>'
+        clean, _, fields = render_with_manifest(source, 'fixture.html')
+        self.assertNotIn('data-cms-source-hash', clean)
+        self.assertEqual(fields[0]['sourceHash'], 'a' * 64)
 
     def test_api_diagnostics_never_include_remote_secrets(self):
         error=urllib.error.HTTPError('https://example.test/?credential=private','401','private response',{},None)

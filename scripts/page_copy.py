@@ -29,6 +29,7 @@ class PageCopy(HTMLParser):
         for line in source.splitlines(keepends=True):
             self.line_offsets.append(self.line_offsets[-1] + len(line))
         self.ranges: list[tuple[int, int, str]] = []
+        self.fields: list[dict[str, str]] = []
         self.in_main = False
         self.count = 0
         self.seen: set[str] = set()
@@ -114,17 +115,15 @@ class PageCopy(HTMLParser):
             if len(value) > 4000 or any(ord(c) < 32 and c not in "\n\t" for c in value):
                 raise ValueError("CMS page copy contains unsupported text: " + self.path)
             rendered = html.escape(value, quote=False)
+        value_hash = digest(html.unescape(rendered))
+        self.fields.append({"id": key, "sourceHash": source_hash, "valueHash": value_hash})
         raw_tag = self.source[node["start"]:node["inner"]]
-        opening = raw_tag
-        for attr, value in (("data-cms-edit-id", key), ("data-cms-source-hash", source_hash),
-                            ("data-cms-value-hash", digest(html.unescape(rendered)))):
-            escaped = html.escape(value, quote=True)
-            pattern = rf'\s{re.escape(attr)}=(?:"[^"]*"|\'[^\']*\'|[^\s>]+)'
-            if re.search(pattern, opening, re.I):
-                opening = re.sub(pattern, f' {attr}="{escaped}"', opening, count=1, flags=re.I)
-            else:
-                ending = "/>" if opening.rstrip().endswith("/>") else ">"
-                opening = opening.rstrip()[:-len(ending)] + f' {attr}="{escaped}"' + ending
+        opening = re.sub(
+            r'\sdata-cms-(?:edit-id|source-hash|value-hash)=(?:"[^"]*"|\'[^\']*\'|[^\s>]+)',
+            "",
+            raw_tag,
+            flags=re.I,
+        )
         self.ranges.append((node["start"], node["inner"], opening))
         if rendered != raw_text:
             self.ranges.append((node["inner"], pos, rendered))
@@ -166,7 +165,14 @@ class PageCopy(HTMLParser):
         return result
 
 
-def render(source: str, path: str, edits: dict[str, dict] | None = None) -> tuple[str, int]:
+def render_with_manifest(
+    source: str, path: str, edits: dict[str, dict] | None = None
+) -> tuple[str, int, list[dict[str, str]]]:
     parser = PageCopy(source, path, edits)
     result = parser.result()
-    return result, parser.count
+    return result, parser.count, parser.fields
+
+
+def render(source: str, path: str, edits: dict[str, dict] | None = None) -> tuple[str, int]:
+    result, count, _ = render_with_manifest(source, path, edits)
+    return result, count

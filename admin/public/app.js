@@ -332,6 +332,11 @@ window.addEventListener("message", (event) => {
     }
     return;
   }
+  if (data.type === "huiwen-cms-error" && typeof data.message === "string") {
+    pageReady = false;
+    setPageStatus(data.message);
+    return;
+  }
   if (data.type === "huiwen-cms-change" && data.field && typeof data.field.id === "string") {
     pageFields.set(data.field.id, { sourceHash: data.field.sourceHash, value: data.field.value });
     pageDirty = true;
