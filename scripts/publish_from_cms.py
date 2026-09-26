@@ -48,7 +48,7 @@ def prepare(item, text):
     row = {'pageId': item['document_id'], 'fields': payload,
            'sessions': payload.get('sessions', []),
            'system': {'siteId': item['record_key'] if domain == 'events' else None,
-                      'syncedHash': expected, 'requestPublish': True}}
+                      'syncedHash': None if expected == 'absent' else expected, 'requestPublish': True}}
     candidate = engine.PREPARE[domain](row, text)
     if candidate.errors:
         raise engine.PublishError('VALIDATION', candidate.errors)

@@ -23,6 +23,13 @@ class StandaloneCMS(unittest.TestCase):
                 cms.prepare(item,(ROOT/engine.DATA_FILES[source['domain']]).read_text())
             self.assertEqual(caught.exception.code,'BASE_DRIFT')
 
+    def test_new_event_has_no_synced_record_claim(self):
+        source=next(s for s in cms.sources(ROOT) if s['domain']=='events')
+        item={**source,'document_id':'d1c0a000-0000-4000-8000-000000000001','record_key':'event-new-cms-record','base_hash':'absent','payload':json.dumps(source['payload'])}
+        candidate=cms.prepare(item,(ROOT/engine.DATA_FILES['events']).read_text())
+        self.assertTrue(candidate.changed)
+        self.assertEqual(json.loads(candidate.new_text)['events'][-1]['id'],'event-new-cms-record')
+
     def test_unknown_fields_preserved_by_existing_publisher(self):
         source=next(s for s in cms.sources(ROOT) if s['domain']=='events')
         text=(ROOT/engine.DATA_FILES['events']).read_text()
