@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+# Cloudflare Access application audience identifier, read back from the named app.
+# Public identifier only: it cannot authenticate a request or sign a JWT.
+# Restrict the exception to this exact value AND the two generated/config paths.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "huiwen CMS public Access application audience"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^ddbe28f9c75570ab3cb0425b556af6db373ac4d14406dca335b6333d33a906a3$''']
+paths = ['''^admin/(wrangler\.jsonc|worker-configuration\.d\.ts)$''']

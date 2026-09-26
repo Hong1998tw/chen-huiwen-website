@@ -1,0 +1,253 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { spawn, execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { generateKeyPair, exportJWK, SignJWT } from "jose";
+import { createHash } from "node:crypto";
+const root = fileURLToPath(new URL("../", import.meta.url));
+const dir = mkdtempSync(`${tmpdir()}/huiwen-cms-test-`);
+const port = 18794,
+  issuerPort = 18795,
+  origin = `http://127.0.0.1:${port}`,
+  issuer = `http://127.0.0.1:${issuerPort}`;
+const email = "cms-test@example.com",
+  emailHash = createHash("sha256").update(email).digest("hex");
+const { privateKey, publicKey } = await generateKeyPair("RS256");
+const jwk = {
+  ...(await exportJWK(publicKey)),
+  kid: "fixture",
+  alg: "RS256",
+  use: "sig",
+};
+const keys = createServer((q, r) => {
+  r.setHeader("Content-Type", "application/json");
+  r.end(JSON.stringify({ keys: [jwk] }));
+});
+await new Promise((resolve) => keys.listen(issuerPort, "127.0.0.1", resolve));
+const token = await new SignJWT({ type: "app", email })
+  .setProtectedHeader({ alg: "RS256", kid: "fixture" })
+  .setIssuer(issuer)
+  .setAudience("fixture")
+  .setSubject("fixture-owner")
+  .setIssuedAt()
+  .setExpirationTime("5m")
+  .sign(privateKey);
+const config = JSON.parse(readFileSync(root + "wrangler.jsonc", "utf8"));
+delete config.routes;
+delete config.$schema;
+config.main = root + "src/index.ts";
+config.assets.directory = root + "public";
+config.d1_databases[0].migrations_dir = root + "migrations";
+Object.assign(config.vars, {
+  ADMIN_ORIGIN: origin,
+  ACCESS_ISSUER: issuer,
+  ACCESS_AUD: "fixture",
+  OWNER_EMAIL_SHA256: emailHash,
+});
+writeFileSync(dir + "/wrangler.json", JSON.stringify(config));
+const wrangler = [
+  "node_modules/wrangler/bin/wrangler.js",
+  "--config",
+  dir + "/wrangler.json",
+];
+let server;
+let log = "";
+try {
+  execFileSync(
+    process.execPath,
+    [
+      ...wrangler,
+      "d1",
+      "migrations",
+      "apply",
+      "huiwen-cms",
+      "--local",
+      "--persist-to",
+      dir,
+    ],
+    { cwd: root, stdio: "pipe" },
+  );
+  server = spawn(
+    process.execPath,
+    [
+      ...wrangler,
+      "dev",
+      "--port",
+      String(port),
+      "--persist-to",
+      dir,
+      "--var",
+      `ADMIN_ORIGIN:${origin}`,
+      "--var",
+      `ACCESS_ISSUER:${issuer}`,
+      "--var",
+      "ACCESS_AUD:fixture",
+      "--var",
+      `OWNER_EMAIL_SHA256:${emailHash}`,
+    ],
+    { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  server.stdout.on("data", (v) => (log += v));
+  server.stderr.on("data", (v) => (log += v));
+  let ready = false;
+  for (let i = 0; i < 150; i++) {
+    try {
+      if ((await fetch(origin)).status === 401) {
+        ready = true;
+        break;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert(ready, log);
+  const headers = { "Cf-Access-Jwt-Assertion": token };
+  const session = await fetch(origin + "/api/session", { headers }).then((r) =>
+    r.json(),
+  );
+  assert.equal(session.role, "owner");
+  assert.equal((await fetch(origin + "/api/documents")).status, 401);
+  assert.equal(
+    (await fetch(origin + "/style.css")).status,
+    401,
+    "static assets also require authentication",
+  );
+  const mutate = (path, method, body, extra = {}) =>
+    fetch(origin + path, {
+      method,
+      headers: {
+        ...headers,
+        Origin: origin,
+        "Content-Type": "application/json",
+        "X-CSRF-Token": session.csrf,
+        ...extra,
+      },
+      body: JSON.stringify(body),
+    });
+  const event = {
+    name: "本機測試草稿",
+    start: "2026-10-01T10:00:00+08:00",
+    end: "2026-10-01T12:00:00+08:00",
+    content: "只存在本機測試資料庫",
+    registration: "無需報名",
+    sourceUrl: "https://www.kcc.gov.tw/",
+    verifiedAt: "2026-09-27",
+    updatedAt: "2026-09-27",
+    reviewDueAt: "2026-09-30",
+    status: "scheduled",
+    changeNote: null,
+  };
+  assert.equal(
+    (
+      await mutate(
+        "/api/documents",
+        "POST",
+        { domain: "events", payload: event },
+        { Origin: "https://evil.example" },
+      )
+    ).status,
+    403,
+  );
+  const created = await mutate("/api/documents", "POST", {
+    domain: "events",
+    payload: event,
+  });
+  assert.equal(created.status, 201);
+  const { id } = await created.json();
+  const path = `/api/documents/${id}`;
+  assert.equal(
+    (
+      await mutate(path, "PUT", {
+        version: 1,
+        payload: { ...event, name: "第二版" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await mutate(path, "PUT", {
+        version: 1,
+        payload: { ...event, name: "過時覆蓋" },
+      })
+    ).status,
+    409,
+  );
+  let history = await fetch(origin + path + "/history", { headers }).then((r) =>
+    r.json(),
+  );
+  assert.equal(history.versions.length, 2);
+  assert.equal(JSON.parse(history.versions[0].payload).name, "第二版");
+  const first = await mutate(path + "/publish", "POST", { version: 2 }).then(
+    (r) => r.json(),
+  );
+  const again = await mutate(path + "/publish", "POST", { version: 2 }).then(
+    (r) => r.json(),
+  );
+  assert.equal(first.id, again.id, "duplicate click is idempotent");
+  assert.equal(
+    (await mutate(path + "/restore", "POST", { version: 2, restoreVersion: 1 }))
+      .status,
+    200,
+  );
+  history = await fetch(origin + path + "/history", { headers }).then((r) =>
+    r.json(),
+  );
+  assert.equal(history.versions.length, 3);
+  assert.equal(JSON.parse(history.versions[0].payload).name, event.name);
+  assert.equal(
+    (await mutate(path + "/publish", "POST", { version: 99 })).status,
+    409,
+  );
+  const pending = await fetch(origin + "/api/publications", { headers }).then(
+    (r) => r.json(),
+  );
+  assert.equal(pending.publications.length, 1);
+  assert.equal(pending.publications[0].version, 2);
+  assert.equal(
+    (await fetch(origin + "/internal/claim", { headers })).status,
+    404,
+    "admin identity cannot access runner route",
+  );
+  const html = await fetch(origin, { headers });
+  assert.equal(html.status, 200);
+  assert.equal(html.headers.get("Cache-Control"), "no-store");
+  assert.match(await html.text(), /內容管理/);
+  if (process.env.CMS_BROWSER === '1') {
+    const {chromium} = await import(process.env.CMS_PLAYWRIGHT_PATH || '../../tests/donation/node_modules/playwright/index.mjs');
+    const browser = await chromium.launch({headless:true});
+    try {
+      const context=await browser.newContext({extraHTTPHeaders:headers});
+      const page=await context.newPage();
+      for(const width of [390,1440]) {
+        await page.setViewportSize({width,height:960});
+        await page.goto(origin);
+        await page.getByRole('button',{name:/本機測試草稿/}).click();
+        assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');
+        await page.getByRole('button',{name:'預覽發布內容',exact:true}).click();
+        assert(await page.getByRole('dialog').isVisible());
+        assert(await page.getByRole('button',{name:'確認並送出發布'}).isVisible());
+        await page.getByRole('button',{name:'關閉',exact:true}).click();
+        await page.evaluate(()=>window.scrollTo(0,0));
+        if(process.env.CMS_SCREENSHOTS)await page.screenshot({path:process.env.CMS_SCREENSHOTS+'/'+width+'.png',fullPage:true});
+      }
+      await context.close();
+    } finally { await browser.close(); }
+    console.log('PASS: mobile and desktop editor and publication preview browser flow');
+  }
+  console.log(
+    "PASS: real local Worker + D1 auth, CSRF, CRUD, optimistic concurrency, restore, immutable publish snapshot, duplicate clicks and protected assets",
+  );
+} finally {
+  if (server && server.exitCode === null) {
+    server.kill("SIGTERM");
+    await Promise.race([
+      new Promise((r) => server.once("exit", r)),
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+  }
+  keys.close();
+  rmSync(dir, { recursive: true, force: true });
+}
