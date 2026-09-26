@@ -95,18 +95,25 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertNotIn('data/content-governance.json', paths)
             self.assertNotIn('data/civic-home.json', paths)
             self.assertNotIn('README.md', paths)
+            self.assertNotIn('cms-page-editor.js', paths)
             self.assertEqual((destination / 'data/achievements.json').read_bytes(), (destination / public.PROJECTION).read_bytes())
             self.assertNotEqual((destination / 'data/achievements.json').read_bytes(), (ROOT / 'data/achievements.json').read_bytes())
             self.assertEqual(result['editorManifests'], 96)
             page = (destination / 'achievements.html').read_text()
             self.assertNotIn('data-cms-edit-id', page)
-            manifest_path = destination / 'cms-editor-manifests/achievements.html.json'
+            manifest_paths = list((destination / 'cms-editor-manifests').glob('achievements.html.*.json'))
+            self.assertEqual(len(manifest_paths), 1)
+            manifest_path = manifest_paths[0]
             manifest = json.loads(manifest_path.read_text())
             self.assertEqual(manifest['schemaVersion'], 1)
             self.assertEqual(manifest['path'], 'achievements.html')
             self.assertTrue(manifest['fields'])
+            editor_assets = list(destination.glob('cms-page-editor.*.js'))
+            self.assertEqual(len(editor_assets), 1)
+            self.assertIn(editor_assets[0].name, page)
+            self.assertIn(manifest_path.relative_to(destination).as_posix(), page)
             self.assertIn('petition.html', paths)
-            self.assertFalse((destination / 'cms-editor-manifests/petition.html.json').exists())
+            self.assertFalse(list((destination / 'cms-editor-manifests').glob('petition.html.*.json')))
             public.validate_artifact_links(destination)
 
 

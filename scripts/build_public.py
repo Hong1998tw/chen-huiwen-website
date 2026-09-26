@@ -31,7 +31,6 @@ ROOT_FILES = (
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
     'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
-    'cms-page-editor.js',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -204,6 +203,11 @@ def build_page_editor_artifacts(staging, root):
 
     state = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8'))
     entries = state.get('pages', {})
+    editor_asset = root / 'cms-page-editor.js'
+    if not editor_asset.is_file():
+        raise ValueError('CMS editor runtime is missing from the reviewed source')
+    editor_name = 'cms-page-editor.' + hashlib.sha256(editor_asset.read_bytes()).hexdigest()[:12] + '.js'
+    shutil.copyfile(editor_asset, staging / editor_name)
     manifests = 0
     for path in public_paths(root):
         if not path.endswith('.html'):
@@ -219,10 +223,34 @@ def build_page_editor_artifacts(staging, root):
         rendered, count, fields = render_with_manifest(target.read_text(encoding='utf-8'), path, edits)
         if count == 0:
             raise ValueError('CMS editor page has no editable copy: ' + path)
-        target.write_text(rendered, encoding='utf-8')
-        manifest_path = staging / 'cms-editor-manifests' / (path + '.json')
+        manifest_bytes = encoded({'schemaVersion': 1, 'path': path, 'fields': fields})
+        manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()[:12]
+        manifest_name = path + '.' + manifest_hash + '.json'
+        manifest_uri = '/cms-editor-manifests/' + manifest_name
+        rendered, loader_count = re.subn(
+            r'(<script\b(?=[^>]*data-cms-editor-loader)[^>]*)(>)',
+            lambda match: match.group(1) + f' data-cms-manifest="{manifest_uri}"' + match.group(2),
+            rendered,
+            count=1,
+            flags=re.I,
+        )
+        if loader_count != 1:
+            raise ValueError('CMS editor loader is missing from public page: ' + path)
+        loader, loader_count = re.subn(
+            r'(<script\b[^>]*data-cms-editor-loader[^>]*>)(.*?)(</script>)',
+            lambda match: match.group(1) + match.group(2).replace(
+                'src="/cms-page-editor.js"', f'src="/{editor_name}"'
+            ) + match.group(3),
+            rendered,
+            count=1,
+            flags=re.I | re.S,
+        )
+        if loader_count != 1 or f'src="/{editor_name}"' not in loader:
+            raise ValueError('CMS editor runtime URL could not be versioned for page: ' + path)
+        target.write_text(loader, encoding='utf-8')
+        manifest_path = staging / 'cms-editor-manifests' / manifest_name
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_bytes(encoded({'schemaVersion': 1, 'path': path, 'fields': fields}))
+        manifest_path.write_bytes(manifest_bytes)
         manifests += 1
     return manifests
 
