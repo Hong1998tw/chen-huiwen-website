@@ -1,6 +1,20 @@
 {
-  "name": "huiwen-cms", "private": true, "type": "module",
-  "scripts": {"types":"wrangler types", "check":"tsc --noEmit", "test":"node --experimental-strip-types --test tests/*.test.ts", "dev":"wrangler dev", "deploy":"wrangler d1 migrations apply huiwen-cms --remote && wrangler deploy"},
-  "dependencies": {"jose":"6.2.12"},
-  "devDependencies": {"wrangler":"4.141.0", "typescript":"5.9.3", "@types/node":"24.10.1"}
+  "name": "huiwen-cms",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "wrangler types",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "dev": "wrangler dev",
+    "deploy": "wrangler d1 migrations apply huiwen-cms --remote && wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "wrangler": "4.141.0",
+    "typescript": "5.9.3",
+    "@types/node": "24.10.1"
+  }
 }

@@ -6,19 +6,37 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  "assets": {"directory": "public", "binding": "ASSETS", "run_worker_first": true},
-  "observability": {"enabled": true, "redact_query_string": true, "logs": {"enabled": true, "invocation_logs": false}},
-  "routes": [{"pattern":"admin.huiwen.tw","custom_domain":true},{"pattern":"cms-publisher.huiwen.tw","custom_domain":true}],
-  "d1_databases": [{"binding":"DB","database_name":"huiwen-cms","database_id":"a1ca9953-77b4-49af-b3b6-415533e09061","migrations_dir":"migrations"}],
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
+  "routes": [
+    { "pattern": "admin.huiwen.tw", "custom_domain": true },
+    { "pattern": "cms-publisher.huiwen.tw", "custom_domain": true },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "huiwen-cms",
+      "database_id": "a1ca9953-77b4-49af-b3b6-415533e09061",
+      "migrations_dir": "migrations",
+    },
+  ],
   "vars": {
-    "ADMIN_ORIGIN":"https://admin.huiwen.tw",
-    "PUBLISHER_ORIGIN":"https://cms-publisher.huiwen.tw",
-    "ACCESS_ISSUER":"https://twhong.cloudflareaccess.com",
-    "ACCESS_AUD":"ddbe28f9c75570ab3cb0425b556af6db373ac4d14406dca335b6333d33a906a3",
-    "OWNER_EMAIL_SHA256":"80797ba10eea1189bbb3fe10aecffebda2282ba7dd28dfe6e143cec43ebe3ae0",
-    "OWNER_LOGIN":"Hong1998tw",
-    "GITHUB_REPOSITORY":"Hong1998tw/chen-huiwen-website",
-    "GITHUB_REPOSITORY_ID":"1360942570",
-    "GITHUB_OWNER_ID":"126787497"
-  }
+    "ADMIN_ORIGIN": "https://admin.huiwen.tw",
+    "PUBLISHER_ORIGIN": "https://cms-publisher.huiwen.tw",
+    "ACCESS_ISSUER": "https://twhong.cloudflareaccess.com",
+    "ACCESS_AUD": "ddbe28f9c75570ab3cb0425b556af6db373ac4d14406dca335b6333d33a906a3",
+    "OWNER_EMAIL_SHA256": "80797ba10eea1189bbb3fe10aecffebda2282ba7dd28dfe6e143cec43ebe3ae0",
+    "OWNER_LOGIN": "Hong1998tw",
+    "GITHUB_REPOSITORY": "Hong1998tw/chen-huiwen-website",
+    "GITHUB_REPOSITORY_ID": "1360942570",
+    "GITHUB_OWNER_ID": "126787497",
+  },
 }
