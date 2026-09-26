@@ -10,6 +10,18 @@ type Document = {
   updated_at: string;
   actor: string;
 };
+export function canAdvancePublication(current: string, next: string): boolean {
+  // Polling may observe both CI and deploy finishing between runs. Allow forward skips,
+  // never regression or resurrection of a terminal publication.
+  const transitions: Record<string,string[]> = {
+    processing: ["pr_created", "failed", "no_change"],
+    pr_created: ["pr_created", "merged", "deployed", "verified", "closed", "failed"],
+    merged: ["merged", "deployed", "verified", "failed"],
+    deployed: ["deployed", "verified", "failed"]
+  };
+  return Boolean(transitions[current]?.includes(next));
+}
+
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 const iso = () => new Date().toISOString();
 const idOK = (id: string) => /^[a-z0-9-]{1,100}$/.test(id);
@@ -129,13 +141,7 @@ async function internal(request: Request, env: Env, path: string) {
       (!b.lease || b.lease !== current.lease)
     )
       throw new HttpError(409, "發布租約已改變");
-    const transitions: Record<string, string[]> = {
-      processing: ["pr_created", "failed", "no_change"],
-      pr_created: ["pr_created", "merged", "closed", "failed"],
-      merged: ["merged", "deployed", "failed"],
-      deployed: ["deployed", "verified", "failed"],
-    };
-    if (!transitions[current.status]?.includes(String(b.status)))
+    if (!canAdvancePublication(current.status, String(b.status)))
       throw new HttpError(409, "發布狀態已改變");
     await env.DB.prepare(
       "UPDATE publications SET status=?,message=?,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?",
