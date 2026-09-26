@@ -23,7 +23,8 @@ def fetch_json(request, stage, timeout):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
-        raise RunnerError(f'{stage}: HTTP {error.code}') from None
+        edge = ' (edge challenge)' if error.headers.get('cf-mitigated') == 'challenge' else ''
+        raise RunnerError(f'{stage}: HTTP {error.code}{edge}') from None
     except urllib.error.URLError:
         raise RunnerError(f'{stage}: network/TLS failure') from None
     except (ValueError, KeyError):
@@ -36,7 +37,8 @@ def api(path, value):
     req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
     token = fetch_json(req, 'GitHub OIDC', 20)['value']
     req = urllib.request.Request(ORIGIN + path, data=json.dumps(value).encode(),
-                                 headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+                                 headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                                          'User-Agent': 'huiwen-cms-publisher/1.0'})
     return fetch_json(req, 'CMS ' + path, 30)
 
 

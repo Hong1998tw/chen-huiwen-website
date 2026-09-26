@@ -24,7 +24,7 @@ async function signed(
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer(issuer)
     .setAudience(audience)
-    .setSubject("owner")
+    .setSubject(payload.sub || "owner")
     .setIssuedAt()
     .setExpirationTime(expiry)
     .sign(privateKey);
@@ -65,6 +65,7 @@ test("owner requires valid signature, audience, expiry and exact allowlisted ide
   );
 });
 const claims = {
+  sub: "repo:Hong1998tw@126787497/chen-huiwen-website@1360942570:environment:notion-publisher",
   repository: env.GITHUB_REPOSITORY,
   repository_id: env.GITHUB_REPOSITORY_ID,
   repository_owner_id: env.GITHUB_OWNER_ID,
@@ -92,7 +93,12 @@ test("OIDC rejects fork, pull request, wrong workflow, repository transfer and o
       key,
     );
   assert.equal(await invoke(claims), "123");
+  const withoutEnvironment = {...claims}; delete withoutEnvironment.environment;
+  assert.equal(await invoke(withoutEnvironment), "123");
   for (const patch of [
+    { sub: "repo:Hong1998tw@126787497/chen-huiwen-website@1360942570:ref:refs/heads/main", environment: undefined },
+    { sub: "repo:attacker@9/chen-huiwen-website@1360942570:environment:notion-publisher" },
+    { sub: "owner" },
     { repository_id: "9" },
     { repository_owner_id: "9" },
     { repository: "attacker/website" },

@@ -69,18 +69,28 @@ export function enforceRunner(
     "GITHUB_REPOSITORY" | "GITHUB_REPOSITORY_ID" | "GITHUB_OWNER_ID"
   >,
 ) {
-  if (
-    payload.repository !== env.GITHUB_REPOSITORY ||
-    payload.repository_id !== env.GITHUB_REPOSITORY_ID ||
-    payload.repository_owner_id !== env.GITHUB_OWNER_ID ||
-    payload.ref !== "refs/heads/main" ||
-    payload.workflow_ref !==
-      `${env.GITHUB_REPOSITORY}/.github/workflows/cms-publisher.yml@refs/heads/main` ||
-    payload.environment !== "notion-publisher" ||
-    !["schedule", "workflow_dispatch"].includes(String(payload.event_name)) ||
-    !/^\d+$/.test(String(payload.run_id))
-  )
+  const [ownerName, repoName] = env.GITHUB_REPOSITORY.split("/");
+  // This repository uses GitHub's immutable default subject (read back from its
+  // OIDC configuration). Environment context is signed in sub; the separate
+  // environment claim is optional. Never accept a conflicting explicit claim.
+  const subject = `repo:${ownerName}@${env.GITHUB_OWNER_ID}/${repoName}@${env.GITHUB_REPOSITORY_ID}:environment:notion-publisher`;
+  const checks = {
+    repository: payload.repository === env.GITHUB_REPOSITORY,
+    repository_id: payload.repository_id === env.GITHUB_REPOSITORY_ID,
+    repository_owner_id: payload.repository_owner_id === env.GITHUB_OWNER_ID,
+    ref: payload.ref === "refs/heads/main",
+    workflow_ref: payload.workflow_ref === `${env.GITHUB_REPOSITORY}/.github/workflows/cms-publisher.yml@refs/heads/main`,
+    sub: payload.sub === subject,
+    environment: payload.environment === undefined || payload.environment === "notion-publisher",
+    event_name: ["schedule", "workflow_dispatch"].includes(String(payload.event_name)),
+    run_id: /^\d+$/.test(String(payload.run_id)),
+  };
+  const fields = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
+  if (fields.length) {
+    // Field names only: no token, claim values, request headers or draft data.
+    console.warn(JSON.stringify({ event: "cms_runner_claim_mismatch", fields }));
     throw new HttpError(403, "執行器身分不符");
+  }
 }
 export async function runner(
   request: Request,
