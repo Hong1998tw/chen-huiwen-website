@@ -72,7 +72,7 @@ try {
   execFileSync(
     process.execPath,
     [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
-      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','none','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
+      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
     { cwd: root, stdio: "pipe" },
   );
   server = spawn(
@@ -135,6 +135,25 @@ try {
       },
       body: JSON.stringify(body),
     });
+  assert.equal((await fetch(origin + "/api/page-draft?path=index.html", { headers })).status, 200);
+  const pageField = { id: "main>p:nth-of-type(1)", sourceHash: "a".repeat(64), value: "首頁草稿第一版" };
+  assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: 0, baseCommit: "a".repeat(40), fields: [pageField] })).status, 200);
+  assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: 0, baseCommit: "a".repeat(40), fields: [{ ...pageField, value: "首頁草稿過時寫入" }] })).status, 409);
+  const savedPage = await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(savedPage.draft.version, 1);
+  let pageHistory = await fetch(origin + "/api/page-draft/history?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(pageHistory.versions.length, 1);
+  const restoredPage = await mutate("/api/page-draft/restore", "POST", { path: "index.html", version: 1, restoreVersion: 1 }).then((r) => r.json());
+  assert.equal(restoredPage.version, 2);
+  pageHistory = await fetch(origin + "/api/page-draft/history?path=index.html", { headers }).then((r) => r.json());
+  assert.equal(pageHistory.versions.length, 2);
+  const pagePublish = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation: "publish" }).then((r) => r.json());
+  const duplicatePagePublish = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation: "publish" }).then((r) => r.json());
+  assert.equal(pagePublish.id, duplicatePagePublish.id, "page publication requests are idempotent");
+  for (const operation of ["unpublish", "delete", "restore"]) {
+    const receipt = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation });
+    assert.equal(receipt.status, 202);
+  }
   const event = {
     name: "本機測試草稿",
     start: "2026-10-01T10:00:00+08:00",
@@ -213,8 +232,8 @@ try {
   const pending = await fetch(origin + "/api/publications", { headers }).then(
     (r) => r.json(),
   );
-  assert.equal(pending.publications.length, 1);
-  assert.equal(pending.publications[0].version, 2);
+  assert.equal(pending.publications.length, 5);
+  assert.equal(pending.publications.filter((row) => row.path === "index.html").length, 4);
   assert.equal(
     (await fetch(origin + "/internal/claim", { headers })).status,
     404,
@@ -226,15 +245,46 @@ try {
   assert.match(await html.text(), /內容管理/);
   if (process.env.CMS_BROWSER === '1') {
     const {chromium} = await import(process.env.CMS_PLAYWRIGHT_PATH || '../../tests/donation/node_modules/playwright/index.mjs');
+    console.log('CMS_BROWSER: launching Chromium');
     const browser = await chromium.launch({headless:true});
+    console.log('CMS_BROWSER: Chromium ready');
     try {
       const context=await browser.newContext({extraHTTPHeaders:headers});
       const page=await context.newPage();
+      let editorRuntimeRequests=0, editorManifestRequests=0;
+      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader>if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')document.write('<scr'+'ipt defer src="/cms-page-editor.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
+      const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
+      const editorRuntime = `(()=>{let node=null,field=null,nonce=null,targetOrigin=null;const send=(type,payload={})=>parent.postMessage({type,nonce,path:location.pathname,...payload},targetOrigin);const ready=()=>send('huiwen-cms-ready',{blocks:[{id:field.id,sourceHash:field.sourceHash,value:node.textContent}]});addEventListener('message',async event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;const manifest=await fetch('/cms-editor-manifests/index.html.json').then(response=>response.json());field=manifest.fields[0];node=document.querySelector(field.id);node.dataset.cmsEditId=field.id;node.dataset.cmsSourceHash=field.sourceHash;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:field.id,sourceHash:field.sourceHash,value:node.textContent}}));ready();}else if(event.data?.type==='huiwen-cms-apply'&&nonce)ready();});})();`;
+      page.on('request',request=>{const path=new URL(request.url()).pathname;if(path==='/cms-page-editor.js')editorRuntimeRequests++;if(path==='/cms-editor-manifests/index.html.json')editorManifestRequests++;});
+      await page.route("https://www.huiwen.tw/**", route => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === "/cms-page-editor.js") return route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime});
+        if (path === "/cms-editor-manifests/index.html.json") return route.fulfill({status:200,contentType:"application/json",body:editorManifest});
+        return route.fulfill({status:200,contentType:"text/html; charset=utf-8",body:editorFixture});
+      });
+      const publicVisitor=await context.newPage();
+      await publicVisitor.goto('https://www.huiwen.tw/');
+      assert.equal(editorRuntimeRequests,0,'ordinary public visits must not download the CMS editor runtime');
+      assert.equal(editorManifestRequests,0,'ordinary public visits must not download editor manifests');
+      assert.equal(await publicVisitor.locator('[data-cms-edit-id]').count(),0,'public HTML must not carry editor selectors');
+      await publicVisitor.close();
       for(const width of [390,1440]) {
         await page.setViewportSize({width,height:960});
         await page.goto(origin);
-        await page.locator('#page-inventory-panel summary').click();
-        assert(await page.getByRole('link',{name:'首頁',exact:true}).isVisible());
+        console.log(`CMS_BROWSER: dashboard loaded at ${width}px`);
+        const priorRuntimeRequests=editorRuntimeRequests;
+        await page.getByRole('button',{name:/首頁/}).click();
+        console.log('CMS_BROWSER: page selected');
+        assert(await page.getByRole('heading',{name:'首頁',exact:true}).isVisible());
+        const frame=page.frameLocator('#page-frame');
+        await frame.locator('h1[contenteditable="true"]').waitFor();
+        assert.equal(editorRuntimeRequests,priorRuntimeRequests+1,'admin iframe must load the editor runtime');
+        assert.equal(editorManifestRequests,width===390?1:2,'admin iframe must load its page-specific editor manifest');
+        await frame.locator('h1[contenteditable="true"]').fill('測試已修改');
+        await page.getByText('頁面文字有變更 · 儲存後才會進入發布流程',{exact:true}).waitFor();
+        assert.equal(await page.locator('#page-save').isEnabled(),true,'editing the rendered page enables draft save');
+        await page.locator('#structured-records > summary').click();
+        console.log('CMS_BROWSER: structured editor opened');
         await page.getByRole('button',{name:/本機測試草稿/}).click();
         assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');

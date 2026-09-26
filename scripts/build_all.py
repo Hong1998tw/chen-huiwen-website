@@ -18,8 +18,9 @@ BUILD_STEPS = (
     ('build_profile.py',),
     ('build_civic.py',),
     ('build_shared.py',),
-    ('build_search.py',),
+    ('build_page_content.py',),
     ('build_sitemap.py',),
+    ('build_search.py',),
 )
 
 

@@ -1,6 +1,7 @@
 """One explicit source-owner catalogue for every reviewed public HTML route."""
 from __future__ import annotations
 
+import json
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -66,12 +67,16 @@ def classify(path):
         return (path, 'legacy-redirect', 'none')
     if path in STATIC_ROOT_PAGES:
         return (path, 'static', 'none')
+    if '/' in path and path.endswith('.html'):
+        return (path, 'static', 'partial')
     raise ValueError('Unclassified public page: ' + path)
 
 
 def catalog(root=ROOT):
     rows = []
-    for path in public_paths(root):
+    managed = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8')).get('pages', {})
+    routes = set(public_paths(root)) | set(managed)
+    for path in sorted(routes):
         if not path.endswith('.html'):
             continue
         source, kind, editor_scope = classify(path)
@@ -82,6 +87,9 @@ def catalog(root=ROOT):
         title = ' '.join(''.join(parser.parts).split())
         if not title or len(title) > 250:
             raise ValueError('Missing or oversized page title: ' + path)
+        if kind not in {'system', 'legacy-redirect', 'excluded-intake'}:
+            editor_scope = 'partial'
         rows.append({'path': path, 'title': title, 'source': source,
-                     'kind': kind, 'editorScope': editor_scope})
+                     'kind': kind, 'editorScope': editor_scope,
+                     'publicationStatus': managed.get(path, {}).get('status', 'published')})
     return sorted(rows, key=lambda row: row['path'])

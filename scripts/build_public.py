@@ -15,6 +15,7 @@ from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
 from achievement_metadata import is_public
+from page_copy import render_with_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTION = 'data/achievements-public.json'
@@ -30,6 +31,7 @@ ROOT_FILES = (
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
     'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
+    'cms-page-editor.js',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -136,6 +138,14 @@ def write_projection(root=ROOT, check=False):
 
 def public_paths(root=ROOT):
     paths = set(ROOT_FILES) | set(PUBLIC_DATA) | set(LEGACY_PAGES)
+    state_path = root / 'data/page-content.json'
+    inactive = set()
+    if state_path.is_file():
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        if isinstance(state, dict) and isinstance(state.get('pages'), dict):
+            inactive = {name for name, entry in state['pages'].items()
+                        if isinstance(entry, dict) and entry.get('status', 'published') in {'unpublished', 'deleted'}}
+    paths.difference_update(inactive)
     # The sitemap is the reviewed page allowlist, not an arbitrary *.html glob.
     for loc in ET.parse(root / 'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc'):
         url = urlsplit(loc.text or '')
@@ -166,7 +176,10 @@ class LocalReferences(HTMLParser):
                 self.references.append(values[key])
 
 
-def validate_artifact_links(destination):
+def validate_artifact_links(destination, root=ROOT):
+    state = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8'))
+    intentionally_removed = {name for name, entry in state.get('pages', {}).items()
+                              if isinstance(entry, dict) and entry.get('status') in {'unpublished', 'deleted'}}
     for path in destination.rglob('*.html'):
         parser = LocalReferences()
         parser.feed(path.read_text())
@@ -177,9 +190,41 @@ def validate_artifact_links(destination):
                 continue
             relative = unquote(url.path).lstrip('/')
             target = destination / (relative + 'index.html' if not relative or relative.endswith('/') else relative)
+            route = relative.rstrip('/') + '/index.html' if relative.endswith('/') and relative else 'index.html' if not relative else relative
+            if route in intentionally_removed:
+                continue
             # Historical extensionless redirects are provided by the existing edge contract.
             if target.suffix and not target.is_file():
                 raise ValueError(f'Artifact reference missing: {path.name} -> {relative}')
+
+
+def build_page_editor_artifacts(staging, root):
+    """Apply approved copy in the Pages artifact and publish editor-only indexes."""
+    from page_authority import classify
+
+    state = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8'))
+    entries = state.get('pages', {})
+    manifests = 0
+    for path in public_paths(root):
+        if not path.endswith('.html'):
+            continue
+        _, kind, _ = classify(path)
+        if kind in {'system', 'legacy-redirect', 'excluded-intake'}:
+            continue
+        target = staging / path
+        if not target.is_file():
+            continue  # Unpublished or deleted pages are absent from the public artifact.
+        entry = entries.get(path, {})
+        edits = entry.get('edits', {}) if isinstance(entry, dict) else {}
+        rendered, count, fields = render_with_manifest(target.read_text(encoding='utf-8'), path, edits)
+        if count == 0:
+            raise ValueError('CMS editor page has no editable copy: ' + path)
+        target.write_text(rendered, encoding='utf-8')
+        manifest_path = staging / 'cms-editor-manifests' / (path + '.json')
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_bytes(encoded({'schemaVersion': 1, 'path': path, 'fields': fields}))
+        manifests += 1
+    return manifests
 
 
 def build(root=ROOT, destination=None):
@@ -202,13 +247,14 @@ def build(root=ROOT, destination=None):
         # Preserve the historical public endpoint for older clients, with the exact
         # same safe projection. Raw canonical data remains in Git, never in _site.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
-        validate_artifact_links(staging)
+        editor_manifests = build_page_editor_artifacts(staging, root)
+        validate_artifact_links(staging, root)
         manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
         (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
         if destination.exists():
             shutil.rmtree(destination)
         staging.replace(destination)
-    return {'files': len(manifest) + 1, 'publicRecords': len(records), 'output': str(destination)}
+    return {'files': len(manifest) + 1, 'publicRecords': len(records), 'editorManifests': editor_manifests, 'output': str(destination)}
 
 
 def main():

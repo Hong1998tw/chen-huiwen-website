@@ -35,6 +35,55 @@
         >
       </div>
       <p id="notice" role="status" aria-live="polite"></p>
+      <section class="page-workspace" aria-label="全站頁面編輯器">
+        <aside class="page-tree-panel" aria-label="網站頁面樹">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">HUIWEN.TW</p>
+              <h2>網站頁面</h2>
+            </div>
+            <span id="page-count" class="badge">載入中</span>
+          </div>
+          <label class="field" for="page-filter">搜尋頁面
+            <input id="page-filter" type="search" placeholder="輸入頁面名稱或網址" autocomplete="off" />
+          </label>
+          <div id="page-tree" class="page-tree" aria-live="polite"><p>正在載入頁面…</p></div>
+          <p class="hint">頁面文字可直接在右側正式版面中點選編輯。儲存只建立草稿，發布仍須通過網站檢查。</p>
+        </aside>
+        <section class="visual-editor" aria-labelledby="page-editor-title">
+          <div class="visual-toolbar">
+            <div class="page-heading">
+              <p class="eyebrow">正式頁面預覽與編輯</p>
+              <h2 id="page-editor-title">請從左側選擇頁面</h2>
+              <p id="page-path" class="page-path">登入後可管理每一頁及子頁。</p>
+            </div>
+            <span id="page-status" class="badge">尚未選取</span>
+          </div>
+          <div id="page-editor-empty" class="editor-empty">
+            <span aria-hidden="true">↖</span>
+            <p>選擇左側頁面，正式網站的版面會在這裡載入。</p>
+          </div>
+          <iframe id="page-frame" title="正式網站頁面視覺編輯器" hidden referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          <div class="page-actions">
+            <span id="page-draft-status" class="hint" aria-live="polite">尚未選取頁面</span>
+            <div class="toolbar">
+              <a id="page-open-live" class="secondary" href="https://www.huiwen.tw/" target="_blank" rel="noopener noreferrer">在新分頁查看 ↗</a>
+              <button id="page-save" type="button" disabled>儲存草稿</button>
+              <button id="page-publish" type="button" disabled>發布變更</button>
+              <button id="page-unpublish" type="button" class="secondary" disabled>下架</button>
+              <button id="page-delete" type="button" class="danger" disabled>移至垃圾桶</button>
+              <button id="page-restore" type="button" class="secondary" hidden>還原並重新發布</button>
+            </div>
+          </div>
+          <details id="page-history-panel" class="page-history" hidden>
+            <summary>此頁草稿版本紀錄</summary>
+            <div id="page-history"></div>
+          </details>
+          <p id="page-action-help" class="hint">上線、下架與移至垃圾桶都會透過受保護的 GitHub 發布流程處理。垃圾桶內容可以還原；不會直接刪除原始來源。</p>
+        </section>
+      </section>
+      <details id="structured-records" class="structured-records">
+        <summary>活動與律師服務資料表單</summary>
       <div class="workspace">
         <aside aria-label="內容清單">
           <div class="section-head">
@@ -81,16 +130,7 @@
           </details>
         </section>
       </div>
-      <section class="page-inventory" aria-labelledby="page-inventory-title">
-        <details id="page-inventory-panel">
-          <summary id="page-inventory-title">全站頁面目錄 <span id="page-count" class="badge">載入中</span></summary>
-          <p class="hint">這裡列出正式發布包的頁面、內容來源與目前編輯範圍。頁面在發布包內，不代表所有文字都能在此後台修改。</p>
-          <label class="field" for="page-filter">搜尋頁面或來源
-            <input id="page-filter" type="search" placeholder="頁面名稱、網址、來源檔案" autocomplete="off" />
-          </label>
-          <div id="page-list" class="page-list" aria-live="polite"></div>
-        </details>
-      </section>
+      </details>
       <section class="publications" aria-labelledby="publication-title">
         <div class="section-head">
           <div>

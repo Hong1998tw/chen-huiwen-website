@@ -89,7 +89,7 @@ class PublicProjectionTests(unittest.TestCase):
     def test_artifact_allowlist_and_legacy_alias(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / 'public'
-            public.build(ROOT, destination)
+            result = public.build(ROOT, destination)
             paths = {p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file()}
             self.assertFalse(any(p.startswith(('docs/', 'scripts/', 'tests/', '.github/', 'schema/')) for p in paths))
             self.assertNotIn('data/content-governance.json', paths)
@@ -97,6 +97,16 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertNotIn('README.md', paths)
             self.assertEqual((destination / 'data/achievements.json').read_bytes(), (destination / public.PROJECTION).read_bytes())
             self.assertNotEqual((destination / 'data/achievements.json').read_bytes(), (ROOT / 'data/achievements.json').read_bytes())
+            self.assertEqual(result['editorManifests'], 96)
+            page = (destination / 'achievements.html').read_text()
+            self.assertNotIn('data-cms-edit-id', page)
+            manifest_path = destination / 'cms-editor-manifests/achievements.html.json'
+            manifest = json.loads(manifest_path.read_text())
+            self.assertEqual(manifest['schemaVersion'], 1)
+            self.assertEqual(manifest['path'], 'achievements.html')
+            self.assertTrue(manifest['fields'])
+            self.assertIn('petition.html', paths)
+            self.assertFalse((destination / 'cms-editor-manifests/petition.html.json').exists())
             public.validate_artifact_links(destination)
 
 
