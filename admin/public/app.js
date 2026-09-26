@@ -1,6 +1,7 @@
 "use strict";
 let session,
   documents = [],
+  pages = [],
   selected = null,
   dirty = false,
   previewVersion = null;
@@ -114,6 +115,42 @@ async function load() {
     list.append(b);
   }
   await publications();
+}
+function renderPages() {
+  const list = $("#page-list");
+  const query = $("#page-filter").value.trim().toLocaleLowerCase();
+  list.replaceChildren();
+  const matching = pages.filter((p) =>
+    [p.title, p.path, p.source_path].some((s) => s.toLocaleLowerCase().includes(query)),
+  );
+  if (!matching.length) list.append(el("p", "沒有符合的頁面。", "hint"));
+  for (const p of matching) {
+    const card = el("article", undefined, "page-item");
+    const title = el("a", p.title);
+    title.href = `https://www.huiwen.tw/${p.path === "index.html" ? "" : p.path.endsWith("/index.html") ? p.path.slice(0, -10) : p.path}`;
+    title.target = "_blank";
+    title.rel = "noopener noreferrer";
+    const source = el("a", p.source_path);
+    source.href = `https://github.com/Hong1998tw/chen-huiwen-website/blob/main/${p.source_path}`;
+    source.target = "_blank";
+    source.rel = "noopener noreferrer";
+    const scope = p.source_kind === "excluded-intake"
+      ? "受理流程維持排除"
+      : p.editor_scope === "partial"
+        ? "部分來源可在後台編輯"
+        : p.source_kind === "legacy-redirect"
+          ? "歷史轉址"
+          : p.source_kind === "system"
+            ? "系統頁面"
+            : "目前由來源檔更新";
+    card.append(title, el("small", p.path), el("span", scope, "badge"), source);
+    list.append(card);
+  }
+}
+async function loadPages() {
+  pages = (await api("/api/pages")).pages;
+  $("#page-count").textContent = `${pages.length} 頁`;
+  renderPages();
 }
 async function select(d) {
   if (dirty && !confirm("尚有未儲存內容，確定離開這筆草稿？")) return;
@@ -352,7 +389,7 @@ $("#new-event").onclick = () =>
   );
 $("#reload").onclick = () =>
   action(async () => {
-    await load();
+    await Promise.all([load(), loadPages()]);
     notice("清單與發布狀態已更新；正在編輯的表單保持不變。");
   });
 window.addEventListener("beforeunload", (e) => {
@@ -361,8 +398,9 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = "";
   }
 });
+$("#page-filter").oninput = renderPages;
 action(async () => {
   session = await api("/api/session");
   $("#identity").textContent = `${session.login} · 擁有者`;
-  await load();
+  await Promise.all([load(), loadPages()]);
 });

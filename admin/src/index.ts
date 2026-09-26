@@ -52,6 +52,7 @@ async function internal(request: Request, env: Env, path: string) {
     if (
       !Array.isArray(b.sources) ||
       b.sources.length > 300 ||
+      (b.pages !== undefined && (!Array.isArray(b.pages) || b.pages.length < 1 || b.pages.length > 200)) ||
       !/^[a-f0-9]{40}$/.test(String(b.commit))
     )
       throw new HttpError(400, "來源快照格式錯誤");
@@ -86,8 +87,34 @@ async function internal(request: Request, env: Env, path: string) {
         ),
       );
     }
+    if (b.pages !== undefined) {
+      const seen = new Set<string>();
+      const publicPath = /^(?:[a-z0-9-]+\/)?[a-z0-9-]+\.html$/;
+      const sourcePath = /^(?:data\/[a-z0-9-]+\.json|(?:[a-z0-9-]+\/)?[a-z0-9-]+\.html)$/;
+      for (const p of b.pages) {
+        if (
+          !p || typeof p !== "object" ||
+          Object.keys(p).some((k) => !["path", "title", "source", "kind", "editorScope"].includes(k)) ||
+          typeof p.path !== "string" || !publicPath.test(p.path) || seen.has(p.path) ||
+          typeof p.title !== "string" || !p.title.trim() || p.title.length > 250 || /[\u0000-\u001f<>]/.test(p.title) ||
+          typeof p.source !== "string" || !sourcePath.test(p.source) ||
+          !["generated", "composite", "static", "system", "legacy-redirect", "excluded-intake"].includes(p.kind) ||
+          !["none", "partial"].includes(p.editorScope)
+        ) throw new HttpError(400, "公開頁面目錄格式錯誤");
+        seen.add(p.path);
+      }
+      const catalogState = await env.DB.prepare(
+        "SELECT COUNT(*) AS count,MIN(commit_sha) AS first_sha,MAX(commit_sha) AS last_sha FROM published_pages",
+      ).first<{ count: number; first_sha: string | null; last_sha: string | null }>();
+      if (catalogState?.count !== b.pages.length || catalogState.first_sha !== b.commit || catalogState.last_sha !== b.commit) {
+        stmts.push(env.DB.prepare("DELETE FROM published_pages"));
+        for (const p of b.pages)
+          stmts.push(env.DB.prepare("INSERT INTO published_pages VALUES(?,?,?,?,?,?,?)")
+            .bind(p.path, p.title, p.source, p.kind, p.editorScope, b.commit, iso()));
+      }
+    }
     if (stmts.length) await env.DB.batch(stmts);
-    return json({ synced: b.sources.length });
+    return json({ synced: b.sources.length, pages: b.pages?.length ?? 0 });
   }
   if (path === "/internal/claim") {
     const now = Date.now(),
@@ -192,6 +219,12 @@ async function handle(request: Request, env: Env) {
           "SELECT d.*, s.source_hash AS published_hash FROM documents d LEFT JOIN published_sources s ON s.domain=d.domain AND s.record_key=d.record_key ORDER BY d.updated_at DESC LIMIT 300",
         ).all()
       ).results,
+    });
+  if (u.pathname === "/api/pages" && request.method === "GET")
+    return json({
+      pages: (await env.DB.prepare(
+        "SELECT path,title,source_path,source_kind,editor_scope,commit_sha,observed_at FROM published_pages ORDER BY path",
+      ).all()).results,
     });
   if (u.pathname === "/api/publications" && request.method === "GET")
     return json({

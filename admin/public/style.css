@@ -257,6 +257,21 @@ summary {
 .publications {
   margin-top: 30px;
 }
+.page-inventory {
+  margin-top: 30px;
+  padding: 20px 25px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.page-inventory details { margin: 0; padding: 0; border: 0; }
+.page-inventory summary { font-size: 20px; }
+.page-inventory .field { max-width: 480px; }
+.page-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; max-height: 620px; overflow-y: auto; }
+.page-item { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.page-item a, .page-item small { overflow-wrap: anywhere; }
+.page-item small { color: var(--muted); }
+.page-item .badge { justify-self: start; }
 .publication,
 .history-row {
   padding: 18px 0;
@@ -333,9 +348,11 @@ dialog::backdrop {
   }
   .workspace > aside,
   .editor,
-  .publications {
+  .publications,
+  .page-inventory {
     padding: 20px;
   }
+  .page-list { grid-template-columns: 1fr; }
   .row {
     grid-template-columns: 1fr;
     gap: 0;

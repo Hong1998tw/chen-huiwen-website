@@ -69,6 +69,12 @@ try {
     ],
     { cwd: root, stdio: "pipe" },
   );
+  execFileSync(
+    process.execPath,
+    [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
+      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','none','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
+    { cwd: root, stdio: "pipe" },
+  );
   server = spawn(
     process.execPath,
     [
@@ -108,6 +114,10 @@ try {
   );
   assert.equal(session.role, "owner");
   assert.equal((await fetch(origin + "/api/documents")).status, 401);
+  assert.equal((await fetch(origin + "/api/pages")).status, 401);
+  const pageCatalog = await fetch(origin + "/api/pages", { headers }).then((r) => r.json());
+  assert.equal(pageCatalog.pages.length, 1);
+  assert.equal(pageCatalog.pages[0].source_path, "data/civic-home.json");
   assert.equal(
     (await fetch(origin + "/style.css")).status,
     401,
@@ -223,6 +233,8 @@ try {
       for(const width of [390,1440]) {
         await page.setViewportSize({width,height:960});
         await page.goto(origin);
+        await page.locator('#page-inventory-panel summary').click();
+        assert(await page.getByRole('link',{name:'首頁',exact:true}).isVisible());
         await page.getByRole('button',{name:/本機測試草稿/}).click();
         assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');
