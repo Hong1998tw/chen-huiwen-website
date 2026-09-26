@@ -1,10 +1,10 @@
 # Standalone website CMS
 
-Owner decision (2026-09-27): independent website backend; initially only Hong1998tw, GitHub login. Preserve the option to add password accounts and roles later.
+Owner decision (2026-09-27): independent website backend; initially only the owner, Google login (supersedes the first GitHub-login release). Preserve the option to add password accounts and roles later.
 
 ## Current implementation and ownership
 
-- `admin.huiwen.tw`: Cloudflare Access, GitHub IdP only; policy restricts the verified primary email observed on the signed-in owner's GitHub settings. Worker additionally verifies issuer, audience, expiration, signature, owner email hash and active owner role on every request, including static assets. Only the email hash is committed. An owner email change requires deliberate policy/config update.
+- `admin.huiwen.tw`: Cloudflare Access, Google IdP only; policy restricts the exact personal Google email specified by the owner. Worker additionally verifies issuer, audience, expiration, signature, owner email hash and active owner role on every request, including static assets. Only the email hash is committed. An owner email change requires deliberate policy/config update. The stable internal account ID retains its legacy GitHub prefix so existing document and audit ownership do not change; it is not a second accepted login method.
 - D1 contains drafts, immutable versions, immutable publication requests and source snapshots. Draft saves use optimistic version checks; conflict returns 409. Restore creates a new version. Duplicate publication clicks reuse the same request.
 - First editing scope: public activities and the current legal consultation month. Structured forms, local preview, version restoration, publication receipts. Existing achievement evidence and private petition workflows are outside this first CMS release.
 - GitHub remains the executable canonical source. Drafts are not published until the existing source builders, path allowlist and required GitHub checks pass. The adapter reuses `publish_from_notion.py`; the legacy `notion-publish/` technical branch prefix is intentionally preserved for its trusted gate.
@@ -29,10 +29,16 @@ Status boundaries: saved draft → queued → building → PR/checks → merged 
 
 `npm ci --ignore-scripts --prefix admin`; `npm run check --prefix admin`; `npm test --prefix admin`; `node admin/tests/integration.mjs`; `python -m unittest discover -s tests -p test_standalone_cms.py`.
 
-Local integration uses synthetic signing keys, local Worker/D1 and exact migration; it tests authentication, asset protection, CSRF, persistence, version conflict, restore and immutable publication snapshots. Synthetic tests are not evidence of real GitHub owner login. Closeout must separately record native owner login, real D1 readback, OIDC job, Worker build/deployment and public-site release.
+Local integration uses synthetic signing keys, local Worker/D1 and exact migration; it tests authentication, asset protection, CSRF, persistence, version conflict, restore and immutable publication snapshots. Synthetic tests are not evidence of real Google owner login. Closeout must separately record native owner login, real D1 readback, OIDC job, Worker build/deployment and public-site release.
 
 ## Initial deployment incident
 
 The first source sync to `cms-publisher.huiwen.tw` returned HTTP 403. Cloudflare native Security Events identified `botFight` managed challenges at `/internal/sync`. The machine endpoint uses this Worker’s dedicated workers.dev origin, with the same strict signed OIDC checks; admin UI remains only on Access-protected `admin.huiwen.tw`. No zone bot protection, WAF, Access policy, or GitHub permission was disabled or widened. [Cloudflare documents that Bot Fight Mode cannot be skipped with custom rules](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/).
 
 The repository OIDC customization readback is `use_default=true`, `use_immutable_subject=true`. Runner verification requires the exact signed immutable subject `repo:Hong1998tw@126787497/chen-huiwen-website@1360942570:environment:notion-publisher`, as well as matching repository and owner IDs, workflow, main ref, issuer, audience and expiry. A separate environment claim may be absent; if present, it must also match. Invalid claim diagnostics contain only fixed field names, never values or JWTs. [GitHub OIDC reference](https://docs.github.com/en/actions/reference/security/oidc).
+
+## Google login cutover gate
+
+Google Cloud project: `huiwen-website-cms-20260927` (Huiwen Website CMS). Use a dedicated web OAuth client with callback `https://twhong.cloudflareaccess.com/cdn-cgi/access/callback`. Client secret belongs only in Cloudflare identity-provider configuration; never in this repository, archives, logs or chat.
+
+This code alone does not prove Google login is active. Before merging, provision and test the Google IdP. Coordinate the Worker email hash and app-specific Access policy: exact approved email, require Google IdP, allowed IdPs restricted to Google, four-hour sessions and HttpOnly retained. Revoke this app's old sessions after cutover; verify anonymous redirect, successful real owner login, preserved D1 ownership, and rejection of a non-owner. Do not widen other applications or reuse the separate office application OAuth client. If provisioning is incomplete, keep this branch unmerged and the existing production login operational.

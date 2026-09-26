@@ -35,7 +35,7 @@ export function enforceOwner(
 }
 export async function owner(request: Request, env: Env, key?: JWTVerifyGetKey) {
   const token = request.headers.get("Cf-Access-Jwt-Assertion");
-  if (!token) throw new HttpError(401, "請使用 GitHub 登入");
+  if (!token) throw new HttpError(401, "請使用 Google 登入");
   let payload: JWTPayload;
   try {
     ({ payload } = await jwtVerify(
@@ -58,6 +58,8 @@ export async function owner(request: Request, env: Env, key?: JWTVerifyGetKey) {
     await sha256(String(payload.email || "").toLowerCase()),
   );
   return {
+    // Stable internal account ID: preserve ownership and audit history across IdP changes.
+    // The legacy prefix is not an accepted login provider; Access controls the provider.
     id: "github:126787497",
     csrf: await sha256(`huiwen-cms-csrf:${token}`),
   };
