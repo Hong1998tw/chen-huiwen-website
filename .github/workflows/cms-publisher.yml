@@ -1,60 +1,22 @@
 name: Standalone CMS publisher
-
-# One-click CMS publishing. A repository-scoped GitHub App token creates the candidate PR and
-# enables GitHub-native auto-merge. The App has no ruleset bypass: required checks still gate
-# merge, and direct merge endpoints remain forbidden in the publisher code.
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
-
 permissions:
   contents: read
   id-token: write
-
-concurrency:
-  group: cms-publisher
-  cancel-in-progress: false
-
 jobs:
-  executor:
-    if: github.ref == 'refs/heads/main' && vars.CMS_ENABLED == 'true'
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    environment: notion-publisher
     steps:
-      - name: Checkout main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - name: Install validator dependencies
-        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
-
-      - name: Mint repository-scoped publisher token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.HUIWEN_PUBLISH_APP_ID }}
-          private-key: ${{ secrets.HUIWEN_PUBLISH_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-actions: read
-          permission-checks: read
-
-      - name: Sync and publish owner drafts
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          CMS_PUBLISH_ENABLED: ${{ vars.SITE_CMS_AUTHORING == 'standalone' && 'true' || 'false' }}
-          PUBLISHER_APP_LOGIN: ${{ vars.PUBLISHER_APP_LOGIN }}
-          PUBLISHER_GIT_NAME: ${{ vars.PUBLISHER_GIT_NAME }}
-          PUBLISHER_GIT_EMAIL: ${{ vars.PUBLISHER_GIT_EMAIL }}
-        run: python scripts/publish_from_cms.py
+      - name: Read only non-secret OIDC identity fields
+        run: |
+          python3 - <<'PY'
+          import os,json,base64,urllib.request,urllib.parse
+          url=os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience='+urllib.parse.quote('https://huiwen-cms.lihong.workers.dev',safe='')
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urllib.request.urlopen(req) as r: token=json.load(r)['value']
+          part=token.split('.')[1]; claims=json.loads(base64.urlsafe_b64decode(part+'='*((4-len(part)%4)%4)))
+          keys=['repository','repository_id','repository_owner_id','workflow_ref','ref','event_name','run_id']
+          print(json.dumps({k:{'value':claims.get(k),'type':type(claims.get(k)).__name__} for k in keys}))
+          print('No CMS request made; no token or private data persisted.')
+          PY
