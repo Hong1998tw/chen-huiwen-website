@@ -21,6 +21,8 @@ Every 15 minutes (GitHub scheduling may delay), the job imports main snapshots, 
 
 Status boundaries: saved draft → queued → building → PR/checks → merged → deployed → verified. A CI/network verification failure must not be displayed as fully verified. Existing external HTTP/snapshot/native verification layers are reused. Production no-op validation may verify queue handling without changing public bytes; it does not prove a changed-content release.
 
+Every Pages release now also runs `scripts/verify_all_pages.py` against the exact HTML roster from `build_public.public_paths()`. It checks each published route's title, language, canonical URL, description, main heading, visible copy and critical facts, or the redirect target for legacy aliases. This verifies deployment coverage; it does not make every page editable from this CMS. The first authoring scope remains activities and the current legal month. Full-page authoring must preserve each page's canonical source and cannot be inferred from the deployed-page count.
+
 ## Future account/password support
 
 `accounts` and `identities` separate account ownership from login provider. Roles reserve owner/editor/viewer; only the seeded owner is currently accepted. Password login, password creation, registration and invitations are **not enabled**. Add a reviewed identity provider or dedicated password credential/session/reset module before exposing these controls; do not store plaintext passwords, fabricate working account buttons, or weaken Access to enable them.
