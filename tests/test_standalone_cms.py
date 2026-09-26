@@ -16,6 +16,11 @@ class StandaloneCMS(unittest.TestCase):
             with self.assertRaises(cms.RunnerError) as caught:
                 cms.fetch_json(object(),'CMS /internal/sync',30)
         self.assertEqual(str(caught.exception),'CMS /internal/sync: HTTP 401')
+        error=urllib.error.HTTPError('https://example.test/?credential=private',403,'private response',{'cf-mitigated':'challenge'},None)
+        with patch('urllib.request.urlopen',side_effect=error):
+            with self.assertRaises(cms.RunnerError) as caught:
+                cms.fetch_json(object(),'CMS /internal/sync',30)
+        self.assertEqual(str(caught.exception),'CMS /internal/sync: HTTP 403 (edge challenge)')
 
     def test_sync_and_noop_preserve_canonical_bytes(self):
         for source in cms.sources(ROOT):
