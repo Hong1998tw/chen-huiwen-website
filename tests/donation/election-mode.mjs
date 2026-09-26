@@ -33,9 +33,9 @@ try {
   const countdownColor = await heroStatus.locator('strong').evaluate(el => getComputedStyle(el).color);
   assert.equal(countdownColor, 'rgb(213, 249, 124)');
   const account = await page.locator('.home-account').boundingBox();
-  const contact = await page.locator('.home-contact').boundingBox();
-  assert(account && contact && account.y < contact.y, 'political donation must appear before contact');
-  assert(contact.y - (account.y + account.height) <= 12, 'donation and contact should read as one visual cluster');
+  const contact = await page.locator('.civic-service-desk').boundingBox();
+  assert(account && contact && contact.y < account.y, 'practical service information precedes donation');
+  assert.equal(await page.locator('.home-contact').count(), 0, 'homepage must not duplicate the service desk');
   const homeFacebook = page.locator('.home-facebook');
   await homeFacebook.scrollIntoViewIfNeeded();
   await homeFacebook.locator('iframe').waitFor({ state: 'attached' });
@@ -85,9 +85,9 @@ try {
   assert(navYs.length === 5);
   assert(Math.max(...navYs) - Math.min(...navYs) <= 4, `desktop navigation wrapped: ${navYs.join(',')}`);
   const desktopAccount = await page.locator('.home-account').boundingBox();
-  const desktopContact = await page.locator('.home-contact').boundingBox();
-  assert(desktopAccount && desktopContact && desktopAccount.y < desktopContact.y);
-  assert(desktopContact.y - (desktopAccount.y + desktopAccount.height) <= 14);
+  const desktopContact = await page.locator('.civic-service-desk').boundingBox();
+  assert(desktopAccount && desktopContact && desktopContact.y < desktopAccount.y);
+  assert.equal(await page.locator('.home-contact').count(), 0);
 
   await page.goto(base + 'activities.html');
   assert(await page.getByRole('heading', { name: '公開行程與活動', exact: true }).isVisible());
