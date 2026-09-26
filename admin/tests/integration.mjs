@@ -230,6 +230,7 @@ try {
         assert(await page.getByRole('dialog').isVisible());
         assert(await page.getByRole('button',{name:'確認並送出發布'}).isVisible());
         await page.getByRole('button',{name:'關閉',exact:true}).click();
+        await page.evaluate(()=>window.scrollTo(0,0));
         if(process.env.CMS_SCREENSHOTS)await page.screenshot({path:process.env.CMS_SCREENSHOTS+'/'+width+'.png',fullPage:true});
       }
       await context.close();

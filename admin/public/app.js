@@ -179,6 +179,7 @@ function render() {
         : ["start", "end"].includes(key)
           ? String(p[key] || "").slice(0, 16)
           : (p[key] ?? "");
+    if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle", "sessions"].includes(key)) label.classList.add("wide");
     label.append(input);
     if (key === "sessions")
       label.append(

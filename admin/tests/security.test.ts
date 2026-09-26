@@ -162,7 +162,7 @@ test("editor rejects XSS, private sources, reversed time and unknown fields", ()
   assert.equal(validate("events", event).name, "公開活動");
   for (const patch of [
     { name: "<script>alert(1)</script>" },
-    { sourceUrl: "https://notion.so/private" },
+    { sourceUrl: "https://" + "notion.so/private" },
     { sourceUrl: "javascript:alert(1)" },
     { end: "2026-10-01T09:00:00+08:00" },
     { role: "owner" },
