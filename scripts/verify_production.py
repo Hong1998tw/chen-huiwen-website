@@ -32,6 +32,11 @@ CORE_PAGES = (
     "press.html",
     "activities.html",
     "service.html",
+    "service-guides.html",
+    "service-print.html",
+    "updates.html",
+    "achievement-after-school-care.html",
+    "achievement-bade-detention.html",
     "petition.html",
     "political-donation.html",
     "terms.html",
@@ -41,6 +46,7 @@ CORE_PAGES = (
 )
 STATIC_FILES = (
     "robots.txt",
+    "updates.xml",
     "sitemap.xml",
     "manifest.webmanifest",
     "data/election-2026.json",

@@ -7,7 +7,7 @@ BUILDERS=('build_all.py',)
 VALIDATORS=('validate_achievements.py','validate_site.py','validate_donation.py','validate_seo.py','validate_p0.py','validate_public_copy.py','validate_domain_migration.py')
 
 def snapshot(root):
-    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/achievements-public.json','sitemap.xml')]
+    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/achievements-public.json','sitemap.xml','updates.xml')]
     paths=[p for p in paths if p.exists()]
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
@@ -37,7 +37,7 @@ def main():
             run(root,[sys.executable,'-m','unittest','discover','-s','tests','-p','test_*.py'])
             run(root,[sys.executable,'-m','unittest','discover','-s','tests/events'])
         if a.browser:
-            for name in ('browser','digital-civic','p0','achievement-governance','election-mode','lifecycle','runtime-maturity','site-maturity'):
+            for name in ('browser','digital-civic','p0','achievement-governance','election-mode','lifecycle','runtime-maturity','site-maturity','service-tools'):
                 run(root,['node','tests/donation/'+name+'.mjs'])
         print('PASS: deterministic quality'+(' and browser regression' if a.browser else ''))
         return 0

@@ -18,7 +18,7 @@ for path in paths:
     title = h1.get_text(' ', strip=True) if h1 else soup.title.get_text(' ', strip=True)
     meta = soup.find('meta', attrs={'name': 'description'})
     description = meta.get('content', '') if meta else ''
-    for element in main.select('script, style, noscript, nav, .eyebrow, .civic-kicker, .case-subtags, .map-controls, .map-source, .case-sources, .source-links, .cross-content-explore'):
+    for element in main.select('script, style, noscript, nav, .eyebrow, .civic-kicker, .case-subtags, .map-controls, .map-source, .case-sources, .source-links, .cross-content-explore, .case-print-sheet'):
         element.decompose()
     # Collections with separate detail pages index their intro.
     # Media reports only live on news.html; retain their text so search can find them.

@@ -29,7 +29,7 @@ ROOT_FILES = (
     'civic.css', 'digital.css', 'home.css', 'campaign.css', 'embeds.css',
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
-    'press.js', 'election.js', 'explore.js', 'sw.js',
+    'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',

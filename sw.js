@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='huiwen-digital-v12-20260922-maturity';
+const CACHE='huiwen-digital-v13-20260922-service';
 const OFFLINE='./offline.html';
 const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg'];
 const rawSource=url=>url.pathname.endsWith('/data/achievements.json');
