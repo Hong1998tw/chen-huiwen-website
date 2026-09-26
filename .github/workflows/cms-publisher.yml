@@ -1,4 +1,4 @@
-name: Notion CMS publisher
+name: Standalone CMS publisher
 
 # One-click CMS publishing. A repository-scoped GitHub App token creates the candidate PR and
 # enables GitHub-native auto-merge. The App has no ruleset bypass: required checks still gate
@@ -7,24 +7,18 @@ on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'publish | redeploy | verify | cycle | gate-check | dry-run(engineering)'
-        type: choice
-        options: [cycle, publish, redeploy, verify, gate-check, dry-run]
-        default: dry-run
 
 permissions:
   contents: read
-  actions: write
+  id-token: write
 
 concurrency:
-  group: publish-executor
+  group: cms-publisher
   cancel-in-progress: false
 
 jobs:
   executor:
-    if: vars.SITE_CMS_AUTHORING != 'standalone' && github.ref == 'refs/heads/main' && (vars.NOTION_PUBLISHER_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'gate-check' || inputs.mode == 'dry-run')))
+    if: github.ref == 'refs/heads/main' && vars.CMS_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: notion-publisher
@@ -56,19 +50,11 @@ jobs:
           permission-actions: read
           permission-checks: read
 
-      - name: Run CMS publisher
+      - name: Sync and publish owner drafts
         env:
-          MODE: ${{ github.event_name == 'schedule' && 'cycle' || inputs.mode }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          ACTIONS_TOKEN: ${{ github.token }}
-          NOTION_TOKEN: ${{ secrets.NOTION_PUBLISH_TOKEN }}
-          NOTION_EVENTS_DS: ${{ vars.NOTION_EVENTS_DS }}
-          NOTION_LEGAL_MONTH_DS: ${{ vars.NOTION_LEGAL_MONTH_DS }}
-          NOTION_LEGAL_SESSION_DS: ${{ vars.NOTION_LEGAL_SESSION_DS }}
-          NOTION_DEPLOY_CONTROL_DS: ${{ vars.NOTION_DEPLOY_CONTROL_DS }}
+          CMS_PUBLISH_ENABLED: ${{ vars.SITE_CMS_AUTHORING == 'standalone' && 'true' || 'false' }}
+          PUBLISHER_APP_LOGIN: ${{ vars.PUBLISHER_APP_LOGIN }}
           PUBLISHER_GIT_NAME: ${{ vars.PUBLISHER_GIT_NAME }}
           PUBLISHER_GIT_EMAIL: ${{ vars.PUBLISHER_GIT_EMAIL }}
-          PUBLISHER_SINGLE_MAINTAINER: ${{ vars.PUBLISHER_SINGLE_MAINTAINER }}
-          PUBLISHER_AUTO_PUBLISH: ${{ vars.PUBLISHER_AUTO_PUBLISH }}
-          PUBLISHER_APP_LOGIN: ${{ vars.PUBLISHER_APP_LOGIN }}
-        run: python scripts/publish_from_notion.py "$MODE"
+        run: python scripts/publish_from_cms.py
