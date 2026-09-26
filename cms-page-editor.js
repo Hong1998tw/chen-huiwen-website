@@ -25,7 +25,10 @@
   async function enable() {
     try {
       const route = pageRoute();
-      const response = await fetch(`/cms-editor-manifests/${route}.json`, { cache: "no-store" });
+      const loader = document.querySelector("script[data-cms-editor-loader]");
+      const manifestUrl = new URL(loader?.dataset.cmsManifest || "", location.origin);
+      if (manifestUrl.origin !== location.origin || !manifestUrl.pathname.startsWith("/cms-editor-manifests/")) throw new Error("manifest path invalid");
+      const response = await fetch(manifestUrl.href, { cache: "no-store" });
       if (!response.ok) throw new Error("manifest unavailable");
       const manifest = await response.json();
       if (manifest.schemaVersion !== 1 || manifest.path !== route || !Array.isArray(manifest.fields)) throw new Error("manifest invalid");
