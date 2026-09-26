@@ -32,6 +32,17 @@ class StandaloneCMS(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source changed'):
             render_page_copy(changed, 'fixture.html', fields)
 
+    def test_editor_runtime_loads_only_in_admin_iframe(self):
+        source = '<html><head><script src="/cms-page-editor.js" defer></script></head><body><main><p>Copy</p></main></body></html>'
+        marked, count = render_page_copy(source, 'fixture.html')
+        self.assertEqual(count, 1)
+        self.assertIn('data-cms-editor-loader', marked)
+        self.assertIn("new URLSearchParams(location.search).get('cmsEdit')==='1'", marked)
+        self.assertIn('window.self!==window.top', marked)
+        self.assertIn("</scr'+'ipt>", marked)
+        self.assertNotIn('<script src="/cms-page-editor.js" defer></script>', marked)
+        self.assertEqual(render_page_copy(marked, 'fixture.html')[0], marked)
+
     def test_api_diagnostics_never_include_remote_secrets(self):
         error=urllib.error.HTTPError('https://example.test/?credential=private','401','private response',{},None)
         with patch('urllib.request.urlopen',side_effect=error):

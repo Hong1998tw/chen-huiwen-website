@@ -30,7 +30,7 @@ def build(root=ROOT):
             if page.is_file():
                 source = page.read_text(encoding='utf-8')
                 clean = re.sub(r'\sdata-cms-(?:edit-id|source-hash|value-hash)=(?:"[^"]*"|\'[^\']*\')', '', source, flags=re.I)
-                clean = re.sub(r'<script\b[^>]*src=["\']/cms-page-editor\.js(?:\?[^"\']*)?["\'][^>]*></script>\s*', '', clean, flags=re.I)
+                clean = re.sub(r'<script\b[^>]*(?:data-cms-editor-loader|src=["\']/cms-page-editor\.js(?:\?[^"\']*)?["\'])[^>]*>.*?</script>\s*', '', clean, flags=re.I | re.S)
                 if clean != source:
                     page.write_text(clean, encoding='utf-8')
             continue

@@ -145,9 +145,19 @@ class PageCopy(HTMLParser):
         parts.append(self.source[cursor:])
         result = "".join(parts)
         if self.count:
-            if re.search(r"<script[^>]+src=[\"']/cms-page-editor\.js(?:\?[^\"']*)?[\"']", result, re.I):
-                return result
-            result, count = re.subn(r"</head\s*>", '<script src="/cms-page-editor.js" defer></script>\n</head>', result, count=1, flags=re.I)
+            loader = (
+                "<script data-cms-editor-loader>"
+                "if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')"
+                "document.write('<scr'+'ipt defer src=\"/cms-page-editor.js\"></scr'+'ipt>');"
+                "</script>"
+            )
+            existing_loader = re.search(r"<script\b[^>]*data-cms-editor-loader[^>]*>.*?</script>", result, re.I | re.S)
+            if existing_loader:
+                if existing_loader.group(0) == loader:
+                    return result
+                return result[:existing_loader.start()] + loader + result[existing_loader.end():]
+            result = re.sub(r'<script\b[^>]*src=["\']/cms-page-editor\.js(?:\?[^"\']*)?["\'][^>]*>\s*</script>\s*', "", result, count=1, flags=re.I)
+            result, count = re.subn(r"</head\s*>", loader + "\n</head>", result, count=1, flags=re.I)
             if count != 1:
                 raise ValueError("CMS editor needs a closing head element: " + self.path)
         # Every saved field must still exist and match; stale selectors fail closed.
