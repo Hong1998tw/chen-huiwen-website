@@ -135,6 +135,12 @@ try {
     assert.match(liveHTML, /data-cms-page-path="service-guides\.html"/);
     assert.match(liveHTML, /data-cms-admin-origin="http:\/\/127\.0\.0\.1:18794"/);
     assert.match(liveHTML, /<main\b/);
+    assert.doesNotMatch(liveHTML, /rocket-loader(?:\.min)?\.js|data-cf-settings=/i,
+      "the sandboxed preview must not execute Cloudflare's Rocket Loader wrapper");
+    assert.doesNotMatch(liveHTML, /type="[a-f0-9]{8,}-text\/javascript"/i,
+      "Rocket Loader's deferred script type must be restored in the preview");
+    assert.match(liveHTML, /data-cfasync="false"\s+src=/i,
+      "preview scripts must retain their source execution order at Cloudflare's edge");
   }
   assert.equal(
     (await fetch(origin + "/style.css")).status,
@@ -274,9 +280,9 @@ try {
       page.on('requestfailed',request=>console.error(`CMS_BROWSER requestfailed: ${request.url()} · ${request.failure()?.errorText||'unknown'}`));
       let editorRuntimeRequests=0, editorManifestRequests=0;
       const manifestPath = "/cms-editor-manifests/index.html.a1b2c3d4e5f6.json";
-      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">if(window.self!==window.top&&document.currentScript?.dataset.cmsEditorEnabled==='true')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
+      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cfasync="false" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">if(window.self!==window.top&&document.currentScript?.dataset.cmsEditorEnabled==='true')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
       const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
-      const editorRuntime = `(()=>{let node=null,field=null,nonce=null,targetOrigin=null;const loader=document.querySelector('script[data-cms-editor-loader]');const send=(type,payload={})=>parent.postMessage({type,nonce,path:'/'+loader.dataset.cmsPagePath,...payload},targetOrigin);const ready=()=>send('huiwen-cms-ready',{blocks:[{id:field.id,sourceHash:field.sourceHash,value:node.textContent}]});addEventListener('message',async event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;const manifestUrl=loader.dataset.cmsManifest;const manifest=await fetch(manifestUrl).then(response=>response.json());field=manifest.fields[0];node=document.querySelector(field.id);node.dataset.cmsEditId=field.id;node.dataset.cmsSourceHash=field.sourceHash;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:field.id,sourceHash:field.sourceHash,value:node.textContent}}));ready();}else if(event.data?.type==='huiwen-cms-apply'&&nonce)ready();});})();`;
+      const editorRuntime = readFileSync(root + "../cms-page-editor.js", "utf8");
       page.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
       await page.route("https://www.huiwen.tw/**", route => {
         const path = new URL(route.request().url()).pathname;
@@ -328,7 +334,7 @@ try {
       }
       await context.close();
     } finally { await browser.close(); }
-    console.log('PASS: mobile and desktop editor and publication preview browser flow');
+    console.log('PASS: mobile and desktop live editor runtime, copy editing and publication preview browser flow');
   }
   console.log(
     "PASS: real local Worker + D1 auth, CSRF, CRUD, optimistic concurrency, restore, immutable publish snapshot, duplicate clicks and protected assets",

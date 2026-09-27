@@ -7,6 +7,7 @@
   const ADMIN_ORIGIN = loader?.dataset.cmsAdminOrigin || "https://admin.huiwen.tw";
   const EDITABLE_TAGS = new Set(["h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "dt", "dd"]);
   let nonce = null;
+  let initializationStarted = false;
   const text = (node) => node.textContent || "";
   function send(type, payload = {}) {
     if (!nonce) return;
@@ -75,7 +76,9 @@
     const data = event.data;
     if (!data || typeof data !== "object") return;
     if (data.type === "huiwen-cms-init" && typeof data.nonce === "string") {
+      if (initializationStarted) return;
       nonce = data.nonce;
+      initializationStarted = true;
       void enable();
       return;
     }
@@ -90,4 +93,5 @@
       send("huiwen-cms-ready", { blocks: collect() });
     }
   });
+  window.parent.postMessage({ type: "huiwen-cms-hello", path: `/${pageRoute()}` }, ADMIN_ORIGIN);
 })();
