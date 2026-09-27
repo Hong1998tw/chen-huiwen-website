@@ -27,7 +27,7 @@ function url(value: unknown, label: string, media = false) {
     throw new HttpError(400, `${label} 不可使用私人文件網址`);
   return raw;
 }
-function mediaProvider(raw: string, kind: string) {
+export function mediaProvider(raw: string, kind: string) {
   const u = new URL(raw), host = u.hostname.toLowerCase();
   if (host === "docs.google.com" || /(?:^|\.)notion\.(?:so|site|com)$/.test(host)) return false;
   if (host === "drive.google.com") return /^\/file\/d\/[A-Za-z0-9_-]{15,}\/+(?:view|preview)?\/?$/.test(u.pathname);

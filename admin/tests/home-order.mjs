@@ -25,6 +25,7 @@ const server = createServer(async (req, res) => {
   if (path === "/api/session") return send(res, JSON.stringify({ login: "owner@example.test", csrf: "test" }));
   if (path === "/api/documents") return send(res, JSON.stringify({ documents: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
+  if (path === "/api/page-blocks") return send(res, JSON.stringify({ blocks: [] }));
   if (path === "/api/publications") return send(res, JSON.stringify({ publications: [] }));
   if (path === "/api/home") return send(res, JSON.stringify({ home, cases }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));
@@ -64,6 +65,7 @@ try {
   await page.locator('[data-home-index="1"] [data-home-action="remove"]').click();
   await page.locator('[data-home-summary="b"]').fill("自訂首頁摘要");
   await preview.locator(".civic-feature h3").getByText("專題 B").waitFor();
+  await preview.locator(".civic-reading-row h3").getByText("專題 C").waitFor({state:"detached"});
   assert.deepEqual(await preview.locator(".civic-reading-row h3").allTextContents(), ["專題 D", "專題 A", "專題 E"]);
   await page.locator("#page-save").click();
   await page.getByText("草稿 v1 已儲存；正式頁面尚未變更。", { exact: true }).waitFor();

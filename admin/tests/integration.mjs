@@ -159,6 +159,25 @@ try {
       },
       body: JSON.stringify(body),
     });
+  const createdPage = await mutate("/api/page-create", "POST", {section:"news",slug:"local-test",title:"本機新聞專頁"});
+  assert.equal(createdPage.status,201);
+  const createdPath = "page-news-local-test.html";
+  const newDraft = await fetch(origin + `/api/page-draft?path=${createdPath}`,{headers}).then(r=>r.json());
+  assert.equal(newDraft.draft.version,1);
+  assert((await fetch(origin + "/api/pages",{headers}).then(r=>r.json())).pages.some(row=>row.path===createdPath));
+  if (process.env.CMS_LIVE_PREVIEW === "1") {
+    const preview = await fetch(origin + `/api/page-preview?path=${createdPath}`,{headers});
+    const markup = await preview.text();
+    assert.equal(preview.status,200,markup);
+    assert.match(markup,/data-cms-page-path="page-news-local-test\.html"/);
+    assert.match(markup,/<article class="wrap section editorial-body"><\/article>/);
+  }
+  const content = JSON.parse(newDraft.draft.payload).editorial;
+  content.summary = "本機測試摘要"; content.seo.description = "本機測試搜尋說明";
+  content.blocks[0].text = "本機測試內容";
+  const savedEditorial = await mutate("/api/page-draft","PUT",{path:createdPath,version:1,baseCommit:"a".repeat(40),fields:[],editorial:content,editorialBase:null});
+  assert.equal(savedEditorial.status,200);
+  assert.equal((await mutate("/api/page-create","POST",{section:"news",slug:"local-test",title:"重複"})).status,409);
   assert.equal((await fetch(origin + "/api/page-draft?path=index.html", { headers })).status, 200);
   const pageField = { id: "main>p:nth-of-type(1)", sourceHash: "a".repeat(64), value: "首頁草稿第一版" };
   assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: 0, baseCommit: "a".repeat(40), fields: [pageField] })).status, 200);

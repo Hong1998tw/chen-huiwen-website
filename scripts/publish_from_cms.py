@@ -17,6 +17,8 @@ from page_authority import catalog
 from validate_achievements import validate as validate_achievements, valid_date
 from case_media import classify as classify_media
 from achievement_metadata import is_public
+from page_seo import validate as validate_seo_overlay
+from editorial_pages import read as read_editorial, validate_page as validate_editorial_page, validate_blocks
 
 ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,12 +235,40 @@ def home_candidate(item, root, draft):
                             updated != original_text, '首頁專題順序：index.html\n操作：publish', digest)
 
 
+def editorial_candidate(item, root, draft):
+    path = item['path']
+    if draft.get('fields') or not isinstance(draft.get('editorial'), dict):
+        raise engine.PublishError('VALIDATION', ['新增專頁不能混用舊式文字覆寫'])
+    live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
+    if item.get('base_commit') != live_sha:
+        raise engine.PublishError('STALE_CHECKOUT')
+    try:
+        revised = validate_editorial_page(path, draft['editorial'], root)
+        source = read_editorial(root)
+    except ValueError as error:
+        raise engine.PublishError('VALIDATION', [str(error)]) from None
+    current = source['pages'].get(path)
+    if current != draft.get('editorialBase'):
+        raise engine.PublishError('BASE_DRIFT', ['這個專頁已有較新內容；請重新載入'])
+    if current is None and (root / path).exists():
+        raise engine.PublishError('VALIDATION', ['頁面網址已被現有官網使用'])
+    source['pages'][path] = revised
+    old_text = (root / 'data/editorial-pages.json').read_text(encoding='utf-8')
+    new_text = json.dumps(source, ensure_ascii=False, indent=2) + '\n'
+    digest = engine.sha({'path':path,'version':item['version'],'editorial':revised})
+    return engine.Candidate('editorial-page', item['id'], path, revised, item['base_commit'], new_text,
+                            new_text != old_text, f'新增或編輯專頁：{path}\n操作：publish', digest)
+
+
 def page_candidate(item, root=ROOT):
     path, operation = item.get('path'), item.get('operation')
     if not isinstance(path, str) or not re.fullmatch(r'(?:[a-z0-9-]+/)*[a-z0-9-]+\.html', path):
         raise engine.PublishError('VALIDATION', ['頁面路徑不在公開頁面範圍'])
     if operation not in {'publish', 'unpublish', 'delete', 'restore'}:
         raise engine.PublishError('VALIDATION', ['頁面操作類型不支援'])
+    draft = json.loads(item['payload'])
+    if operation == 'publish' and 'editorial' in draft and draft.get('editorial') != draft.get('editorialBase'):
+        return editorial_candidate(item, root, draft)
     pages = {row['path']: row for row in catalog(root)}
     page = pages.get(path)
     if not page or page['kind'] in {'system', 'legacy-redirect', 'excluded-intake'}:
@@ -253,19 +283,44 @@ def page_candidate(item, root=ROOT):
     if not isinstance(state, dict) or state.get('schemaVersion') != 1 or not isinstance(state.get('pages'), dict):
         raise engine.PublishError('UNKNOWN_SCHEMA', ['data/page-content.json'])
     entry = copy.deepcopy(state['pages'].get(path, {'edits': {}}))
-    if not isinstance(entry, dict) or set(entry) - {'edits', 'status', 'lastmod'}:
+    if not isinstance(entry, dict) or set(entry) - {'edits', 'status', 'lastmod', 'seo', 'blocks'}:
         raise engine.PublishError('FORMAT_DRIFT', ['data/page-content.json'])
-    draft = json.loads(item['payload'])
-    if operation == 'publish' and 'case' in draft:
+    if operation == 'publish' and 'case' in draft and (draft.get('case') != draft.get('caseBase') or 'seo' not in draft):
+        if 'seo' in draft and draft.get('seo') != draft.get('seoBase'):
+            raise engine.PublishError('VALIDATION', ['政績內容與 SEO 請分次發布，避免兩種來源同時改動'])
+        if draft.get('blocks') != draft.get('blocksBase'):
+            raise engine.PublishError('VALIDATION', ['政績內容與延伸區塊請分次發布，避免兩種來源同時改動'])
         return case_candidate(item, root, path, draft)
     if operation == 'publish' and 'home' in draft and draft.get('home') != draft.get('homeBase'):
         if path != 'index.html':
             raise engine.PublishError('VALIDATION', ['首頁專題排序只能用於首頁'])
+        if 'seo' in draft and draft.get('seo') != draft.get('seoBase'):
+            raise engine.PublishError('VALIDATION', ['首頁專題與 SEO 請分次發布，避免兩種來源同時改動'])
+        if draft.get('blocks') != draft.get('blocksBase'):
+            raise engine.PublishError('VALIDATION', ['首頁專題與延伸區塊請分次發布，避免兩種來源同時改動'])
         return home_candidate(item, root, draft)
-    fields = validate_page_payload({'fields': draft.get('fields', {})} if 'case' in draft or 'home' in draft else draft)
+    fields = validate_page_payload({'fields': draft.get('fields', {})})
     if operation == 'publish':
-        changed_fields = entry.get('edits', {}) != fields or entry.get('status', 'published') != 'published'
+        blocks = draft.get('blocks')
+        if blocks is not None:
+            try:
+                blocks = validate_blocks(blocks)
+            except ValueError as error:
+                raise engine.PublishError('VALIDATION', [str(error)]) from None
+            if entry.get('blocks', []) != draft.get('blocksBase', []):
+                raise engine.PublishError('BASE_DRIFT', ['頁面區塊已有新版本，請重新載入後台'])
+        seo = draft.get('seo')
+        if seo is not None:
+            try:
+                seo = validate_seo_overlay(seo, root)
+            except ValueError as error:
+                raise engine.PublishError('VALIDATION', [str(error)]) from None
+        changed_fields = entry.get('edits', {}) != fields or entry.get('status', 'published') != 'published' or (seo is not None and entry.get('seo') != seo) or (blocks is not None and entry.get('blocks', []) != blocks)
         entry['edits'] = fields
+        if blocks is not None:
+            entry['blocks'] = blocks
+        if seo is not None:
+            entry['seo'] = seo
         entry['status'] = 'published'
         if changed_fields:
             entry['lastmod'] = engine.datetime.now(engine.TAIPEI).date().isoformat()
@@ -317,7 +372,8 @@ def reconcile_page(item, gh):
     if pr.get('state') == 'closed' and not pr.get('merged_at'):
         return {'id': item['id'], 'status': 'closed', 'message': '發布請求已關閉，頁面維持原狀。'}
     payload = json.loads(item['payload'])
-    domain = 'achievement-content' if item['operation'] == 'publish' and 'case' in payload else \
+    domain = 'editorial-page' if item['operation'] == 'publish' and payload.get('editorial') != payload.get('editorialBase') and 'editorial' in payload else \
+        'achievement-content' if item['operation'] == 'publish' and 'case' in payload and (payload.get('case') != payload.get('caseBase') or 'seo' not in payload) else \
         'home-content' if item['operation'] == 'publish' and payload.get('home') != payload.get('homeBase') and 'home' in payload else 'page-copy'
     layers, revision = engine.layered_status(gh, item['pr_number'], domain, item['path'], item['operation'],
         single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''))

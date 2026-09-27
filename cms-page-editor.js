@@ -20,6 +20,24 @@
       value: text(node),
     }));
   }
+  function seoInfo() {
+    const meta = (selector) => document.head.querySelector(selector)?.content || "";
+    return { title: document.title, description: meta('meta[name="description"]'),
+      image: meta('meta[property="og:image"]'), imageAlt: meta('meta[property="og:image:alt"]') };
+  }
+  function applySeoPreview(seo) {
+    if (!seo || typeof seo !== "object") return;
+    const values = { title: seo.title, description: seo.description, image: seo.image, imageAlt: seo.imageAlt };
+    if (Object.values(values).some(value => typeof value !== "string" || value.length > 500)) return;
+    document.title = values.title;
+    for (const [selector, value] of [
+      ['meta[name="description"]', values.description],
+      ['meta[property="og:title"]', values.title], ['meta[property="og:description"]', values.description],
+      ['meta[property="og:image"]', values.image], ['meta[property="og:image:alt"]', values.imageAlt],
+      ['meta[name="twitter:title"]', values.title], ['meta[name="twitter:description"]', values.description],
+      ['meta[name="twitter:image"]', values.image], ['meta[name="twitter:image:alt"]', values.imageAlt],
+    ]) { const tag = document.head.querySelector(selector); if (tag) tag.content = value; }
+  }
   function pageRoute() {
     if (loader?.dataset.cmsPagePath) {
       if (!/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/.test(loader.dataset.cmsPagePath)) throw new Error("invalid page path");
@@ -106,6 +124,54 @@
     const link = node("a", "開啟原始內容 ↗"); link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer";
     credit.append(link); caption.append(credit); figure.append(visual, caption);
     return figure;
+  }
+  function applyEditorialPreview(page, extra = false) {
+    let body = document.querySelector(extra ? ".cms-extra" : ".editorial-body");
+    if (extra && !body) {
+      body = node("section",undefined,"wrap section editorial-body cms-extra");
+      document.querySelector("main")?.append(body);
+    }
+    if (!body || !page || !Array.isArray(page.blocks)) return;
+    if (!extra) {
+      const h1 = document.querySelector(".page-head h1"); if (h1) h1.textContent = page.title || "";
+      const intro = document.querySelector(".page-head h1 + p"); if (intro) intro.textContent = page.summary || "";
+    }
+    const nodes = [];
+    if (page.eventStart) {
+      const event = node("p"), start = node("time", String(page.eventStart).replace("T", " ").replace("+08:00", ""));
+      start.dateTime = page.eventStart; event.append(start);
+      if (page.eventEnd) { event.append(" – "); const end = node("time", String(page.eventEnd).replace("T", " ").replace("+08:00", "")); end.dateTime = page.eventEnd; event.append(end); }
+      nodes.push(event);
+    }
+    for (const block of page.blocks.slice(0, 80)) {
+      if (block.type === "heading") nodes.push(node("h2",block.title || ""));
+      if (block.type === "paragraph") nodes.push(node("p",block.text || ""));
+      if (block.type === "timeline") {
+        const article = node("article",undefined,"content-card"), copy = node("div",undefined,"card-body"), time = node("time",block.date || "");
+        time.dateTime = block.date || ""; copy.append(time,node("h2",block.title || ""),node("p",block.text || "")); article.append(copy); nodes.push(article);
+      }
+      if (block.type === "source") {
+        const source = node("p",undefined,"source-note");
+        if (block.date) { const time = node("time",block.date); time.dateTime=block.date; source.append(time," · "); }
+        const link = node("a",(block.title || "資料來源") + " ↗"); link.href=block.url || "#"; link.target="_blank"; link.rel="noopener noreferrer";
+        source.append(link); nodes.push(source);
+      }
+      if (["photo","video"].includes(block.type)) {
+        const media = mediaPreview({kind:block.type,url:block.url,alt:block.alt,caption:block.text || block.title,credit:block.credit});
+        if (media) nodes.push(media);
+      }
+      if (block.type === "map") {
+        const card=node("div",undefined,"content-card"),copy=node("div",undefined,"card-body");
+        copy.append(node("h2",block.title || "地點"),node("address",block.address || ""));
+        if (block.address) { const a=node("a","開啟地圖 App 導航 ↗","button button-green"); a.href=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(block.address)}`; a.target="_blank"; a.rel="noopener noreferrer"; copy.append(a); }
+        card.append(copy); nodes.push(card);
+      }
+    }
+    if (!extra) {
+      const updated=node("p",undefined,"source-note"),time=node("time",page.updated || ""); time.dateTime=page.updated || "";
+      updated.append("內容整理 ",time); nodes.push(updated);
+    }
+    body.replaceChildren(...nodes);
   }
   function applyCasePreview(data) {
     if (!data || typeof data !== "object") return;
@@ -213,11 +279,16 @@
       }
       if (date) nav.append(date);
     }
-    send("huiwen-cms-ready", { blocks: [] });
+    send("huiwen-cms-ready", { blocks: [], seo: seoInfo() });
   }
   async function enable() {
     try {
       const route = pageRoute();
+      if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(route)) {
+        document.addEventListener("click", (event) => { if (event.target.closest("main a")) event.preventDefault(); }, true);
+        send("huiwen-cms-ready", { blocks: [], seo: seoInfo() });
+        return;
+      }
       if (/^achievement-[a-z0-9-]+\.html$/.test(route)) {
         document.addEventListener("click", (event) => {
           const target = event.target;
@@ -228,7 +299,7 @@
           if (section) { event.preventDefault(); send("huiwen-cms-case-focus", { section }); }
           else if (target.closest("main a")) event.preventDefault();
         }, true);
-        send("huiwen-cms-ready", { blocks: [] });
+        send("huiwen-cms-ready", { blocks: [], seo: seoInfo() });
         return;
       }
       const manifestUrl = new URL(loader?.dataset.cmsManifest || "", SITE_ORIGIN);
@@ -268,7 +339,7 @@
       if (event.target.closest("main [data-cms-edit-id]")) return;
       if (event.target.closest("main a")) event.preventDefault();
     }, true);
-    send("huiwen-cms-ready", { blocks: collect() });
+    send("huiwen-cms-ready", { blocks: collect(), seo: seoInfo() });
   }
   addEventListener("message", (event) => {
     if (event.origin !== ADMIN_ORIGIN || event.source !== window.parent) return;
@@ -289,10 +360,13 @@
           .find((candidate) => candidate.dataset.cmsEditId === field.id);
         if (node && node.dataset.cmsSourceHash === field.sourceHash) node.textContent = field.value;
       }
-      send("huiwen-cms-ready", { blocks: collect() });
+      send("huiwen-cms-ready", { blocks: collect(), seo: seoInfo() });
     }
     if (data.type === "huiwen-cms-case-preview" && /^achievement-[a-z0-9-]+\.html$/.test(pageRoute())) applyCasePreview(data.case);
     if (data.type === "huiwen-cms-home-preview" && pageRoute() === "index.html") applyHomePreview(data.home, data.cases);
+    if (data.type === "huiwen-cms-seo-preview") applySeoPreview(data.seo);
+    if (data.type === "huiwen-cms-editorial-preview" && /^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(pageRoute())) applyEditorialPreview(data.page);
+    if (data.type === "huiwen-cms-extra-preview" && Array.isArray(data.blocks)) applyEditorialPreview({blocks:data.blocks},true);
   });
   window.parent.postMessage({ type: "huiwen-cms-hello", path: `/${pageRoute()}` }, ADMIN_ORIGIN);
 })();

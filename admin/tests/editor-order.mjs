@@ -70,6 +70,7 @@ const server = createServer(async (req, res) => {
   }
   if (/^\/api\/documents\/\d+\/history$/.test(path)) return send(res, JSON.stringify({ versions: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
+  if (path === "/api/page-blocks") return send(res, JSON.stringify({ blocks: [] }));
   if (path === "/api/publications") return send(res, JSON.stringify({ publications: [] }));
   if (path === "/api/case") return send(res, JSON.stringify({ case: published }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));

@@ -57,6 +57,19 @@
             </select>
           </label>
           <div id="page-tree" class="page-tree" aria-live="polite"><p>正在載入頁面…</p></div>
+          <details class="page-history" id="page-create-panel">
+            <summary>＋ 在欄目新增專頁</summary>
+            <form id="page-create-form">
+              <label class="field">所屬欄目<select name="section" required>
+                <option value="news">新聞媒體</option><option value="press">新聞發布</option>
+                <option value="service">民眾服務</option><option value="council">議會問政</option>
+                <option value="achievement">建設與政績</option>
+              </select></label>
+              <label class="field">頁面名稱<input name="title" required maxlength="150"></label>
+              <label class="field">網址識別（小寫英文／數字／-）<input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80" placeholder="fengshan-topic"></label>
+              <button type="submit">建立草稿頁</button>
+            </form>
+          </details>
           <p class="hint">頁面文字可直接在右側正式版面中點選編輯。儲存只建立草稿，發布仍須通過網站檢查。</p>
         </aside>
         <section class="visual-editor" aria-labelledby="page-editor-title">
@@ -82,6 +95,21 @@
             <div class="section-head"><div><p class="eyebrow">首頁專題選片與排序</p><h3 id="home-editor-heading">決定哪些專題出現在首頁</h3></div></div>
             <p class="hint">可從已公開專題新增、移除、修改摘要或調整順序。第一則是左側主打，其餘依序顯示為右側閱讀卡片；至少保留一則閱讀卡片，最多十二則。儲存草稿並發布後才會更新正式首頁。</p>
             <div id="home-editor-fields"></div>
+          </section>
+          <section id="seo-editor" class="case-editor" aria-labelledby="seo-editor-heading" hidden>
+            <div class="section-head"><div><p class="eyebrow">逐頁搜尋與分享設定</p><h3 id="seo-editor-heading">編輯這一頁的 SEO</h3></div></div>
+            <p class="hint">網址由頁面路徑自動產生；標題、描述和分享圖會同步到搜尋、Open Graph 與社群預覽。分享圖請填本站已公開的 assets 圖片網址。</p>
+            <div id="seo-editor-fields"></div>
+          </section>
+          <section id="editorial-editor" class="case-editor" aria-labelledby="editorial-editor-heading" hidden>
+            <div class="section-head"><div><p class="eyebrow">新增與編輯子頁</p><h3 id="editorial-editor-heading">頁面內容與區塊</h3></div></div>
+            <p class="hint">每頁可新增、移除及排序標題、段落、時間軸、資料來源、照片、影片及地圖區塊。空白內容不會通過發布檢查；公開時間統一為台灣時間。</p>
+            <div id="editorial-editor-fields"></div>
+          </section>
+          <section id="extra-blocks-editor" class="case-editor" aria-labelledby="extra-blocks-heading" hidden>
+            <div class="section-head"><div><p class="eyebrow">既有頁面延伸內容</p><h3 id="extra-blocks-heading">新增與排序內容區塊</h3></div></div>
+            <p class="hint">在這一頁的原有內容之後加入標題、段落、時間軸、資料來源、照片、影片或地圖；可調整這些新增區塊的順序，沒有新增就保持空白。</p>
+            <div id="extra-blocks-fields"></div>
           </section>
           <div class="page-actions">
             <span id="page-draft-status" class="hint" aria-live="polite">尚未選取頁面</span>

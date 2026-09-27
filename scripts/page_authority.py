@@ -59,6 +59,10 @@ def classify(path):
         return (path, 'excluded-intake', 'none')
     if path.startswith('achievement-') and path.endswith('.html'):
         return ('data/achievements.json', 'generated', 'none')
+    if path.startswith('page-') and path.endswith('.html'):
+        from editorial_pages import PATH
+        if PATH.fullmatch(path):
+            return ('data/editorial-pages.json', 'generated', 'partial')
     if path.startswith('news-') and path.endswith('.html'):
         return (path, 'static', 'none')
     if path == 'renwu-anju-social-housing/index.html':

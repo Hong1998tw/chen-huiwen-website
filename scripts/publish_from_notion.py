@@ -47,7 +47,7 @@ TAIPEI = ZoneInfo('Asia/Taipei')
 NOTION_API = 'https://api.' + 'notion' + '.com/v1'  # split so the public-link scanner does not treat the API as content
 CONTRACT = 'huiwen-pilot-publisher/1'
 SUPPORTED_SCHEMA = {'events': {2}, 'legal-schedule': {2}}
-DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json', 'home-content': 'data/civic-home.json'}
+DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json', 'home-content': 'data/civic-home.json', 'editorial-page': 'data/editorial-pages.json'}
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
@@ -64,6 +64,7 @@ ALLOWED_PATHS = {
         if row['path'].startswith('achievement-')
     },
     'home-content': {'data/civic-home.json', 'index.html', 'data/search-index.json', 'sitemap.xml'},
+    'editorial-page': {'data/editorial-pages.json', 'data/search-index.json', 'sitemap.xml'},
 }
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
@@ -544,8 +545,20 @@ def changed_files(repo):
     return sorted(line[3:].strip() for line in out.splitlines() if line.strip())
 
 
-def check_allowed(domain, files):
-    bad = sorted(set(files) - ALLOWED_PATHS[domain])
+def allowed_for(candidate):
+    allowed = set(ALLOWED_PATHS[candidate.domain])
+    if candidate.domain == 'editorial-page':
+        from editorial_pages import PATH, SECTIONS
+        matched = PATH.fullmatch(candidate.record_key)
+        if not matched:
+            raise PublishError('PATH_NOT_ALLOWED', [candidate.record_key])
+        allowed.update((candidate.record_key, SECTIONS[matched[1]][0]))
+    return allowed
+
+
+def check_allowed(domain, files, candidate=None):
+    allowed = allowed_for(candidate) if candidate else ALLOWED_PATHS[domain]
+    bad = sorted(set(files) - allowed)
     if bad:
         raise PublishError('PATH_NOT_ALLOWED', bad)
 
@@ -568,7 +581,7 @@ def materialize(candidate, repo, *, quality=True):
         tail = [line for line in (exc.output or '').splitlines() if re.search(r'Error|FAIL|STALE|assert', line)][-3:]
         raise PublishError('BUILD_FAILED', [re.sub(r'\s+', ' ', t)[:200] for t in tail]) from None
     files = changed_files(repo)
-    check_allowed(candidate.domain, files)
+    check_allowed(candidate.domain, files, candidate)
     return files
 
 
@@ -834,7 +847,7 @@ def parse_verification_artifact(zip_bytes):
 
 
 def http_check(domain, record_key, record_name=None, fetch=None):
-    if domain in {'page-copy', 'achievement-content', 'home-content'}:
+    if domain in {'page-copy', 'achievement-content', 'home-content', 'editorial-page'}:
         route = '' if record_key == 'index.html' else record_key[:-10] if record_key.endswith('/index.html') else record_key
         url = 'https://www.huiwen.tw/' + route
         try:
@@ -1222,7 +1235,7 @@ def git_push(token):
         env = {**os.environ, 'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'http.https://github.com/.extraheader',
                'GIT_CONFIG_VALUE_0': f'AUTHORIZATION: basic {auth}', 'GIT_TERMINAL_PROMPT': '0'}
         run(['git', 'checkout', '-B', cand.branch], worktree)
-        run(['git', 'add', '--', *sorted(ALLOWED_PATHS[cand.domain] & set(changed_files(worktree)))], worktree)
+        run(['git', 'add', '--', *sorted(allowed_for(cand) & set(changed_files(worktree)))], worktree)
         run(['git', '-c', f"user.name={os.environ.get('PUBLISHER_GIT_NAME', 'huiwen-publisher[bot]')}",
              '-c', f"user.email={os.environ.get('PUBLISHER_GIT_EMAIL', 'huiwen-publisher[bot]@users.noreply.github.com')}",
              'commit', '-m', title, '-m', f'Candidate digest: {cand.digest}'], worktree)
