@@ -188,8 +188,12 @@ function validateRequiredFields(root, includeHidden = false) {
   }
   return true;
 }
-function notice(text) {
-  $("#notice").textContent = text;
+function notice(text, kind = "info") {
+  const target = $("#notice");
+  target.textContent = text;
+  target.classList.toggle("notice-error", kind === "error" && Boolean(text));
+  target.setAttribute("role", kind === "error" ? "alert" : "status");
+  target.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
 }
 async function api(path, method = "GET", body) {
   const r = await fetch(path, {
@@ -213,7 +217,7 @@ async function action(fn) {
   try {
     await fn();
   } catch (e) {
-    notice(e.message);
+    notice(e.message, "error");
     showFieldError(e.field, e.message);
   }
 }
@@ -323,6 +327,41 @@ const readOnlyKinds = new Set(["system", "legacy-redirect", "excluded-intake"]);
 const pageUrl = (path) => path === "index.html" ? "/" : path.endsWith("/index.html") ? `/${path.slice(0, -10)}` : `/${path}`;
 const pageRoute = (pathname) => pathname === "/" ? "index.html" : pathname.endsWith("/") ? `${pathname.slice(1)}index.html` : pathname.slice(1);
 const isPageEditable = (page) => Boolean(page && page.editor_scope === "partial" && !readOnlyKinds.has(page.source_kind));
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
+  return value;
+}
+function sameValue(left, right) {
+  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+}
+function pagePublishConflicts() {
+  const content = [], seo = [];
+  const caseChanged = Boolean(caseDraft && !sameValue(caseDraft, caseBase));
+  const homeChanged = Boolean(homeDraft && !sameValue(homeDraft, homeBase));
+  const seoChanged = Boolean(seoDraft && !sameValue(seoDraft, seoBase));
+  const blocksChanged = Boolean(extraBlocks && !sameValue(extraBlocks, extraBlocksBase));
+  const add = (message, includeSeo = false) => {
+    content.push(message);
+    if (includeSeo) seo.push(message);
+  };
+  if (caseChanged && seoChanged) add("政績內容與 SEO 必須分次發布", true);
+  if (caseChanged && blocksChanged) add("政績內容與延伸區塊必須分次發布");
+  if (homeChanged && seoChanged) add("首頁專題與 SEO 必須分次發布", true);
+  if (homeChanged && blocksChanged) add("首頁專題與延伸區塊必須分次發布");
+  if (caseChanged && pageFields.size) add("政績結構化內容與版面文字必須分次發布");
+  if (homeChanged && pageFields.size) add("首頁專題與版面文字必須分次發布");
+  return { content: [...new Set(content)], seo: [...new Set(seo)] };
+}
+function renderPagePublishConflicts(conflicts = pagePublishConflicts()) {
+  const instructions = "請保留草稿，先單獨發布其中一類；完成後載入最新官網版本，再發布另一類。";
+  const contentError = $("#content-publish-conflict"), seoError = $("#seo-publish-conflict");
+  contentError.textContent = conflicts.content.length ? `發布前檢查：${conflicts.content.join("；")}。${instructions}` : "";
+  seoError.textContent = conflicts.seo.length ? `發布前檢查：${conflicts.seo.join("；")}。${instructions}` : "";
+  contentError.hidden = !conflicts.content.length;
+  seoError.hidden = !conflicts.seo.length;
+  return conflicts;
+}
 function pageStatusLabel(page) {
   const status = page?.publication_status || "published";
   return status === "draft" ? "新頁面草稿" : status === "deleted" ? "在垃圾桶，可還原" : status === "unpublished" ? "已下架，可還原" : "正式頁面";
@@ -346,10 +385,12 @@ function pageControls() {
   const pendingLabel = pendingStatus ? statusNames[pendingStatus] || "等待處理" : "等待處理";
   const pendingSuffix = pendingStatus === "queued" && pendingAge > 15 * 60 * 1000 ? " · 執行器尚未領取" : "";
   const unchanged = publicationRecords.some(p => p.path === selectedPage?.path && p.version === pageDraft?.version && p.status === "no_change");
-  const publishable = editable && (live || newEditorialReady) && Boolean(pageDraft?.version) && !pageDirty && !pending && !unchanged;
+  const conflicts = renderPagePublishConflicts();
+  const hasPublishConflict = conflicts.content.length > 0 || conflicts.seo.length > 0;
+  const publishable = editable && (live || newEditorialReady) && Boolean(pageDraft?.version) && !pageDirty && !pending && !unchanged && !hasPublishConflict;
   $("#page-status").textContent = selectedPage ? [pageStatusLabel(selectedPage),
     pageDirty ? "有未儲存變更" : pageDraft?.version ? `草稿 v${pageDraft.version} 已儲存` : "無未儲存變更",
-    pending ? `${pendingLabel}${pendingSuffix}` : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
+    pending ? `${pendingLabel}${pendingSuffix}` : hasPublishConflict ? "來源需分次發布" : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
   $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
   $("#page-publish").disabled = !publishable;
   $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
@@ -882,6 +923,7 @@ async function selectPage(page) {
   extraBlocks = null;
   extraBlocksBase = null;
   let homeUnavailable = false;
+  let caseBaselineRebased = false;
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -914,6 +956,11 @@ async function selectPage(page) {
         caseBase.images ??= [...currentCase.images];
         caseBase.sectionOrder ??= [...currentCase.sectionOrder];
       }
+      if (caseDraft && caseBase && !sameValue(caseBase, currentCase) && sameValue(caseDraft, currentCase)) {
+        caseBase = structuredClone(currentCase);
+        pageDirty = true;
+        caseBaselineRebased = true;
+      }
     }
     if (page.path === "index.html") {
       try {
@@ -939,7 +986,7 @@ async function selectPage(page) {
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
     $("#page-history-panel").hidden = !history.versions?.length;
-    setPageStatus(homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
+    setPageStatus(caseBaselineRebased ? "正式政績內容已包含此草稿變更；基準已安全對齊，儲存草稿後即可發布其他獨立變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
       pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
   } else {
     $("#page-history-panel").hidden = true;
@@ -1005,6 +1052,14 @@ async function savePageDraft() {
 }
 async function submitPageOperation(operation, confirmed = false) {
   if (!selectedPage || !isPageEditable(selectedPage)) return;
+  if (operation === "publish") {
+    const conflicts = renderPagePublishConflicts();
+    if (conflicts.content.length || conflicts.seo.length) {
+      setPageStatus("發布前檢查未通過；請依內容與 SEO 區域的紅字分次發布。");
+      pageControls();
+      return;
+    }
+  }
   if (pageDirty) {
     if (!confirm("目前有未儲存的文字，先儲存草稿再繼續？")) return;
     if (await savePageDraft() === false) return;

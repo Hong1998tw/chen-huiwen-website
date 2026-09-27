@@ -123,6 +123,7 @@
             <button id="tab-publishing" type="button" role="tab" aria-controls="panel-publishing" aria-selected="false" data-editor-tab="publishing">發布</button>
           </div>
           <div id="panel-content" role="tabpanel" aria-labelledby="tab-content">
+          <p id="content-publish-conflict" class="field-error workflow-error" role="alert" hidden></p>
           <div id="page-editor-empty" class="editor-empty">
             <span aria-hidden="true">↖</span>
             <p>選擇左側頁面，正式網站的版面會在這裡載入。</p>
@@ -150,6 +151,7 @@
           </section>
           </div>
           <div id="panel-seo" role="tabpanel" aria-labelledby="tab-seo" hidden>
+          <p id="seo-publish-conflict" class="field-error workflow-error" role="alert" hidden></p>
           <section id="seo-editor" class="case-editor" aria-labelledby="seo-editor-heading" hidden>
             <div class="section-head"><div><p class="eyebrow">逐頁搜尋與分享設定</p><h3 id="seo-editor-heading">編輯這一頁的 SEO</h3></div></div>
             <p class="hint">網址由頁面路徑自動產生；標題、描述和分享圖會同步到搜尋、Open Graph 與社群預覽。分享圖請填本站已公開的 assets 圖片網址。</p>

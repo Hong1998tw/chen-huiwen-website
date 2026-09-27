@@ -11,7 +11,7 @@ const [html, script, consoleScript, style, dateTimeScript] = await Promise.all([
   readFile(new URL("style.css", root)),
   readFile(new URL("date-time.js", root)),
 ]);
-const published = {
+let published = {
   title: "A 專頁", summary: "公開紀錄", updated: "2026-09-27",
   paragraphs: ["第一段", "第二段"],
   history: [
@@ -37,6 +37,7 @@ let draft = null;
 let savedDocument = null;
 let rejectMediaCredit = false;
 let releaseList = [];
+let publishRequestCount = 0;
 const documents = [
   { id: 1, domain: "events", version: 1, updated_at: "2026-09-27T00:00:00Z", payload: JSON.stringify({
     name: "日期測試活動", start: "2026-10-01T19:30:00+08:00", end: "2026-10-01T21:00:00+08:00",
@@ -81,6 +82,14 @@ const server = createServer(async (req, res) => {
   if (path === "/api/case") return send(res, JSON.stringify({ case: published }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));
   if (path === "/api/page-draft" && req.method === "GET") return send(res, JSON.stringify({ draft }));
+  if (path === "/test/fixture" && req.method === "POST") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const fixture = JSON.parse(body);
+    if (Object.hasOwn(fixture, "published")) published = fixture.published;
+    if (Object.hasOwn(fixture, "draft")) draft = fixture.draft;
+    return send(res, JSON.stringify({ ok: true }));
+  }
   if (path === "/api/page-draft" && req.method === "PUT") {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -90,9 +99,14 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ error: "媒體來源 內容或長度不正確", field: "case.media.0.credit" }));
     }
     saved = JSON.parse(body);
-    draft = { version: 1, payload: JSON.stringify({ fields: {}, case: saved.case, caseBase: saved.caseBase }), publication_status: "published" };
-    pages[1].draft_version = 1;
-    return send(res, JSON.stringify({ version: 1 }));
+    const version = (draft?.version || 0) + 1;
+    draft = { version, payload: JSON.stringify(saved), publication_status: "published" };
+    pages[1].draft_version = version;
+    return send(res, JSON.stringify({ version }));
+  }
+  if (path === "/api/page-draft/publish" && req.method === "POST") {
+    publishRequestCount++;
+    return send(res, JSON.stringify({ status: "queued" }));
   }
   res.writeHead(404); res.end();
 });
@@ -127,6 +141,8 @@ try {
   await page.locator("#page-save").click();
   await page.locator('[data-validation-path="case.media.0.credit"] .field-error').waitFor({ state: "visible" });
   assert.equal(await page.locator('[data-validation-path="case.media.0.credit"] .field-error').textContent(), "媒體來源 內容或長度不正確");
+  assert.equal(await page.locator("#notice").getAttribute("role"), "alert");
+  assert.equal(await page.locator("#notice").evaluate(node => node.classList.contains("notice-error")), true, "server validation errors use the red error treatment");
   assert.match(await page.locator("#notice").textContent(), /媒體來源 內容或長度不正確/);
   await mediaCredit.fill("");
   await mediaCredit.fill("服務處");
@@ -159,6 +175,45 @@ try {
   assert.equal(saved.case.history[0].date, '2023-06-21');
   assert.equal(saved.case.sources[0].sourceDate, '2023-06');
   assert.deepEqual(saved.caseBase.images, ["first.jpg", "second.jpg"]);
+
+  const seoBase = { title: "A 專頁 | 慧文", description: "原始說明", image: "https://www.huiwen.tw/assets/og/default.png", imageAlt: "原始圖片說明" };
+  const seoDraft = { ...seoBase, imageAlt: "更新後圖片說明" };
+  const conflictDraft = {
+    version: 2,
+    publication_status: "published",
+    payload: JSON.stringify({ fields: {}, case: saved.case, caseBase: saved.caseBase, seo: seoDraft, seoBase }),
+  };
+  const setFixture = async (fixture) => page.evaluate(async (value) => {
+    await fetch("/test/fixture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+  }, fixture);
+  await setFixture({ published, draft: conflictDraft });
+  await page.locator("#open-page-drawer").click();
+  await page.getByRole("button", { name: /Z 專頁/ }).click();
+  await page.locator("#open-page-drawer").click();
+  await page.getByRole("button", { name: /A 專頁/ }).click();
+  await page.locator("#content-publish-conflict").waitFor({ state: "visible" });
+  await page.locator("#tab-seo").click();
+  await page.locator("#seo-publish-conflict").waitFor({ state: "visible" });
+  assert.match(await page.locator("#content-publish-conflict").textContent(), /政績內容與 SEO 必須分次發布/);
+  assert.match(await page.locator("#seo-publish-conflict").textContent(), /政績內容與 SEO 必須分次發布/);
+  assert.equal(await page.locator("#page-publish").isDisabled(), true, "mixed structured content and SEO cannot be queued");
+  await page.evaluate(() => window.submitPageOperation("publish", true));
+  assert.equal(publishRequestCount, 0, "invalid mixed release is rejected before the publishing API");
+
+  await setFixture({ published: saved.case, draft: conflictDraft });
+  await page.locator("#open-page-drawer").click();
+  await page.getByRole("button", { name: /Z 專頁/ }).click();
+  await page.locator("#open-page-drawer").click();
+  await page.getByRole("button", { name: /A 專頁/ }).click();
+  await page.getByText(/基準已安全對齊/).waitFor();
+  assert.equal(await page.locator("#content-publish-conflict").isHidden(), true, "content already live no longer conflicts with SEO");
+  assert.equal(await page.locator("#page-save").isDisabled(), false, "safe baseline rebase requires a draft save");
+  assert.equal(await page.locator("#page-publish").isDisabled(), true, "rebased baseline is not publishable until saved");
+  await page.locator("#page-save").click();
+  await page.getByText(/已儲存；正式頁面尚未變更。/).waitFor();
+  assert.deepEqual(saved.caseBase, published, "safe rebase records the exact live canonical case as the new base");
+  assert.equal(await page.locator("#page-publish").isDisabled(), false, "only the remaining SEO change is publishable after save");
+
   await page.locator('.primary-nav [data-workspace-target="services"]').click();
   await page.locator('#documents button.document').first().click();
   await page.locator('#field-start').fill('202610011930');
@@ -205,7 +260,7 @@ try {
   assert.match(await page.locator("#page-release-state").textContent(), /發布執行器尚未領取/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.close();
-  console.log("PASS: mobile CMS ordering and compact date/time entry in case, event, and legal schedule editors");
+  console.log("PASS: mobile CMS ordering, compact date/time entry, inline validation, split publishing, and safe baseline rebase");
 } finally {
   await browser?.close();
   server.closeAllConnections();
