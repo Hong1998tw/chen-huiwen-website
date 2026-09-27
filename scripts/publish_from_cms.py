@@ -245,8 +245,6 @@ def editorial_candidate(item, root, draft):
     if draft.get('fields') or not isinstance(draft.get('editorial'), dict):
         raise engine.PublishError('VALIDATION', ['新增專頁不能混用舊式文字覆寫'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
-    if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT', retryable=True)
     try:
         revised = validate_editorial_page(path, draft['editorial'], root)
         source = read_editorial(root)
@@ -261,7 +259,7 @@ def editorial_candidate(item, root, draft):
     old_text = (root / 'data/editorial-pages.json').read_text(encoding='utf-8')
     new_text = json.dumps(source, ensure_ascii=False, indent=2) + '\n'
     digest = engine.sha({'path':path,'version':item['version'],'editorial':revised})
-    return engine.Candidate('editorial-page', item['id'], path, revised, item['base_commit'], new_text,
+    return engine.Candidate('editorial-page', item['id'], path, revised, live_sha, new_text,
                             new_text != old_text, f'新增或編輯專頁：{path}\n操作：publish', digest)
 
 
@@ -279,8 +277,13 @@ def page_candidate(item, root=ROOT):
     if not page or page['kind'] in {'system', 'legacy-redirect', 'excluded-intake'}:
         raise engine.PublishError('VALIDATION', ['此頁目前不開放編輯'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
-    if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT', retryable=True)
+    stale_base = item.get('base_commit') != live_sha
+    structured_case_edit = (operation == 'publish' and isinstance(draft.get('case'), dict) and
+                            draft.get('case') != draft.get('caseBase'))
+    structured_home_edit = (operation == 'publish' and isinstance(draft.get('home'), dict) and
+                            draft.get('home') != draft.get('homeBase'))
+    if stale_base and not (structured_case_edit or structured_home_edit):
+        raise engine.PublishError('BASE_DRIFT', ['此頁草稿基準早於目前官網版本。草稿已保留；請先確認目前正式頁面，再重新整理草稿。'])
     try:
         state = json.loads(page_text(root))
     except (ValueError, OSError):
@@ -295,7 +298,8 @@ def page_candidate(item, root=ROOT):
             raise engine.PublishError('VALIDATION', ['政績內容與 SEO 請分次發布，避免兩種來源同時改動'])
         if draft.get('blocks') != draft.get('blocksBase'):
             raise engine.PublishError('VALIDATION', ['政績內容與延伸區塊請分次發布，避免兩種來源同時改動'])
-        return case_candidate(item, root, path, draft)
+        candidate_item = {**item, 'base_commit': live_sha} if stale_base else item
+        return case_candidate(candidate_item, root, path, draft)
     if operation == 'publish' and 'home' in draft and draft.get('home') != draft.get('homeBase'):
         if path != 'index.html':
             raise engine.PublishError('VALIDATION', ['首頁專題排序只能用於首頁'])
@@ -303,7 +307,8 @@ def page_candidate(item, root=ROOT):
             raise engine.PublishError('VALIDATION', ['首頁專題與 SEO 請分次發布，避免兩種來源同時改動'])
         if draft.get('blocks') != draft.get('blocksBase'):
             raise engine.PublishError('VALIDATION', ['首頁專題與延伸區塊請分次發布，避免兩種來源同時改動'])
-        return home_candidate(item, root, draft)
+        candidate_item = {**item, 'base_commit': live_sha} if stale_base else item
+        return home_candidate(candidate_item, root, draft)
     fields = validate_page_payload({'fields': draft.get('fields', {})})
     if operation == 'publish':
         blocks = draft.get('blocks')
