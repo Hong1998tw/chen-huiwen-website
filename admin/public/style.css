@@ -216,6 +216,15 @@ h2 {
   font-weight: 400;
 }
 .case-editor{padding:24px;border-top:1px solid var(--line);background:#fff}.case-editor h3{margin:0}.case-editor-group{padding:18px 0;border-top:1px solid var(--line)}.case-editor-group:first-child{border-top:0}.case-editor-group header{position:static;padding:0;background:none;color:var(--ink);border:0}.case-editor-row{padding:16px;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--paper)}.case-editor-row .field{margin-bottom:12px}.case-editor-row .field:last-child{margin-bottom:0}.case-editor .field{max-width:100%}.case-editor .field textarea{min-height:88px}.case-editor-actions{display:flex;gap:12px;flex-wrap:wrap}.case-editor [type=checkbox]{width:auto;display:inline-block;margin-right:8px}.case-editor .field:has([type=checkbox]){display:flex;align-items:center;font-weight:500}.case-editor-row button{margin-top:8px}.case-editor p.hint{margin:8px 0 18px}
+.case-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.case-section-actions,.case-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.case-section-actions button,.case-row-actions button{margin:0}
+.case-section-actions button,.case-row-actions button,.case-row-position select{font-size:14px}
+.case-row-actions{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.case-row-position{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600}
+.case-row-position select{width:auto;min-width:112px;margin:0;padding:8px}
+.case-local-group{padding-top:18px;margin-top:18px;border-top:1px solid var(--line)}
+.case-local-group h5{margin:0 0 12px;font-size:16px}
 .case-local-thumbnail{display:block;max-width:240px;max-height:160px;object-fit:contain;margin:10px 0;border-radius:6px}
 .row {
   display: grid;

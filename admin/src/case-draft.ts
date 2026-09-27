@@ -1,6 +1,7 @@
 import { HttpError } from "./security.ts";
 
-const allowed = new Set(["title", "summary", "updated", "paragraphs", "history", "sources", "media", "imageMetadata"]);
+const allowed = new Set(["title", "summary", "updated", "paragraphs", "history", "sources", "media", "imageMetadata", "images", "sectionOrder"]);
+const sectionKeys = ["overview", "media", "history", "sources"];
 const forbidden = /[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]|<\s*\/?[a-z!?]/i;
 const day = (value: unknown) => typeof value === "string" && /^20\d\d-\d\d-\d\d$/.test(value) &&
   Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
@@ -48,7 +49,19 @@ function list(value: unknown, label: string, max: number) {
 export function validateCaseDraft(value: unknown) {
   const source = object(value, [...allowed], "政績草稿");
   if (Object.keys(source).some(k => !allowed.has(k))) throw new HttpError(400, "政績草稿欄位不正確");
+  const hasImages = Object.hasOwn(source, "images"), hasSectionOrder = Object.hasOwn(source, "sectionOrder");
+  if (hasImages !== hasSectionOrder) throw new HttpError(400, "照片與區塊排序欄位不完整");
   if (!day(source.updated)) throw new HttpError(400, "內容整理日期不正確");
+  const images = hasImages ? list(source.images, "既有照片", 24).map((name, i) => {
+    if (typeof name !== "string" || !/^[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)$/.test(name))
+      throw new HttpError(400, `既有照片 ${i + 1} 檔名不正確`);
+    return name;
+  }) : undefined;
+  if (images && new Set(images).size !== images.length) throw new HttpError(400, "既有照片不得重複");
+  const sectionOrder = hasSectionOrder ? list(source.sectionOrder, "區塊排序", sectionKeys.length) : undefined;
+  if (sectionOrder && (sectionOrder.length !== sectionKeys.length ||
+      new Set(sectionOrder).size !== sectionKeys.length || sectionOrder.some(key => !sectionKeys.includes(key))))
+    throw new HttpError(400, "區塊排序不正確");
   const paragraphs = list(source.paragraphs, "背景段落", 30).map((p, i) => string(p, `背景段落 ${i + 1}`, 4000));
   const history = list(source.history, "推動歷程", 50).map((row, i) => {
     const r = object(row, ["date", "title", "text"], `歷程 ${i + 1}`);
@@ -76,6 +89,8 @@ export function validateCaseDraft(value: unknown) {
     throw new HttpError(400, "原有照片說明格式不正確");
   const metadata = source.imageMetadata as Record<string, unknown>;
   if (Object.keys(metadata).length > 24) throw new HttpError(400, "原有照片數量超出限制");
+  if (images && Object.keys(metadata).some(filename => !images.includes(filename)))
+    throw new HttpError(400, "照片說明不屬於此頁");
   const imageMetadata: Record<string, unknown> = {};
   for (const [filename, raw] of Object.entries(metadata)) {
     if (!/^[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)$/.test(filename)) throw new HttpError(400, "原有照片檔名不正確");
@@ -84,5 +99,6 @@ export function validateCaseDraft(value: unknown) {
       credit: string(item.credit, "照片來源"), sourceUrl: url(item.sourceUrl, "照片原始網址") };
   }
   return { title: string(source.title, "標題"), summary: string(source.summary, "摘要", 4000, false),
-    updated: source.updated as string, paragraphs, history, sources, media, imageMetadata };
+    updated: source.updated as string, paragraphs, history, sources, media, imageMetadata,
+    ...(images && sectionOrder ? { images, sectionOrder } : {}) };
 }

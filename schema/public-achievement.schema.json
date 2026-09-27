@@ -60,6 +60,15 @@
           "type": "string"
         }
       },
+      "sectionOrder": {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "items": {
+          "type": "string",
+          "enum": ["overview", "media", "history", "sources"]
+        }
+      },
       "notes": {
         "type": "array",
         "items": {

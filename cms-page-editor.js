@@ -113,7 +113,16 @@
     if (media.length) {
       if (!photos) { photos = node("div", undefined, "case-photos"); photos.id = "case-media"; body.insertBefore(photos, body.querySelector(".history-section,.case-sources")); }
       photos.append(...media);
-    } else if (photos && !photos.children.length) photos.remove();
+    } else if (photos && !photos.children.length) { photos.remove(); photos = null; }
+    if (photos && Array.isArray(data.images)) {
+      const localPhotos = new Map();
+      for (const child of photos.children) {
+        if (child.classList.contains("case-external-media")) continue;
+        const anchor = child.matches('a[href*="/assets/"]') ? child : child.querySelector('a[href*="/assets/"]');
+        if (anchor) localPhotos.set(decodeURIComponent(new URL(anchor.href).pathname.split("/").at(-1) || ""), child);
+      }
+      photos.prepend(...data.images.map(filename => localPhotos.get(filename)).filter(Boolean));
+    }
     if (photos && data.imageMetadata && typeof data.imageMetadata === "object") {
       for (const anchor of photos.querySelectorAll('a[href*="/assets/"]')) {
         const filename = decodeURIComponent(new URL(anchor.href).pathname.split("/").at(-1) || "");
@@ -143,6 +152,28 @@
         row.append(link); list.append(row);
       }
       section.append(list); body.append(section);
+    }
+    const defaultOrder = ["overview", "media", "history", "sources"];
+    const order = Array.isArray(data.sectionOrder) && data.sectionOrder.length === defaultOrder.length &&
+      defaultOrder.every(key => data.sectionOrder.includes(key)) ? data.sectionOrder : defaultOrder;
+    const sections = { overview: body.querySelector(".case-background"), media: photos,
+      history: body.querySelector(".history-section"), sources: body.querySelector(".case-sources") };
+    for (const key of order) if (sections[key]) body.append(sections[key]);
+    const nav = document.querySelector(".civic-article-nav");
+    if (nav) {
+      const context = nav.querySelector('a[href="#case-context"]');
+      const date = nav.querySelector("span");
+      const links = { overview: ["#case-overview", "重點說明", Boolean(sections.overview)],
+        media: ["#case-media", "照片與影片", Boolean(photos?.children.length)],
+        history: ["#case-history", "推動歷程", Boolean(history.length)],
+        sources: ["#case-sources", "資料來源", Boolean(sources.length)] };
+      nav.replaceChildren();
+      if (context) nav.append(context);
+      for (const key of order) {
+        const [href, label, visible] = links[key];
+        if (visible) { const link = node("a", label + " ↓"); link.href = href; nav.append(link); }
+      }
+      if (date) nav.append(date);
     }
     send("huiwen-cms-ready", { blocks: [] });
   }

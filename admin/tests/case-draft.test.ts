@@ -14,6 +14,21 @@ test("case draft allows optional empty sections and historical year-only dates",
   assert.equal(validateCaseDraft(draft).history[0].date, "2026");
 });
 
+test("case draft preserves explicit section and existing photo order", () => {
+  const draft = base();
+  draft.images = ["first.jpg", "second.png"];
+  draft.sectionOrder = ["sources", "history", "media", "overview"];
+  assert.deepEqual(validateCaseDraft(draft).images, draft.images);
+  assert.deepEqual(validateCaseDraft(draft).sectionOrder, draft.sectionOrder);
+  draft.images = ["first.jpg", "first.jpg"];
+  assert.throws(() => validateCaseDraft(draft));
+  draft.images = ["first.jpg", "second.png"];
+  draft.sectionOrder = ["sources", "sources", "media", "overview"];
+  assert.throws(() => validateCaseDraft(draft));
+  delete draft.sectionOrder;
+  assert.throws(() => validateCaseDraft(draft));
+});
+
 test("media import requires a supported public link, credit and explicit access confirmation", () => {
   const draft = base();
   draft.media.push({ kind: "video", url: "https://drive.google.com/file/d/1234567890abcdef/view", alt: "會勘影片", caption: "現場紀錄", credit: "陳慧文服務處", publicAccessConfirmed: true });

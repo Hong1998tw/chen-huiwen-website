@@ -13,8 +13,9 @@ let session,
   pageDraftApplied = false,
   pageDirty = false,
   caseDraft = null,
-  caseBase = null,
-  caseLocalImages = [];
+  caseBase = null;
+const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
+const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
 const $ = (s) => document.querySelector(s);
 const statusNames = {
   queued: "等待發布",
@@ -129,6 +130,7 @@ async function load() {
 function renderPages() {
   const list = $("#page-tree");
   const query = $("#page-filter").value.trim().toLocaleLowerCase();
+  const openGroups = new Map([...list.querySelectorAll("details.tree-group")].map(group => [group.dataset.group, group.open]));
   list.replaceChildren();
   const matching = pages.filter((p) =>
     [p.title, p.path, p.source_path].some((s) => String(s || "").toLocaleLowerCase().includes(query)),
@@ -154,13 +156,22 @@ function renderPages() {
     groups.get(group).push(p);
   }
   const order = ["首頁", "建設與政策", "民眾服務", "新聞、媒體與議會", "活動與主題專頁", "官網資訊與其他頁面"];
+  const pageSort = $("#page-sort").value;
+  const pathCompare = (a, b) => pageCollator.compare(a.path, b.path);
+  const compare = (a, b) => {
+    if (pageSort === "title") return pageCollator.compare(a.title || a.path, b.title || b.path) || pathCompare(a, b);
+    if (pageSort === "draft") return Number(Boolean(b.draft_version)) - Number(Boolean(a.draft_version)) || pathCompare(a, b);
+    if (pageSort === "recent") return (Date.parse(b.draft_updated_at || "") || 0) - (Date.parse(a.draft_updated_at || "") || 0) || pathCompare(a, b);
+    return pathCompare(a, b);
+  };
   for (const name of order.filter((key) => groups.has(key))) {
     const details = el("details", undefined, "tree-group");
-    details.open = !query || name === "首頁";
+    details.dataset.group = name;
+    details.open = Boolean(query) || (openGroups.get(name) ?? true);
     const summary = el("summary");
     summary.append(el("span", name), el("small", `${groups.get(name).length} 頁`));
     const children = el("div", undefined, "tree-children");
-    for (const p of groups.get(name).sort((a, b) => a.path.localeCompare(b.path))) {
+    for (const p of groups.get(name).sort(compare)) {
       const button = el("button", undefined, "tree-page");
       button.type = "button";
       button.dataset.status = p.publication_status || "published";
@@ -240,27 +251,99 @@ function cleanCaseDraft() {
   draft.history = draft.history.filter((item) => item.date?.trim() || item.title?.trim() || item.text?.trim());
   draft.sources = draft.sources.filter((item) => item.title?.trim() || item.url?.trim() || item.sourceDate?.trim() || item.sourceType?.trim());
   draft.media = draft.media.filter((item) => item.url?.trim() || item.alt?.trim() || item.caption?.trim() || item.credit?.trim());
-  draft.imageMetadata = Object.fromEntries(Object.entries(draft.imageMetadata).filter(([, item]) =>
-    item.alt?.trim() || item.caption?.trim() || item.credit?.trim() || item.sourceUrl?.trim()));
+  draft.imageMetadata = Object.fromEntries(Object.entries(draft.imageMetadata).filter(([filename, item]) =>
+    caseBase?.imageMetadata?.[filename] || item.alt?.trim() || item.caption?.trim() || item.credit?.trim() || item.sourceUrl?.trim()));
   return draft;
 }
-function caseGroup(title, key, blank, inputs) {
-  const group = el("section", undefined, "case-editor-group");
-  group.dataset.caseGroup = key;
-  const heading = el("h4", title);
-  group.append(heading);
+function moveCaseItem(key, from, to, focusAction = "position") {
+  if (!caseDraft || to < 0 || to >= caseDraft[key].length || from === to) return;
+  const [item] = caseDraft[key].splice(from, 1);
+  caseDraft[key].splice(to, 0, item);
+  renderCaseEditor();
+  caseChanged();
+  document.querySelector('[data-case-list="' + key + '"][data-case-index="' + to + '"] [data-case-action="' + focusAction + '"]')?.focus();
+}
+function moveCaseSection(key, offset) {
+  const from = caseDraft.sectionOrder.indexOf(key), to = from + offset;
+  if (from < 0 || to < 0 || to >= caseDraft.sectionOrder.length) return;
+  caseDraft.sectionOrder.splice(from, 1);
+  caseDraft.sectionOrder.splice(to, 0, key);
+  renderCaseEditor();
+  caseChanged();
+  document.querySelector('[data-case-section="' + key + '"] [data-case-section-action="' + (offset < 0 ? "up" : "down") + '"]')?.focus();
+}
+function caseSectionHeader(title, key) {
+  const head = el("div", undefined, "case-section-head");
+  const actions = el("div", undefined, "case-section-actions");
+  const index = caseDraft.sectionOrder.indexOf(key);
+  for (const [offset, label, action] of [[-1, "區塊上移", "up"], [1, "區塊下移", "down"]]) {
+    const button = el("button", label, "secondary");
+    button.type = "button";
+    button.dataset.caseSectionAction = action;
+    button.setAttribute("aria-label", title + label);
+    button.disabled = index + offset < 0 || index + offset >= caseDraft.sectionOrder.length;
+    button.onclick = () => moveCaseSection(key, offset);
+    actions.append(button);
+  }
+  head.append(el("h4", title), actions);
+  return head;
+}
+function caseRowActions(key, index, title, removable = true) {
+  const actions = el("div", undefined, "case-row-actions");
+  for (const [offset, label, action] of [[-1, "上移", "up"], [1, "下移", "down"]]) {
+    const button = el("button", label, "secondary");
+    button.type = "button";
+    button.dataset.caseAction = action;
+    button.setAttribute("aria-label", title + "第 " + (index + 1) + " 項" + label);
+    button.disabled = index + offset < 0 || index + offset >= caseDraft[key].length;
+    button.onclick = () => moveCaseItem(key, index, index + offset, action);
+    actions.append(button);
+  }
+  const position = el("label", "移至", "case-row-position");
+  const select = el("select");
+  select.dataset.caseAction = "position";
+  select.setAttribute("aria-label", title + "第 " + (index + 1) + " 項位置");
   for (let i = 0; i < caseDraft[key].length; i++) {
-    const row = el("div", undefined, "case-editor-row");
-    row.append(...inputs(caseDraft[key][i], i));
+    const option = el("option", "第 " + (i + 1) + " 項");
+    option.value = String(i);
+    select.append(option);
+  }
+  select.value = String(index);
+  select.disabled = caseDraft[key].length < 2;
+  select.onchange = () => moveCaseItem(key, index, Number(select.value));
+  position.append(select);
+  actions.append(position);
+  if (removable) {
     const remove = el("button", "移除此項", "secondary");
     remove.type = "button";
-    remove.onclick = () => { caseDraft[key].splice(i, 1); renderCaseEditor(); caseChanged(); };
-    row.append(remove);
+    remove.setAttribute("aria-label", title + "第 " + (index + 1) + " 項移除");
+    remove.onclick = () => { caseDraft[key].splice(index, 1); renderCaseEditor(); caseChanged(); };
+    actions.append(remove);
+  }
+  return actions;
+}
+function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
+  const group = el("section", undefined, "case-editor-group");
+  group.dataset.caseGroup = key;
+  group.dataset.caseSection = sectionKey;
+  group.append(caseSectionHeader(title, sectionKey));
+  for (let i = 0; i < caseDraft[key].length; i++) {
+    const row = el("div", undefined, "case-editor-row");
+    row.dataset.caseList = key;
+    row.dataset.caseIndex = String(i);
+    row.append(...inputs(caseDraft[key][i], i));
+    row.append(caseRowActions(key, i, title));
     group.append(row);
   }
   const add = el("button", `＋ 新增${title}`, "secondary");
   add.type = "button";
-  add.onclick = () => { caseDraft[key].push(structuredClone(blank)); renderCaseEditor(); caseChanged(); };
+  add.disabled = caseDraft[key].length >= maxCount;
+  add.onclick = () => {
+    caseDraft[key].push(structuredClone(blank));
+    renderCaseEditor();
+    caseChanged();
+    document.querySelector('[data-case-list="' + key + '"][data-case-index="' + (caseDraft[key].length - 1) + '"] input, [data-case-list="' + key + '"][data-case-index="' + (caseDraft[key].length - 1) + '"] textarea')?.focus();
+  };
   group.append(add);
   return group;
 }
@@ -274,21 +357,22 @@ function renderCaseEditor() {
     caseInput("摘要", caseDraft.summary, (v) => caseDraft.summary = v, { multiline: true }),
     caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { type: "date" }),
   );
-  target.append(caseGroup("完整背景與說明", "paragraphs", "", (_item, i) => [
+  const groups = {};
+  groups.overview = caseGroup("完整背景與說明", "paragraphs", "", (_item, i) => [
     caseInput(`段落 ${i + 1}`, caseDraft.paragraphs[i], (v) => caseDraft.paragraphs[i] = v, { multiline: true }),
-  ]));
-  target.append(caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item) => [
+  ], 30, "overview");
+  groups.history = caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item) => [
     caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v),
     caseInput("標題", item.title, (v) => item.title = v),
     caseInput("說明", item.text, (v) => item.text = v, { multiline: true }),
-  ]));
-  target.append(caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item) => [
+  ], 50);
+  groups.sources = caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item) => [
     caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v),
     caseInput("來源名稱", item.title, (v) => item.title = v),
     caseInput("公開網址", item.url, (v) => item.url = v, { type: "url" }),
     caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v),
-  ]));
-  target.append(caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item) => {
+  ], 50);
+  groups.media = caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item) => {
     const kind = el("label", "類型", "field"), select = document.createElement("select");
     for (const [value, label] of [["photo", "照片"], ["video", "影片"]]) { const option = el("option", label); option.value = value; select.append(option); }
     select.value = item.kind;
@@ -303,12 +387,14 @@ function renderCaseEditor() {
       caseInput("替代文字／影片名稱", item.alt, (v) => item.alt = v),
       caseInput("說明", item.caption, (v) => item.caption = v, { multiline: true }),
       caseInput("拍攝者／刊登來源", item.credit, (v) => item.credit = v), access];
-  }));
-  const local = el("section", undefined, "case-editor-group");
-  local.append(el("h4", "既有網站照片說明"));
-  for (const filename of caseLocalImages) {
+  }, 24);
+  const local = el("div", undefined, "case-local-group");
+  local.append(el("h5", "既有網站照片"));
+  for (const [index, filename] of caseDraft.images.entries()) {
     const item = caseDraft.imageMetadata?.[filename];
     const row = el("div", undefined, "case-editor-row");
+    row.dataset.caseList = "images";
+    row.dataset.caseIndex = String(index);
     row.append(el("strong", filename));
     const thumbnail = document.createElement("img");
     thumbnail.src = `https://www.huiwen.tw/assets/${encodeURIComponent(filename)}`;
@@ -320,14 +406,24 @@ function renderCaseEditor() {
       add.type = "button";
       add.onclick = () => { caseDraft.imageMetadata[filename] = { alt: "", caption: "", credit: "", sourceUrl: "" }; renderCaseEditor(); caseChanged(); };
       row.append(add);
-    } else row.append(
-      caseInput("替代文字", item.alt, (v) => item.alt = v),
-      caseInput("照片說明", item.caption, (v) => item.caption = v),
-      caseInput("照片來源", item.credit, (v) => item.credit = v),
-      caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url" }));
+    } else {
+      row.append(
+        caseInput("替代文字", item.alt, (v) => item.alt = v),
+        caseInput("照片說明", item.caption, (v) => item.caption = v),
+        caseInput("照片來源", item.credit, (v) => item.credit = v),
+        caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url" }));
+      if (!caseBase?.imageMetadata?.[filename]) {
+        const cancel = el("button", "取消新增照片說明", "secondary");
+        cancel.type = "button";
+        cancel.onclick = () => { delete caseDraft.imageMetadata[filename]; renderCaseEditor(); caseChanged(); };
+        row.append(cancel);
+      }
+    }
+    row.append(caseRowActions("images", index, "既有網站照片", false));
     local.append(row);
   }
-  if (caseLocalImages.length) target.append(local);
+  if (caseDraft.images.length) groups.media.append(local);
+  for (const key of caseDraft.sectionOrder) target.append(groups[key]);
 }
 function applyCurrentPageEdits() {
   const path = selectedPage?.path;
@@ -358,7 +454,6 @@ async function selectPage(page) {
   pageFields = new Map();
   caseDraft = null;
   caseBase = null;
-  caseLocalImages = [];
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -373,13 +468,20 @@ async function selectPage(page) {
     }
     if (isCasePage(page)) {
       const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
-      caseLocalImages = publicCase.images || [];
-      if (!caseDraft) caseDraft = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
+      const currentCase = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
         paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
-        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {} };
-      if (!caseBase) caseBase = structuredClone({ title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
-        paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
-        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {} });
+        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {},
+        images: publicCase.images || [], sectionOrder: publicCase.sectionOrder || defaultCaseSectionOrder };
+      if (!caseDraft) caseDraft = structuredClone(currentCase);
+      else {
+        caseDraft.images ??= [...currentCase.images];
+        caseDraft.sectionOrder ??= [...currentCase.sectionOrder];
+      }
+      if (!caseBase) caseBase = structuredClone(currentCase);
+      else {
+        caseBase.images ??= [...currentCase.images];
+        caseBase.sectionOrder ??= [...currentCase.sectionOrder];
+      }
     }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
@@ -738,6 +840,7 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 $("#page-filter").oninput = renderPages;
+$("#page-sort").onchange = renderPages;
 $("#page-save").onclick = () => action(savePageDraft);
 $("#page-publish").onclick = () => action(() => submitPageOperation("publish"));
 $("#page-unpublish").onclick = () => action(() => submitPageOperation("unpublish"));
