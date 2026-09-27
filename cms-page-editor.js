@@ -1,14 +1,16 @@
 "use strict";
 (() => {
   const params = new URLSearchParams(location.search);
-  if (params.get("cmsEdit") !== "1" || window.parent === window) return;
-  const ADMIN_ORIGIN = "https://admin.huiwen.tw";
+  const loader = document.querySelector("script[data-cms-editor-loader]");
+  if ((params.get("cmsEdit") !== "1" && loader?.dataset.cmsEditorEnabled !== "true") || window.parent === window) return;
+  const SITE_ORIGIN = "https://www.huiwen.tw";
+  const ADMIN_ORIGIN = loader?.dataset.cmsAdminOrigin || "https://admin.huiwen.tw";
   const EDITABLE_TAGS = new Set(["h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "dt", "dd"]);
   let nonce = null;
   const text = (node) => node.textContent || "";
   function send(type, payload = {}) {
     if (!nonce) return;
-    window.parent.postMessage({ type, nonce, path: location.pathname, ...payload }, ADMIN_ORIGIN);
+    window.parent.postMessage({ type, nonce, path: `/${pageRoute()}`, ...payload }, ADMIN_ORIGIN);
   }
   function collect() {
     return [...document.querySelectorAll("main [data-cms-edit-id]")].map((node) => ({
@@ -18,6 +20,10 @@
     }));
   }
   function pageRoute() {
+    if (loader?.dataset.cmsPagePath) {
+      if (!/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/.test(loader.dataset.cmsPagePath)) throw new Error("invalid page path");
+      return loader.dataset.cmsPagePath;
+    }
     const path = location.pathname;
     if (!path.startsWith("/") || path.includes("..")) throw new Error("invalid page path");
     return path === "/" ? "index.html" : path.endsWith("/") ? `${path.slice(1)}index.html` : path.slice(1);
@@ -25,9 +31,8 @@
   async function enable() {
     try {
       const route = pageRoute();
-      const loader = document.querySelector("script[data-cms-editor-loader]");
-      const manifestUrl = new URL(loader?.dataset.cmsManifest || "", location.origin);
-      if (manifestUrl.origin !== location.origin || !manifestUrl.pathname.startsWith("/cms-editor-manifests/")) throw new Error("manifest path invalid");
+      const manifestUrl = new URL(loader?.dataset.cmsManifest || "", SITE_ORIGIN);
+      if (manifestUrl.origin !== SITE_ORIGIN || !manifestUrl.pathname.startsWith("/cms-editor-manifests/")) throw new Error("manifest path invalid");
       const response = await fetch(manifestUrl.href, { cache: "no-store" });
       if (!response.ok) throw new Error("manifest unavailable");
       const manifest = await response.json();
