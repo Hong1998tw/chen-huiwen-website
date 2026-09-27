@@ -23,7 +23,7 @@ const server = createServer(async (req, res) => {
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
   if (path === "/api/page-preview") return send(res,
-    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"></head><body><main><div class="civic-story-grid"></div></main><script src="https://www.huiwen.tw/cms-page-editor.js" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json"></script></body></html>`, "text/html; charset=utf-8");
+    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"><title>陳慧文｜測試首頁</title><meta name="description" content="測試首頁說明"><meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png"><meta property="og:image:alt" content="陳慧文・測試首頁"></head><body><main><div class="civic-story-grid"></div></main><script src="https://www.huiwen.tw/cms-page-editor.js" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json"></script></body></html>`, "text/html; charset=utf-8");
   if (path === "/api/session") return send(res, JSON.stringify({ login: "owner@example.test", csrf: "test" }));
   if (path === "/api/documents") return send(res, JSON.stringify({ documents: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
