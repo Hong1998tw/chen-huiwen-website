@@ -40,6 +40,7 @@ const statusNames = {
   deployed: "已部署，等待外部驗證",
   verified: "已上線並完成驗證",
 };
+const retryablePublicationMessage = "網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。";
 const labels = {
   name: "活動名稱",
   start: "開始時間",
