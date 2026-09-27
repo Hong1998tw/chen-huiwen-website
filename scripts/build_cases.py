@@ -67,7 +67,9 @@ for c in public_items:
  history=('<section class="history-section" id="case-history"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h and not single_event else ''
  sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+(f'<time>{E(source["sourceDate"])}</time> · ' if source.get('sourceDate') else '')+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
  context=render_case_context(c['id'],R)
- article='<article class="case-body">'+context+content+photos+history+sources+'</article>' if content or photos or history or sources else ''
+ section_order=c.get('sectionOrder',['overview','media','history','sources'])
+ sections={'overview':content,'media':photos,'history':history,'sources':sources}
+ article='<article class="case-body">'+context+''.join(sections[key] for key in section_order)+'</article>' if content or photos or history or sources else ''
  layout_class='case-layout' if article else 'case-layout case-layout-compact'
  description=c['summary'] or f'「{c["title"]}」政績與服務紀錄｜陳慧文服務處'
  related=''
@@ -81,7 +83,9 @@ for c in public_items:
  narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
  current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else ''
  if single_event: current='<div id="case-history">'+current+'</div>'
- reading_links = [('case-context','議題導讀',bool(context)),('case-overview','重點說明',bool(content)),('case-media','照片與影片',bool(photos)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
+ section_links={'overview':('case-overview','重點說明',bool(content)), 'media':('case-media','照片與影片',bool(photos)),
+                'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
+ reading_links=[('case-context','議題導讀',bool(context))]+[section_links[key] for key in section_order]
  reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容整理 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
  body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section>{reading_nav}<div class="wrap case-latest-wrap">{current}</div><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
  if context:

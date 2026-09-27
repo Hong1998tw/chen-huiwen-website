@@ -47,6 +47,14 @@
           <label class="field" for="page-filter">搜尋頁面
             <input id="page-filter" type="search" placeholder="輸入頁面名稱或網址" autocomplete="off" />
           </label>
+          <label class="field" for="page-sort">清單排序
+            <select id="page-sort">
+              <option value="path">網址順序</option>
+              <option value="title">頁面名稱</option>
+              <option value="draft">有草稿優先</option>
+              <option value="recent">最近編輯</option>
+            </select>
+          </label>
           <div id="page-tree" class="page-tree" aria-live="polite"><p>正在載入頁面…</p></div>
           <p class="hint">頁面文字可直接在右側正式版面中點選編輯。儲存只建立草稿，發布仍須通過網站檢查。</p>
         </aside>
@@ -66,7 +74,7 @@
           <iframe id="page-frame" title="正式網站頁面視覺編輯器" hidden referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms"></iframe>
           <section id="case-editor" class="case-editor" aria-labelledby="case-editor-heading" hidden>
             <div class="section-head"><div><p class="eyebrow">政績專頁欄位</p><h3 id="case-editor-heading">編輯這一頁的完整內容</h3></div></div>
-            <p class="hint">填寫時上方正式版面會同步預覽。沒有內容的選用區塊不會顯示在公開頁；資料來源至少保留一筆。</p>
+            <p class="hint">可調整區塊與各筆內容的順序；填寫時上方正式版面同步預覽。沒有內容的選用區塊不會顯示在公開頁；資料來源至少保留一筆。</p>
             <div id="case-editor-fields"></div>
           </section>
           <div class="page-actions">

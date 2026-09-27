@@ -150,4 +150,33 @@ class StandaloneCMS(unittest.TestCase):
         item['operation']='unpublish'
         self.assertEqual(cms.page_candidate(item).domain,'page-copy')
 
+    def test_case_order_changes_preserve_existing_photos_and_check_source_drift(self):
+        commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
+        source=next(c for c in json.loads((ROOT/'data/achievements.json').read_text()) if c['id']=='metro-green-line')
+        fields={key:source.get(key, [] if key=='media' else {} if key=='imageMetadata' else None) for key in cms.CASE_FIELDS}
+        fields['images']=list(source['images'])
+        fields['sectionOrder']=list(cms.DEFAULT_SECTION_ORDER)
+        baseline=json.loads(json.dumps(fields))
+        item={'id':'00000000-0000-4000-8000-000000000003','path':'achievement-metro-green-line.html',
+              'operation':'publish','base_commit':commit,'version':1,'payload':json.dumps({'fields':{},'case':fields,'caseBase':baseline})}
+        self.assertFalse(cms.page_candidate(item).changed)
+        fields['images'].reverse()
+        fields['sectionOrder']=['sources','overview','history','media']
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':baseline})
+        candidate=cms.page_candidate(item)
+        revised=next(c for c in json.loads(candidate.new_text) if c['id']==source['id'])
+        self.assertEqual(revised['images'],list(reversed(source['images'])))
+        self.assertEqual(revised['sectionOrder'],fields['sectionOrder'])
+        fields['images']=source['images'][:1]
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':baseline})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'VALIDATION')
+        fields['images']=list(source['images'])
+        stale=json.loads(json.dumps(baseline)); stale['images'].reverse()
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':stale})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'BASE_DRIFT')
+
 if __name__=='__main__':unittest.main()

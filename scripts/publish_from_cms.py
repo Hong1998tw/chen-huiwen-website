@@ -114,17 +114,26 @@ def validate_page_payload(value):
 
 
 CASE_FIELDS = {'title', 'summary', 'updated', 'paragraphs', 'history', 'sources', 'media', 'imageMetadata'}
+CASE_ORDER_FIELDS = {'images', 'sectionOrder'}
+DEFAULT_SECTION_ORDER = ['overview', 'media', 'history', 'sources']
 
 
 def case_candidate(item, root, path, draft):
     if draft.get('fields'):
         raise engine.PublishError('VALIDATION', ['政績結構化草稿不能同時包含舊式頁面文字覆寫'])
     edits = draft.get('case')
-    if not isinstance(edits, dict) or set(edits) != CASE_FIELDS:
+    if not isinstance(edits, dict) or set(edits) not in (CASE_FIELDS, CASE_FIELDS | CASE_ORDER_FIELDS):
         raise engine.PublishError('VALIDATION', ['政績專頁欄位格式不正確'])
     baseline = draft.get('caseBase')
-    if not isinstance(baseline, dict) or set(baseline) != CASE_FIELDS:
+    if not isinstance(baseline, dict) or set(baseline) != set(edits):
         raise engine.PublishError('VALIDATION', ['政績草稿缺少原始版本；請重新載入頁面'])
+    has_order = CASE_ORDER_FIELDS <= set(edits)
+    if has_order and (not isinstance(edits['images'], list) or len(edits['images']) > 24 or
+                      not all(isinstance(name, str) and re.fullmatch(r'[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)', name) for name in edits['images']) or
+                      not isinstance(edits['sectionOrder'], list) or len(edits['sectionOrder']) != len(DEFAULT_SECTION_ORDER) or
+                      not all(isinstance(key, str) for key in edits['sectionOrder']) or
+                      sorted(edits['sectionOrder']) != sorted(DEFAULT_SECTION_ORDER)):
+        raise engine.PublishError('VALIDATION', ['照片或區塊排序不正確'])
     if not isinstance(edits['title'], str) or not edits['title'].strip() or not isinstance(edits['summary'], str) or not valid_date(edits['updated']):
         raise engine.PublishError('VALIDATION', ['標題、摘要或整理日期不正確'])
     if not isinstance(edits['paragraphs'], list) or len(edits['paragraphs']) > 30 or any(not isinstance(p, str) or not p.strip() or len(p) > 4000 for p in edits['paragraphs']):
@@ -162,6 +171,11 @@ def case_candidate(item, root, path, draft):
         default = [] if key == 'media' else {} if key == 'imageMetadata' else None
         if match.get(key, default) != baseline[key]:
             raise engine.PublishError('BASE_DRIFT', ['這筆政績資料已有更新；請重新載入正式頁面後再編輯'])
+    if has_order:
+        if sorted(edits['images']) != sorted(match.get('images', [])):
+            raise engine.PublishError('VALIDATION', ['既有照片只能調整順序，不能在此新增或刪除'])
+        if match.get('images', []) != baseline['images'] or match.get('sectionOrder', DEFAULT_SECTION_ORDER) != baseline['sectionOrder']:
+            raise engine.PublishError('BASE_DRIFT', ['照片或區塊排序已有更新；請重新載入正式頁面後再編輯'])
     if set(edits['imageMetadata']) - set(match.get('images', [])):
         raise engine.PublishError('VALIDATION', ['照片說明不屬於此頁'])
     overlay = json.loads(page_text(root)).get('pages', {}).get(path, {})
@@ -170,6 +184,8 @@ def case_candidate(item, root, path, draft):
     revised = copy.deepcopy(cases)
     target = next(c for c in revised if c['id'] == case_id)
     target.update(edits)
+    if has_order and edits['sectionOrder'] == DEFAULT_SECTION_ORDER and 'sectionOrder' not in match:
+        target.pop('sectionOrder', None)
     if not edits['media'] and 'media' not in match:
         target.pop('media', None)
     if not edits['imageMetadata'] and 'imageMetadata' not in match:

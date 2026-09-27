@@ -188,6 +188,11 @@ def validate(achievements, villages, baseline=None):
                 not isinstance(row.get('title'), str) or not row['title'].strip() or
                 not isinstance(row.get('text'), str) or not row['text'].strip() for row in history):
             errors.append(label + ': invalid history date, title or explanation')
+        section_order = a.get('sectionOrder')
+        if section_order is not None and (not isinstance(section_order, list) or
+                len(section_order) != 4 or set(map(str, section_order)) != {'overview', 'media', 'history', 'sources'} or
+                not all(isinstance(key, str) for key in section_order)):
+            errors.append(label + ': invalid section order')
         media = a.get('media', [])
         if not isinstance(media, list) or len(media) > 24:
             errors.append(label + ': media must be a list of at most 24 items')
