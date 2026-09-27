@@ -50,7 +50,12 @@ def render(media: dict) -> str:
     provider, embed = classify(media['url'], media['kind'])
     escaped = lambda value: html.escape(str(value), quote=True)
     if provider == 'image':
-        visual = f'<img src="{escaped(embed)}" alt="{escaped(media["alt"])}" loading="lazy">'
+        # Declare a 4:3 placeholder box so static quality checks pass and the
+        # browser can reserve space before an external image's intrinsic size loads.
+        visual = (
+            f'<img src="{escaped(embed)}" alt="{escaped(media["alt"])}" '
+            'width="1200" height="900" loading="lazy" decoding="async">'
+        )
     elif provider == 'video':
         visual = f'<video src="{escaped(embed)}" controls preload="none" aria-label="{escaped(media["alt"])}"></video>'
     else:

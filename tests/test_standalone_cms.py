@@ -70,6 +70,7 @@ class StandaloneCMS(unittest.TestCase):
         html=render_media({'kind':'photo','url':'https://example.com/photo.jpg','alt':'現場照片',
                            'caption':'公開現場','credit':'拍攝者'})
         self.assertIn('<img',html)
+        self.assertIn('width="1200" height="900"',html)
         self.assertIn('開啟原始內容',html)
     def test_visual_copy_manifest_is_stable_without_public_html_markers(self):
         source = '<!doctype html><html><head></head><body><main><section><p>Original &amp; text</p></section></main></body></html>'
