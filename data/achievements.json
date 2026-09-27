@@ -3190,7 +3190,13 @@
     "paragraphs": [
       "過勇路排水加蓋工程於2023年3月開放通行。"
     ],
-    "history": [],
+    "history": [
+      {
+        "date": "2022-05-20",
+        "title": "總質詢陳其邁市長承諾",
+        "text": "過勇路中間有一條灌溉溝，以往是為了農田灌溉，近年來已經沒有其必要性，慧文往年多次會勘爭取加蓋，可雙向車道各增加一線道，造福用路人且改善城市景觀。\n總質詢時，市長允諾今年動工，特地與 \n莫尚忠里長會勘，並且向里民宣布這個好消息，感謝\n陳其邁 市長及市府團隊，感謝莫里長多年來的共同爭取。"
+      }
+    ],
     "notes": [
       "來源反映文件發布時的狀態；尚未取得的新進度不推定完成。"
     ],
@@ -3199,8 +3205,7 @@
       {
         "title": "高雄市政府／市議會原始公開資料",
         "url": "https://cissearch.kcc.gov.tw/System/Bulletin/Pdfview.aspx?file=~%2FUpload%2FAttachment%2F%E5%85%AC%E5%A0%B1%E8%B3%87%E6%96%99%2F%E9%AB%98%E9%9B%84%E5%B8%82%E8%AD%B0%E6%9C%83%2F42%E5%8D%B7%2F2%E6%9C%9F%2F42%E5%8D%B72%E6%9C%9F05186%E8%B5%B7%E9%A0%8105236%E8%BF%84%E9%A0%81.pdf&page=24",
-        "sourceType": "政府第一手資料",
-        "sourceDate": null
+        "sourceType": "政府第一手資料"
       }
     ],
     "related": [],
@@ -3218,7 +3223,17 @@
         "市議會公報第42卷第2期、印刷頁5209（PDF第24頁）記載，過勇路排水加蓋於2023年3月開放通行。此為政府工程紀錄，個別議員推動情形仍需其他證據。"
       ],
       "history": []
-    }
+    },
+    "media": [
+      {
+        "kind": "photo",
+        "url": "https://scontent.fkhh1-2.fna.fbcdn.net/v/t39.30808-6/475152856_1046879794119361_8570519637930758265_n.jpg?stp=dst-jpg_tt6&cstp=mx1440x1078&ctp=s1440x1078&_nc_cat=103&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=aa7b47&_nc_ohc=pNK6rgsC4aEQ7kNvwFdhWo4&_nc_oc=Adpy6rm6H5XTn0jCsgOJirjElp2ow7D4S4XGT6obApvOSXXXz_XfQYpiXWgkzc5nMFX0VoEoZltNCmY7COHJ9eJN&_nc_zt=23&_nc_ht=scontent.fkhh1-2.fna&_nc_gid=HVqMCiSwhgH_EgWZQ--Sxw&_nc_ss=7b2a8&oh=00_AQLDC2CUx0qYG_UFChuFuH0U9fmDgIgiYmH3Jlup1vKa3w&oe=6ABF0E93",
+        "alt": "過勇路加蓋會勘",
+        "caption": "與莫尚忠里長會勘，並且向里民宣布這個好消息",
+        "credit": "Facebook",
+        "publicAccessConfirmed": true
+      }
+    ]
   },
   {
     "id": "partnership-registration",
