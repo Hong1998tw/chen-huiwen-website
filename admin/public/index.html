@@ -80,20 +80,20 @@
             </select>
           </label>
           <label class="field" for="page-work-filter">工作狀態
-            <select id="page-work-filter"><option value="all">全部</option><option value="recent">最近處理</option><option value="draft">草稿</option><option value="pending">發布中</option><option value="read-only">僅檢視</option></select>
+            <select id="page-work-filter"><option value="all">全部</option><option value="recent">最近處理</option><option value="draft">草稿</option><option value="pending">發布待處理</option><option value="read-only">僅檢視</option></select>
           </label>
           <p id="page-list-status" class="sr-only" role="status" aria-live="polite"></p>
           <div id="page-tree" class="page-tree"><p>正在載入頁面…</p></div>
           <details class="page-history" id="page-create-panel">
             <summary>＋ 在欄目新增專頁</summary>
             <form id="page-create-form">
-              <label class="field">所屬欄目<select name="section" required>
+              <label class="field" data-validation-path="page-create.section"><span class="field-label">所屬欄目<span class="required-marker" aria-hidden="true">＊</span></span><select name="section" required aria-describedby="field-error-page-create-section">
                 <option value="news">新聞媒體</option><option value="press">新聞發布</option>
                 <option value="service">民眾服務</option><option value="council">議會問政</option>
                 <option value="achievement">建設與政績</option>
-              </select></label>
-              <label class="field">頁面名稱<input name="title" required maxlength="150"></label>
-              <label class="field">網址識別（小寫英文／數字／-）<input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80" placeholder="fengshan-topic"></label>
+              </select><span class="field-error" id="field-error-page-create-section" role="alert" hidden></span></label>
+              <label class="field" data-validation-path="page-create.title"><span class="field-label">頁面名稱<span class="required-marker" aria-hidden="true">＊</span></span><input name="title" required maxlength="150" aria-describedby="field-error-page-create-title"><span class="field-error" id="field-error-page-create-title" role="alert" hidden></span></label>
+              <label class="field" data-validation-path="page-create.slug"><span class="field-label">網址識別（小寫英文／數字／-）<span class="required-marker" aria-hidden="true">＊</span></span><input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80" placeholder="fengshan-topic" aria-describedby="field-error-page-create-slug"><span class="field-error" id="field-error-page-create-slug" role="alert" hidden></span></label>
               <button type="submit">建立草稿頁</button>
             </form>
           </details>

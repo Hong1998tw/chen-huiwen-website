@@ -39,7 +39,7 @@ export function validate(
   for (const [k, v] of Object.entries(p)) {
     if (k === "sessions") continue;
     if (v !== null && typeof v !== "string")
-      throw new HttpError(400, `${k} 格式不正確`);
+      throw new HttpError(400, `${k} 格式不正確`, `document.${k}`);
     if (
       typeof v === "string" &&
       (v.length > (k === "content" ? 4000 : 500) ||
@@ -47,16 +47,16 @@ export function validate(
           v,
         ))
     )
-      throw new HttpError(400, `${k} 含不允許的文字或長度`);
+      throw new HttpError(400, `${k} 含不允許的文字或長度`, `document.${k}`);
   }
   for (const k of keys.filter((k) => !["changeNote", "sessions"].includes(k)))
     if (typeof p[k] !== "string" || !(p[k] as string).trim())
-      throw new HttpError(400, `${k} 尚未填寫`);
+      throw new HttpError(400, `${k} 尚未填寫`, `document.${k}`);
   let url: URL;
   try {
     url = new URL(String(p.sourceUrl));
   } catch {
-    throw new HttpError(400, "請填寫公開來源網址");
+    throw new HttpError(400, "請填寫公開來源網址", "document.sourceUrl");
   }
   if (
     url.protocol !== "https:" ||
@@ -71,7 +71,7 @@ export function validate(
     ) ||
     /\.(local|internal|lan|localhost|home|corp)$/.test(url.hostname)
   )
-    throw new HttpError(400, "來源必須是公開 HTTPS 網址");
+    throw new HttpError(400, "來源必須是公開 HTTPS 網址", "document.sourceUrl");
   const day = (s: unknown) =>
     typeof s === "string" &&
     /^20\d\d-\d\d-\d\d$/.test(s) &&
@@ -83,31 +83,29 @@ export function validate(
     for (const k of ["start", "end"]) {
       const match = String(p[k]).match(/^(20\d\d-\d\d-\d\d)T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\+08:00$/);
       if (!match || !day(match[1]))
-        throw new HttpError(400, "活動時間請使用台灣時間");
+        throw new HttpError(400, "活動時間請使用台灣時間", `document.${k}`);
     }
     if (Date.parse(String(p.end)) <= Date.parse(String(p.start)))
-      throw new HttpError(400, "結束時間必須晚於開始");
+      throw new HttpError(400, "結束時間必須晚於開始", "document.end");
     if (!["scheduled", "rescheduled", "cancelled"].includes(String(p.status)))
-      throw new HttpError(400, "活動狀態不正確");
+      throw new HttpError(400, "活動狀態不正確", "document.status");
     if (p.status !== "scheduled" && !p.changeNote)
-      throw new HttpError(400, "改期或取消請填寫原因");
+      throw new HttpError(400, "改期或取消請填寫原因", "document.changeNote");
     for (const k of ["verifiedAt", "updatedAt", "reviewDueAt"])
-      if (!day(p[k])) throw new HttpError(400, `${k} 日期不正確`);
+      if (!day(p[k])) throw new HttpError(400, `${k} 日期不正確`, `document.${k}`);
   } else {
-    if (
-      !/^20\d\d-(0[1-9]|1[0-2])$/.test(String(p.month)) ||
-      !day(p.observedAt) ||
-      !day(p.nextReviewAt)
-    )
-      throw new HttpError(400, "月份或日期不正確");
+    if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(String(p.month)))
+      throw new HttpError(400, "月份不正確", "document.month");
+    if (!day(p.observedAt)) throw new HttpError(400, "核對日期不正確", "document.observedAt");
+    if (!day(p.nextReviewAt)) throw new HttpError(400, "下次核對日期不正確", "document.nextReviewAt");
     if (
       !Array.isArray(p.sessions) ||
       !p.sessions.length ||
       p.sessions.length > 31
     )
-      throw new HttpError(400, "請填寫 1 至 31 個時段");
+      throw new HttpError(400, "請填寫 1 至 31 個時段", "document.sessions");
     const dates = new Set();
-    for (const s of p.sessions) {
+    for (const [index, s] of p.sessions.entries()) {
       if (
         !s ||
         typeof s !== "object" ||
@@ -119,14 +117,14 @@ export function validate(
         s.start >= s.end ||
         dates.has(s.date)
       )
-        throw new HttpError(400, "時段日期、時間或重複日期有誤");
+        throw new HttpError(400, `第 ${index + 1} 個時段日期、時間或重複日期有誤`, "document.sessions");
       dates.add(s.date);
     }
     if (
       String(p.nextReviewAt) < String(p.observedAt) ||
       !String(p.nextReviewAt).startsWith(String(p.month))
     )
-      throw new HttpError(400, "下次核對須在核對日之後且在該月份內");
+      throw new HttpError(400, "下次核對須在核對日之後且在該月份內", "document.nextReviewAt");
   }
   return p;
 }

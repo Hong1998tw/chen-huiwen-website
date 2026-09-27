@@ -35,6 +35,8 @@ const pages = [
 let saved = null;
 let draft = null;
 let savedDocument = null;
+let rejectMediaCredit = false;
+let releaseList = [];
 const documents = [
   { id: 1, domain: "events", version: 1, updated_at: "2026-09-27T00:00:00Z", payload: JSON.stringify({
     name: "日期測試活動", start: "2026-10-01T19:30:00+08:00", end: "2026-10-01T21:00:00+08:00",
@@ -75,13 +77,18 @@ const server = createServer(async (req, res) => {
   if (/^\/api\/documents\/\d+\/published$/.test(path)) return send(res, JSON.stringify({ source: { payload: publishedEventPayload, source_hash: "fixture" } }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
   if (path === "/api/page-blocks") return send(res, JSON.stringify({ blocks: [] }));
-  if (path === "/api/publications") return send(res, JSON.stringify({ publications: [] }));
+  if (path === "/api/publications") return send(res, JSON.stringify({ publications: releaseList }));
   if (path === "/api/case") return send(res, JSON.stringify({ case: published }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));
   if (path === "/api/page-draft" && req.method === "GET") return send(res, JSON.stringify({ draft }));
   if (path === "/api/page-draft" && req.method === "PUT") {
     let body = "";
     for await (const chunk of req) body += chunk;
+    if (rejectMediaCredit) {
+      rejectMediaCredit = false;
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: "媒體來源 內容或長度不正確", field: "case.media.0.credit" }));
+    }
     saved = JSON.parse(body);
     draft = { version: 1, payload: JSON.stringify({ fields: {}, case: saved.case, caseBase: saved.caseBase }), publication_status: "published" };
     pages[1].draft_version = 1;
@@ -109,6 +116,20 @@ try {
   await page.getByRole("button", { name: /A 專頁/ }).click();
   console.log("CMS order test: page selected");
   await page.locator('[data-case-section="overview"]').waitFor();
+  const mediaCredit = page.locator('[data-validation-path="case.media.0.credit"] input');
+  assert.equal(await page.locator('[data-validation-path="case.media.0.credit"] .required-marker').textContent(), "＊");
+  await mediaCredit.fill("");
+  await page.locator("#page-save").click();
+  assert.equal(await page.locator('[data-validation-path="case.media.0.credit"] .field-error').textContent(), "此欄位為必填。");
+  assert.equal(saved, null, "client validation prevents an invalid draft request");
+  await mediaCredit.fill("服務處");
+  rejectMediaCredit = true;
+  await page.locator("#page-save").click();
+  await page.locator('[data-validation-path="case.media.0.credit"] .field-error').waitFor({ state: "visible" });
+  assert.equal(await page.locator('[data-validation-path="case.media.0.credit"] .field-error').textContent(), "媒體來源 內容或長度不正確");
+  assert.match(await page.locator("#notice").textContent(), /媒體來源 內容或長度不正確/);
+  await mediaCredit.fill("");
+  await mediaCredit.fill("服務處");
   await page.locator('[data-case-list="paragraphs"][data-case-index="1"] .case-row-menu > summary').click();
   await page.locator('[data-case-list="paragraphs"][data-case-index="1"] [data-case-action="up"]').click();
   assert.equal(await page.locator('[data-case-list="paragraphs"][data-case-index="0"] textarea').inputValue(), "第二段");
@@ -171,6 +192,17 @@ try {
   assert.equal(savedDocument.payload.month, '2026-10');
   assert.equal(savedDocument.payload.nextReviewAt, '2026-10-15');
   assert.deepEqual(savedDocument.payload.sessions, [{ date: '2026-10-01', start: '19:30', end: '21:00' }]);
+  pages[1].pending_operation = "publish";
+  pages[1].pending_status = "queued";
+  pages[1].pending_since = "2026-09-27T00:00:00.000Z";
+  releaseList = [{ id: "release-fixture", path: "achievement-z.html", operation: "publish", version: 1, status: "queued", created_at: "2026-09-27T00:00:00.000Z", message: "" }];
+  await page.evaluate(() => document.querySelector("#reload").click());
+  await page.locator('.primary-nav [data-workspace-target="content"]').click();
+  await page.locator("#open-page-drawer").click();
+  await page.getByRole("button", { name: /A 專頁/ }).click();
+  await page.waitForFunction(() => /等待發布/.test(document.querySelector("#page-status").textContent));
+  assert.match(await page.locator("#page-status").textContent(), /等待發布 · 執行器尚未領取/);
+  assert.match(await page.locator("#page-release-state").textContent(), /發布執行器尚未領取/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.close();
   console.log("PASS: mobile CMS ordering and compact date/time entry in case, event, and legal schedule editors");

@@ -40,6 +40,12 @@ test("media import requires a supported public link, credit and explicit access 
   assert.throws(() => validateCaseDraft(draft));
 });
 
+test("media validation returns the exact field path for inline correction", () => {
+  const draft = base();
+  draft.media.push({ kind: "video", url: "https://youtu.be/abcdefghijk", alt: "會勘影片", caption: "現場紀錄", credit: "", publicAccessConfirmed: true });
+  assert.throws(() => validateCaseDraft(draft), error => error instanceof Error && (error as any).field === "case.media.0.credit");
+});
+
 test("source URL and date edits reject private documents and invented invalid dates", () => {
   const draft = base();
   draft.sources[0].url = "https://drive.google.com/file/d/1234567890abcdef/view";

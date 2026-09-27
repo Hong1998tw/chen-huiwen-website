@@ -28,3 +28,10 @@ test("existing pages can keep empty extensions, while media and locations use th
   assert.throws(()=>validateEditorialBlocks([{...media,publicAccessConfirmed:false}]));
   assert.throws(()=>validateEditorialBlocks([{...media,url:"https://example.com/page"}]));
 });
+
+test("editorial validation identifies the invalid editor field", () => {
+  const invalid:any = page(); invalid.blocks = [{...block(), type:"photo", url:"https://drive.google.com/file/d/1234567890abcde/view", alt:"", credit:"服務處", publicAccessConfirmed:true}];
+  assert.throws(() => validateEditorialPage(path, invalid), error => error instanceof Error && (error as any).field === "editorial.blocks.0.alt");
+  invalid.blocks = [block()]; invalid.seo.image = "https://example.com/share.png";
+  assert.throws(() => validateEditorialPage(path, invalid), error => error instanceof Error && (error as any).field === "editorial.seo.image");
+});
