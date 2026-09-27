@@ -13,6 +13,53 @@ function normalizedOrigin(value: string) {
   return origin.origin;
 }
 
+function attributeValue(tag: string, name: string) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+  return match ? match[1] ?? match[2] ?? match[3] ?? "" : null;
+}
+
+/** Keep edge-optimized scripts from being deferred inside the opaque preview iframe. */
+function normalizePreviewScripts(source: string) {
+  const withoutRocketLoader = source.replace(
+    /<script\b(?=[^>]*\bsrc\s*=\s*(["'])[^"']*rocket-loader(?:\.min)?\.js[^"']*\1)[^>]*>[\s\S]*?<\/script\s*>/gi,
+    "",
+  );
+  return withoutRocketLoader.replace(/<script\b[^>]*>/gi, (original) => {
+    const src = attributeValue(original, "src");
+    if (src && /rocket-loader(?:\.min)?\.js/i.test(src)) return original;
+
+    let tag = original.replace(/\s+data-cf-settings(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, "");
+    const type = attributeValue(tag, "type");
+    const rocketType = type && (/^[a-f0-9]{8,}-text\/javascript$/i.test(type) || type.toLowerCase() === "text/rocketscript");
+    if (rocketType) {
+      if (/\s+type\s*=/i.test(tag)) {
+        tag = tag.replace(/\s+type\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i, ' type="text/javascript"');
+      } else {
+        tag = tag.slice(0, -1) + ' type="text/javascript">';
+      }
+    }
+
+    const normalizedType = (rocketType ? "text/javascript" : type || "").toLowerCase();
+    const isJavaScript = !normalizedType || [
+      "module",
+      "text/javascript",
+      "application/javascript",
+      "text/ecmascript",
+      "application/ecmascript",
+      "application/x-javascript",
+    ].includes(normalizedType);
+    if (!isJavaScript) return tag;
+
+    if (/\s+data-cfasync(?:\s*=|\s|>)/i.test(tag)) {
+      return tag.replace(/\s+data-cfasync(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/i, ' data-cfasync="false"');
+    }
+    const srcIndex = tag.search(/\s+src\s*=/i);
+    return srcIndex < 0
+      ? tag.slice(0, -1) + ' data-cfasync="false">'
+      : tag.slice(0, srcIndex) + ' data-cfasync="false"' + tag.slice(srcIndex);
+  });
+}
+
 /** Prepare the deployed HTML for an opaque-origin CMS iframe without changing its design. */
 export function preparePagePreviewDocument(
   source: string,
@@ -27,7 +74,7 @@ export function preparePagePreviewDocument(
   }
 
   const base = `<base href="${PUBLIC_SITE_ORIGIN}/${escapeAttribute(path)}">`;
-  let document = source.replace(/<base\b[^>]*>/gi, "");
+  let document = normalizePreviewScripts(source).replace(/<base\b[^>]*>/gi, "");
   document = document.replace(/<head\b[^>]*>/i, (head) => `${head}${base}`);
 
   if (enableEditor) {

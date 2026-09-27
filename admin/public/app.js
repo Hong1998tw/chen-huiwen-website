@@ -320,7 +320,12 @@ async function submitPageOperation(operation) {
 window.addEventListener("message", (event) => {
   if (event.origin !== "null" || event.source !== $("#page-frame").contentWindow) return;
   const data = event.data;
-  if (!data || typeof data !== "object" || typeof data.path !== "string" || data.path.length > 300 || data.nonce !== pageNonce || !selectedPage || pageRoute(data.path) !== selectedPage.path) return;
+  if (!data || typeof data !== "object" || typeof data.path !== "string" || data.path.length > 300 || !selectedPage || pageRoute(data.path) !== selectedPage.path) return;
+  if (data.type === "huiwen-cms-hello") {
+    if (pageNonce) event.source.postMessage({ type: "huiwen-cms-init", nonce: pageNonce }, "*");
+    return;
+  }
+  if (data.nonce !== pageNonce) return;
   if (data.type === "huiwen-cms-ready" && Array.isArray(data.blocks)) {
     pageReady = true;
     if (!pageDraftApplied) {
