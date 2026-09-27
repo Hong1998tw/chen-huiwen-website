@@ -1,5 +1,8 @@
 'use strict';
 (() => {
+  // The CMS manifest targets the complete, source-order news grid. Keep every
+  // card in place inside the authenticated preview so its selectors stay valid.
+  if (document.querySelector('script[data-cms-editor-loader][data-cms-editor-enabled="true"]')) return;
   const PAGE_SIZE = 10;
   const pageLabel = '新聞報導';
   const section = document.querySelector('#news-reports');

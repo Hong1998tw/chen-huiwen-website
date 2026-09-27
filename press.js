@@ -1,5 +1,8 @@
 'use strict';
 (() => {
+  // Preserve all source-order cards in the authenticated CMS preview. The
+  // manifest selectors must not shift when public pagination removes cards.
+  if (document.querySelector('script[data-cms-editor-loader][data-cms-editor-enabled="true"]')) return;
   const PAGE_SIZE = 10;
   const pageLabel = '新聞發稿';
   const section = document.querySelector('[data-press-index]');

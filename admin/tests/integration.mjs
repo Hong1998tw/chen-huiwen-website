@@ -351,6 +351,19 @@ try {
         await page.evaluate(()=>window.scrollTo(0,0));
         if(process.env.CMS_SCREENSHOTS)await page.screenshot({path:process.env.CMS_SCREENSHOTS+'/'+width+'.png',fullPage:true});
       }
+      const indexCards = Array.from({length: 11}, (_, index) =>
+        `<article data-news-categories="public"><h2>項目 ${index + 1}</h2></article>`).join("");
+      for (const [script, section, grid] of [["news.js", 'id="news-reports"', "data-news-grid"], ["press.js", "data-press-index", "data-press-grid"]]) {
+        const runtime = readFileSync(root + "../" + script, "utf8");
+        for (const editing of [false, true]) {
+          const indexPage = await context.newPage();
+          await indexPage.setContent(`<!doctype html><html><head>${editing ? '<script data-cms-editor-loader data-cms-editor-enabled="true"></script>' : ''}</head><body><main><section ${section}><div ${grid}>${indexCards}</div></section></main></body></html>`);
+          await indexPage.addScriptTag({content: runtime});
+          assert.equal(await indexPage.locator(`[${grid}] article`).count(), editing ? 11 : 10,
+            editing ? `${script} CMS preview must preserve every source-order card for manifest selectors` : `${script} public pagination must keep working`);
+          await indexPage.close();
+        }
+      }
       await context.close();
     } finally { await browser.close(); }
     console.log('PASS: mobile and desktop live editor runtime, copy editing and publication preview browser flow');
