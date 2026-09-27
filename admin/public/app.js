@@ -15,6 +15,7 @@ let session,
   caseDraft = null,
   caseBase = null;
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
+const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
 const $ = (s) => document.querySelector(s);
 const statusNames = {
@@ -230,9 +231,14 @@ function caseInput(label, value, update, options = {}) {
   const field = el("label", label, "field");
   const input = document.createElement(options.multiline ? "textarea" : "input");
   if (!options.multiline) input.type = options.type || "text";
+  if (options.dateKind) input.inputMode = "numeric";
   input.value = value || "";
   if (options.placeholder) input.placeholder = options.placeholder;
   input.addEventListener("input", () => { update(input.value); caseChanged(); });
+  if (options.dateKind) input.addEventListener("blur", () => {
+    const normalized = dateTime[options.dateKind](input.value);
+    if (normalized !== input.value) { input.value = normalized; update(normalized); caseChanged(); }
+  });
   field.append(input);
   return field;
 }
@@ -247,6 +253,9 @@ function caseChanged() {
 function cleanCaseDraft() {
   if (!caseDraft) return null;
   const draft = structuredClone(caseDraft);
+  draft.updated = dateTime.day(draft.updated);
+  draft.history.forEach((item) => item.date = dateTime.period(item.date));
+  draft.sources.forEach((item) => item.sourceDate = dateTime.period(item.sourceDate));
   draft.paragraphs = draft.paragraphs.filter((item) => item.trim());
   draft.history = draft.history.filter((item) => item.date?.trim() || item.title?.trim() || item.text?.trim());
   draft.sources = draft.sources.filter((item) => item.title?.trim() || item.url?.trim() || item.sourceDate?.trim() || item.sourceType?.trim());
@@ -355,19 +364,19 @@ function renderCaseEditor() {
   target.append(
     caseInput("專頁標題", caseDraft.title, (v) => caseDraft.title = v),
     caseInput("摘要", caseDraft.summary, (v) => caseDraft.summary = v, { multiline: true }),
-    caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { type: "date" }),
+    caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { dateKind: "day", placeholder: "20260924 或 2026-09-24" }),
   );
   const groups = {};
   groups.overview = caseGroup("完整背景與說明", "paragraphs", "", (_item, i) => [
     caseInput(`段落 ${i + 1}`, caseDraft.paragraphs[i], (v) => caseDraft.paragraphs[i] = v, { multiline: true }),
   ], 30, "overview");
   groups.history = caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item) => [
-    caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v),
+    caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v, { dateKind: "period" }),
     caseInput("標題", item.title, (v) => item.title = v),
     caseInput("說明", item.text, (v) => item.text = v, { multiline: true }),
   ], 50);
   groups.sources = caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item) => [
-    caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v),
+    caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v, { dateKind: "period" }),
     caseInput("來源名稱", item.title, (v) => item.title = v),
     caseInput("公開網址", item.url, (v) => item.url = v, { type: "url" }),
     caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v),
@@ -634,16 +643,16 @@ function render() {
       input.rows = key === "sessions" ? 8 : 6;
     } else {
       input = el("input");
-      input.type =
-        key === "month"
-          ? "month"
-          : key === "sourceUrl"
-            ? "url"
-            : /At$/.test(key)
-              ? "date"
-              : ["start", "end"].includes(key)
-                ? "datetime-local"
-                : "text";
+      input.type = key === "sourceUrl" ? "url" : "text";
+      if (key === "month" || /At$/.test(key) || ["start", "end"].includes(key)) {
+        input.inputMode = "numeric";
+        input.placeholder = key === "month" ? "202610 或 2026-10" : ["start", "end"].includes(key)
+          ? "202610011930 或 2026-10-01 19:30" : "20261001 或 2026-10-01";
+        input.addEventListener("blur", () => {
+          const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : "day";
+          input.value = dateTime[kind](input.value);
+        });
+      }
     }
     input.name = key;
     input.id = `field-${key}`;
@@ -660,8 +669,11 @@ function render() {
     label.append(input);
     if (key === "sessions")
       label.append(
-        el("small", "每行一個時段：2026-10-01 19:30 21:00。每個日期只填一次。"),
+        el("small", "每行一個時段：20261001 1930 2100 或 2026-10-01 19:30 21:00。每個日期只填一次。"),
       );
+    if (key === "sessions") input.addEventListener("blur", () => {
+      input.value = normalizeSessions(input.value);
+    });
     container.append(label);
   }
   $("#preview").disabled = !selected.id;
@@ -670,23 +682,32 @@ function render() {
     $("#preview").disabled = true;
   };
 }
+function normalizeSessions(value) {
+  return value.split("\n").map((line) => {
+    const parts = line.trim().split(/\s+/);
+    return parts.length === 3
+      ? `${dateTime.day(parts[0])} ${dateTime.time(parts[1])} ${dateTime.time(parts[2])}`
+      : line;
+  }).join("\n");
+}
 function read() {
   const out = {};
   for (const [key, value] of new FormData($("#editor-form"))) {
+    const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : /At$/.test(key) ? "day" : null;
     out[key] =
       key === "sessions"
-        ? value
+        ? normalizeSessions(value)
             .trim()
             .split("\n")
             .map((line) => {
               const [date, start, end, ...extra] = line.trim().split(/\s+/);
               if (extra.length)
                 throw new Error("每行時段只需填日期、開始、結束。");
-              return { date, start, end };
+              return { date: dateTime.day(date), start: dateTime.time(start), end: dateTime.time(end) };
             })
         : ["start", "end"].includes(key)
-          ? `${value}:00+08:00`
-          : value || null;
+          ? `${dateTime.dateTime(value)}:00+08:00`
+          : kind ? dateTime[kind](value) : value || null;
   }
   return out;
 }

@@ -173,6 +173,8 @@ test("editor rejects XSS, private sources, reversed time and unknown fields", ()
     { end: "2026-10-01T09:00:00+08:00" },
     { role: "owner" },
     { verifiedAt: "2026-02-31" },
+    { start: "2023-02-30T19:30:00+08:00" },
+    { start: "2026-10-01T24:00:00+08:00" },
   ])
     assert.throws(() => validate("events", { ...event, ...patch }));
 });
