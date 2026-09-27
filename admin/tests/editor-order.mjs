@@ -33,7 +33,7 @@ const pages = [
   { path: "achievement-z.html", title: "A 專頁", source_path: "data/achievements.json", source_kind: "generated", editor_scope: "partial", commit_sha: "a".repeat(40), publication_status: "published", draft_version: 0 },
 ];
 let saved = null;
-let draft = null;
+const drafts = new Map();
 let savedDocument = null;
 let rejectMediaCredit = false;
 let releaseList = [];
@@ -81,13 +81,16 @@ const server = createServer(async (req, res) => {
   if (path === "/api/publications") return send(res, JSON.stringify({ publications: releaseList }));
   if (path === "/api/case") return send(res, JSON.stringify({ case: published }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));
-  if (path === "/api/page-draft" && req.method === "GET") return send(res, JSON.stringify({ draft }));
+  if (path === "/api/page-draft" && req.method === "GET") {
+    const requestedPath = new URL(req.url, "http://127.0.0.1").searchParams.get("path");
+    return send(res, JSON.stringify({ draft: drafts.get(requestedPath) || null }));
+  }
   if (path === "/test/fixture" && req.method === "POST") {
     let body = "";
     for await (const chunk of req) body += chunk;
     const fixture = JSON.parse(body);
     if (Object.hasOwn(fixture, "published")) published = fixture.published;
-    if (Object.hasOwn(fixture, "draft")) draft = fixture.draft;
+    if (Object.hasOwn(fixture, "draft")) drafts.set(fixture.path, fixture.draft);
     return send(res, JSON.stringify({ ok: true }));
   }
   if (path === "/api/page-draft" && req.method === "PUT") {
@@ -99,8 +102,8 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ error: "媒體來源 內容或長度不正確", field: "case.media.0.credit" }));
     }
     saved = JSON.parse(body);
-    const version = (draft?.version || 0) + 1;
-    draft = { version, payload: JSON.stringify(saved), publication_status: "published" };
+    const version = (drafts.get(saved.path)?.version || 0) + 1;
+    drafts.set(saved.path, { version, payload: JSON.stringify(saved), publication_status: "published" });
     pages[1].draft_version = version;
     return send(res, JSON.stringify({ version }));
   }
@@ -186,7 +189,7 @@ try {
   const setFixture = async (fixture) => page.evaluate(async (value) => {
     await fetch("/test/fixture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
   }, fixture);
-  await setFixture({ published, draft: conflictDraft });
+  await setFixture({ path: "achievement-z.html", published, draft: conflictDraft });
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /Z 專頁/ }).click();
   await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
@@ -202,7 +205,7 @@ try {
   await page.evaluate(() => window.submitPageOperation("publish", true));
   assert.equal(publishRequestCount, 0, "invalid mixed release is rejected before the publishing API");
 
-  await setFixture({ published: saved.case, draft: conflictDraft });
+  await setFixture({ path: "achievement-z.html", published: saved.case, draft: conflictDraft });
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /Z 專頁/ }).click();
   await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
