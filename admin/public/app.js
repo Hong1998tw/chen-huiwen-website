@@ -85,6 +85,108 @@ function el(tag, text, cls) {
   if (cls) n.className = cls;
   return n;
 }
+function makeField(label, options = {}) {
+  const field = el("label", undefined, "field"), caption = el("span", undefined, "field-label");
+  caption.append(document.createTextNode(label));
+  if (options.required) {
+    const marker = el("span", "＊", "required-marker");
+    marker.setAttribute("aria-hidden", "true");
+    caption.append(marker);
+    field.dataset.required = "true";
+  }
+  field.append(caption);
+  if (options.path) {
+    field.dataset.validationPath = options.path;
+    const error = el("span", undefined, "field-error");
+    error.id = `field-error-${options.path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    field.append(error);
+  }
+  return field;
+}
+function connectField(field, control, required = false) {
+  const caption = field.querySelector(".field-label");
+  if (caption) control.setAttribute("aria-label", caption.textContent.replace(/＊$/, "").trim());
+  if (required) {
+    control.required = true;
+    control.setAttribute("aria-required", "true");
+  }
+  const error = field.querySelector(".field-error");
+  if (error) control.setAttribute("aria-describedby", error.id);
+  field.append(control);
+  if (error) field.append(error);
+  return field;
+}
+function clearFieldError(control) {
+  const field = control.closest("[data-validation-path]");
+  if (!field) return;
+  const error = field.querySelector(".field-error");
+  const previousMessage = error?.textContent;
+  field.classList.remove("has-error");
+  control.removeAttribute("aria-invalid");
+  if (error) { error.textContent = ""; error.hidden = true; }
+  if (previousMessage && $("#notice")?.textContent === previousMessage) $("#notice").textContent = "";
+}
+function markFieldError(field, control, message) {
+  if (!field || !control) return false;
+  const error = field.querySelector(".field-error");
+  if (!error) return false;
+  error.textContent = message;
+  error.hidden = false;
+  field.classList.add("has-error");
+  control.setAttribute("aria-invalid", "true");
+  field.scrollIntoView({ behavior: "smooth", block: "center" });
+  control.focus({ preventScroll: true });
+  return true;
+}
+function showFieldError(path, message) {
+  if (typeof path !== "string") return;
+  const field = [...document.querySelectorAll("[data-validation-path]")].find(item => item.dataset.validationPath === path);
+  if (!field) return;
+  const details = field.closest("details:not([open])");
+  if (details) details.open = true;
+  if (!field.matches("label")) field.tabIndex = -1;
+  const body = field.closest(".case-group-body");
+  if (body?.hidden) {
+    body.hidden = false;
+    const toggle = body.parentElement?.querySelector(".case-section-head .quiet");
+    if (toggle) { toggle.textContent = "收合"; toggle.setAttribute("aria-expanded", "true"); }
+  }
+  markFieldError(field, field.querySelector("input,textarea,select,button") || field, message);
+}
+function validateRequiredFields(root, includeHidden = false) {
+  if (!root) return true;
+  for (const control of root.querySelectorAll("input[required],textarea[required],select[required]")) {
+    if (control.disabled || !includeHidden && control.closest("[hidden]")) continue;
+    const optionalRow = control.closest('[data-optional-empty-row="true"]');
+    if (optionalRow) {
+      const hasText = [...optionalRow.querySelectorAll("input:not([type=checkbox]):not([data-case-action]),textarea")]
+        .some(input => String(input.value || "").trim());
+      const checked = [...optionalRow.querySelectorAll('input[type="checkbox"]')].some(input => input.checked);
+      if (!hasText && !checked && !optionalRow.dataset.forceValidate) continue;
+    }
+    const empty = control.type === "checkbox" ? !control.checked : !String(control.value || "").trim();
+    const invalid = empty || !control.checkValidity();
+    if (!invalid) continue;
+    const message = empty ? "此欄位為必填。" : control.type === "url" ? "請輸入有效的公開網址。" : "欄位格式不正確。";
+    const field = control.closest("[data-validation-path]");
+    if (field) {
+      const panel = field.closest('[id^="panel-"]');
+      if (panel?.hidden && typeof showEditorTab === "function") showEditorTab(panel.id.slice(6));
+      const body = field.closest(".case-group-body");
+      if (body?.hidden) {
+        body.hidden = false;
+        const toggle = body.parentElement?.querySelector(".case-section-head .quiet");
+        if (toggle) { toggle.textContent = "收合"; toggle.setAttribute("aria-expanded", "true"); }
+      }
+      markFieldError(field, control, message);
+    }
+    else { control.reportValidity(); }
+    return false;
+  }
+  return true;
+}
 function notice(text) {
   $("#notice").textContent = text;
 }
@@ -98,13 +200,11 @@ async function api(path, method = "GET", body) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!r.ok) {
-    let error;
-    try {
-      error = (await r.json()).error;
-    } catch {}
-    throw new Error(
-      error || "連線中斷或登入已失效，請重新載入；未儲存內容仍保留在表單。",
-    );
+    let body = {};
+    try { body = await r.json(); } catch {}
+    const error = new Error(body.error || "連線中斷或登入已失效，請重新載入；未儲存內容仍保留在表單。");
+    error.field = body.field;
+    throw error;
   }
   return r.json();
 }
@@ -113,6 +213,7 @@ async function action(fn) {
     await fn();
   } catch (e) {
     notice(e.message);
+    showFieldError(e.field, e.message);
   }
 }
 function displayDate(value) {
@@ -201,7 +302,7 @@ function renderPages() {
       const sub = p.path === "index.html" ? "/" : `/${p.path}`;
       const states = [p.publication_status === "deleted" ? "垃圾桶" : p.publication_status === "unpublished" ? "已下架" : p.publication_status === "draft" ? "新頁草稿" : "正式"];
       if (p.draft_version) states.push(`草稿 v${p.draft_version}`);
-      if (p.pending_operation) states.push("發布中");
+      if (p.pending_operation) states.push(statusNames[p.pending_status] || "等待處理");
       if (!isPageEditable(p)) states.push("僅檢視");
       button.append(title, el("small", sub), el("small", states.join(" · "), "tree-states"));
       button.onclick = () => action(() => selectPage(p));
@@ -237,12 +338,17 @@ function pageControls() {
     } catch { newEditorialReady = false; }
   }
   const removed = editable && ["deleted", "unpublished"].includes(selectedPage?.publication_status);
-  const pending = pages.some((p) => p.path === selectedPage?.path && p.pending_operation);
+  const pendingPage = pages.find((p) => p.path === selectedPage?.path && p.pending_operation);
+  const pending = Boolean(pendingPage);
+  const pendingStatus = pendingPage?.pending_status;
+  const pendingAge = pendingPage?.pending_since ? Date.now() - Date.parse(pendingPage.pending_since) : 0;
+  const pendingLabel = pendingStatus ? statusNames[pendingStatus] || "等待處理" : "等待處理";
+  const pendingSuffix = pendingStatus === "queued" && pendingAge > 15 * 60 * 1000 ? " · 執行器尚未領取" : "";
   const unchanged = publicationRecords.some(p => p.path === selectedPage?.path && p.version === pageDraft?.version && p.status === "no_change");
   const publishable = editable && (live || newEditorialReady) && Boolean(pageDraft?.version) && !pageDirty && !pending && !unchanged;
   $("#page-status").textContent = selectedPage ? [pageStatusLabel(selectedPage),
     pageDirty ? "有未儲存變更" : pageDraft?.version ? `草稿 v${pageDraft.version} 已儲存` : "無未儲存變更",
-    pending ? "發布中" : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
+    pending ? `${pendingLabel}${pendingSuffix}` : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
   $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
   $("#page-publish").disabled = !publishable;
   $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
@@ -275,7 +381,9 @@ function renderSeoEditor() {
     ["title", "搜尋與分享標題", false], ["description", "搜尋與分享說明", true],
     ["image", "分享圖片網址（本站 assets）", false], ["imageAlt", "分享圖片替代文字", false],
   ]) {
-    const field = el("label", label, "field wide"), input = document.createElement(multiline ? "textarea" : "input");
+    const field = makeField(label, { required: true, path: `seo.${key}` });
+    field.classList.add("wide");
+    const input = document.createElement(multiline ? "textarea" : "input");
     input.name = `seo-${key}`; input.value = seoDraft[key] || "";
     if (key === "image") input.type = "url";
     if (multiline) input.rows = 3;
@@ -288,7 +396,8 @@ function renderSeoEditor() {
       pageControls();
       $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
     });
-    field.append(input);
+    input.addEventListener("input", () => clearFieldError(input));
+    connectField(field, input, true);
     if (counter) field.append(counter);
     target.append(field);
   }
@@ -314,14 +423,15 @@ function extraChanged() {
   if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
 }
 function editorialInput(label, value, update, options = {}) {
-  const field = el("label", label, "field wide");
+  const field = makeField(label, { required: options.required, path: options.path });
+  field.classList.add("wide");
   const input = document.createElement(options.multiline ? "textarea" : "input");
   if (options.multiline) input.rows = options.rows || 3;
   else input.type = options.type || "text";
   input.value = value || "";
   input.placeholder = options.placeholder || "";
   const signal = options.onChange || editorialChanged;
-  input.addEventListener("input", () => { update(input.value); signal(); });
+  input.addEventListener("input", () => { clearFieldError(input); update(input.value); signal(); });
   if (options.dateKind) input.addEventListener("blur", () => {
     const raw = input.value.replace(/\+08:00$/, "");
     const normalized = dateTime[options.dateKind](raw);
@@ -329,7 +439,7 @@ function editorialInput(label, value, update, options = {}) {
       ? normalized + "+08:00" : normalized;
     if (output !== input.value) { input.value = output; update(output); signal(); }
   });
-  field.append(input);
+  connectField(field, input, options.required);
   return field;
 }
 function renderEditorialEditor() {
@@ -342,32 +452,33 @@ function renderEditorialEditor() {
   if (!editorialDraft) return;
   const p = editorialDraft;
   target.append(
-    editorialInput("頁面標題", p.title, v => p.title = v),
-    editorialInput("導讀摘要", p.summary, v => p.summary = v, {multiline:true}),
-    editorialInput("內容整理日期", p.updated, v => p.updated = v, {dateKind:"day",placeholder:"20260927 或 2026-09-27"}),
+    editorialInput("頁面標題", p.title, v => p.title = v, {required:true,path:"editorial.title"}),
+    editorialInput("導讀摘要", p.summary, v => p.summary = v, {multiline:true,required:true,path:"editorial.summary"}),
+    editorialInput("內容整理日期", p.updated, v => p.updated = v, {dateKind:"day",placeholder:"20260927 或 2026-09-27",required:true,path:"editorial.updated"}),
     editorialInput("事件開始（選填，台灣時間）", p.eventStart, v => p.eventStart = v, {dateKind:"dateTime",placeholder:"202609271930 或 2026-09-27T19:30+08:00"}),
     editorialInput("事件結束（選填）", p.eventEnd, v => p.eventEnd = v, {dateKind:"dateTime"}),
     el("h4", "頁面區塊與順序")
   );
   seoTarget.append(
     el("h3", "搜尋與社群分享 SEO"),
-    editorialInput("SEO 標題", p.seo.title, v => p.seo.title = v),
-    editorialInput("SEO 描述", p.seo.description, v => p.seo.description = v, {multiline:true}),
-    editorialInput("分享圖片（本站 assets 圖片網址）", p.seo.image, v => p.seo.image = v, {type:"url"}),
-    editorialInput("分享圖片替代文字", p.seo.imageAlt, v => p.seo.imageAlt = v),
+    editorialInput("SEO 標題", p.seo.title, v => p.seo.title = v, {required:true,path:"editorial.seo.title"}),
+    editorialInput("SEO 描述", p.seo.description, v => p.seo.description = v, {multiline:true,required:true,path:"editorial.seo.description"}),
+    editorialInput("分享圖片（本站 assets 圖片網址）", p.seo.image, v => p.seo.image = v, {type:"url",required:true,path:"editorial.seo.image"}),
+    editorialInput("分享圖片替代文字", p.seo.imageAlt, v => p.seo.imageAlt = v, {required:true,path:"editorial.seo.imageAlt"}),
   );
-  renderBlockEditor(target,p.blocks,editorialChanged);
+  renderBlockEditor(target,p.blocks,editorialChanged,"editorial.blocks");
 }
 function renderExtraBlocksEditor() {
   const panel = $("#extra-blocks-editor"), target = $("#extra-blocks-fields");
   panel.hidden = !extraBlocks || !isPageEditable(selectedPage);
   target.replaceChildren();
-  if (!panel.hidden) renderBlockEditor(target,extraBlocks,extraChanged);
+  if (!panel.hidden) renderBlockEditor(target,extraBlocks,extraChanged,"blocks");
 }
-function renderBlockEditor(target, blocks, changed) {
+function renderBlockEditor(target, blocks, changed, pathPrefix) {
   const render = () => extraBlocks === blocks ? renderExtraBlocksEditor() : renderEditorialEditor();
   for (let index = 0; index < blocks.length; index++) {
     const block = blocks[index], row = el("div", undefined, "case-editor-row");
+    row.dataset.optionalEmptyRow = "true";
     row.dataset.editorialIndex = String(index);
     const labels = {heading:"段落標題",paragraph:"文字段落",timeline:"時間軸",source:"資料來源",photo:"照片",video:"影片",map:"地點與地圖"};
     row.append(el("strong", `${index+1}. ${labels[block.type] || block.type}`));
@@ -381,20 +492,24 @@ function renderBlockEditor(target, blocks, changed) {
     const remove = el("button","移除區塊","secondary"); remove.type="button";
     remove.onclick = () => { blocks.splice(index,1); render(); changed(); };
     controls.append(remove); row.append(controls);
+    const path = `${pathPrefix}.${index}`;
     const input = (label,value,update,options={}) => editorialInput(label,value,update,{...options,onChange:changed});
-    if (["heading","timeline","source","map"].includes(block.type)) row.append(input("標題",block.title,v=>block.title=v));
-    if (["paragraph","timeline","photo","video"].includes(block.type)) row.append(input(block.type === "paragraph" ? "段落內容" : "說明／圖說",block.text,v=>block.text=v,{multiline:true}));
-    if (["timeline","source"].includes(block.type)) row.append(input("日期",block.date,v=>block.date=v,{dateKind:"day",placeholder:"20260927"}));
-    if (["source","photo","video"].includes(block.type)) row.append(input("公開網址",block.url,v=>block.url=v,{type:"url"}));
+    if (["heading","timeline","source"].includes(block.type)) row.append(input("標題",block.title,v=>block.title=v,{required:true,path:`${path}.title`}));
+    if (block.type === "map") row.append(input("標題（選填）",block.title,v=>block.title=v,{path:`${path}.title`}));
+    if (["paragraph","timeline"].includes(block.type)) row.append(input(block.type === "paragraph" ? "段落內容" : "說明／圖說",block.text,v=>block.text=v,{multiline:true,required:true,path:`${path}.text`}));
+    if (["photo","video"].includes(block.type)) row.append(input("說明／圖說（選填）",block.text,v=>block.text=v,{multiline:true,path:`${path}.text`}));
+    if (["timeline","source"].includes(block.type)) row.append(input("日期",block.date,v=>block.date=v,{dateKind:"day",placeholder:"20260927",required:block.type === "timeline",path:`${path}.date`}));
+    if (["source","photo","video"].includes(block.type)) row.append(input("公開網址",block.url,v=>block.url=v,{type:"url",required:true,path:`${path}.url`}));
     if (["photo","video"].includes(block.type)) {
-      row.append(input("替代文字",block.alt,v=>block.alt=v), input("來源署名",block.credit,v=>block.credit=v));
-      const confirmation=el("label",undefined,"field wide"), check=document.createElement("input");
+      row.append(input("替代文字",block.alt,v=>block.alt=v,{required:true,path:`${path}.alt`}), input("來源署名",block.credit,v=>block.credit=v,{required:true,path:`${path}.credit`}));
+      const confirmation=makeField("我已確認此網址不需登入即可公開瀏覽",{required:true,path:`${path}.publicAccessConfirmed`}), check=document.createElement("input");
       check.type="checkbox"; check.checked=Boolean(block.publicAccessConfirmed);
-      check.onchange=()=>{block.publicAccessConfirmed=check.checked;changed();};
-      confirmation.append(check,"我已確認此網址不需登入即可公開瀏覽"); row.append(confirmation);
+      check.onchange=()=>{clearFieldError(check);block.publicAccessConfirmed=check.checked;changed();};
+      confirmation.insertBefore(check,confirmation.firstChild); check.required=true; check.setAttribute("aria-required","true");
+      confirmation.append(confirmation.querySelector(".field-error")); row.append(confirmation);
     }
     if (block.type === "map") {
-      row.append(input("完整地址（以高雄市起頭）",block.address,v=>block.address=v,{placeholder:"高雄市鳳山區錦田路231號"}));
+      row.append(input("完整地址（以高雄市起頭）",block.address,v=>block.address=v,{placeholder:"高雄市鳳山區錦田路231號",required:true,path:`${path}.address`}));
       if (block.address.startsWith("高雄市")) {
         const link = el("a","在地圖 App 核對位置 ↗","text-link");
         link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(block.address)}`;
@@ -439,13 +554,13 @@ function renderHomeEditor() {
     select.value = String(index);
     select.onchange = () => moveHomeStory(index, Number(select.value));
     position.append(select); actions.append(position); row.append(actions); target.append(row);
-    const summary = el("label", "首頁卡片摘要", "field");
+    const summary = makeField("首頁卡片摘要",{required:true,path:`home.summaries.${order[index]}`});
     const textarea = document.createElement("textarea");
     textarea.value = homeDraft.summaries[order[index]] || "";
     textarea.maxLength = 500;
     textarea.dataset.homeSummary = order[index];
-    textarea.oninput = () => { homeDraft.summaries[order[index]] = textarea.value; homeChanged(); };
-    summary.append(textarea); row.append(summary);
+    textarea.oninput = () => { clearFieldError(textarea); homeDraft.summaries[order[index]] = textarea.value; homeChanged(); };
+    connectField(summary,textarea,true); row.append(summary);
     const remove = el("button", "從首頁移除", "secondary");
     remove.type = "button"; remove.dataset.homeAction = "remove";
     remove.disabled = order.length <= 2;
@@ -494,19 +609,18 @@ function moveHomeStory(from, to) {
   homeChanged();
 }
 function caseInput(label, value, update, options = {}) {
-  const field = el("label", label, "field");
+  const field = makeField(label,{required:options.required,path:options.path});
   const input = document.createElement(options.multiline ? "textarea" : "input");
   if (!options.multiline) input.type = options.type || "text";
   if (options.dateKind) input.inputMode = "numeric";
   input.value = value || "";
   if (options.placeholder) input.placeholder = options.placeholder;
-  input.addEventListener("input", () => { update(input.value); caseChanged(); });
+  input.addEventListener("input", () => { clearFieldError(input); update(input.value); caseChanged(); });
   if (options.dateKind) input.addEventListener("blur", () => {
     const normalized = dateTime[options.dateKind](input.value);
     if (normalized !== input.value) { input.value = normalized; update(normalized); caseChanged(); }
   });
-  field.append(input);
-  return field;
+  return connectField(field,input,options.required);
 }
 function caseChanged() {
   pageDirty = true;
@@ -605,6 +719,14 @@ function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
   const group = el("section", undefined, "case-editor-group");
   group.dataset.caseGroup = key;
   group.dataset.caseSection = sectionKey;
+  if (key === "sources") {
+    group.dataset.validationPath = "case.sources";
+    const error = el("p", undefined, "field-error");
+    error.id = "field-error-case-sources";
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    group.append(error);
+  }
   const heading=caseSectionHeader(title, sectionKey);
   heading.querySelector("h4").textContent=`${title}  ${caseDraft[key].length}`;
   const collapse=el("button","收合","quiet");collapse.type="button";collapse.setAttribute("aria-expanded","true");
@@ -616,6 +738,7 @@ function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
     const row = el("div", undefined, "case-editor-row");
     row.dataset.caseList = key;
     row.dataset.caseIndex = String(i);
+    row.dataset.optionalEmptyRow = "true";
     row.append(...inputs(caseDraft[key][i], i));
     row.append(caseRowActions(key, i, title));
     body.append(row);
@@ -639,42 +762,46 @@ function renderCaseEditor() {
   target.replaceChildren();
   if (!caseDraft) return;
   target.append(
-    caseInput("專頁標題", caseDraft.title, (v) => caseDraft.title = v),
-    caseInput("摘要", caseDraft.summary, (v) => caseDraft.summary = v, { multiline: true }),
-    caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { dateKind: "day", placeholder: "20260924 或 2026-09-24" }),
+    caseInput("專頁標題", caseDraft.title, (v) => caseDraft.title = v, {required:true,path:"case.title"}),
+    caseInput("摘要", caseDraft.summary, (v) => caseDraft.summary = v, { multiline: true,path:"case.summary" }),
+    caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { dateKind: "day", placeholder: "20260924 或 2026-09-24",required:true,path:"case.updated" }),
   );
   const groups = {};
   groups.overview = caseGroup("完整背景與說明", "paragraphs", "", (_item, i) => [
-    caseInput(`段落 ${i + 1}`, caseDraft.paragraphs[i], (v) => caseDraft.paragraphs[i] = v, { multiline: true }),
+    caseInput(`段落 ${i + 1}`, caseDraft.paragraphs[i], (v) => caseDraft.paragraphs[i] = v, { multiline: true,path:`case.paragraphs.${i}` }),
   ], 30, "overview");
-  groups.history = caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item) => [
-    caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v, { dateKind: "period" }),
-    caseInput("標題", item.title, (v) => item.title = v),
-    caseInput("說明", item.text, (v) => item.text = v, { multiline: true }),
+  groups.history = caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item,i) => [
+    caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v, { dateKind: "period",required:true,path:`case.history.${i}.date` }),
+    caseInput("標題", item.title, (v) => item.title = v,{required:true,path:`case.history.${i}.title`}),
+    caseInput("說明", item.text, (v) => item.text = v, { multiline: true,required:true,path:`case.history.${i}.text` }),
   ], 50);
-  groups.sources = caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item) => [
-    caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v, { dateKind: "period" }),
-    caseInput("來源名稱", item.title, (v) => item.title = v),
-    caseInput("公開網址", item.url, (v) => item.url = v, { type: "url" }),
-    caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v),
+  groups.sources = caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item,i) => [
+    caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v, { dateKind: "period",path:`case.sources.${i}.sourceDate` }),
+    caseInput("來源名稱", item.title, (v) => item.title = v,{required:true,path:`case.sources.${i}.title`}),
+    caseInput("公開網址", item.url, (v) => item.url = v, { type: "url",required:true,path:`case.sources.${i}.url` }),
+    caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v,{path:`case.sources.${i}.sourceType`}),
   ], 50);
   const sourceCount = caseDraft.sources.filter(item => item.url).length;
   groups.sources.prepend(el("p", `${caseDraft.sources.length} 筆來源 · ${sourceCount} 筆有公開網址。網址可達不代表主張已核實；內容核對仍須由人工確認。`, "source-health hint"));
-  groups.media = caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item) => {
-    const kind = el("label", "類型", "field"), select = document.createElement("select");
+  groups.media = caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item,i) => {
+    const path = `case.media.${i}`;
+    const kind = makeField("類型",{required:true,path:`${path}.kind`}), select = document.createElement("select");
     for (const [value, label] of [["photo", "照片"], ["video", "影片"]]) { const option = el("option", label); option.value = value; select.append(option); }
     select.value = item.kind;
-    select.onchange = () => { item.kind = select.value; caseChanged(); };
-    kind.append(select);
-    const access = el("label", "我已確認此網址不需登入即可公開檢視", "field");
+    select.onchange = () => { clearFieldError(select); select.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.kind = select.value; caseChanged(); };
+    connectField(kind,select,true);
+    const access = makeField("我已確認此網址不需登入即可公開檢視",{required:true,path:`${path}.publicAccessConfirmed`});
     const check = document.createElement("input"); check.type = "checkbox"; check.checked = Boolean(item.publicAccessConfirmed);
-    check.onchange = () => { item.publicAccessConfirmed = check.checked; caseChanged(); };
-    access.prepend(check);
+    check.required=true;check.setAttribute("aria-required","true");
+    check.onchange = () => { clearFieldError(check); if (check.checked) check.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.publicAccessConfirmed = check.checked; caseChanged(); };
+    const error=access.querySelector(".field-error");
+    if(error)check.setAttribute("aria-describedby",error.id);
+    access.insertBefore(check,access.firstChild);
     return [kind,
-      caseInput("Drive／Facebook／YouTube 或圖片、影片公開網址", item.url, (v) => item.url = v, { type: "url" }),
-      caseInput("替代文字／影片名稱", item.alt, (v) => item.alt = v),
-      caseInput("說明", item.caption, (v) => item.caption = v, { multiline: true }),
-      caseInput("拍攝者／刊登來源", item.credit, (v) => item.credit = v), access];
+      caseInput("Drive／Facebook／YouTube 或圖片、影片公開網址", item.url, (v) => item.url = v, { type: "url",required:true,path:`${path}.url` }),
+      caseInput("替代文字／影片名稱", item.alt, (v) => item.alt = v,{required:true,path:`${path}.alt`}),
+      caseInput("說明", item.caption, (v) => item.caption = v, { multiline: true,required:true,path:`${path}.caption` }),
+      caseInput("拍攝者／刊登來源", item.credit, (v) => item.credit = v,{required:true,path:`${path}.credit`}), access];
   }, 24);
   const local = el("div", undefined, "case-local-group");
   local.append(el("h5", "既有網站照片"));
@@ -683,6 +810,7 @@ function renderCaseEditor() {
     const row = el("div", undefined, "case-editor-row");
     row.dataset.caseList = "images";
     row.dataset.caseIndex = String(index);
+    row.dataset.optionalEmptyRow = item ? "false" : "true";
     row.append(el("strong", filename));
     const thumbnail = document.createElement("img");
     thumbnail.src = `https://www.huiwen.tw/assets/${encodeURIComponent(filename)}`;
@@ -695,11 +823,12 @@ function renderCaseEditor() {
       add.onclick = () => { caseDraft.imageMetadata[filename] = { alt: "", caption: "", credit: "", sourceUrl: "" }; renderCaseEditor(); caseChanged(); };
       row.append(add);
     } else {
+      const field = `case.imageMetadata.${filename}`;
       row.append(
-        caseInput("替代文字", item.alt, (v) => item.alt = v),
-        caseInput("照片說明", item.caption, (v) => item.caption = v),
-        caseInput("照片來源", item.credit, (v) => item.credit = v),
-        caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url" }));
+        caseInput("替代文字", item.alt, (v) => item.alt = v,{required:true,path:`${field}.alt`}),
+        caseInput("照片說明", item.caption, (v) => item.caption = v,{required:true,path:`${field}.caption`}),
+        caseInput("照片來源", item.credit, (v) => item.credit = v,{required:true,path:`${field}.credit`}),
+        caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url",required:true,path:`${field}.sourceUrl` }));
       if (!caseBase?.imageMetadata?.[filename]) {
         const cancel = el("button", "取消新增照片說明", "secondary");
         cancel.type = "button";
@@ -845,6 +974,9 @@ function renderPageHistory(versions) {
 }
 async function savePageDraft() {
   if (!selectedPage || !isPageEditable(selectedPage)) return;
+  for (const id of ["case-editor-fields","home-editor-fields","editorial-editor-fields","editorial-seo-fields","extra-blocks-fields","seo-editor-fields"]) {
+    if (!validateRequiredFields(document.getElementById(id), true)) return false;
+  }
   const cleanedCase = cleanCaseDraft();
   const result = await api("/api/page-draft", "PUT", {
     path: selectedPage.path,
@@ -868,14 +1000,15 @@ async function savePageDraft() {
   renderPageHistory(history.versions || []);
   $("#page-history-panel").hidden = !history.versions?.length;
   setPageStatus(`草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
+  return true;
 }
 async function submitPageOperation(operation, confirmed = false) {
   if (!selectedPage || !isPageEditable(selectedPage)) return;
   if (pageDirty) {
     if (!confirm("目前有未儲存的文字，先儲存草稿再繼續？")) return;
-    await savePageDraft();
+    if (await savePageDraft() === false) return;
   }
-  if (!pageDraft?.version) await savePageDraft();
+  if (!pageDraft?.version && await savePageDraft() === false) return;
   const prompts = {
     publish: "送出這個頁面的草稿？通過必要檢查後會更新正式官網。",
     unpublish: "將此頁從正式官網下架？原始頁面與版本紀錄保留，可再還原。",
@@ -953,7 +1086,8 @@ function render() {
   $("#history-panel").hidden = !selected.id;
   $("#refresh").disabled = !selected.id;
   for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
-    const label = el("label", labels[key], "field");
+    const required = key !== "changeNote";
+    const label = makeField(labels[key],{required,path:`document.${key}`});
     let input;
     if (key === "status") {
       input = el("select");
@@ -984,7 +1118,7 @@ function render() {
     }
     input.name = key;
     input.id = `field-${key}`;
-    input.required = key !== "changeNote";
+    input.required = required;
     input.value =
       key === "sessions"
         ? (p.sessions || [])
@@ -994,7 +1128,8 @@ function render() {
           ? String(p[key] || "").slice(0, 16)
           : (p[key] ?? "");
     if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle", "sessions"].includes(key)) label.classList.add("wide");
-    label.append(input);
+    connectField(label,input,required);
+    input.addEventListener("input",()=>clearFieldError(input));
     if (key === "sessions")
       label.append(
         el("small", "每行一個時段：20261001 1930 2100 或 2026-10-01 19:30 21:00。每個日期只填一次。"),
@@ -1041,6 +1176,7 @@ function read() {
   return out;
 }
 async function save() {
+  if (!validateRequiredFields($("#fields"), true)) return;
   const payload = read();
   const result = selected.id
     ? await api(`/api/documents/${selected.id}`, "PUT", {
@@ -1226,6 +1362,7 @@ $("#page-work-filter").onchange = () => {
 };
 $("#page-create-form").onsubmit = (event) => {
   event.preventDefault();
+  if (!validateRequiredFields(event.currentTarget, true)) return;
   action(async () => {
     const form = new FormData(event.currentTarget);
     const result = await api("/api/page-create","POST",{
@@ -1238,6 +1375,8 @@ $("#page-create-form").onsubmit = (event) => {
     $("#page-create-panel").open = false;
   });
 };
+$("#page-create-form").addEventListener("input", event => clearFieldError(event.target));
+$("#page-create-form").addEventListener("change", event => clearFieldError(event.target));
 $("#page-save").onclick = () => action(savePageDraft);
 $("#page-publish").onclick = () => action(() => submitPageOperation("publish"));
 $("#page-unpublish").onclick = () => action(() => submitPageOperation("unpublish"));

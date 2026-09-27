@@ -82,7 +82,14 @@ function updateSelectedRelease() {
   if (!records.length) { target.append(el("p", "這一頁尚無後台發布紀錄。", "hint")); return; }
   const latest = records[0];
   target.append(el("h3", `最近一次發布 · ${statusNames[latest.status] || latest.status}`), el("p", `v${latest.version} · ${localDate(latest.created_at)}`));
-  const details = el("p", latest.message || "後端未回傳詳細原因。", "hint"); target.append(details);
+  let message = latest.message || "後端未回傳詳細原因。";
+  if (latest.status === "queued") {
+    const age = Date.now() - Date.parse(latest.created_at);
+    message = age > 15 * 60 * 1000
+      ? "發布要求仍在安全佇列，發布執行器尚未領取；官網維持原版本。系統會自動更新狀態，請勿重複送出。"
+      : "發布要求已進入安全佇列，尚未開始建置；官網維持原版本。";
+  }
+  const details = el("p", message, "hint"); target.append(details);
   const full = document.querySelector("#publications").querySelector(`.publication[data-release-id="${CSS.escape(String(latest.id))}"] .verification-chain`);
   if (full) target.append(full.cloneNode(true));
   const link = document.createElement("button"); link.type="button"; link.className="secondary"; link.textContent="在發布中心查看完整歷程"; link.onclick=()=>showWorkspace("publishing"); target.append(link);
@@ -220,6 +227,12 @@ const originalLoad=load;
 load=async function(){await originalLoad();updateDashboard();};
 const originalPublications=publications;
 publications=async function(){await originalPublications();for(const row of document.querySelectorAll("#publications .publication")){const index=[...row.parentElement.children].indexOf(row);row.dataset.releaseId=String(publicationRecords[index]?.id||"");}filterReleases();updateDashboard();if(selectedPage)pageControls();};
+let releasePollBusy=false;
+setInterval(async()=>{
+  if(document.hidden||releasePollBusy||!publicationRecords.some(item=>["queued","processing","pr_created","merged","deployed"].includes(item.status)))return;
+  releasePollBusy=true;
+  try{await Promise.all([publications(),loadPages()]);}catch{}finally{releasePollBusy=false;}
+},30000);
 showWorkspace(location.hash.slice(1));
 showEditorTab("content");
 window.addEventListener("hashchange",()=>{const target=location.hash.slice(1);if(target!==currentWorkspace)showWorkspace(target);});

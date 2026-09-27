@@ -13,3 +13,8 @@ test("homepage selection keeps a featured story, public reading slots and matchi
   assert.throws(() => validateHomeDraft({ ...home, reading: ["b", "c", "e"] }));
   assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, b: "<script>bad</script>" } }));
 });
+
+test("homepage summary errors identify the specific card", () => {
+  assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, c: " " } }),
+    error => error instanceof Error && (error as any).field === "home.summaries.c");
+});

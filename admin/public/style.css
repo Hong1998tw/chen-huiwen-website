@@ -225,6 +225,12 @@ h2 {
   font-size: 14px;
   font-weight: 700;
 }
+.field-label { display: block; }
+.required-marker { margin-left: 4px; color: #b42318; font-weight: 800; }
+.field-error { display: block; margin-top: 5px; color: #b42318; font-size: 13px; font-weight: 650; line-height: 1.45; }
+.field.has-error input,.field.has-error textarea,.field.has-error select { border-color: #b42318; box-shadow: 0 0 0 1px #b42318; }
+.field.has-error input[type=checkbox] { outline: 2px solid #b42318; outline-offset: 2px; }
+.case-editor-group.has-error { border-left: 3px solid #b42318; padding-left: 14px; }
 .field input,
 .field textarea,
 .field select {
@@ -249,6 +255,7 @@ h2 {
   font-weight: 400;
 }
 .case-editor{padding:24px;border-top:1px solid var(--line);background:#fff}.case-editor h3{margin:0}.case-editor-group{padding:18px 0;border-top:1px solid var(--line)}.case-editor-group:first-child{border-top:0}.case-editor-group header{position:static;padding:0;background:none;color:var(--ink);border:0}.case-editor-row{padding:16px;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--paper)}.case-editor-row .field{margin-bottom:12px}.case-editor-row .field:last-child{margin-bottom:0}.case-editor .field{max-width:100%}.case-editor .field textarea{min-height:88px}.case-editor-actions{display:flex;gap:12px;flex-wrap:wrap}.case-editor [type=checkbox]{width:auto;display:inline-block;margin-right:8px}.case-editor .field:has([type=checkbox]){display:flex;align-items:center;font-weight:500}.case-editor-row button{margin-top:8px}.case-editor p.hint{margin:8px 0 18px}
+.case-editor .field:has([type=checkbox]){flex-wrap:wrap;align-items:flex-start;gap:0 8px}.case-editor .field:has([type=checkbox])>.field-label{display:inline;font-weight:500}.case-editor .field:has([type=checkbox])>.field-error{flex-basis:100%;order:4;margin-left:28px}.case-editor .field:has([type=checkbox]) input[type=checkbox]{order:0;margin-top:5px}.case-editor .field:has([type=checkbox])>.field-label{order:1}
 .case-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .case-section-actions,.case-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .case-section-actions button,.case-row-actions button{margin:0}

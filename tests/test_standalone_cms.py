@@ -2,6 +2,7 @@ import json
 import sys
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import urllib.error
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -12,6 +13,51 @@ from page_copy import digest as page_digest, render as render_page_copy, render_
 from case_media import classify as classify_media, render as render_media
 
 class StandaloneCMS(unittest.TestCase):
+    def test_retryable_publish_errors_return_to_queue(self):
+        receipt = {"id": "release-id", "lease": "lease-id"}
+        retry = cms.receipt_for_publish_error(receipt, engine.PublishError("STALE_CHECKOUT", retryable=True))
+        self.assertEqual(retry["status"], "queued")
+        self.assertIn("下一輪", retry["message"])
+        stop = cms.receipt_for_publish_error(receipt, engine.PublishError("VALIDATION"))
+        self.assertEqual(stop["status"], "failed")
+
+    def test_stale_structured_case_uses_current_main_only_after_case_candidate_validation(self):
+        old_sha, live_sha = "a" * 40, "b" * 40
+        item = {
+            "id": "release-id", "path": "achievement-fixture.html", "version": 2,
+            "base_commit": old_sha, "operation": "publish",
+            "payload": json.dumps({"fields": {}, "case": {"title": "編輯後"}, "caseBase": {"title": "原始值"}}),
+        }
+        seen = {}
+
+        def validated_candidate(current_item, *_args):
+            seen.update(current_item)
+            return engine.Candidate("achievement-content", current_item["id"], current_item["path"], {},
+                                    current_item["base_commit"], "updated", True, "preview", "sha256:" + "c" * 64)
+
+        with patch.object(cms, "catalog", return_value=[{"path": item["path"], "kind": "generated"}]), \
+             patch.object(cms.engine, "run", return_value=SimpleNamespace(stdout=live_sha)), \
+             patch.object(cms, "page_text", return_value=json.dumps({"schemaVersion": 1, "pages": {}})), \
+             patch.object(cms, "case_candidate", side_effect=validated_candidate):
+            candidate = cms.page_candidate(item, root=ROOT)
+
+        self.assertEqual(candidate.base_hash, live_sha)
+        self.assertEqual(seen["base_commit"], live_sha)
+        self.assertEqual(item["base_commit"], old_sha, "the stored publication snapshot remains immutable")
+
+    def test_stale_unstructured_page_does_not_loop_in_the_publication_queue(self):
+        item = {
+            "id": "release-id", "path": "service.html", "version": 1,
+            "base_commit": "a" * 40, "operation": "publish", "payload": json.dumps({"fields": {}}),
+        }
+        with patch.object(cms, "catalog", return_value=[{"path": item["path"], "kind": "generated"}]), \
+             patch.object(cms.engine, "run", return_value=SimpleNamespace(stdout="b" * 40)):
+            with self.assertRaises(engine.PublishError) as raised:
+                cms.page_candidate(item, root=ROOT)
+        self.assertEqual(raised.exception.code, "BASE_DRIFT")
+        self.assertFalse(raised.exception.retryable)
+        self.assertIn("草稿已保留", raised.exception.plain())
+
     def test_empty_optional_case_history_is_not_shown_as_placeholder(self):
         html=(ROOT/'achievement-changle-hexing-youbike.html').read_text()
         self.assertNotIn('本專題尚未收錄具日期的推動歷程',html)

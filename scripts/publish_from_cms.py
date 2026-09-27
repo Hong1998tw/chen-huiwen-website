@@ -28,6 +28,11 @@ class RunnerError(Exception):
     """Only static stage/status diagnostics, never remote bodies or token values."""
 
 
+def receipt_for_publish_error(receipt, error):
+    return {**receipt, 'status': 'queued' if error.retryable else 'failed',
+            'message': error.plain()[:1500]}
+
+
 def fetch_json(request, stage, timeout):
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -240,8 +245,6 @@ def editorial_candidate(item, root, draft):
     if draft.get('fields') or not isinstance(draft.get('editorial'), dict):
         raise engine.PublishError('VALIDATION', ['新增專頁不能混用舊式文字覆寫'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
-    if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT')
     try:
         revised = validate_editorial_page(path, draft['editorial'], root)
         source = read_editorial(root)
@@ -256,7 +259,7 @@ def editorial_candidate(item, root, draft):
     old_text = (root / 'data/editorial-pages.json').read_text(encoding='utf-8')
     new_text = json.dumps(source, ensure_ascii=False, indent=2) + '\n'
     digest = engine.sha({'path':path,'version':item['version'],'editorial':revised})
-    return engine.Candidate('editorial-page', item['id'], path, revised, item['base_commit'], new_text,
+    return engine.Candidate('editorial-page', item['id'], path, revised, live_sha, new_text,
                             new_text != old_text, f'新增或編輯專頁：{path}\n操作：publish', digest)
 
 
@@ -274,8 +277,13 @@ def page_candidate(item, root=ROOT):
     if not page or page['kind'] in {'system', 'legacy-redirect', 'excluded-intake'}:
         raise engine.PublishError('VALIDATION', ['此頁目前不開放編輯'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
-    if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT')
+    stale_base = item.get('base_commit') != live_sha
+    structured_case_edit = (operation == 'publish' and isinstance(draft.get('case'), dict) and
+                            draft.get('case') != draft.get('caseBase'))
+    structured_home_edit = (operation == 'publish' and isinstance(draft.get('home'), dict) and
+                            draft.get('home') != draft.get('homeBase'))
+    if stale_base and not (structured_case_edit or structured_home_edit):
+        raise engine.PublishError('BASE_DRIFT', ['此頁草稿基準早於目前官網版本。草稿已保留；請先確認目前正式頁面，再重新整理草稿。'])
     try:
         state = json.loads(page_text(root))
     except (ValueError, OSError):
@@ -290,7 +298,8 @@ def page_candidate(item, root=ROOT):
             raise engine.PublishError('VALIDATION', ['政績內容與 SEO 請分次發布，避免兩種來源同時改動'])
         if draft.get('blocks') != draft.get('blocksBase'):
             raise engine.PublishError('VALIDATION', ['政績內容與延伸區塊請分次發布，避免兩種來源同時改動'])
-        return case_candidate(item, root, path, draft)
+        candidate_item = {**item, 'base_commit': live_sha} if stale_base else item
+        return case_candidate(candidate_item, root, path, draft)
     if operation == 'publish' and 'home' in draft and draft.get('home') != draft.get('homeBase'):
         if path != 'index.html':
             raise engine.PublishError('VALIDATION', ['首頁專題排序只能用於首頁'])
@@ -298,7 +307,8 @@ def page_candidate(item, root=ROOT):
             raise engine.PublishError('VALIDATION', ['首頁專題與 SEO 請分次發布，避免兩種來源同時改動'])
         if draft.get('blocks') != draft.get('blocksBase'):
             raise engine.PublishError('VALIDATION', ['首頁專題與延伸區塊請分次發布，避免兩種來源同時改動'])
-        return home_candidate(item, root, draft)
+        candidate_item = {**item, 'base_commit': live_sha} if stale_base else item
+        return home_candidate(candidate_item, root, draft)
     fields = validate_page_payload({'fields': draft.get('fields', {})})
     if operation == 'publish':
         blocks = draft.get('blocks')
@@ -356,7 +366,7 @@ def publish_page(item, gh):
         with engine.Worktree(ROOT, base) as wt:
             engine.materialize(candidate, wt)
             if gh.branch_sha('main') != base:
-                raise engine.PublishError('STALE_CHECKOUT')
+                raise engine.PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = engine.ensure_pull_request(gh, candidate,
                 lambda: engine.git_push(os.environ['GH_TOKEN'])(wt, candidate, title), title,
                 f"Owner-approved page revision {item['version']}.\n\nPage: `{item['path']}`\nOperation: `{item['operation']}`\nBuild, canonical source, publication path and required checks are enforced.\nCandidate digest: `{candidate.digest}`")
@@ -364,7 +374,7 @@ def publish_page(item, gh):
                 gh.enable_auto_merge(pr['number'], expected_head_sha=gh.branch_sha(candidate.branch))
         return {**receipt, 'status': 'pr_created', 'pr_number': pr['number'], 'message': '頁面發布請求已建立；正在等待必要檢查與正式站部署。'}
     except engine.PublishError as error:
-        return {**receipt, 'status': 'failed', 'message': error.plain()[:1500]}
+        return receipt_for_publish_error(receipt, error)
 
 
 def reconcile_page(item, gh):
@@ -395,7 +405,7 @@ def publish(item, gh):
         with engine.Worktree(ROOT, base) as wt:
             engine.materialize(candidate, wt)
             if gh.branch_sha('main') != base:
-                raise engine.PublishError('STALE_CHECKOUT')
+                raise engine.PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = engine.ensure_pull_request(gh, candidate,
                 lambda: engine.git_push(os.environ['GH_TOKEN'])(wt,candidate,title), title,
                 f"Owner-approved CMS revision {item['version']}.\n\nBuild, canonical source, and publication path checks are required.\nCandidate digest: {candidate.digest}")
@@ -403,7 +413,7 @@ def publish(item, gh):
                 gh.enable_auto_merge(pr['number'], expected_head_sha=gh.branch_sha(candidate.branch))
         return {**receipt, 'status':'pr_created', 'pr_number':pr['number'], 'message':'發布請求已建立；正在等待必要檢查及自動合併。'}
     except engine.PublishError as error:
-        return {**receipt, 'status':'failed', 'message': error.plain()[:1500]}
+        return receipt_for_publish_error(receipt, error)
 
 
 def reconcile(item, gh):

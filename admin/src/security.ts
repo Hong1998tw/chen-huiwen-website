@@ -6,9 +6,11 @@ import {
 } from "jose";
 export class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  field?: string;
+  constructor(status: number, message: string, field?: string) {
     super(message);
     this.status = status;
+    this.field = field;
   }
 }
 export const sha256 = async (value: string) =>

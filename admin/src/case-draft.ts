@@ -9,22 +9,22 @@ const period = (value: unknown) => typeof value === "string" && value.length <= 
   (/^20\d\d$/.test(value) || /^20\d\d-(?:0[1-9]|1[0-2])$/.test(value) || day(value) ||
     /^20\d\d-\d\d-\d\d (?:\d\d:\d\d–\d\d:\d\d|至 \d\d-\d\d)$/.test(value) ||
     /^\d{3}學年度第[12]學期$|^第\d+屆第\d+次定期大會$/.test(value));
-function string(value: unknown, label: string, limit = 500, required = true) {
+function string(value: unknown, label: string, limit = 500, required = true, field?: string) {
   if (typeof value !== "string" || value.length > limit || forbidden.test(value) || (required && !value.trim()))
-    throw new HttpError(400, `${label} 內容或長度不正確`);
+    throw new HttpError(400, `${label} 內容或長度不正確`, field);
   return value.normalize("NFC").trim();
 }
-function url(value: unknown, label: string, media = false) {
-  const raw = string(value, label, 1200);
+function url(value: unknown, label: string, media = false, field?: string) {
+  const raw = string(value, label, 1200, true, field);
   let parsed: URL;
-  try { parsed = new URL(raw); } catch { throw new HttpError(400, `${label} 網址不正確`); }
+  try { parsed = new URL(raw); } catch { throw new HttpError(400, `${label} 網址不正確`, field); }
   if (parsed.protocol !== "https:" || parsed.username || parsed.password || (parsed.port && parsed.port !== "443") ||
       !parsed.hostname.includes(".") || /^(?:\d+\.)+\d+$/.test(parsed.hostname) || parsed.hostname.includes(":") ||
       /\.(?:local|internal|lan|home|corp)$/.test(parsed.hostname) ||
       /(?:token|api_key|secret|password)=/i.test(parsed.search))
-    throw new HttpError(400, `${label} 須使用公開 HTTPS 網址`);
+    throw new HttpError(400, `${label} 須使用公開 HTTPS 網址`, field);
   if (!media && /^(?:drive|docs)\.google\.com$|(?:^|\.)notion\.(?:so|site|com)$/.test(parsed.hostname))
-    throw new HttpError(400, `${label} 不可使用私人文件網址`);
+    throw new HttpError(400, `${label} 不可使用私人文件網址`, field);
   return raw;
 }
 export function mediaProvider(raw: string, kind: string) {
@@ -51,7 +51,7 @@ export function validateCaseDraft(value: unknown) {
   if (Object.keys(source).some(k => !allowed.has(k))) throw new HttpError(400, "政績草稿欄位不正確");
   const hasImages = Object.hasOwn(source, "images"), hasSectionOrder = Object.hasOwn(source, "sectionOrder");
   if (hasImages !== hasSectionOrder) throw new HttpError(400, "照片與區塊排序欄位不完整");
-  if (!day(source.updated)) throw new HttpError(400, "內容整理日期不正確");
+  if (!day(source.updated)) throw new HttpError(400, "內容整理日期不正確", "case.updated");
   const images = hasImages ? list(source.images, "既有照片", 24).map((name, i) => {
     if (typeof name !== "string" || !/^[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)$/.test(name))
       throw new HttpError(400, `既有照片 ${i + 1} 檔名不正確`);
@@ -62,28 +62,29 @@ export function validateCaseDraft(value: unknown) {
   if (sectionOrder && (sectionOrder.length !== sectionKeys.length ||
       new Set(sectionOrder).size !== sectionKeys.length || sectionOrder.some(key => !sectionKeys.includes(key))))
     throw new HttpError(400, "區塊排序不正確");
-  const paragraphs = list(source.paragraphs, "背景段落", 30).map((p, i) => string(p, `背景段落 ${i + 1}`, 4000));
+  const paragraphs = list(source.paragraphs, "背景段落", 30).map((p, i) => string(p, `背景段落 ${i + 1}`, 4000, true, `case.paragraphs.${i}`));
   const history = list(source.history, "推動歷程", 50).map((row, i) => {
     const r = object(row, ["date", "title", "text"], `歷程 ${i + 1}`);
-    if (!period(r.date)) throw new HttpError(400, `歷程 ${i + 1} 日期或期間不正確`);
-    return { date: r.date as string, title: string(r.title, "歷程標題"), text: string(r.text, "歷程說明", 4000) };
+    if (!period(r.date)) throw new HttpError(400, `歷程 ${i + 1} 日期或期間不正確`, `case.history.${i}.date`);
+    return { date: r.date as string, title: string(r.title, "歷程標題", 500, true, `case.history.${i}.title`), text: string(r.text, "歷程說明", 4000, true, `case.history.${i}.text`) };
   });
   const sources = list(source.sources, "資料來源", 50).map((row, i) => {
     const r = object(row, ["title", "url", "sourceType", "sourceDate"], `來源 ${i + 1}`);
-    if (r.sourceDate && !period(r.sourceDate)) throw new HttpError(400, `來源 ${i + 1} 日期或期間不正確`);
-    return { title: string(r.title, "來源標題"), url: url(r.url, "資料來源"),
-      ...(r.sourceType ? { sourceType: string(r.sourceType, "來源類型") } : {}),
+    if (r.sourceDate && !period(r.sourceDate)) throw new HttpError(400, `來源 ${i + 1} 日期或期間不正確`, `case.sources.${i}.sourceDate`);
+    return { title: string(r.title, "來源標題", 500, true, `case.sources.${i}.title`), url: url(r.url, "資料來源", false, `case.sources.${i}.url`),
+      ...(r.sourceType ? { sourceType: string(r.sourceType, "來源類型", 500, true, `case.sources.${i}.sourceType`) } : {}),
       ...(r.sourceDate ? { sourceDate: r.sourceDate as string } : {}) };
   });
-  if (!sources.length) throw new HttpError(400, "至少需要一筆可追溯的資料來源");
+  if (!sources.length) throw new HttpError(400, "至少需要一筆可追溯的資料來源", "case.sources");
   const media = list(source.media || [], "照片與影片", 24).map((row, i) => {
+    const field = `case.media.${i}`;
     const r = object(row, ["kind", "url", "alt", "caption", "credit", "publicAccessConfirmed"], `媒體 ${i + 1}`);
-    if (!["photo", "video"].includes(String(r.kind))) throw new HttpError(400, "請選擇照片或影片");
-    const link = url(r.url, "媒體網址", true);
-    if (!mediaProvider(link, String(r.kind))) throw new HttpError(400, "媒體網址須為 Drive 檔案、Facebook 貼文、YouTube 影片或直接圖片／影片檔");
-    if (r.publicAccessConfirmed !== true) throw new HttpError(400, "請先確認媒體不需登入即可公開檢視");
-    return { kind: r.kind as string, url: link, alt: string(r.alt, "媒體替代文字"),
-      caption: string(r.caption, "媒體說明"), credit: string(r.credit, "媒體來源"), publicAccessConfirmed: true };
+    if (!["photo", "video"].includes(String(r.kind))) throw new HttpError(400, "請選擇照片或影片", `${field}.kind`);
+    const link = url(r.url, "媒體網址", true, `${field}.url`);
+    if (!mediaProvider(link, String(r.kind))) throw new HttpError(400, "媒體網址須為 Drive 檔案、Facebook 貼文、YouTube 影片或直接圖片／影片檔", `${field}.url`);
+    if (r.publicAccessConfirmed !== true) throw new HttpError(400, "請先確認媒體不需登入即可公開檢視", `${field}.publicAccessConfirmed`);
+    return { kind: r.kind as string, url: link, alt: string(r.alt, "媒體替代文字", 500, true, `${field}.alt`),
+      caption: string(r.caption, "媒體說明", 500, true, `${field}.caption`), credit: string(r.credit, "媒體來源", 500, true, `${field}.credit`), publicAccessConfirmed: true };
   });
   if (!source.imageMetadata || typeof source.imageMetadata !== "object" || Array.isArray(source.imageMetadata))
     throw new HttpError(400, "原有照片說明格式不正確");
@@ -95,10 +96,11 @@ export function validateCaseDraft(value: unknown) {
   for (const [filename, raw] of Object.entries(metadata)) {
     if (!/^[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)$/.test(filename)) throw new HttpError(400, "原有照片檔名不正確");
     const item = object(raw, ["alt", "caption", "credit", "sourceUrl"], "原有照片說明");
-    imageMetadata[filename] = { alt: string(item.alt, "照片替代文字"), caption: string(item.caption, "照片說明"),
-      credit: string(item.credit, "照片來源"), sourceUrl: url(item.sourceUrl, "照片原始網址") };
+    const field = `case.imageMetadata.${filename}`;
+    imageMetadata[filename] = { alt: string(item.alt, "照片替代文字", 500, true, `${field}.alt`), caption: string(item.caption, "照片說明", 500, true, `${field}.caption`),
+      credit: string(item.credit, "照片來源", 500, true, `${field}.credit`), sourceUrl: url(item.sourceUrl, "照片原始網址", false, `${field}.sourceUrl`) };
   }
-  return { title: string(source.title, "標題"), summary: string(source.summary, "摘要", 4000, false),
+  return { title: string(source.title, "標題", 500, true, "case.title"), summary: string(source.summary, "摘要", 4000, false, "case.summary"),
     updated: source.updated as string, paragraphs, history, sources, media, imageMetadata,
     ...(images && sectionOrder ? { images, sectionOrder } : {}) };
 }
