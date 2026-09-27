@@ -189,8 +189,10 @@ try {
   await setFixture({ published, draft: conflictDraft });
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /Z 專頁/ }).click();
+  await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /A 專頁/ }).click();
+  await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
   await page.locator("#content-publish-conflict").waitFor({ state: "visible" });
   await page.locator("#tab-seo").click();
   await page.locator("#seo-publish-conflict").waitFor({ state: "visible" });
@@ -203,6 +205,7 @@ try {
   await setFixture({ published: saved.case, draft: conflictDraft });
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /Z 專頁/ }).click();
+  await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /A 專頁/ }).click();
   await page.getByText(/基準已安全對齊/).waitFor();
