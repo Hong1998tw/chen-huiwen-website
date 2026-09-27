@@ -72,7 +72,7 @@ try {
   execFileSync(
     process.execPath,
     [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
-      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
+      "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z'),('service-guides.html','市民服務指南','data/service-guides.json','generated','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
     { cwd: root, stdio: "pipe" },
   );
   server = spawn(
@@ -115,9 +115,27 @@ try {
   assert.equal(session.role, "owner");
   assert.equal((await fetch(origin + "/api/documents")).status, 401);
   assert.equal((await fetch(origin + "/api/pages")).status, 401);
+  assert.equal((await fetch(origin + "/api/page-preview?path=index.html")).status, 401,
+    "the published-page preview must require the authenticated owner");
   const pageCatalog = await fetch(origin + "/api/pages", { headers }).then((r) => r.json());
-  assert.equal(pageCatalog.pages.length, 1);
+  assert.equal(pageCatalog.pages.length, 2);
   assert.equal(pageCatalog.pages[0].source_path, "data/civic-home.json");
+  assert.equal((await fetch(origin + "/api/page-preview?path=" + encodeURIComponent("../index.html"), { headers })).status, 400,
+    "the preview route must reject traversal paths");
+  assert.equal((await fetch(origin + "/api/page-preview?path=missing.html", { headers })).status, 404,
+    "the preview route must reject paths outside the published catalogue");
+  if (process.env.CMS_LIVE_PREVIEW === "1") {
+    const livePreview = await fetch(origin + "/api/page-preview?path=service-guides.html", { headers });
+    const liveHTML = await livePreview.text();
+    assert.equal(livePreview.status, 200, liveHTML);
+    assert.match(livePreview.headers.get("content-type") || "", /text\/html/);
+    assert.equal(livePreview.headers.get("cache-control"), "no-store");
+    assert.equal(livePreview.headers.get("x-frame-options"), "SAMEORIGIN");
+    assert.match(livePreview.headers.get("content-security-policy") || "", new RegExp(`frame-ancestors ${origin.replaceAll(".", "\\.")}`));
+    assert.match(liveHTML, /data-cms-page-path="service-guides\.html"/);
+    assert.match(liveHTML, /data-cms-admin-origin="http:\/\/127\.0\.0\.1:18794"/);
+    assert.match(liveHTML, /<main\b/);
+  }
   assert.equal(
     (await fetch(origin + "/style.css")).status,
     401,
@@ -251,18 +269,26 @@ try {
     try {
       const context=await browser.newContext({extraHTTPHeaders:headers});
       const page=await context.newPage();
+      page.on('pageerror',error=>console.error(`CMS_BROWSER pageerror: ${error.message}`));
+      page.on('console',message=>{if(message.type()==='error')console.error(`CMS_BROWSER console: ${message.text()}`);});
+      page.on('requestfailed',request=>console.error(`CMS_BROWSER requestfailed: ${request.url()} · ${request.failure()?.errorText||'unknown'}`));
       let editorRuntimeRequests=0, editorManifestRequests=0;
       const manifestPath = "/cms-editor-manifests/index.html.a1b2c3d4e5f6.json";
-      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader data-cms-manifest="${manifestPath}">if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
+      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">if(window.self!==window.top&&document.currentScript?.dataset.cmsEditorEnabled==='true')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
       const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
-      const editorRuntime = `(()=>{let node=null,field=null,nonce=null,targetOrigin=null;const send=(type,payload={})=>parent.postMessage({type,nonce,path:location.pathname,...payload},targetOrigin);const ready=()=>send('huiwen-cms-ready',{blocks:[{id:field.id,sourceHash:field.sourceHash,value:node.textContent}]});addEventListener('message',async event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;const manifestUrl=document.querySelector('script[data-cms-editor-loader]').dataset.cmsManifest;const manifest=await fetch(manifestUrl).then(response=>response.json());field=manifest.fields[0];node=document.querySelector(field.id);node.dataset.cmsEditId=field.id;node.dataset.cmsSourceHash=field.sourceHash;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:field.id,sourceHash:field.sourceHash,value:node.textContent}}));ready();}else if(event.data?.type==='huiwen-cms-apply'&&nonce)ready();});})();`;
+      const editorRuntime = `(()=>{let node=null,field=null,nonce=null,targetOrigin=null;const loader=document.querySelector('script[data-cms-editor-loader]');const send=(type,payload={})=>parent.postMessage({type,nonce,path:'/'+loader.dataset.cmsPagePath,...payload},targetOrigin);const ready=()=>send('huiwen-cms-ready',{blocks:[{id:field.id,sourceHash:field.sourceHash,value:node.textContent}]});addEventListener('message',async event=>{if(event.source!==parent)return;if(event.data?.type==='huiwen-cms-init'){nonce=event.data.nonce;targetOrigin=event.origin;const manifestUrl=loader.dataset.cmsManifest;const manifest=await fetch(manifestUrl).then(response=>response.json());field=manifest.fields[0];node=document.querySelector(field.id);node.dataset.cmsEditId=field.id;node.dataset.cmsSourceHash=field.sourceHash;node.contentEditable='true';node.addEventListener('input',()=>send('huiwen-cms-change',{field:{id:field.id,sourceHash:field.sourceHash,value:node.textContent}}));ready();}else if(event.data?.type==='huiwen-cms-apply'&&nonce)ready();});})();`;
       page.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
       await page.route("https://www.huiwen.tw/**", route => {
         const path = new URL(route.request().url()).pathname;
         if (/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path)) return route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime});
-        if (path === manifestPath) return route.fulfill({status:200,contentType:"application/json",body:editorManifest});
+        if (path === manifestPath) return route.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:editorManifest});
         return route.fulfill({status:200,contentType:"text/html; charset=utf-8",body:editorFixture});
       });
+      await page.route(`${origin}/api/page-preview**`, route => route.fulfill({
+        status:200,
+        headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","x-frame-options":"SAMEORIGIN","content-security-policy":`default-src 'none'; base-uri https://www.huiwen.tw; script-src https://www.huiwen.tw 'unsafe-inline'; style-src https://www.huiwen.tw 'unsafe-inline'; connect-src https://www.huiwen.tw; frame-ancestors ${origin}`},
+        body:editorFixture,
+      }));
       const publicVisitor=await context.newPage();
       await publicVisitor.goto('https://www.huiwen.tw/');
       assert.equal(editorRuntimeRequests,0,'ordinary public visits must not download the CMS editor runtime');
@@ -277,6 +303,10 @@ try {
         await page.getByRole('button',{name:/首頁/}).click();
         console.log('CMS_BROWSER: page selected');
         assert(await page.getByRole('heading',{name:'首頁',exact:true}).isVisible());
+        await page.waitForFunction(()=>document.querySelector('#page-frame')?.getAttribute('src')?.startsWith('/api/page-preview?'));
+        assert.equal(new URL(await page.locator('#page-frame').getAttribute('src'),origin).pathname,'/api/page-preview');
+        assert.equal((await page.locator('#page-frame').getAttribute('sandbox')).includes('allow-same-origin'),false,
+          'published page scripts must not share the authenticated admin origin');
         const frame=page.frameLocator('#page-frame');
         await frame.locator('h1[contenteditable="true"]').waitFor();
         assert.equal(editorRuntimeRequests,priorRuntimeRequests+1,'admin iframe must load the editor runtime');

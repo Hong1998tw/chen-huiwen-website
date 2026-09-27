@@ -146,7 +146,7 @@ class PageCopy(HTMLParser):
         if self.count:
             loader = (
                 "<script data-cms-editor-loader>"
-                "if(window.self!==window.top&&new URLSearchParams(location.search).get('cmsEdit')==='1')"
+                "if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))"
                 "document.write('<scr'+'ipt defer src=\"/cms-page-editor.js\"></scr'+'ipt>');"
                 "</script>"
             )

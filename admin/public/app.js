@@ -208,7 +208,7 @@ function applyDraftToFrame() {
   if (!pageReady || !selectedPage || !pageNonce) return;
   const fields = [...pageFields.entries()].map(([id, value]) => ({ id, ...value }));
   const frame = $("#page-frame");
-  frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "https://www.huiwen.tw");
+  frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "*");
 }
 function applyCurrentPageEdits() {
   const path = selectedPage?.path;
@@ -221,18 +221,15 @@ function applyCurrentPageEdits() {
     return;
   }
   const frame = $("#page-frame");
-  const url = new URL(pageUrl(path), "https://www.huiwen.tw");
-  url.searchParams.set("cmsEdit", "1");
-  url.searchParams.set("cmsSession", crypto.randomUUID());
   frame.hidden = false;
   $("#page-editor-empty").hidden = true;
   pageNonce = crypto.randomUUID();
   pageReady = false;
   pageDraftApplied = false;
   frame.onload = () => {
-    frame.contentWindow?.postMessage({ type: "huiwen-cms-init", nonce: pageNonce }, "https://www.huiwen.tw");
+    frame.contentWindow?.postMessage({ type: "huiwen-cms-init", nonce: pageNonce }, "*");
   };
-  frame.src = url.href;
+  frame.src = `/api/page-preview?path=${encodeURIComponent(path)}&session=${encodeURIComponent(pageNonce)}`;
 }
 async function selectPage(page) {
   if (pageDirty && !confirm("這一頁有尚未儲存的文字，確定切換頁面？")) return;
@@ -321,7 +318,7 @@ async function submitPageOperation(operation) {
   pageControls();
 }
 window.addEventListener("message", (event) => {
-  if (event.origin !== "https://www.huiwen.tw" || event.source !== $("#page-frame").contentWindow) return;
+  if (event.origin !== "null" || event.source !== $("#page-frame").contentWindow) return;
   const data = event.data;
   if (!data || typeof data !== "object" || typeof data.path !== "string" || data.path.length > 300 || data.nonce !== pageNonce || !selectedPage || pageRoute(data.path) !== selectedPage.path) return;
   if (data.type === "huiwen-cms-ready" && Array.isArray(data.blocks)) {

@@ -1,5 +1,6 @@
 import { owner, runner, csrf, boundedJSON, HttpError } from "./security.ts";
 import { validate, validatePageFields } from "./validation.ts";
+import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
 type Document = {
   id: string;
   domain: string;
@@ -38,10 +39,12 @@ function protect(response: Response) {
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
     "Content-Security-Policy":
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https://www.huiwen.tw; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self' https://www.huiwen.tw; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     "X-Robots-Tag": "noindex, nofollow",
-  }))
+  })) {
+    if (["X-Frame-Options", "Content-Security-Policy"].includes(k) && r.headers.has(k)) continue;
     r.headers.set(k, v);
+  }
   return r;
 }
 async function internal(request: Request, env: Env, path: string) {
@@ -274,6 +277,50 @@ async function handle(request: Request, env: Env) {
       throw new HttpError(404, "這個頁面目前不開放內容編輯");
     return row;
   };
+  if (u.pathname === "/api/page-preview" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    if (!/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/.test(path))
+      throw new HttpError(400, "頁面路徑格式不正確");
+    const page = await env.DB.prepare(
+      "SELECT p.editor_scope,p.source_kind,COALESCE(e.publication_status,'published') AS publication_status FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path WHERE p.path=?",
+    ).bind(path).first<{editor_scope:string;source_kind:string;publication_status:string}>();
+    if (!page || page.publication_status !== "published")
+      throw new HttpError(404, "此頁目前沒有正式發布版本");
+    const editable = page.editor_scope === "partial" && !["system", "legacy-redirect", "excluded-intake"].includes(page.source_kind);
+    if (editable) await isEditablePage(path);
+
+    const upstreamURL = new URL(path, "https://www.huiwen.tw/");
+    let upstream: Response;
+    try {
+      upstream = await fetch(upstreamURL, {
+        headers: { Accept: "text/html", "Cache-Control": "no-cache, no-store" },
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      throw new HttpError(502, "正式頁面暫時無法載入，請稍後重試");
+    }
+    if (upstream.status !== 200 || !upstream.headers.get("content-type")?.includes("text/html"))
+      throw new HttpError(502, "正式頁面暫時無法載入，請稍後重試");
+    const source = await upstream.text();
+    if (new TextEncoder().encode(source).byteLength > 2_000_000)
+      throw new HttpError(502, "此頁內容超過預覽大小限制");
+    let document: string;
+    try {
+      document = preparePagePreviewDocument(source, path, env.ADMIN_ORIGIN, editable);
+    } catch {
+      throw new HttpError(502, "正式頁面缺少必要的預覽結構，請重新部署官網後再試");
+    }
+    return new Response(document, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Content-Security-Policy": pagePreviewContentSecurityPolicy(env.ADMIN_ORIGIN),
+      },
+    });
+  }
   if (u.pathname === "/api/page-draft" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
     await isEditablePage(path);
