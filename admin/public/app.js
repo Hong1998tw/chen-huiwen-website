@@ -11,7 +11,9 @@ let session,
   pageNonce = null,
   pageReady = false,
   pageDraftApplied = false,
-  pageDirty = false;
+  pageDirty = false,
+  caseDraft = null,
+  caseLocalImages = [];
 const $ = (s) => document.querySelector(s);
 const statusNames = {
   queued: "等待發布",
@@ -209,6 +211,122 @@ function applyDraftToFrame() {
   const fields = [...pageFields.entries()].map(([id, value]) => ({ id, ...value }));
   const frame = $("#page-frame");
   frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "*");
+  if (caseDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft }, "*");
+}
+const isCasePage = (page) => /^achievement-[a-z0-9-]+\.html$/.test(page?.path || "");
+function caseInput(label, value, update, options = {}) {
+  const field = el("label", label, "field");
+  const input = document.createElement(options.multiline ? "textarea" : "input");
+  if (!options.multiline) input.type = options.type || "text";
+  input.value = value || "";
+  if (options.placeholder) input.placeholder = options.placeholder;
+  input.addEventListener("input", () => { update(input.value); caseChanged(); });
+  field.append(input);
+  return field;
+}
+function caseChanged() {
+  pageDirty = true;
+  setPageStatus("政績內容有變更 · 儲存後才會進入發布流程");
+  pageControls();
+  if (pageReady && caseDraft) $("#page-frame").contentWindow?.postMessage({
+    type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft,
+  }, "*");
+}
+function cleanCaseDraft() {
+  if (!caseDraft) return null;
+  const draft = structuredClone(caseDraft);
+  draft.paragraphs = draft.paragraphs.filter((item) => item.trim());
+  draft.history = draft.history.filter((item) => item.date?.trim() || item.title?.trim() || item.text?.trim());
+  draft.sources = draft.sources.filter((item) => item.title?.trim() || item.url?.trim() || item.sourceDate?.trim() || item.sourceType?.trim());
+  draft.media = draft.media.filter((item) => item.url?.trim() || item.alt?.trim() || item.caption?.trim() || item.credit?.trim());
+  draft.imageMetadata = Object.fromEntries(Object.entries(draft.imageMetadata).filter(([, item]) =>
+    item.alt?.trim() || item.caption?.trim() || item.credit?.trim() || item.sourceUrl?.trim()));
+  return draft;
+}
+function caseGroup(title, key, blank, inputs) {
+  const group = el("section", undefined, "case-editor-group");
+  group.dataset.caseGroup = key;
+  const heading = el("h4", title);
+  group.append(heading);
+  for (let i = 0; i < caseDraft[key].length; i++) {
+    const row = el("div", undefined, "case-editor-row");
+    row.append(...inputs(caseDraft[key][i], i));
+    const remove = el("button", "移除此項", "secondary");
+    remove.type = "button";
+    remove.onclick = () => { caseDraft[key].splice(i, 1); renderCaseEditor(); caseChanged(); };
+    row.append(remove);
+    group.append(row);
+  }
+  const add = el("button", `＋ 新增${title}`, "secondary");
+  add.type = "button";
+  add.onclick = () => { caseDraft[key].push(structuredClone(blank)); renderCaseEditor(); caseChanged(); };
+  group.append(add);
+  return group;
+}
+function renderCaseEditor() {
+  const panel = $("#case-editor"), target = $("#case-editor-fields");
+  panel.hidden = !caseDraft;
+  target.replaceChildren();
+  if (!caseDraft) return;
+  target.append(
+    caseInput("專頁標題", caseDraft.title, (v) => caseDraft.title = v),
+    caseInput("摘要", caseDraft.summary, (v) => caseDraft.summary = v, { multiline: true }),
+    caseInput("內容整理日期", caseDraft.updated, (v) => caseDraft.updated = v, { type: "date" }),
+  );
+  target.append(caseGroup("完整背景與說明", "paragraphs", "", (_item, i) => [
+    caseInput(`段落 ${i + 1}`, caseDraft.paragraphs[i], (v) => caseDraft.paragraphs[i] = v, { multiline: true }),
+  ]));
+  target.append(caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item) => [
+    caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v),
+    caseInput("標題", item.title, (v) => item.title = v),
+    caseInput("說明", item.text, (v) => item.text = v, { multiline: true }),
+  ]));
+  target.append(caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item) => [
+    caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v),
+    caseInput("來源名稱", item.title, (v) => item.title = v),
+    caseInput("公開網址", item.url, (v) => item.url = v, { type: "url" }),
+    caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v),
+  ]));
+  target.append(caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item) => {
+    const kind = el("label", "類型", "field"), select = document.createElement("select");
+    for (const [value, label] of [["photo", "照片"], ["video", "影片"]]) { const option = el("option", label); option.value = value; select.append(option); }
+    select.value = item.kind;
+    select.onchange = () => { item.kind = select.value; caseChanged(); };
+    kind.append(select);
+    const access = el("label", "我已確認此網址不需登入即可公開檢視", "field");
+    const check = document.createElement("input"); check.type = "checkbox"; check.checked = Boolean(item.publicAccessConfirmed);
+    check.onchange = () => { item.publicAccessConfirmed = check.checked; caseChanged(); };
+    access.prepend(check);
+    return [kind,
+      caseInput("Drive／Facebook／YouTube 或圖片、影片公開網址", item.url, (v) => item.url = v, { type: "url" }),
+      caseInput("替代文字／影片名稱", item.alt, (v) => item.alt = v),
+      caseInput("說明", item.caption, (v) => item.caption = v, { multiline: true }),
+      caseInput("拍攝者／刊登來源", item.credit, (v) => item.credit = v), access];
+  }));
+  const local = el("section", undefined, "case-editor-group");
+  local.append(el("h4", "既有網站照片說明"));
+  for (const filename of caseLocalImages) {
+    const item = caseDraft.imageMetadata?.[filename];
+    const row = el("div", undefined, "case-editor-row");
+    row.append(el("strong", filename));
+    const thumbnail = document.createElement("img");
+    thumbnail.src = `https://www.huiwen.tw/assets/${encodeURIComponent(filename)}`;
+    thumbnail.alt = "原有網站照片";
+    thumbnail.className = "case-local-thumbnail";
+    row.append(thumbnail);
+    if (!item) {
+      const add = el("button", "編輯照片說明與來源", "secondary");
+      add.type = "button";
+      add.onclick = () => { caseDraft.imageMetadata[filename] = { alt: "", caption: "", credit: "", sourceUrl: "" }; renderCaseEditor(); caseChanged(); };
+      row.append(add);
+    } else row.append(
+      caseInput("替代文字", item.alt, (v) => item.alt = v),
+      caseInput("照片說明", item.caption, (v) => item.caption = v),
+      caseInput("照片來源", item.credit, (v) => item.credit = v),
+      caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url" }));
+    local.append(row);
+  }
+  if (caseLocalImages.length) target.append(local);
 }
 function applyCurrentPageEdits() {
   const path = selectedPage?.path;
@@ -237,6 +355,8 @@ async function selectPage(page) {
   pageDirty = false;
   pageDraft = null;
   pageFields = new Map();
+  caseDraft = null;
+  caseLocalImages = [];
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -247,6 +367,14 @@ async function selectPage(page) {
     if (pageDraft?.payload) {
       const saved = JSON.parse(pageDraft.payload);
       pageFields = new Map(Object.entries(saved.fields || {}));
+      if (isCasePage(page) && saved.case) caseDraft = saved.case;
+    }
+    if (isCasePage(page)) {
+      const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
+      caseLocalImages = publicCase.images || [];
+      if (!caseDraft) caseDraft = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
+        paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
+        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {} };
     }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
@@ -256,6 +384,7 @@ async function selectPage(page) {
     $("#page-history-panel").hidden = true;
   }
   pageControls();
+  renderCaseEditor();
   renderPages();
   applyCurrentPageEdits();
 }
@@ -281,12 +410,15 @@ function renderPageHistory(versions) {
 }
 async function savePageDraft() {
   if (!selectedPage || !isPageEditable(selectedPage)) return;
+  const cleanedCase = cleanCaseDraft();
   const result = await api("/api/page-draft", "PUT", {
     path: selectedPage.path,
     version: pageDraft?.version || 0,
     baseCommit: selectedPage.commit_sha,
     fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
+    ...(cleanedCase ? { case: cleanedCase } : {}),
   });
+  if (cleanedCase) { caseDraft = cleanedCase; renderCaseEditor(); }
   pageDirty = false;
   const updated = await api(`/api/page-draft?path=${encodeURIComponent(selectedPage.path)}`);
   pageDraft = updated.draft;
@@ -337,6 +469,13 @@ window.addEventListener("message", (event) => {
   if (data.type === "huiwen-cms-error" && typeof data.message === "string") {
     pageReady = false;
     setPageStatus(data.message);
+    return;
+  }
+  if (data.type === "huiwen-cms-case-focus" && caseDraft && typeof data.section === "string") {
+    const target = data.section === "updated" ? $("#case-editor-fields > .field:nth-child(3) input") :
+      $("#case-editor-fields [data-case-group='" + CSS.escape(data.section) + "'] input, #case-editor-fields [data-case-group='" + CSS.escape(data.section) + "'] textarea");
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    target?.focus({ preventScroll: true });
     return;
   }
   if (data.type === "huiwen-cms-change" && data.field && typeof data.field.id === "string") {

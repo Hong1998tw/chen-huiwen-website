@@ -202,6 +202,22 @@
           ]
         }
       },
+      "media": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"type": "string", "enum": ["photo", "video"]},
+            "url": {"type": "string", "pattern": "^https://"},
+            "alt": {"type": "string"},
+            "caption": {"type": "string"},
+            "credit": {"type": "string"},
+            "publicAccessConfirmed": {"type": "boolean"}
+          },
+          "required": ["kind", "url", "alt", "caption", "credit", "publicAccessConfirmed"]
+        }
+      },
       "villageHeadPartners": {
         "type": "array",
         "items": {

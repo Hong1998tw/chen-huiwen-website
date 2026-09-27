@@ -14,6 +14,7 @@ import subprocess
 from urllib.parse import urlsplit, unquote
 
 from achievement_metadata import STATUSES, is_public, joined_villages, village_lookup
+from case_media import classify
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
@@ -29,6 +30,18 @@ def valid_date(value):
         return isinstance(value, str) and date.fromisoformat(value).isoformat() == value
     except ValueError:
         return False
+
+
+def valid_case_period(value):
+    if not isinstance(value, str) or not value or len(value) > 60 or privacy_issues(value):
+        return False
+    if re.fullmatch(r'20\d{2}', value):
+        return True
+    if re.fullmatch(r'20\d{2}-(?:0[1-9]|1[0-2])', value):
+        return True
+    if valid_date(value):
+        return True
+    return bool(re.fullmatch(r'20\d{2}-\d{2}-\d{2} (?:\d{2}:\d{2}–\d{2}:\d{2}|至 \d{2}-\d{2})|\d{3}學年度第[12]學期|第\d+屆第\d+次定期大會', value))
 
 
 def traceable(source):
@@ -153,7 +166,9 @@ def validate(achievements, villages, baseline=None):
         if coords is not None:
             if not (isinstance(coords, list) and len(coords) == 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in coords) and -90 <= coords[0] <= 90 and -180 <= coords[1] <= 180):
                 errors.append(label + ': invalid coordinates')
-        errors.extend(label + ': ' + issue for issue in privacy_issues(a))
+        # External media links have their own narrow provider/URL validation.
+        # All other fields retain the private Drive/document URL prohibition.
+        errors.extend(label + ': ' + issue for issue in privacy_issues({k: v for k, v in a.items() if k != 'media'}))
         if not is_public(a):
             continue
         for field in ('title', 'categories', 'scope', 'sources', 'updated', 'district'):
@@ -166,6 +181,29 @@ def validate(achievements, villages, baseline=None):
         sources = a.get('sources', [])
         if not isinstance(sources, list) or not sources or not all(traceable(s) for s in sources):
             errors.append(label + ': sources need titled traceable URLs')
+        elif any(s.get('sourceDate') and not valid_case_period(s['sourceDate']) for s in sources):
+            errors.append(label + ': invalid source date')
+        history = a.get('history', [])
+        if not isinstance(history, list) or any(not isinstance(row, dict) or not valid_case_period(row.get('date')) or
+                not isinstance(row.get('title'), str) or not row['title'].strip() or
+                not isinstance(row.get('text'), str) or not row['text'].strip() for row in history):
+            errors.append(label + ': invalid history date, title or explanation')
+        media = a.get('media', [])
+        if not isinstance(media, list) or len(media) > 24:
+            errors.append(label + ': media must be a list of at most 24 items')
+        else:
+            for index, item in enumerate(media):
+                prefix = f'{label}: media {index + 1}'
+                if not isinstance(item, dict) or set(item) != {'kind', 'url', 'alt', 'caption', 'credit', 'publicAccessConfirmed'}:
+                    errors.append(prefix + ': invalid fields')
+                    continue
+                if item['kind'] not in {'photo', 'video'} or not isinstance(item['url'], str) or not classify(item['url'], item['kind']):
+                    errors.append(prefix + ': unsupported public media URL')
+                if item['publicAccessConfirmed'] is not True:
+                    errors.append(prefix + ': owner must confirm public viewing access')
+                for key in ('alt', 'caption', 'credit'):
+                    if not isinstance(item[key], str) or not item[key].strip() or len(item[key]) > 500 or privacy_issues(item[key]):
+                        errors.append(prefix + ': invalid ' + key)
         image_metadata = a.get('imageMetadata', {})
         if not isinstance(image_metadata, dict):
             errors.append(label + ': imageMetadata must be an object')

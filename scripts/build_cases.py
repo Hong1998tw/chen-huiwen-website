@@ -6,6 +6,7 @@ import json,re,html,hashlib
 from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
 from validate_achievements import validate
 from case_context import render_case_context
+from case_media import render as render_media
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
 BASE='https://www.huiwen.tw/'
@@ -49,7 +50,7 @@ for c in public_items:
  single_event=len(c['history'])==1
  h=''.join(f'<li><time>{E(x["date"])}</time><div><h3>{E(x["title"])}</h3><p>{E(x["text"])}</p></div></li>' for x in c['history'])
  photos=''
- if c['images']:
+ if c['images'] or c.get('media'):
   figures=[]
   for p in c['images']:
    metadata=c.get('imageMetadata',{}).get(p,{})
@@ -58,7 +59,8 @@ for c in public_items:
    if metadata:
     photo='<figure>'+photo+'<figcaption>'+E(metadata['caption'])+'<span class="case-photo-credit">照片：'+E(metadata['credit'])+' · '+ext(metadata['sourceUrl'],'刊登來源')+'</span></figcaption></figure>'
    figures.append(photo)
-  photos='<div class="case-photos">'+''.join(figures)+'</div>'
+  figures.extend(render_media(item) for item in c.get('media', []))
+  photos='<div class="case-photos" id="case-media">'+''.join(figures)+'</div>'
  location=('、'.join(c['villages']) or c['scope'])
  info=facts_html(c,village_by_key)
  content=('<details class="case-background"><summary id="case-overview">完整背景與說明</summary>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])+'</details>') if c['paragraphs'] else ''
@@ -77,9 +79,9 @@ for c in public_items:
  evidence=ext(latest_sources[-1]['url'],'核對此階段來源') if latest_sources else '<a href="#case-sources">查看完整來源 ↓</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
  narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else '<p class="record-boundary">本專題尚未收錄具日期的推動歷程。</p>'
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else ''
  if single_event: current='<div id="case-history">'+current+'</div>'
- reading_links = [('case-context','議題導讀',bool(context)),('case-overview','重點說明',bool(content)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
+ reading_links = [('case-context','議題導讀',bool(context)),('case-overview','重點說明',bool(content)),('case-media','照片與影片',bool(photos)),('case-history','推動歷程',bool(h)),('case-sources','資料來源',bool(c['sources']))]
  reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容整理 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
  body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section>{reading_nav}<div class="wrap case-latest-wrap">{current}</div><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
  if context:

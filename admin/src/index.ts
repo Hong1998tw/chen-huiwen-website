@@ -1,6 +1,7 @@
 import { owner, runner, csrf, boundedJSON, HttpError } from "./security.ts";
 import { validate, validatePageFields } from "./validation.ts";
 import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
+import { validateCaseDraft } from "./case-draft.ts";
 type Document = {
   id: string;
   domain: string;
@@ -277,6 +278,28 @@ async function handle(request: Request, env: Env) {
       throw new HttpError(404, "這個頁面目前不開放內容編輯");
     return row;
   };
+  if (u.pathname === "/api/case" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    const match = /^achievement-([a-z0-9-]+)\.html$/.exec(path);
+    if (!match) throw new HttpError(400, "這不是政績專頁");
+    await isEditablePage(path);
+    let upstream: Response;
+    try {
+      upstream = await fetch("https://www.huiwen.tw/data/achievements-public.json", {
+        headers: { Accept: "application/json", "Cache-Control": "no-cache" }, cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch { throw new HttpError(502, "無法讀取正式站政績資料"); }
+    if (!upstream.ok || Number(upstream.headers.get("content-length") || 0) > 1_000_000)
+      throw new HttpError(502, "正式站政績資料暫時無法載入");
+    const body = await upstream.text();
+    if (body.length > 1_000_000) throw new HttpError(502, "正式站政績資料超出大小限制");
+    let rows: unknown;
+    try { rows = JSON.parse(body); } catch { throw new HttpError(502, "正式站政績資料格式不正確"); }
+    const row = Array.isArray(rows) ? rows.find((item) => item?.id === match[1]) : null;
+    if (!row) throw new HttpError(404, "找不到這筆政績資料");
+    return json({ case: row });
+  }
   if (u.pathname === "/api/page-preview" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
     if (!/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/.test(path))
@@ -340,13 +363,16 @@ async function handle(request: Request, env: Env) {
     if (!Number.isSafeInteger(b.version) || Number(b.version) < 0 || b.baseCommit !== page.commit_sha)
       throw new HttpError(409, "頁面版本已更新，請重新載入正式頁面");
     const fields = validatePageFields(b.fields);
+    const isCase = /^achievement-[a-z0-9-]+\.html$/.test(path);
+    if (isCase !== (b.case !== undefined)) throw new HttpError(400, "此頁草稿類型不正確");
+    const caseDraft = isCase ? validateCaseDraft(b.case) : undefined;
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;
     if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
     const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
-    const merged = {...(old.fields as Record<string,unknown> || {}), ...fields};
-    const payload = JSON.stringify({fields:merged});
+    const merged = isCase ? fields : {...(old.fields as Record<string,unknown> || {}), ...fields};
+    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft} : {fields:merged});
     const now = iso();
     if (existing) {
       const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")

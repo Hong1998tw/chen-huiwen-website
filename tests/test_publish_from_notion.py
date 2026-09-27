@@ -702,6 +702,16 @@ class PathGuardTests(unittest.TestCase):
                             ['data/page-content.json', 'admin/src/index.ts'])
         self.assertFalse(rejected)
 
+    def test_achievement_executor_cannot_modify_code_or_unrelated_data(self):
+        branch='notion-publish/achievement-content/achievement-changle-hexing-youbike.html-abcdef01'
+        allowed, _ = guard(branch, 'huiwen-publisher[bot]', 'Bot', '',
+                           ['data/achievements.json', 'data/achievements-public.json',
+                            'achievement-changle-hexing-youbike.html', 'data/achievement-map.json'])
+        self.assertTrue(allowed)
+        rejected, _ = guard(branch, 'huiwen-publisher[bot]', 'Bot', '',
+                            ['data/achievements.json', 'admin/src/index.ts'])
+        self.assertFalse(rejected)
+
 
 if __name__ == '__main__':
     unittest.main()

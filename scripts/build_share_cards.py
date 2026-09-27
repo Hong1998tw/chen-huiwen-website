@@ -3,17 +3,20 @@
 Requires Pillow and Noto Sans CJK TC; pass --font for a local licensed font.
 PNG output is committed, so normal site builds do not need rendering dependencies.
 """
-import argparse, json, hashlib
+import argparse, json, hashlib, os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 R=Path(__file__).resolve().parents[1]
-parser=argparse.ArgumentParser();parser.add_argument('--font',default=str(Path.home()/'.local/share/fonts/NotoSansCJKtc-Regular.otf'));args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--font',default=os.environ.get('HUIWEN_OG_FONT',str(Path.home()/'.local/share/fonts/NotoSansCJKtc-Regular.otf')));parser.add_argument('--only',help='Render one achievement slug and update only its manifest entry');args=parser.parse_args()
 font=Path(args.font)
 if not font.exists(): raise SystemExit('Provide --font /path/to/NotoSansCJKtc-Regular.otf (SIL OFL 1.1).')
 items=[x for x in json.loads((R/'data/achievements.json').read_text()) if x['status']!='待核驗']
 records=[('achievements','慧做事・政績地圖','建設與服務紀錄','依里別、主題與歷程查詢')]+[('achievement-'+x['id'],x['title'],x['status'],'、'.join(x['villages']) or x['scope']) for x in items]
 out=R/'assets/og';out.mkdir(exist_ok=True)
-manifest={}
+if args.only:
+ records=[row for row in records if row[0]==args.only]
+ if len(records)!=1: raise SystemExit('Unknown share-card slug')
+manifest=json.loads((out/'manifest.json').read_text()) if args.only else {}
 for slug,title,status,place in records:
  im=Image.new('RGB',(1200,630),'#f6f7ef');d=ImageDraw.Draw(im)
  d.rectangle((0,0,1200,18),fill='#075548')

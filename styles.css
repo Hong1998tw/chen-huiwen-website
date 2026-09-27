@@ -61,5 +61,7 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 /* Event photographs retain their public source and office credit. */
 .case-photos figure{margin:0;min-width:0}
 .case-photos figcaption{font-size:15px;line-height:1.8;color:#466055;margin-top:12px;overflow-wrap:anywhere}
+.case-external-media iframe,.case-external-media video{display:block;width:100%;min-height:320px;aspect-ratio:16/9;border:0;border-radius:16px;background:#e9eee4}.case-external-media .case-photo-credit{display:block;font-size:13px}.case-external-media a{text-decoration:underline}
+.case-latest-wrap:empty{display:none}
 .case-photo-credit{display:block;margin-top:4px;font-size:14px}
 .case-photo-credit a{text-decoration:underline;text-underline-offset:3px}

@@ -9,8 +9,22 @@ sys.path.insert(0,str(ROOT/'scripts'))
 import publish_from_cms as cms
 import publish_from_notion as engine
 from page_copy import digest as page_digest, render as render_page_copy, render_with_manifest
+from case_media import classify as classify_media, render as render_media
 
 class StandaloneCMS(unittest.TestCase):
+    def test_empty_optional_case_history_is_not_shown_as_placeholder(self):
+        html=(ROOT/'achievement-changle-hexing-youbike.html').read_text()
+        self.assertNotIn('本專題尚未收錄具日期的推動歷程',html)
+        self.assertIn('case-sources',html)
+
+    def test_media_provider_rendering_and_private_host_rejection(self):
+        self.assertEqual(classify_media('https://drive.google.com/file/d/1234567890abcdef/view','photo')[0],'drive')
+        self.assertEqual(classify_media('https://www.facebook.com/example/posts/123','photo')[0],'facebook')
+        self.assertIsNone(classify_media('https://127.0.0.1/private.jpg','photo'))
+        html=render_media({'kind':'photo','url':'https://example.com/photo.jpg','alt':'現場照片',
+                           'caption':'公開現場','credit':'拍攝者'})
+        self.assertIn('<img',html)
+        self.assertIn('開啟原始內容',html)
     def test_visual_copy_manifest_is_stable_without_public_html_markers(self):
         source = '<!doctype html><html><head></head><body><main><section><p>Original &amp; text</p></section></main></body></html>'
         marked, count, manifest = render_with_manifest(source, 'fixture.html')
@@ -105,5 +119,28 @@ class StandaloneCMS(unittest.TestCase):
         state=json.loads(candidate.new_text)
         self.assertEqual(state['pages']['activity-market.html']['status'],'unpublished')
         self.assertRegex(state['pages']['activity-market.html']['lastmod'],r'^20\d\d-\d\d-\d\d$')
+
+    def test_case_draft_updates_canonical_dates_sources_and_optional_sections(self):
+        commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
+        source=next(c for c in json.loads((ROOT/'data/achievements.json').read_text()) if c['id']=='changle-hexing-youbike')
+        fields={key:source.get(key, [] if key=='media' else {} if key=='imageMetadata' else None) for key in cms.CASE_FIELDS}
+        item={'id':'00000000-0000-4000-8000-000000000002','path':'achievement-changle-hexing-youbike.html',
+              'operation':'publish','base_commit':commit,'version':1,'payload':json.dumps({'fields':{},'case':fields})}
+        self.assertFalse(cms.page_candidate(item).changed)
+        fields['history']=[{'date':'2026-09-24','title':'公開進度','text':'依公開文件持續核對'}]
+        fields['updated']='2026-09-25'
+        fields['sources'][0]['sourceDate']='2026-09-24'
+        fields['media']=[{'kind':'photo','url':'https://drive.google.com/file/d/1234567890abcdef/view',
+                          'alt':'現場照片','caption':'公開現場紀錄','credit':'陳慧文服務處','publicAccessConfirmed':True}]
+        item['payload']=json.dumps({'fields':{},'case':fields})
+        candidate=cms.page_candidate(item)
+        self.assertTrue(candidate.changed)
+        self.assertEqual(candidate.domain,'achievement-content')
+        revised=next(c for c in json.loads(candidate.new_text) if c['id']==source['id'])
+        self.assertEqual(revised['history'][0]['date'],'2026-09-24')
+        self.assertEqual(revised['sources'][0]['sourceDate'],'2026-09-24')
+        self.assertEqual(revised['media'][0]['kind'],'photo')
+        item['operation']='unpublish'
+        self.assertEqual(cms.page_candidate(item).domain,'page-copy')
 
 if __name__=='__main__':unittest.main()
