@@ -106,6 +106,8 @@ function makeField(label, options = {}) {
   return field;
 }
 function connectField(field, control, required = false) {
+  const caption = field.querySelector(".field-label");
+  if (caption) control.setAttribute("aria-label", caption.textContent.replace(/＊$/, "").trim());
   if (required) {
     control.required = true;
     control.setAttribute("aria-required", "true");
