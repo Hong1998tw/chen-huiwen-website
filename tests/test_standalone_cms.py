@@ -124,15 +124,16 @@ class StandaloneCMS(unittest.TestCase):
         commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
         source=next(c for c in json.loads((ROOT/'data/achievements.json').read_text()) if c['id']=='changle-hexing-youbike')
         fields={key:source.get(key, [] if key=='media' else {} if key=='imageMetadata' else None) for key in cms.CASE_FIELDS}
+        baseline=json.loads(json.dumps(fields))
         item={'id':'00000000-0000-4000-8000-000000000002','path':'achievement-changle-hexing-youbike.html',
-              'operation':'publish','base_commit':commit,'version':1,'payload':json.dumps({'fields':{},'case':fields})}
+              'operation':'publish','base_commit':commit,'version':1,'payload':json.dumps({'fields':{},'case':fields,'caseBase':baseline})}
         self.assertFalse(cms.page_candidate(item).changed)
         fields['history']=[{'date':'2026-09-24','title':'公開進度','text':'依公開文件持續核對'}]
         fields['updated']='2026-09-25'
         fields['sources'][0]['sourceDate']='2026-09-24'
         fields['media']=[{'kind':'photo','url':'https://drive.google.com/file/d/1234567890abcdef/view',
                           'alt':'現場照片','caption':'公開現場紀錄','credit':'陳慧文服務處','publicAccessConfirmed':True}]
-        item['payload']=json.dumps({'fields':{},'case':fields})
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':baseline})
         candidate=cms.page_candidate(item)
         self.assertTrue(candidate.changed)
         self.assertEqual(candidate.domain,'achievement-content')
@@ -140,6 +141,12 @@ class StandaloneCMS(unittest.TestCase):
         self.assertEqual(revised['history'][0]['date'],'2026-09-24')
         self.assertEqual(revised['sources'][0]['sourceDate'],'2026-09-24')
         self.assertEqual(revised['media'][0]['kind'],'photo')
+        stale=json.loads(json.dumps(baseline)); stale['updated']='2025-01-01'
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':stale})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'BASE_DRIFT')
+        item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':baseline})
         item['operation']='unpublish'
         self.assertEqual(cms.page_candidate(item).domain,'page-copy')
 

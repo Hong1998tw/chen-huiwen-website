@@ -13,6 +13,7 @@ let session,
   pageDraftApplied = false,
   pageDirty = false,
   caseDraft = null,
+  caseBase = null,
   caseLocalImages = [];
 const $ = (s) => document.querySelector(s);
 const statusNames = {
@@ -356,6 +357,7 @@ async function selectPage(page) {
   pageDraft = null;
   pageFields = new Map();
   caseDraft = null;
+  caseBase = null;
   caseLocalImages = [];
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
@@ -367,7 +369,7 @@ async function selectPage(page) {
     if (pageDraft?.payload) {
       const saved = JSON.parse(pageDraft.payload);
       pageFields = new Map(Object.entries(saved.fields || {}));
-      if (isCasePage(page) && saved.case) caseDraft = saved.case;
+      if (isCasePage(page) && saved.case) { caseDraft = saved.case; caseBase = saved.caseBase || null; }
     }
     if (isCasePage(page)) {
       const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
@@ -375,6 +377,9 @@ async function selectPage(page) {
       if (!caseDraft) caseDraft = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
         paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
         media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {} };
+      if (!caseBase) caseBase = structuredClone({ title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
+        paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
+        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {} });
     }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
@@ -416,7 +421,7 @@ async function savePageDraft() {
     version: pageDraft?.version || 0,
     baseCommit: selectedPage.commit_sha,
     fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
-    ...(cleanedCase ? { case: cleanedCase } : {}),
+    ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
   });
   if (cleanedCase) { caseDraft = cleanedCase; renderCaseEditor(); }
   pageDirty = false;

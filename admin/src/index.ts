@@ -364,15 +364,16 @@ async function handle(request: Request, env: Env) {
       throw new HttpError(409, "頁面版本已更新，請重新載入正式頁面");
     const fields = validatePageFields(b.fields);
     const isCase = /^achievement-[a-z0-9-]+\.html$/.test(path);
-    if (isCase !== (b.case !== undefined)) throw new HttpError(400, "此頁草稿類型不正確");
+    if (isCase !== (b.case !== undefined) || isCase !== (b.caseBase !== undefined)) throw new HttpError(400, "此頁草稿類型不正確");
     const caseDraft = isCase ? validateCaseDraft(b.case) : undefined;
+    if (isCase) validateCaseDraft(b.caseBase);
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;
     if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
     const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
     const merged = isCase ? fields : {...(old.fields as Record<string,unknown> || {}), ...fields};
-    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft} : {fields:merged});
+    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft,caseBase:b.caseBase} : {fields:merged});
     const now = iso();
     if (existing) {
       const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")

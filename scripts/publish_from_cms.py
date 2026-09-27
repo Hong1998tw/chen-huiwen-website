@@ -122,6 +122,9 @@ def case_candidate(item, root, path, draft):
     edits = draft.get('case')
     if not isinstance(edits, dict) or set(edits) != CASE_FIELDS:
         raise engine.PublishError('VALIDATION', ['政績專頁欄位格式不正確'])
+    baseline = draft.get('caseBase')
+    if not isinstance(baseline, dict) or set(baseline) != CASE_FIELDS:
+        raise engine.PublishError('VALIDATION', ['政績草稿缺少原始版本；請重新載入頁面'])
     if not isinstance(edits['title'], str) or not edits['title'].strip() or not isinstance(edits['summary'], str) or not valid_date(edits['updated']):
         raise engine.PublishError('VALIDATION', ['標題、摘要或整理日期不正確'])
     if not isinstance(edits['paragraphs'], list) or len(edits['paragraphs']) > 30 or any(not isinstance(p, str) or not p.strip() or len(p) > 4000 for p in edits['paragraphs']):
@@ -155,6 +158,10 @@ def case_candidate(item, root, path, draft):
     match = next((c for c in cases if c.get('id') == case_id), None)
     if not match:
         raise engine.PublishError('VALIDATION', ['找不到此政績專頁的原始資料'])
+    for key in CASE_FIELDS:
+        default = [] if key == 'media' else {} if key == 'imageMetadata' else None
+        if match.get(key, default) != baseline[key]:
+            raise engine.PublishError('BASE_DRIFT', ['這筆政績資料已有更新；請重新載入正式頁面後再編輯'])
     if set(edits['imageMetadata']) - set(match.get('images', [])):
         raise engine.PublishError('VALIDATION', ['照片說明不屬於此頁'])
     overlay = json.loads(page_text(root)).get('pages', {}).get(path, {})
