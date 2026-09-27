@@ -14,9 +14,9 @@ def build():
     data={x['id']:x for x in json.loads((R/'data/achievements.json').read_text()) if is_public(x)}
     config=json.loads((R/'data/civic-home.json').read_text())
     ids=[config['featured'],*config['reading']]
-    if len(set(ids))!=len(ids) or any(i not in data for i in ids): raise ValueError('Home selection must reference unique public records')
+    if not 1 <= len(config['reading']) <= 12 or len(set(ids))!=len(ids) or any(i not in data for i in ids): raise ValueError('Home selection must reference unique public records and one to twelve reading records')
     summaries=config.get('summaries',{})
-    if set(summaries)-set(ids): raise ValueError('Home summaries must reference selected public records')
+    if set(summaries)!=set(ids): raise ValueError('Home summaries must match selected public records')
     c=data[config['featured']];url='achievement-'+c['id']+'.html'
     photo=''
     if c['images']:

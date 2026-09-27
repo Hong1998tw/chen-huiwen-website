@@ -13,7 +13,10 @@ let session,
   pageDraftApplied = false,
   pageDirty = false,
   caseDraft = null,
-  caseBase = null;
+  caseBase = null,
+  homeDraft = null,
+  homeBase = null,
+  homeCases = new Map();
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
 const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
@@ -225,8 +228,89 @@ function applyDraftToFrame() {
   const frame = $("#page-frame");
   frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "*");
   if (caseDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft }, "*");
+  if (homeDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()] }, "*");
 }
 const isCasePage = (page) => /^achievement-[a-z0-9-]+\.html$/.test(page?.path || "");
+function renderHomeEditor() {
+  const panel = $("#home-editor"), target = $("#home-editor-fields");
+  panel.hidden = !homeDraft;
+  target.replaceChildren();
+  if (!homeDraft) return;
+  const order = [homeDraft.featured, ...homeDraft.reading];
+  for (let index = 0; index < order.length; index++) {
+    const record = homeCases.get(order[index]);
+    const row = el("div", undefined, "case-editor-row");
+    row.dataset.homeIndex = String(index);
+    row.append(el("strong", index === 0 ? "主打專題（左側）" : `右側 0${index}`),
+      el("p", record?.title || order[index]));
+    const actions = el("div", undefined, "case-editor-actions");
+    for (const [label, offset] of [["上移", -1], ["下移", 1]]) {
+      const button = el("button", label, "secondary");
+      button.type = "button"; button.disabled = index + offset < 0 || index + offset >= order.length;
+      button.dataset.homeAction = offset < 0 ? "up" : "down";
+      button.onclick = () => moveHomeStory(index, index + offset);
+      actions.append(button);
+    }
+    const position = el("label", "移至位置 ", "field");
+    const select = document.createElement("select"); select.dataset.homeAction = "position";
+    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `右側 ${String(n).padStart(2, "0")}`, String(n))));
+    select.value = String(index);
+    select.onchange = () => moveHomeStory(index, Number(select.value));
+    position.append(select); actions.append(position); row.append(actions); target.append(row);
+    const summary = el("label", "首頁卡片摘要", "field");
+    const textarea = document.createElement("textarea");
+    textarea.value = homeDraft.summaries[order[index]] || "";
+    textarea.maxLength = 500;
+    textarea.dataset.homeSummary = order[index];
+    textarea.oninput = () => { homeDraft.summaries[order[index]] = textarea.value; homeChanged(); };
+    summary.append(textarea); row.append(summary);
+    const remove = el("button", "從首頁移除", "secondary");
+    remove.type = "button"; remove.dataset.homeAction = "remove";
+    remove.disabled = order.length <= 2;
+    remove.onclick = () => {
+      const updated = order.filter((_, position) => position !== index);
+      delete homeDraft.summaries[order[index]];
+      homeDraft.featured = updated[0]; homeDraft.reading = updated.slice(1);
+      renderHomeEditor(); homeChanged();
+    };
+    row.append(remove);
+  }
+  const available = [...homeCases.values()].filter(record => !order.includes(record.id))
+    .sort((a, b) => pageCollator.compare(a.title || a.id, b.title || b.id));
+  const addRow = el("div", undefined, "case-editor-row");
+  const label = el("label", "新增公開專題", "field");
+  const chooser = document.createElement("select"); chooser.id = "home-add-select";
+  for (const record of available) chooser.add(new Option(`${record.title} · ${record.id}`, record.id));
+  label.append(chooser); addRow.append(label);
+  const add = el("button", "加入首頁", "secondary");
+  add.type = "button"; add.id = "home-add";
+  add.disabled = !available.length || order.length >= 13;
+  add.onclick = () => {
+    const record = homeCases.get(chooser.value);
+    if (!record || [homeDraft.featured, ...homeDraft.reading].includes(record.id)) return;
+    homeDraft.reading.push(record.id);
+    homeDraft.summaries[record.id] = record.summary || record.title;
+    renderHomeEditor(); homeChanged();
+  };
+  addRow.append(add); target.append(addRow);
+}
+function homeChanged() {
+  pageDirty = true;
+  setPageStatus("首頁專題選片、摘要或順序有變更 · 儲存並發布後才會更新正式首頁");
+  pageControls();
+  if (pageReady) $("#page-frame").contentWindow?.postMessage({
+    type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()],
+  }, "*");
+}
+function moveHomeStory(from, to) {
+  if (!homeDraft || from === to || to < 0 || to >= homeDraft.reading.length + 1) return;
+  const order = [homeDraft.featured, ...homeDraft.reading];
+  order.splice(to, 0, ...order.splice(from, 1));
+  homeDraft.featured = order[0];
+  homeDraft.reading = order.slice(1);
+  renderHomeEditor();
+  homeChanged();
+}
 function caseInput(label, value, update, options = {}) {
   const field = el("label", label, "field");
   const input = document.createElement(options.multiline ? "textarea" : "input");
@@ -463,6 +547,10 @@ async function selectPage(page) {
   pageFields = new Map();
   caseDraft = null;
   caseBase = null;
+  homeDraft = null;
+  homeBase = null;
+  homeCases = new Map();
+  let homeUnavailable = false;
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -474,6 +562,7 @@ async function selectPage(page) {
       const saved = JSON.parse(pageDraft.payload);
       pageFields = new Map(Object.entries(saved.fields || {}));
       if (isCasePage(page) && saved.case) { caseDraft = saved.case; caseBase = saved.caseBase || null; }
+      if (page.path === "index.html" && saved.home) { homeDraft = saved.home; homeBase = saved.homeBase || null; }
     }
     if (isCasePage(page)) {
       const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
@@ -492,15 +581,28 @@ async function selectPage(page) {
         caseBase.sectionOrder ??= [...currentCase.sectionOrder];
       }
     }
+    if (page.path === "index.html") {
+      try {
+        const current = await api("/api/home");
+        homeCases = new Map(current.cases.map(record => [record.id, record]));
+        if (!homeDraft) homeDraft = structuredClone(current.home);
+        if (!homeBase) homeBase = structuredClone(current.home);
+      } catch (error) {
+        if (homeDraft) throw error;
+        homeUnavailable = true;
+      }
+    }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
     $("#page-history-panel").hidden = !history.versions?.length;
-    setPageStatus(pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
+    setPageStatus(homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
+      pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
   } else {
     $("#page-history-panel").hidden = true;
   }
   pageControls();
   renderCaseEditor();
+  renderHomeEditor();
   renderPages();
   applyCurrentPageEdits();
 }
@@ -533,6 +635,7 @@ async function savePageDraft() {
     baseCommit: selectedPage.commit_sha,
     fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
     ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
+    ...(homeDraft ? { home: homeDraft, homeBase } : {}),
   });
   if (cleanedCase) { caseDraft = cleanedCase; renderCaseEditor(); }
   pageDirty = false;

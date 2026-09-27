@@ -35,6 +35,44 @@
     if (className) item.className = className;
     return item;
   };
+  function applyHomePreview(home, records) {
+    const grid = document.querySelector(".civic-story-grid");
+    if (!grid || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
+    const cases = new Map(records.map(record => [record.id, record]));
+    const ids = [home.featured, ...home.reading];
+    if (ids.length < 2 || ids.length > 13 || new Set(ids).size !== ids.length || ids.some(id => !cases.has(id))) return;
+    const story = (id, featured, index) => {
+      const record = cases.get(id), url = `achievement-${id}.html`;
+      const article = node("article", undefined, featured ? "civic-feature" : "civic-reading-row");
+      const copy = node("div", undefined, featured ? "civic-feature-copy" : undefined);
+      if (featured && record.images?.length) {
+        const filename = record.images[0], meta = record.imageMetadata?.[filename];
+        if (meta) {
+          const figure = node("figure", undefined, "civic-feature-photo");
+          const image = node("img"); image.src = `assets/${filename}`; image.alt = meta.alt || ""; image.loading = "lazy";
+          const [width, height] = record.imageDimensions?.[filename] || [];
+          if (width && height) { image.width = width; image.height = height; }
+          const caption = node("figcaption", `${meta.caption || ""} · `);
+          const credit = node("a", `${meta.credit || ""} ↗`);
+          credit.href = meta.sourceUrl || "#"; credit.target = "_blank"; credit.rel = "noopener noreferrer";
+          caption.append(credit); figure.append(image, caption); article.append(figure);
+        }
+      }
+      if (!featured) article.append(node("span", `0${index}`, "civic-number"));
+      copy.append(node("p", `${featured ? "地方專題" : record.categories?.[0] || "地方專題"} · ${record.status || ""}`, "civic-kicker"));
+      const heading = node("h3"), link = node("a", record.title || id); link.href = url; heading.append(link); copy.append(heading);
+      copy.append(node("p", home.summaries?.[id] || record.summary || ""));
+      if (featured) {
+        const read = node("a", "閱讀歷程與資料來源 ↗", "civic-read"); read.href = url; copy.append(read);
+      }
+      const small = node("small", "內容整理 "), time = node("time", record.updated || "");
+      time.dateTime = record.updated || ""; small.append(time); copy.append(small); article.append(copy);
+      return article;
+    };
+    const reading = node("div", undefined, "civic-reading");
+    home.reading.forEach((id, index) => reading.append(story(id, false, index + 1)));
+    grid.replaceChildren(story(home.featured, true, 0), reading);
+  }
   function mediaPreview(item) {
     let url;
     try { url = new URL(item.url); } catch { return null; }
@@ -254,6 +292,7 @@
       send("huiwen-cms-ready", { blocks: collect() });
     }
     if (data.type === "huiwen-cms-case-preview" && /^achievement-[a-z0-9-]+\.html$/.test(pageRoute())) applyCasePreview(data.case);
+    if (data.type === "huiwen-cms-home-preview" && pageRoute() === "index.html") applyHomePreview(data.home, data.cases);
   });
   window.parent.postMessage({ type: "huiwen-cms-hello", path: `/${pageRoute()}` }, ADMIN_ORIGIN);
 })();

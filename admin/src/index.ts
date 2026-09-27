@@ -2,6 +2,7 @@ import { owner, runner, csrf, boundedJSON, HttpError } from "./security.ts";
 import { validate, validatePageFields } from "./validation.ts";
 import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
 import { validateCaseDraft } from "./case-draft.ts";
+import { validateHomeDraft } from "./home-draft.ts";
 type Document = {
   id: string;
   domain: string;
@@ -300,6 +301,31 @@ async function handle(request: Request, env: Env) {
     if (!row) throw new HttpError(404, "找不到這筆政績資料");
     return json({ case: row });
   }
+  if (u.pathname === "/api/home" && request.method === "GET") {
+    const page = await isEditablePage("index.html");
+    if (!/^[a-f0-9]{40}$/.test(page.commit_sha)) throw new HttpError(502, "首頁來源版本不正確");
+    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${page.commit_sha}/data/civic-home.json`;
+    let homeResponse: Response, casesResponse: Response;
+    try {
+      [homeResponse, casesResponse] = await Promise.all([
+        fetch(source, { cache: "no-store", signal: AbortSignal.timeout(10000) }),
+        fetch("https://www.huiwen.tw/data/achievements-public.json", { cache: "no-store", signal: AbortSignal.timeout(10000) }),
+      ]);
+    } catch { throw new HttpError(502, "無法讀取首頁專題來源"); }
+    if (!homeResponse.ok || !casesResponse.ok ||
+        Number(homeResponse.headers.get("content-length") || 0) > 20000 ||
+        Number(casesResponse.headers.get("content-length") || 0) > 1000000)
+      throw new HttpError(502, "首頁專題來源暫時無法載入");
+    const [homeText, casesText] = await Promise.all([homeResponse.text(), casesResponse.text()]);
+    if (homeText.length > 20000 || casesText.length > 1000000) throw new HttpError(502, "首頁專題來源超出大小限制");
+    let home: ReturnType<typeof validateHomeDraft>, cases: unknown;
+    try { home = validateHomeDraft(JSON.parse(homeText)); cases = JSON.parse(casesText); }
+    catch { throw new HttpError(502, "首頁專題來源格式不正確"); }
+    const ids = [home.featured, ...home.reading];
+    if (!Array.isArray(cases) || ids.some(id => !cases.some(row => row?.id === id)))
+      throw new HttpError(502, "首頁專題與公開資料不一致");
+    return json({ home, cases });
+  }
   if (u.pathname === "/api/page-preview" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
     if (!/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/.test(path))
@@ -365,15 +391,21 @@ async function handle(request: Request, env: Env) {
     const fields = validatePageFields(b.fields);
     const isCase = /^achievement-[a-z0-9-]+\.html$/.test(path);
     if (isCase !== (b.case !== undefined) || isCase !== (b.caseBase !== undefined)) throw new HttpError(400, "此頁草稿類型不正確");
+    const isHome = path === "index.html";
+    if ((b.home !== undefined || b.homeBase !== undefined) && (!isHome || b.home === undefined || b.homeBase === undefined))
+      throw new HttpError(400, "此頁草稿類型不正確");
     const caseDraft = isCase ? validateCaseDraft(b.case) : undefined;
     if (isCase) validateCaseDraft(b.caseBase);
+    const homeDraft = b.home !== undefined ? validateHomeDraft(b.home) : undefined;
+    const homeBase = b.homeBase !== undefined ? validateHomeDraft(b.homeBase) : undefined;
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;
     if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
     const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
     const merged = isCase ? fields : {...(old.fields as Record<string,unknown> || {}), ...fields};
-    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft,caseBase:b.caseBase} : {fields:merged});
+    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft,caseBase:b.caseBase} :
+      homeDraft ? {fields:merged,home:homeDraft,homeBase} : {fields:merged});
     const now = iso();
     if (existing) {
       const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")

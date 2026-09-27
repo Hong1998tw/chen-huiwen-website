@@ -150,6 +150,42 @@ class StandaloneCMS(unittest.TestCase):
         item['operation']='unpublish'
         self.assertEqual(cms.page_candidate(item).domain,'page-copy')
 
+    def test_home_story_order_changes_canonical_source_and_rejects_drift(self):
+        commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
+        baseline=json.loads((ROOT/'data/civic-home.json').read_text(encoding='utf-8'))
+        edited=json.loads(json.dumps(baseline))
+        order=[edited['featured'],*edited['reading']]
+        edited['featured'],edited['reading']=order[1], [order[0],*order[2:]]
+        item={'id':'00000000-0000-4000-8000-000000000009','path':'index.html',
+              'operation':'publish','base_commit':commit,'version':1,
+              'payload':json.dumps({'fields':{},'home':edited,'homeBase':baseline})}
+        candidate=cms.page_candidate(item)
+        self.assertEqual(candidate.domain,'home-content')
+        self.assertTrue(candidate.changed)
+        self.assertEqual(json.loads(candidate.new_text)['featured'],order[1])
+        self.assertEqual(json.loads(candidate.new_text)['reading'][0],order[0])
+        self.assertEqual(engine.http_check('home-content','index.html','publish',fetch=lambda _: (200,'<html>ok</html>')),'PASS')
+        edited['reading'].append('wende-school-center')
+        edited['summaries']['wende-school-center']='文德國小周邊公開建設進度'
+        edited['reading'].remove(order[3]); del edited['summaries'][order[3]]
+        item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':baseline})
+        selected=cms.page_candidate(item)
+        self.assertIn('wende-school-center',json.loads(selected.new_text)['reading'])
+        self.assertNotIn(order[3],json.loads(selected.new_text)['reading'])
+        item['payload']=json.dumps({'fields':{'main>p:nth-of-type(1)':{'sourceHash':'a'*64,'value':'尚未發布的文字'}},'home':edited,'homeBase':baseline})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'VALIDATION')
+        stale=json.loads(json.dumps(baseline)); stale['summaries'][order[0]]+=' 已更新'
+        item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':stale})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'BASE_DRIFT')
+        item['payload']=json.dumps({'fields':{},'home':{**edited,'reading':[order[0],order[0],order[3]]},'homeBase':baseline})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'VALIDATION')
+
     def test_case_order_changes_preserve_existing_photos_and_check_source_drift(self):
         commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
         source=next(c for c in json.loads((ROOT/'data/achievements.json').read_text()) if c['id']=='metro-green-line')

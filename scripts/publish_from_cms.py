@@ -16,6 +16,7 @@ import publish_from_notion as engine
 from page_authority import catalog
 from validate_achievements import validate as validate_achievements, valid_date
 from case_media import classify as classify_media
+from achievement_metadata import is_public
 
 ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
 ROOT = Path(__file__).resolve().parents[1]
@@ -201,6 +202,37 @@ def case_candidate(item, root, path, draft):
                             new_text != old_text, f'政績：{path}\n操作：publish', digest)
 
 
+def home_candidate(item, root, draft):
+    fields = validate_page_payload({'fields': draft.get('fields', {})})
+    published_fields = json.loads(page_text(root)).get('pages', {}).get('index.html', {}).get('edits', {})
+    if fields and fields != published_fields:
+        raise engine.PublishError('VALIDATION', ['首頁專題選片請與尚未發布的首頁文字分開發布；先發布文字後重新載入'])
+    edits, baseline = draft.get('home'), draft.get('homeBase')
+    def valid(value):
+        if not isinstance(value, dict) or set(value) != {'featured', 'reading', 'summaries'}:
+            return False
+        ids = [value['featured'], *(value['reading'] if isinstance(value['reading'], list) else [])]
+        return (2 <= len(ids) <= 13 and all(isinstance(i, str) and re.fullmatch(r'[a-z0-9-]{1,100}', i) for i in ids)
+                and len(set(ids)) == len(ids) and isinstance(value['summaries'], dict)
+                and set(value['summaries']) == set(ids)
+                and all(isinstance(s, str) and s.strip() and len(s) <= 500 and
+                        not re.search(r'[\x00-\x1f\x7f]|<\s*/?[a-z!?]', s, re.I) for s in value['summaries'].values()))
+    if not valid(edits) or not valid(baseline):
+        raise engine.PublishError('VALIDATION', ['首頁專題排序格式不正確'])
+    source = root / 'data/civic-home.json'
+    original_text = source.read_text(encoding='utf-8')
+    current = json.loads(original_text)
+    if current != baseline:
+        raise engine.PublishError('BASE_DRIFT', ['首頁專題已有更新；請重新載入正式頁面後再排序'])
+    public = {row['id'] for row in json.loads((root / 'data/achievements.json').read_text(encoding='utf-8')) if is_public(row)}
+    if not set([edits['featured'], *edits['reading']]) <= public:
+        raise engine.PublishError('VALIDATION', ['首頁專題必須是可公開的資料'])
+    updated = json.dumps(edits, ensure_ascii=False, indent=2) + '\n'
+    digest = engine.sha({'path': 'index.html', 'version': item['version'], 'home': edits})
+    return engine.Candidate('home-content', item['id'], 'index.html', edits, item['base_commit'], updated,
+                            updated != original_text, '首頁專題順序：index.html\n操作：publish', digest)
+
+
 def page_candidate(item, root=ROOT):
     path, operation = item.get('path'), item.get('operation')
     if not isinstance(path, str) or not re.fullmatch(r'(?:[a-z0-9-]+/)*[a-z0-9-]+\.html', path):
@@ -226,7 +258,11 @@ def page_candidate(item, root=ROOT):
     draft = json.loads(item['payload'])
     if operation == 'publish' and 'case' in draft:
         return case_candidate(item, root, path, draft)
-    fields = validate_page_payload({'fields': draft.get('fields', {})} if 'case' in draft else draft)
+    if operation == 'publish' and 'home' in draft and draft.get('home') != draft.get('homeBase'):
+        if path != 'index.html':
+            raise engine.PublishError('VALIDATION', ['首頁專題排序只能用於首頁'])
+        return home_candidate(item, root, draft)
+    fields = validate_page_payload({'fields': draft.get('fields', {})} if 'case' in draft or 'home' in draft else draft)
     if operation == 'publish':
         changed_fields = entry.get('edits', {}) != fields or entry.get('status', 'published') != 'published'
         entry['edits'] = fields
@@ -280,7 +316,9 @@ def reconcile_page(item, gh):
     _, pr = gh.request('GET', f"/pulls/{int(item['pr_number'])}")
     if pr.get('state') == 'closed' and not pr.get('merged_at'):
         return {'id': item['id'], 'status': 'closed', 'message': '發布請求已關閉，頁面維持原狀。'}
-    domain = 'achievement-content' if item['operation'] == 'publish' and 'case' in json.loads(item['payload']) else 'page-copy'
+    payload = json.loads(item['payload'])
+    domain = 'achievement-content' if item['operation'] == 'publish' and 'case' in payload else \
+        'home-content' if item['operation'] == 'publish' and payload.get('home') != payload.get('homeBase') and 'home' in payload else 'page-copy'
     layers, revision = engine.layered_status(gh, item['pr_number'], domain, item['path'], item['operation'],
         single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''))
     state = 'verified' if all(v == 'PASS' for v in layers.values()) else 'deployed' if layers['deployed'] == 'PASS' else 'merged' if layers['merged'] == 'PASS' else 'pr_created'

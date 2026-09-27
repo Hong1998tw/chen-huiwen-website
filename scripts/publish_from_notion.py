@@ -47,7 +47,7 @@ TAIPEI = ZoneInfo('Asia/Taipei')
 NOTION_API = 'https://api.' + 'notion' + '.com/v1'  # split so the public-link scanner does not treat the API as content
 CONTRACT = 'huiwen-pilot-publisher/1'
 SUPPORTED_SCHEMA = {'events': {2}, 'legal-schedule': {2}}
-DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json'}
+DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json', 'home-content': 'data/civic-home.json'}
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
@@ -63,6 +63,7 @@ ALLOWED_PATHS = {
         'assets/og/' + row['path'].removesuffix('.html') + '.png' for row in page_catalog(ROOT)
         if row['path'].startswith('achievement-')
     },
+    'home-content': {'data/civic-home.json', 'index.html', 'data/search-index.json', 'sitemap.xml'},
 }
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
@@ -833,7 +834,7 @@ def parse_verification_artifact(zip_bytes):
 
 
 def http_check(domain, record_key, record_name=None, fetch=None):
-    if domain in {'page-copy', 'achievement-content'}:
+    if domain in {'page-copy', 'achievement-content', 'home-content'}:
         route = '' if record_key == 'index.html' else record_key[:-10] if record_key.endswith('/index.html') else record_key
         url = 'https://www.huiwen.tw/' + route
         try:
