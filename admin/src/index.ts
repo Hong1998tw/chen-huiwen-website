@@ -578,7 +578,7 @@ async function handle(request: Request, env: Env) {
     return json({ id }, 201);
   }
   const m = u.pathname.match(
-    /^\/api\/documents\/([a-z0-9-]+)(?:\/(history|restore|refresh|publish))?$/,
+    /^\/api\/documents\/([a-z0-9-]+)(?:\/(history|published|restore|refresh|publish))?$/,
   );
   if (m) {
     const [, id, action] = m;
@@ -587,6 +587,12 @@ async function handle(request: Request, env: Env) {
       .bind(id)
       .first<Document>();
     if (!d) throw new HttpError(404, "找不到內容");
+    if (request.method === "GET" && action === "published") {
+      const source = await env.DB.prepare(
+        "SELECT payload,source_hash FROM published_sources WHERE domain=? AND record_key=?",
+      ).bind(d.domain, d.record_key).first<{ payload: string; source_hash: string }>();
+      return json({ source: source || null });
+    }
     if (request.method === "GET" && action === "history")
       return json({
         versions: (

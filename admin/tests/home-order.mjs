@@ -4,8 +4,9 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, style, dateTimeScript, editorRuntime] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript, editorRuntime] = await Promise.all([
   readFile(new URL("index.html", root)), readFile(new URL("app.js", root)),
+  readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)), readFile(new URL("date-time.js", root)),
   readFile(new URL("../../cms-page-editor.js", import.meta.url)),
 ]);
@@ -18,6 +19,7 @@ const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://127.0.0.1").pathname;
   if (path === "/") return send(res, html, "text/html; charset=utf-8");
   if (path === "/app.js") return send(res, script, "application/javascript");
+  if (path === "/console.js") return send(res, consoleScript, "application/javascript");
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
   if (path === "/api/page-preview") return send(res,
@@ -53,6 +55,8 @@ try {
     return route.abort();
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await page.locator('.primary-nav [data-workspace-target="content"]').click();
+  await page.locator('#open-page-drawer').click();
   await page.locator("#page-tree .tree-page").click();
   const preview = page.frameLocator("#page-frame");
   await preview.locator(".civic-feature h3").getByText("專題 A").waitFor();
@@ -75,6 +79,11 @@ try {
   assert.equal(saved.home.summaries.e, "摘要 e");
   assert.equal(saved.home.summaries.c, undefined);
   assert.deepEqual(saved.homeBase, home);
+  await page.locator('#page-publish').click();
+  await page.locator('#page-review-dialog').waitFor({state:'visible'});
+  assert.match(await page.locator('#page-review-content').textContent(),/首頁專題.*主打專題/s);
+  assert.match(await page.locator('#page-review-content').textContent(),/NOT CHECKED/);
+  await page.locator('#close-page-review').click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   console.log("PASS: homepage story selection, summary editing, removal and ordering in CMS");
 } finally {

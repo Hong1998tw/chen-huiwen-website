@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, style, dateTimeScript] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript] = await Promise.all([
   readFile(new URL("index.html", root)),
   readFile(new URL("app.js", root)),
+  readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)),
   readFile(new URL("date-time.js", root)),
 ]);
@@ -45,6 +46,7 @@ const documents = [
     sourceTitle: "月表", nextReviewAt: "2026-10-15", sessions: [{ date: "2026-10-01", start: "19:30", end: "21:00" }],
   }) },
 ];
+const publishedEventPayload = JSON.stringify({...JSON.parse(documents[0].payload),start:"2026-10-01T10:00:00+08:00"});
 const send = (res, data, type = "application/json") => {
   res.writeHead(200, { "content-type": type });
   res.end(data);
@@ -53,6 +55,7 @@ const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://127.0.0.1").pathname;
   if (path === "/") return send(res, html, "text/html; charset=utf-8");
   if (path === "/app.js") return send(res, script, "application/javascript");
+  if (path === "/console.js") return send(res, consoleScript, "application/javascript");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/api/page-preview") return send(res, "<!doctype html><html><head></head><body><main><article class='case-body'></article><div class='case-latest-wrap'></div></main></body></html>", "text/html; charset=utf-8");
@@ -69,6 +72,7 @@ const server = createServer(async (req, res) => {
     return send(res, JSON.stringify({ id }));
   }
   if (/^\/api\/documents\/\d+\/history$/.test(path)) return send(res, JSON.stringify({ versions: [] }));
+  if (/^\/api\/documents\/\d+\/published$/.test(path)) return send(res, JSON.stringify({ source: { payload: publishedEventPayload, source_hash: "fixture" } }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
   if (path === "/api/page-blocks") return send(res, JSON.stringify({ blocks: [] }));
   if (path === "/api/publications") return send(res, JSON.stringify({ publications: [] }));
@@ -96,6 +100,8 @@ try {
   await page.route("https://www.huiwen.tw/assets/**", route => route.abort());
   await page.goto(origin);
   console.log("CMS order test: dashboard loaded");
+  await page.locator('.primary-nav [data-workspace-target="content"]').click();
+  await page.locator('#open-page-drawer').click();
   await page.locator("#page-tree .tree-page").first().waitFor();
   assert.match(await page.locator("#page-tree .tree-page").first().textContent(), /Z 專頁/);
   await page.locator("#page-sort").selectOption("title");
@@ -103,10 +109,14 @@ try {
   await page.getByRole("button", { name: /A 專頁/ }).click();
   console.log("CMS order test: page selected");
   await page.locator('[data-case-section="overview"]').waitFor();
+  await page.locator('[data-case-list="paragraphs"][data-case-index="1"] .case-row-menu > summary').click();
   await page.locator('[data-case-list="paragraphs"][data-case-index="1"] [data-case-action="up"]').click();
   assert.equal(await page.locator('[data-case-list="paragraphs"][data-case-index="0"] textarea').inputValue(), "第二段");
+  await page.locator('[data-case-list="sources"][data-case-index="1"] .case-row-menu > summary').click();
   await page.locator('[data-case-list="sources"][data-case-index="1"] [data-case-action="position"]').selectOption("0");
+  await page.locator('[data-case-list="media"][data-case-index="1"] .case-row-menu > summary').click();
   await page.locator('[data-case-list="media"][data-case-index="1"] [data-case-action="up"]').click();
+  await page.locator('[data-case-list="images"][data-case-index="1"] .case-row-menu > summary').click();
   await page.locator('[data-case-list="images"][data-case-index="1"] [data-case-action="up"]').click();
   await page.locator('[data-case-section="sources"] [data-case-section-action="up"]').click();
   await page.locator('#case-editor-fields > .field:nth-child(3) input').fill('20230927');
@@ -128,7 +138,7 @@ try {
   assert.equal(saved.case.history[0].date, '2023-06-21');
   assert.equal(saved.case.sources[0].sourceDate, '2023-06');
   assert.deepEqual(saved.caseBase.images, ["first.jpg", "second.jpg"]);
-  await page.locator('#structured-records > summary').click();
+  await page.locator('.primary-nav [data-workspace-target="services"]').click();
   await page.locator('#documents button.document').first().click();
   await page.locator('#field-start').fill('202610011930');
   await page.locator('#field-end').fill('202610012100');
@@ -143,6 +153,12 @@ try {
   assert.equal(savedDocument.payload.start, '2026-10-01T19:30:00+08:00');
   assert.equal(savedDocument.payload.end, '2026-10-01T21:00:00+08:00');
   assert.equal(savedDocument.payload.verifiedAt, '2026-09-27');
+  await page.locator('#preview').click();
+  await page.locator('#preview-dialog').waitFor({state:'visible'});
+  assert.match(await page.locator('#preview-content').textContent(),/發布 [1-9]\d* 項變更/);
+  assert.match(await page.locator('#preview-content').textContent(),/2026\/10\/1 19:30/);
+  assert.match(await page.locator('#preview-content').textContent(),/NOT CHECKED/);
+  await page.locator('#close-preview').click();
   await page.locator('#documents button.document').last().click();
   await page.locator('#field-month').fill('202610');
   await page.locator('#field-observedAt').fill('20260927');
