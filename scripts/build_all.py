@@ -17,6 +17,7 @@ BUILD_STEPS = (
     ('build_election_page.py',),
     ('build_profile.py',),
     ('build_civic.py',),
+    ('editorial_pages.py',),
     ('build_shared.py',),
     ('build_page_content.py',),
     ('build_sitemap.py',),

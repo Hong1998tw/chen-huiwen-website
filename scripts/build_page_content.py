@@ -10,6 +10,8 @@ import sys
 from build_public import public_paths
 from page_authority import classify
 from page_copy import render
+from page_seo import apply as apply_seo
+from editorial_pages import validate_blocks, render_block
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,6 +23,8 @@ def build(root=ROOT):
         raise ValueError('PAGE_CONTENT_SCHEMA: expected version 1')
     seen = set()
     routes = set(public_paths(root)) | set(state['pages'])
+    from editorial_pages import read as read_editorial
+    routes.update(read_editorial(root)['pages'])
     for route in sorted(routes):
         if not route.endswith('.html') or route == 'petition.html':
             continue  # The user's fifth audit item remains excluded from this CMS.
@@ -37,7 +41,7 @@ def build(root=ROOT):
         if route not in state['pages'] and route not in public_paths(root):
             continue
         entry = state['pages'].get(route, {})
-        if not isinstance(entry, dict) or set(entry) - {'edits', 'status', 'lastmod'}:
+        if not isinstance(entry, dict) or set(entry) - {'edits', 'status', 'lastmod', 'seo', 'blocks'}:
             raise ValueError('PAGE_CONTENT_ENTRY: ' + route)
         if entry.get('status', 'published') not in {'published', 'unpublished', 'deleted'}:
             raise ValueError('PAGE_CONTENT_STATUS: ' + route)
@@ -57,6 +61,15 @@ def build(root=ROOT):
         if edits:
             render(source, route, edits)
         result, _ = render(source, route, {})
+        result = re.sub(r'<!-- cms-extra:start -->.*?<!-- cms-extra:end -->', '', result, flags=re.S)
+        if entry.get('blocks'):
+            blocks = validate_blocks(entry['blocks'])
+            extra = '<!-- cms-extra:start --><section class="wrap section editorial-body cms-extra">' + ''.join(render_block(block) for block in blocks) + '</section><!-- cms-extra:end -->'
+            if result.count('</main>') != 1:
+                raise ValueError('PAGE_CONTENT_MAIN: ' + route)
+            result = result.replace('</main>', extra + '</main>', 1)
+        if 'seo' in entry:
+            result = apply_seo(result, entry['seo'], route, root)
         if result != source:
             page.write_text(result, encoding='utf-8')
         seen.add(route)

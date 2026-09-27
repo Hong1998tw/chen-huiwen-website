@@ -8,6 +8,7 @@ stolen App credential cannot change scripts, templates, workflows, tests or CNAM
 Human PRs are not restricted here; they remain under normal review.
 """
 import os
+import re
 import sys
 
 from publish_from_notion import ALLOWED_PATHS, BRANCH_PREFIX, DATA_FILES
@@ -26,7 +27,17 @@ def evaluate(head_ref, author, author_type, app_login, files):
         return False, f'unknown publish domain: {domain!r}'
     if not files:
         return False, 'executor pull request changes no files'
-    outside = [f for f in files if f not in ALLOWED_PATHS[domain]]
+    allowed = set(ALLOWED_PATHS[domain])
+    if domain == 'editorial-page':
+        from editorial_pages import PATH, SECTIONS
+        record = '/'.join(parts[2:])
+        match = re.fullmatch(r'(page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html)-[a-f0-9]{8}', record)
+        page_path = match[1] if match else ''
+        section = PATH.fullmatch(page_path) if page_path else None
+        if not section:
+            return False, 'invalid editorial page branch path'
+        allowed.update((page_path, SECTIONS[section[1]][0]))
+    outside = [f for f in files if f not in allowed]
     if outside:
         return False, 'paths outside the executor allowlist: ' + ', '.join(outside)
     if DATA_FILES[domain] not in files:

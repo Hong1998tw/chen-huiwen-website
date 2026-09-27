@@ -3,6 +3,8 @@ import { validate, validatePageFields } from "./validation.ts";
 import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
 import { validateCaseDraft } from "./case-draft.ts";
 import { validateHomeDraft } from "./home-draft.ts";
+import { validatePageSeo } from "./page-seo.ts";
+import { validateEditorialPage, validateEditorialBlocks, editorialPath, EDITORIAL_SECTIONS } from "./editorial-page.ts";
 type Document = {
   id: string;
   domain: string;
@@ -267,18 +269,86 @@ async function handle(request: Request, env: Env) {
         ).all()
       ).results,
     });
-  if (u.pathname === "/api/pages" && request.method === "GET")
-    return json({
-      pages: (await env.DB.prepare(
+  if (u.pathname === "/api/pages" && request.method === "GET") {
+    const published = (await env.DB.prepare(
         "SELECT p.path,p.title,p.source_path,p.source_kind,p.editor_scope,p.commit_sha,p.observed_at,COALESCE(e.publication_status,'published') AS publication_status,COALESCE(e.version,0) AS draft_version,e.updated_at AS draft_updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path ORDER BY p.path",
-      ).all()).results,
+      ).all()).results;
+    const pending = (await env.DB.prepare(
+      "SELECT e.path,e.payload,e.base_commit,e.version,e.updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation FROM page_edits e LEFT JOIN published_pages p ON p.path=e.path WHERE p.path IS NULL AND e.path LIKE 'page-%' ORDER BY e.path LIMIT 100",
+    ).all()).results;
+    const drafts = pending.filter((row) => editorialPath.test(String(row.path))).map((row) => {
+      let title = String(row.path);
+      try { title = String(JSON.parse(String(row.payload)).editorial?.title || title); } catch { /* malformed old draft stays visible */ }
+      return {path: row.path,title,source_path:"data/editorial-pages.json",source_kind:"editorial-draft",editor_scope:"partial",
+        commit_sha:row.base_commit,observed_at:row.updated_at,publication_status:"draft",draft_version:row.version,draft_updated_at:row.updated_at,pending_operation:row.pending_operation};
     });
+    return json({ pages: [...published, ...drafts] });
+  }
   const isEditablePage = async (path: string) => {
     const row = await env.DB.prepare("SELECT source_kind,commit_sha FROM published_pages WHERE path=?").bind(path).first<{source_kind:string;commit_sha:string}>();
+    if (!row && editorialPath.test(path)) {
+      const draft = await env.DB.prepare("SELECT base_commit FROM page_edits WHERE path=?").bind(path).first<{base_commit:string}>();
+      if (draft) return {source_kind:"editorial-draft",commit_sha:draft.base_commit};
+    }
     if (!row || ["system", "legacy-redirect", "excluded-intake"].includes(row.source_kind))
       throw new HttpError(404, "這個頁面目前不開放內容編輯");
     return row;
   };
+  if (u.pathname === "/api/page-create" && request.method === "POST") {
+    const b = await boundedJSON(request);
+    const section = String(b.section || ""), slug = String(b.slug || "");
+    if (!(EDITORIAL_SECTIONS as readonly string[]).includes(section) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 80)
+      throw new HttpError(400, "請選擇欄目並使用小寫英文、數字或連字號作為網址");
+    const path = `page-${section}-${slug}.html`;
+    if (await env.DB.prepare("SELECT path FROM published_pages WHERE path=?").bind(path).first() ||
+        await env.DB.prepare("SELECT path FROM page_edits WHERE path=?").bind(path).first())
+      throw new HttpError(409, "此頁面網址已存在");
+    const source = await env.DB.prepare("SELECT commit_sha FROM published_pages LIMIT 1").first<{commit_sha:string}>();
+    if (!source || !/^[a-f0-9]{40}$/.test(source.commit_sha)) throw new HttpError(503, "網站來源尚未同步");
+    const title = String(b.title || "").trim();
+    if (!title || title.length > 150 || /[\x00-\x1f<>]/.test(title)) throw new HttpError(400, "頁面標題不正確");
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const editorial = {section,title,summary:"",updated:today,eventStart:"",eventEnd:"",
+      seo:{title:`${title}｜陳慧文`,description:"",image:"https://www.huiwen.tw/assets/site-share-20260909.png",imageAlt:"陳慧文・高雄市議員・鳳山區"},
+      blocks:[{type:"paragraph",title:"",text:"",date:"",url:"",alt:"",credit:"",address:"",publicAccessConfirmed:false}]};
+    const now = iso();
+    await env.DB.prepare("INSERT INTO page_edits(path,payload,base_commit,version,publication_status,updated_at,actor) VALUES(?,?,?,1,'unpublished',?,?)")
+      .bind(path,JSON.stringify({fields:{},editorial,editorialBase:null}),source.commit_sha,now,actor.id).run();
+    return json({path,version:1},201);
+  }
+  if (u.pathname === "/api/editorial-page" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    if (!editorialPath.test(path)) throw new HttpError(400, "這不是可新增的專頁");
+    const published = await env.DB.prepare("SELECT commit_sha FROM published_pages WHERE path=?").bind(path).first<{commit_sha:string}>();
+    if (!published) throw new HttpError(404, "此專頁尚未發布");
+    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${published.commit_sha}/data/editorial-pages.json`;
+    let response: Response;
+    try { response = await fetch(source,{cache:"no-store",signal:AbortSignal.timeout(10000)}); }
+    catch { throw new HttpError(502, "無法讀取專頁來源"); }
+    if (!response.ok || Number(response.headers.get("content-length") || 0) > 1_000_000) throw new HttpError(502, "專頁來源暫時無法載入");
+    const body = await response.text();
+    if (body.length > 1_000_000) throw new HttpError(502, "專頁來源超出大小限制");
+    let record: unknown;
+    try { record = JSON.parse(body).pages?.[path]; } catch { throw new HttpError(502, "專頁來源格式不正確"); }
+    if (!record) throw new HttpError(502, "專頁來源與目錄不一致");
+    return json({page:validateEditorialPage(path,record)});
+  }
+  if (u.pathname === "/api/page-blocks" && request.method === "GET") {
+    const path = u.searchParams.get("path") || "";
+    if (editorialPath.test(path)) throw new HttpError(400, "新增專頁請使用專頁編輯器");
+    const page = await isEditablePage(path);
+    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${page.commit_sha}/data/page-content.json`;
+    let response: Response;
+    try { response = await fetch(source,{cache:"no-store",signal:AbortSignal.timeout(10000)}); }
+    catch { throw new HttpError(502, "無法讀取頁面區塊來源"); }
+    if (!response.ok || Number(response.headers.get("content-length") || 0) > 1_000_000) throw new HttpError(502, "頁面區塊來源暫時無法載入");
+    const body = await response.text();
+    if (body.length > 1_000_000) throw new HttpError(502, "頁面區塊來源超出大小限制");
+    let blocks: unknown;
+    try { blocks = JSON.parse(body).pages?.[path]?.blocks ?? []; }
+    catch { throw new HttpError(502, "頁面區塊來源格式不正確"); }
+    return json({blocks:validateEditorialBlocks(blocks)});
+  }
   if (u.pathname === "/api/case" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
     const match = /^achievement-([a-z0-9-]+)\.html$/.exec(path);
@@ -333,12 +403,16 @@ async function handle(request: Request, env: Env) {
     const page = await env.DB.prepare(
       "SELECT p.editor_scope,p.source_kind,COALESCE(e.publication_status,'published') AS publication_status FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path WHERE p.path=?",
     ).bind(path).first<{editor_scope:string;source_kind:string;publication_status:string}>();
-    if (!page || page.publication_status !== "published")
+    const draft = !page && editorialPath.test(path) ? await env.DB.prepare("SELECT payload FROM page_edits WHERE path=?")
+      .bind(path).first<{payload:string}>() : null;
+    if ((!page && !draft) || page && page.publication_status !== "published")
       throw new HttpError(404, "此頁目前沒有正式發布版本");
-    const editable = page.editor_scope === "partial" && !["system", "legacy-redirect", "excluded-intake"].includes(page.source_kind);
+    const editable = Boolean(draft || page?.editor_scope === "partial" && !["system", "legacy-redirect", "excluded-intake"].includes(page.source_kind));
     if (editable) await isEditablePage(path);
 
-    const upstreamURL = new URL(path, "https://www.huiwen.tw/");
+    const sectionPage: Record<string,string> = {news:"news.html",press:"press.html",service:"service.html",council:"council-records.html",achievement:"achievements.html"};
+    const templatePath = draft ? sectionPage[editorialPath.exec(path)![1]] : path;
+    const upstreamURL = new URL(templatePath, "https://www.huiwen.tw/");
     let upstream: Response;
     try {
       upstream = await fetch(upstreamURL, {
@@ -352,9 +426,19 @@ async function handle(request: Request, env: Env) {
     }
     if (upstream.status !== 200 || !upstream.headers.get("content-type")?.includes("text/html"))
       throw new HttpError(502, "正式頁面暫時無法載入，請稍後重試");
-    const source = await upstream.text();
+    let source = await upstream.text();
     if (new TextEncoder().encode(source).byteLength > 2_000_000)
       throw new HttpError(502, "此頁內容超過預覽大小限制");
+    if (draft) {
+      let content: Record<string,unknown>;
+      try { content = JSON.parse(draft.payload).editorial; }
+      catch { throw new HttpError(502, "專頁草稿格式不正確"); }
+      const escaped = (value: unknown) => String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+      const title = escaped(content?.title), summary = escaped(content?.summary);
+      const previewMain = `<main id="main"><section class="page-head"><div class="wrap"><p class="eyebrow">新增專頁草稿</p><h1>${title}</h1><p>${summary}</p></div></section><article class="wrap section editorial-body"></article></main>`;
+      if (!/<main\b[^>]*>[\s\S]*?<\/main>/i.test(source)) throw new HttpError(502,"專頁預覽樣板格式不正確");
+      source = source.replace(/<main\b[^>]*>[\s\S]*?<\/main>/i,previewMain);
+    }
     let document: string;
     try {
       document = preparePagePreviewDocument(source, path, env.ADMIN_ORIGIN, editable);
@@ -398,14 +482,30 @@ async function handle(request: Request, env: Env) {
     if (isCase) validateCaseDraft(b.caseBase);
     const homeDraft = b.home !== undefined ? validateHomeDraft(b.home) : undefined;
     const homeBase = b.homeBase !== undefined ? validateHomeDraft(b.homeBase) : undefined;
+    const isEditorial = editorialPath.test(path);
+    if (isEditorial !== (b.editorial !== undefined) || isEditorial !== (b.editorialBase !== undefined))
+      throw new HttpError(400, "此頁草稿類型不正確");
+    const editorial = isEditorial ? validateEditorialPage(path,b.editorial) : undefined;
+    if (b.editorialBase !== null && isEditorial) validateEditorialPage(path,b.editorialBase);
+    if (!isEditorial && ((b.blocks === undefined) !== (b.blocksBase === undefined))) throw new HttpError(400,"頁面區塊缺少原始版本");
+    if (isEditorial && (b.blocks !== undefined || b.blocksBase !== undefined)) throw new HttpError(400,"新增專頁區塊格式不正確");
+    const blocks = b.blocks === undefined ? undefined : validateEditorialBlocks(b.blocks);
+    const blocksBase = b.blocksBase === undefined ? undefined : validateEditorialBlocks(b.blocksBase);
+    if ((b.seo === undefined) !== (b.seoBase === undefined)) throw new HttpError(400, "SEO 草稿缺少原始版本");
+    const seo = b.seo === undefined ? undefined : validatePageSeo(b.seo);
+    const seoBase = b.seoBase === undefined ? undefined : validatePageSeo(b.seoBase);
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;
     if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
     const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
     const merged = isCase ? fields : {...(old.fields as Record<string,unknown> || {}), ...fields};
-    const payload = JSON.stringify(isCase ? {fields:merged,case:caseDraft,caseBase:b.caseBase} :
-      homeDraft ? {fields:merged,home:homeDraft,homeBase} : {fields:merged});
+    const payload = JSON.stringify({fields:merged,
+      ...(isCase ? {case:caseDraft,caseBase:b.caseBase} : {}),
+      ...(homeDraft ? {home:homeDraft,homeBase} : {}),
+      ...(editorial ? {editorial,editorialBase:b.editorialBase} : {}),
+      ...(blocks ? {blocks,blocksBase} : old.blocks ? {blocks:old.blocks,blocksBase:old.blocksBase} : {}),
+      ...(seo ? {seo,seoBase} : old.seo ? {seo:old.seo,seoBase:old.seoBase} : {})});
     const now = iso();
     if (existing) {
       const result = await env.DB.prepare("UPDATE page_edits SET payload=?,base_commit=?,version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")

@@ -11,6 +11,8 @@ BASE = 'https://www.huiwen.tw/'
 
 def build(root=ROOT):
     metadata = json.loads((root / 'data/page-metadata.json').read_text())
+    from editorial_pages import read as read_editorial
+    editorial = read_editorial(root)['pages']
     managed = json.loads((root / 'data/page-content.json').read_text()).get('pages', {})
     ET.register_namespace('', NS)
     tree = ET.parse(root / 'sitemap.xml')
@@ -44,6 +46,26 @@ def build(root=ROOT):
             entries[name] = entry
         elif state.get('lastmod'):
             entries[name].find('{' + NS + '}lastmod').text = state['lastmod']
+    for name, page in editorial.items():
+        if managed.get(name, {}).get('status', 'published') != 'published':
+            continue
+        if name not in entries:
+            entry = ET.SubElement(tree.getroot(), '{'+NS+'}url')
+            ET.SubElement(entry, '{'+NS+'}loc').text = BASE + name
+            ET.SubElement(entry, '{'+NS+'}lastmod').text = page['updated']
+            entries[name] = entry
+        else:
+            entries[name].find('{' + NS + '}lastmod').text = managed.get(name, {}).get('lastmod') or page['updated']
+    # build_cases regenerates all achievement entries on every run. Keep CMS
+    # pages before them so a first build and a repeat build have the same order.
+    editorial_entries = [(name, entries[name]) for name in sorted(editorial) if name in entries]
+    for _, entry in editorial_entries:
+        tree.getroot().remove(entry)
+    case_index = next((index for index, entry in enumerate(tree.getroot())
+                       if (entry.find('{' + NS + '}loc').text or '').startswith(BASE + 'achievement-')),
+                      len(tree.getroot()))
+    for offset, (_, entry) in enumerate(editorial_entries):
+        tree.getroot().insert(case_index + offset, entry)
     existing = {entry.find('{'+NS+'}loc').text for entry in tree.getroot()}
     for name in ('service-guides.html', 'service-print.html', 'updates.html'):
         if BASE + name not in existing and managed.get(name, {}).get('status', 'published') == 'published':

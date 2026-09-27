@@ -16,7 +16,13 @@ let session,
   caseBase = null,
   homeDraft = null,
   homeBase = null,
-  homeCases = new Map();
+  homeCases = new Map(),
+  seoDraft = null,
+  seoBase = null,
+  editorialDraft = null,
+  editorialBase = null,
+  extraBlocks = null,
+  extraBlocksBase = null;
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
 const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
@@ -148,7 +154,9 @@ function renderPages() {
   const groupFor = (p) => {
     const path = p.path;
     if (path === "index.html") return "首頁";
-    if (path.startsWith("achievement-") || ["achievements.html", "explore.html", "vision.html"].includes(path)) return "建設與政策";
+    if (path.startsWith("page-achievement-") || path.startsWith("achievement-") || ["achievements.html", "explore.html", "vision.html"].includes(path)) return "建設與政策";
+    if (path.startsWith("page-service-")) return "民眾服務";
+    if (/^page-(?:news|press|council)-/.test(path)) return "新聞、媒體與議會";
     if (path.startsWith("news-") || ["news.html", "press.html", "gallery.html", "council-records.html"].includes(path)) return "新聞、媒體與議會";
     if (path.startsWith("activity-") || path.startsWith("history-") || path.includes("/index.html")) return "活動與主題專頁";
     if (["service.html", "service-guides.html", "service-print.html", "activities.html", "political-donation.html"].includes(path)) return "民眾服務";
@@ -203,21 +211,29 @@ const pageRoute = (pathname) => pathname === "/" ? "index.html" : pathname.endsW
 const isPageEditable = (page) => Boolean(page && page.editor_scope === "partial" && !readOnlyKinds.has(page.source_kind));
 function pageStatusLabel(page) {
   const status = page?.publication_status || "published";
-  return status === "deleted" ? "在垃圾桶，可還原" : status === "unpublished" ? "已下架，可還原" : "正式頁面";
+  return status === "draft" ? "新頁面草稿" : status === "deleted" ? "在垃圾桶，可還原" : status === "unpublished" ? "已下架，可還原" : "正式頁面";
 }
 function pageControls() {
   const editable = isPageEditable(selectedPage);
   const live = editable && (selectedPage?.publication_status || "published") === "published";
+  const newEditorial = editable && selectedPage?.source_kind === "editorial-draft";
+  let newEditorialReady = false;
+  if (newEditorial && pageDraft?.payload) {
+    try {
+      const data = JSON.parse(pageDraft.payload).editorial;
+      newEditorialReady = Boolean(data?.summary && data?.seo?.description && data?.blocks?.some(block => block.text || block.title || block.url || block.address));
+    } catch { newEditorialReady = false; }
+  }
   const removed = editable && ["deleted", "unpublished"].includes(selectedPage?.publication_status);
   const pending = pages.some((p) => p.path === selectedPage?.path && p.pending_operation);
   $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
-  $("#page-publish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
+  $("#page-publish").disabled = !editable || !(live || newEditorialReady) || !pageDraft?.version || pageDirty || pending;
   $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
   $("#page-delete").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
   $("#page-restore").hidden = !removed;
   $("#page-restore").disabled = !removed || !pageDraft?.version || pageDirty || pending;
   $("#page-open-live").href = `https://www.huiwen.tw${pageUrl(selectedPage?.path || "index.html")}`;
-  $("#page-open-live").hidden = !selectedPage;
+  $("#page-open-live").hidden = !selectedPage || newEditorial;
 }
 function setPageStatus(message) {
   $("#page-draft-status").textContent = message;
@@ -229,6 +245,139 @@ function applyDraftToFrame() {
   frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "*");
   if (caseDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft }, "*");
   if (homeDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()] }, "*");
+  if (seoDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
+  if (editorialDraft) frame.contentWindow?.postMessage({type:"huiwen-cms-editorial-preview",nonce:pageNonce,page:editorialDraft},"*");
+  if (extraBlocks) frame.contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
+}
+function renderSeoEditor() {
+  const panel = $("#seo-editor"), target = $("#seo-editor-fields");
+  panel.hidden = !seoDraft || !isPageEditable(selectedPage);
+  target.replaceChildren();
+  if (panel.hidden) return;
+  for (const [key, label, multiline] of [
+    ["title", "搜尋與分享標題", false], ["description", "搜尋與分享說明", true],
+    ["image", "分享圖片網址（本站 assets）", false], ["imageAlt", "分享圖片替代文字", false],
+  ]) {
+    const field = el("label", label, "field wide"), input = document.createElement(multiline ? "textarea" : "input");
+    input.name = `seo-${key}`; input.value = seoDraft[key] || "";
+    if (key === "image") input.type = "url";
+    if (multiline) input.rows = 3;
+    input.addEventListener("input", () => {
+      seoDraft[key] = input.value;
+      pageDirty = true;
+      setPageStatus("SEO 有變更 · 儲存並發布後才會更新正式頁面");
+      pageControls();
+      $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
+    });
+    field.append(input); target.append(field);
+  }
+}
+const editorialBlankBlock = (type = "paragraph") => ({ type, title:"", text:"", date:"", url:"", alt:"", credit:"", address:"", publicAccessConfirmed:false });
+function editorialChanged() {
+  pageDirty = true;
+  setPageStatus("專頁內容、區塊或 SEO 有變更 · 儲存並發布後才會更新正式頁面");
+  pageControls();
+  if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-editorial-preview",nonce:pageNonce,page:editorialDraft},"*");
+}
+function extraChanged() {
+  pageDirty = true;
+  setPageStatus("頁面延伸區塊有變更 · 儲存並發布後才會更新正式頁面");
+  pageControls();
+  if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
+}
+function editorialInput(label, value, update, options = {}) {
+  const field = el("label", label, "field wide");
+  const input = document.createElement(options.multiline ? "textarea" : "input");
+  if (options.multiline) input.rows = options.rows || 3;
+  else input.type = options.type || "text";
+  input.value = value || "";
+  input.placeholder = options.placeholder || "";
+  const signal = options.onChange || editorialChanged;
+  input.addEventListener("input", () => { update(input.value); signal(); });
+  if (options.dateKind) input.addEventListener("blur", () => {
+    const raw = input.value.replace(/\+08:00$/, "");
+    const normalized = dateTime[options.dateKind](raw);
+    const output = options.dateKind === "dateTime" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)
+      ? normalized + "+08:00" : normalized;
+    if (output !== input.value) { input.value = output; update(output); signal(); }
+  });
+  field.append(input);
+  return field;
+}
+function renderEditorialEditor() {
+  const panel = $("#editorial-editor"), target = $("#editorial-editor-fields");
+  panel.hidden = !editorialDraft;
+  target.replaceChildren();
+  if (!editorialDraft) return;
+  const p = editorialDraft;
+  target.append(
+    editorialInput("頁面標題", p.title, v => p.title = v),
+    editorialInput("導讀摘要", p.summary, v => p.summary = v, {multiline:true}),
+    editorialInput("內容整理日期", p.updated, v => p.updated = v, {dateKind:"day",placeholder:"20260927 或 2026-09-27"}),
+    editorialInput("事件開始（選填，台灣時間）", p.eventStart, v => p.eventStart = v, {dateKind:"dateTime",placeholder:"202609271930 或 2026-09-27T19:30+08:00"}),
+    editorialInput("事件結束（選填）", p.eventEnd, v => p.eventEnd = v, {dateKind:"dateTime"}),
+    el("h4", "搜尋與社群分享 SEO"),
+    editorialInput("SEO 標題", p.seo.title, v => p.seo.title = v),
+    editorialInput("SEO 描述", p.seo.description, v => p.seo.description = v, {multiline:true}),
+    editorialInput("分享圖片（本站 assets 圖片網址）", p.seo.image, v => p.seo.image = v, {type:"url"}),
+    editorialInput("分享圖片替代文字", p.seo.imageAlt, v => p.seo.imageAlt = v),
+    el("h4", "頁面區塊與順序")
+  );
+  renderBlockEditor(target,p.blocks,editorialChanged);
+}
+function renderExtraBlocksEditor() {
+  const panel = $("#extra-blocks-editor"), target = $("#extra-blocks-fields");
+  panel.hidden = !extraBlocks || !isPageEditable(selectedPage);
+  target.replaceChildren();
+  if (!panel.hidden) renderBlockEditor(target,extraBlocks,extraChanged);
+}
+function renderBlockEditor(target, blocks, changed) {
+  const render = () => extraBlocks === blocks ? renderExtraBlocksEditor() : renderEditorialEditor();
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index], row = el("div", undefined, "case-editor-row");
+    row.dataset.editorialIndex = String(index);
+    const labels = {heading:"段落標題",paragraph:"文字段落",timeline:"時間軸",source:"資料來源",photo:"照片",video:"影片",map:"地點與地圖"};
+    row.append(el("strong", `${index+1}. ${labels[block.type] || block.type}`));
+    const controls = el("div",undefined,"case-editor-actions");
+    for (const [label, offset] of [["上移",-1],["下移",1]]) {
+      const button = el("button",label,"secondary"); button.type="button";
+      button.disabled = index + offset < 0 || index + offset >= blocks.length;
+      button.onclick = () => { const [item] = blocks.splice(index,1); blocks.splice(index+offset,0,item); render(); changed(); };
+      controls.append(button);
+    }
+    const remove = el("button","移除區塊","secondary"); remove.type="button";
+    remove.onclick = () => { blocks.splice(index,1); render(); changed(); };
+    controls.append(remove); row.append(controls);
+    const input = (label,value,update,options={}) => editorialInput(label,value,update,{...options,onChange:changed});
+    if (["heading","timeline","source","map"].includes(block.type)) row.append(input("標題",block.title,v=>block.title=v));
+    if (["paragraph","timeline","photo","video"].includes(block.type)) row.append(input(block.type === "paragraph" ? "段落內容" : "說明／圖說",block.text,v=>block.text=v,{multiline:true}));
+    if (["timeline","source"].includes(block.type)) row.append(input("日期",block.date,v=>block.date=v,{dateKind:"day",placeholder:"20260927"}));
+    if (["source","photo","video"].includes(block.type)) row.append(input("公開網址",block.url,v=>block.url=v,{type:"url"}));
+    if (["photo","video"].includes(block.type)) {
+      row.append(input("替代文字",block.alt,v=>block.alt=v), input("來源署名",block.credit,v=>block.credit=v));
+      const confirmation=el("label",undefined,"field wide"), check=document.createElement("input");
+      check.type="checkbox"; check.checked=Boolean(block.publicAccessConfirmed);
+      check.onchange=()=>{block.publicAccessConfirmed=check.checked;changed();};
+      confirmation.append(check,"我已確認此網址不需登入即可公開瀏覽"); row.append(confirmation);
+    }
+    if (block.type === "map") {
+      row.append(input("完整地址（以高雄市起頭）",block.address,v=>block.address=v,{placeholder:"高雄市鳳山區錦田路231號"}));
+      if (block.address.startsWith("高雄市")) {
+        const link = el("a","在地圖 App 核對位置 ↗","text-link");
+        link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(block.address)}`;
+        link.target = "_blank"; link.rel = "noopener noreferrer"; row.append(link);
+      }
+    }
+    target.append(row);
+  }
+  const addRow = el("div",undefined,"case-editor-row"), select = document.createElement("select");
+  for (const [value,label] of [["heading","標題"],["paragraph","段落"],["timeline","時間軸"],["source","資料來源"],["photo","照片"],["video","影片"],["map","地圖"]]) {
+    const option = el("option",label); option.value=value; select.append(option);
+  }
+  select.setAttribute("aria-label","新增區塊類型");
+  const add = el("button","新增區塊","secondary"); add.type="button"; add.disabled = blocks.length >= 80;
+  add.onclick = () => { blocks.push(editorialBlankBlock(select.value)); render(); changed(); };
+  addRow.append(select,add); target.append(addRow);
 }
 const isCasePage = (page) => /^achievement-[a-z0-9-]+\.html$/.test(page?.path || "");
 function renderHomeEditor() {
@@ -520,11 +669,11 @@ function renderCaseEditor() {
 }
 function applyCurrentPageEdits() {
   const path = selectedPage?.path;
-  if (!path || !isPageEditable(selectedPage) || selectedPage.publication_status !== "published") {
+  if (!path || !isPageEditable(selectedPage) || selectedPage.publication_status !== "published" && selectedPage.source_kind !== "editorial-draft") {
     $("#page-frame").hidden = true;
     $("#page-editor-empty").hidden = false;
     $("#page-editor-empty p").textContent = selectedPage
-      ? selectedPage.publication_status === "deleted" ? "此頁已在垃圾桶。可按「還原並重新發布」後再編輯。" : selectedPage.publication_status === "unpublished" ? "此頁已下架。可按「還原並重新發布」後再編輯。" : "此頁僅供檢視，原始來源不開放後台修改。"
+      ? selectedPage.publication_status === "draft" ? "新頁面尚未發布；請在下方編輯內容、SEO 與區塊，儲存後即可送出發布。" : selectedPage.publication_status === "deleted" ? "此頁已在垃圾桶。可按「還原並重新發布」後再編輯。" : selectedPage.publication_status === "unpublished" ? "此頁已下架。可按「還原並重新發布」後再編輯。" : "此頁僅供檢視，原始來源不開放後台修改。"
       : "選擇左側頁面，正式網站的版面會在這裡載入。";
     return;
   }
@@ -550,6 +699,12 @@ async function selectPage(page) {
   homeDraft = null;
   homeBase = null;
   homeCases = new Map();
+  seoDraft = null;
+  seoBase = null;
+  editorialDraft = null;
+  editorialBase = null;
+  extraBlocks = null;
+  extraBlocksBase = null;
   let homeUnavailable = false;
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
@@ -563,6 +718,9 @@ async function selectPage(page) {
       pageFields = new Map(Object.entries(saved.fields || {}));
       if (isCasePage(page) && saved.case) { caseDraft = saved.case; caseBase = saved.caseBase || null; }
       if (page.path === "index.html" && saved.home) { homeDraft = saved.home; homeBase = saved.homeBase || null; }
+      if (saved.seo) { seoDraft = saved.seo; seoBase = saved.seoBase || null; }
+      if (saved.editorial) { editorialDraft = saved.editorial; editorialBase = saved.editorialBase || null; }
+      if (saved.blocks) { extraBlocks = saved.blocks; extraBlocksBase = saved.blocksBase || []; }
     }
     if (isCasePage(page)) {
       const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
@@ -592,6 +750,16 @@ async function selectPage(page) {
         homeUnavailable = true;
       }
     }
+    if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
+      const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
+      if (!editorialDraft) editorialDraft = structuredClone(current);
+      if (!editorialBase) editorialBase = structuredClone(current);
+    }
+    if (!editorialDraft && page.source_kind !== "editorial-draft" && page.path !== "index.html" && !isCasePage(page)) {
+      const currentBlocks = (await api(`/api/page-blocks?path=${encodeURIComponent(page.path)}`)).blocks;
+      if (!extraBlocks) extraBlocks = structuredClone(currentBlocks);
+      if (!extraBlocksBase) extraBlocksBase = structuredClone(currentBlocks);
+    }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
     $("#page-history-panel").hidden = !history.versions?.length;
@@ -603,6 +771,9 @@ async function selectPage(page) {
   pageControls();
   renderCaseEditor();
   renderHomeEditor();
+  renderSeoEditor();
+  renderEditorialEditor();
+  renderExtraBlocksEditor();
   renderPages();
   applyCurrentPageEdits();
 }
@@ -636,6 +807,9 @@ async function savePageDraft() {
     fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
     ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
     ...(homeDraft ? { home: homeDraft, homeBase } : {}),
+    ...(seoDraft ? { seo: seoDraft, seoBase } : {}),
+    ...(editorialDraft ? { editorial: editorialDraft, editorialBase } : {}),
+    ...(extraBlocks ? { blocks: extraBlocks, blocksBase: extraBlocksBase } : {}),
   });
   if (cleanedCase) { caseDraft = cleanedCase; renderCaseEditor(); }
   pageDirty = false;
@@ -679,6 +853,11 @@ window.addEventListener("message", (event) => {
   if (data.nonce !== pageNonce) return;
   if (data.type === "huiwen-cms-ready" && Array.isArray(data.blocks)) {
     pageReady = true;
+    if (data.seo && !seoDraft && !editorialDraft && Object.values(data.seo).every(value => typeof value === "string")) {
+      seoDraft = structuredClone(data.seo);
+      seoBase = structuredClone(data.seo);
+      renderSeoEditor();
+    }
     if (!pageDraftApplied) {
       pageDraftApplied = true;
       applyDraftToFrame();
@@ -965,6 +1144,20 @@ window.addEventListener("beforeunload", (e) => {
 });
 $("#page-filter").oninput = renderPages;
 $("#page-sort").onchange = renderPages;
+$("#page-create-form").onsubmit = (event) => {
+  event.preventDefault();
+  action(async () => {
+    const form = new FormData(event.currentTarget);
+    const result = await api("/api/page-create","POST",{
+      section:String(form.get("section") || ""), slug:String(form.get("slug") || ""), title:String(form.get("title") || ""),
+    });
+    await loadPages();
+    const page = pages.find(item => item.path === result.path);
+    if (page) await selectPage(page);
+    notice("已建立新頁草稿；填妥摘要、SEO 與至少一個內容區塊後再儲存及發布。");
+    $("#page-create-panel").open = false;
+  });
+};
 $("#page-save").onclick = () => action(savePageDraft);
 $("#page-publish").onclick = () => action(() => submitPageOperation("publish"));
 $("#page-unpublish").onclick = () => action(() => submitPageOperation("unpublish"));
