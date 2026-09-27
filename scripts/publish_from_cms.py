@@ -28,6 +28,11 @@ class RunnerError(Exception):
     """Only static stage/status diagnostics, never remote bodies or token values."""
 
 
+def receipt_for_publish_error(receipt, error):
+    return {**receipt, 'status': 'queued' if error.retryable else 'failed',
+            'message': error.plain()[:1500]}
+
+
 def fetch_json(request, stage, timeout):
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -241,7 +246,7 @@ def editorial_candidate(item, root, draft):
         raise engine.PublishError('VALIDATION', ['新增專頁不能混用舊式文字覆寫'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
     if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT')
+        raise engine.PublishError('STALE_CHECKOUT', retryable=True)
     try:
         revised = validate_editorial_page(path, draft['editorial'], root)
         source = read_editorial(root)
@@ -275,7 +280,7 @@ def page_candidate(item, root=ROOT):
         raise engine.PublishError('VALIDATION', ['此頁目前不開放編輯'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
     if item.get('base_commit') != live_sha:
-        raise engine.PublishError('STALE_CHECKOUT')
+        raise engine.PublishError('STALE_CHECKOUT', retryable=True)
     try:
         state = json.loads(page_text(root))
     except (ValueError, OSError):
@@ -356,7 +361,7 @@ def publish_page(item, gh):
         with engine.Worktree(ROOT, base) as wt:
             engine.materialize(candidate, wt)
             if gh.branch_sha('main') != base:
-                raise engine.PublishError('STALE_CHECKOUT')
+                raise engine.PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = engine.ensure_pull_request(gh, candidate,
                 lambda: engine.git_push(os.environ['GH_TOKEN'])(wt, candidate, title), title,
                 f"Owner-approved page revision {item['version']}.\n\nPage: `{item['path']}`\nOperation: `{item['operation']}`\nBuild, canonical source, publication path and required checks are enforced.\nCandidate digest: `{candidate.digest}`")
@@ -364,7 +369,7 @@ def publish_page(item, gh):
                 gh.enable_auto_merge(pr['number'], expected_head_sha=gh.branch_sha(candidate.branch))
         return {**receipt, 'status': 'pr_created', 'pr_number': pr['number'], 'message': '頁面發布請求已建立；正在等待必要檢查與正式站部署。'}
     except engine.PublishError as error:
-        return {**receipt, 'status': 'failed', 'message': error.plain()[:1500]}
+        return receipt_for_publish_error(receipt, error)
 
 
 def reconcile_page(item, gh):
@@ -395,7 +400,7 @@ def publish(item, gh):
         with engine.Worktree(ROOT, base) as wt:
             engine.materialize(candidate, wt)
             if gh.branch_sha('main') != base:
-                raise engine.PublishError('STALE_CHECKOUT')
+                raise engine.PublishError('STALE_CHECKOUT', retryable=True)
             outcome, pr = engine.ensure_pull_request(gh, candidate,
                 lambda: engine.git_push(os.environ['GH_TOKEN'])(wt,candidate,title), title,
                 f"Owner-approved CMS revision {item['version']}.\n\nBuild, canonical source, and publication path checks are required.\nCandidate digest: {candidate.digest}")
@@ -403,7 +408,7 @@ def publish(item, gh):
                 gh.enable_auto_merge(pr['number'], expected_head_sha=gh.branch_sha(candidate.branch))
         return {**receipt, 'status':'pr_created', 'pr_number':pr['number'], 'message':'發布請求已建立；正在等待必要檢查及自動合併。'}
     except engine.PublishError as error:
-        return {**receipt, 'status':'failed', 'message': error.plain()[:1500]}
+        return receipt_for_publish_error(receipt, error)
 
 
 def reconcile(item, gh):

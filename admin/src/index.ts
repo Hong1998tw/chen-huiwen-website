@@ -16,10 +16,10 @@ type Document = {
   actor: string;
 };
 export function canAdvancePublication(current: string, next: string): boolean {
-  // Polling may observe both CI and deploy finishing between runs. Allow forward skips,
-  // never regression or resurrection of a terminal publication.
+  // Polling may observe CI and deploy finishing between runs. Retryable worker failures may
+  // return an active lease to the queue; terminal states never move backwards or resurrect.
   const transitions: Record<string,string[]> = {
-    processing: ["pr_created", "failed", "no_change"],
+    processing: ["queued", "pr_created", "failed", "no_change"],
     pr_created: ["pr_created", "merged", "deployed", "verified", "closed", "failed"],
     merged: ["merged", "deployed", "verified", "failed"],
     deployed: ["deployed", "verified", "failed"]
@@ -165,6 +165,7 @@ async function internal(request: Request, env: Env, path: string) {
     ).all()).results });
   if (path === "/internal/receipt") {
     const states = [
+      "queued",
       "pr_created",
       "failed",
       "no_change",
@@ -200,11 +201,13 @@ async function internal(request: Request, env: Env, path: string) {
     if (!canAdvancePublication(current.status, String(b.status)))
       throw new HttpError(409, "發布狀態已改變");
     await env.DB.prepare(
-      "UPDATE publications SET status=?,message=?,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?",
+      "UPDATE publications SET status=?,message=?,lease=CASE WHEN ?='queued' THEN NULL ELSE lease END,lease_until=CASE WHEN ?='queued' THEN NULL ELSE lease_until END,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?",
     )
       .bind(
         b.status,
         b.message,
+        b.status,
+        b.status,
         b.pr_number ?? null,
         b.commit_sha ?? null,
         iso(),
@@ -215,7 +218,7 @@ async function internal(request: Request, env: Env, path: string) {
     return json({ saved: true });
   }
   if (path === "/internal/receipt-page") {
-    const states = ["pr_created", "failed", "no_change", "closed", "merged", "deployed", "verified"];
+    const states = ["queued", "pr_created", "failed", "no_change", "closed", "merged", "deployed", "verified"];
     if (!idOK(String(b.id)) || !states.includes(String(b.status)) || typeof b.message !== "string" || b.message.length > 1500 ||
         (b.pr_number != null && (!Number.isSafeInteger(b.pr_number) || Number(b.pr_number) < 1)) ||
         (b.commit_sha != null && !/^[a-f0-9]{40}$/.test(String(b.commit_sha))))
@@ -226,8 +229,8 @@ async function internal(request: Request, env: Env, path: string) {
     if (current.status === "processing" && (!b.lease || b.lease !== current.lease)) throw new HttpError(409, "頁面發布租約已改變");
     if (!canAdvancePublication(current.status, String(b.status))) throw new HttpError(409, "頁面發布狀態已改變");
     await env.DB.batch([
-      env.DB.prepare("UPDATE page_publications SET status=?,message=?,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?")
-        .bind(b.status,b.message,b.pr_number??null,b.commit_sha??null,iso(),b.id,current.status),
+      env.DB.prepare("UPDATE page_publications SET status=?,message=?,lease=CASE WHEN ?='queued' THEN NULL ELSE lease END,lease_until=CASE WHEN ?='queued' THEN NULL ELSE lease_until END,pr_number=COALESCE(?,pr_number),commit_sha=COALESCE(?,commit_sha),updated_at=? WHERE id=? AND status=?")
+        .bind(b.status,b.message,b.status,b.status,b.pr_number??null,b.commit_sha??null,iso(),b.id,current.status),
       ...(b.status === "deployed" || b.status === "verified" ? [env.DB.prepare(
         "UPDATE page_edits SET publication_status=?,updated_at=? WHERE path=?",
       ).bind(current.operation === "unpublish" ? "unpublished" : current.operation === "delete" ? "deleted" : "published",iso(),current.path)] : []),
@@ -271,10 +274,10 @@ async function handle(request: Request, env: Env) {
     });
   if (u.pathname === "/api/pages" && request.method === "GET") {
     const published = (await env.DB.prepare(
-        "SELECT p.path,p.title,p.source_path,p.source_kind,p.editor_scope,p.commit_sha,p.observed_at,COALESCE(e.publication_status,'published') AS publication_status,COALESCE(e.version,0) AS draft_version,e.updated_at AS draft_updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation,(SELECT q.status FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_status,(SELECT q.created_at FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_since FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path ORDER BY p.path",
+        "SELECT p.path,p.title,p.source_path,p.source_kind,p.editor_scope,p.commit_sha,p.observed_at,COALESCE(e.publication_status,'published') AS publication_status,COALESCE(e.version,0) AS draft_version,e.updated_at AS draft_updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation,(SELECT q.status FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_status,(SELECT q.updated_at FROM page_publications q WHERE q.path=p.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_since FROM published_pages p LEFT JOIN page_edits e ON e.path=p.path ORDER BY p.path",
       ).all()).results;
     const pending = (await env.DB.prepare(
-      "SELECT e.path,e.payload,e.base_commit,e.version,e.updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation,(SELECT q.status FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_status,(SELECT q.created_at FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_since FROM page_edits e LEFT JOIN published_pages p ON p.path=e.path WHERE p.path IS NULL AND e.path LIKE 'page-%' ORDER BY e.path LIMIT 100",
+      "SELECT e.path,e.payload,e.base_commit,e.version,e.updated_at,(SELECT q.operation FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_operation,(SELECT q.status FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_status,(SELECT q.updated_at FROM page_publications q WHERE q.path=e.path AND q.status IN ('queued','processing','pr_created','merged','deployed') ORDER BY q.created_at DESC LIMIT 1) AS pending_since FROM page_edits e LEFT JOIN published_pages p ON p.path=e.path WHERE p.path IS NULL AND e.path LIKE 'page-%' ORDER BY e.path LIMIT 100",
     ).all()).results;
     const drafts = pending.filter((row) => editorialPath.test(String(row.path))).map((row) => {
       let title = String(row.path);

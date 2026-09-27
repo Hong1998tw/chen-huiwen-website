@@ -12,6 +12,14 @@ from page_copy import digest as page_digest, render as render_page_copy, render_
 from case_media import classify as classify_media, render as render_media
 
 class StandaloneCMS(unittest.TestCase):
+    def test_retryable_publish_errors_return_to_queue(self):
+        receipt = {"id": "release-id", "lease": "lease-id"}
+        retry = cms.receipt_for_publish_error(receipt, engine.PublishError("STALE_CHECKOUT", retryable=True))
+        self.assertEqual(retry["status"], "queued")
+        self.assertIn("下一輪", retry["message"])
+        stop = cms.receipt_for_publish_error(receipt, engine.PublishError("VALIDATION"))
+        self.assertEqual(stop["status"], "failed")
+
     def test_empty_optional_case_history_is_not_shown_as_placeholder(self):
         html=(ROOT/'achievement-changle-hexing-youbike.html').read_text()
         self.assertNotIn('本專題尚未收錄具日期的推動歷程',html)

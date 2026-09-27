@@ -204,12 +204,14 @@ test("monthly schedule rejects duplicate days and out-of-month appointments", ()
 
 import worker, {canAdvancePublication} from '../src/index.ts';
 test('publication polling accepts a completed deployment between polls without permitting regression',()=>{
+ assert(canAdvancePublication('processing','queued'));
  assert(canAdvancePublication('pr_created','deployed'));
  assert(canAdvancePublication('pr_created','verified'));
  assert(canAdvancePublication('merged','verified'));
  assert(!canAdvancePublication('deployed','pr_created'));
  assert(!canAdvancePublication('verified','processing'));
  assert(!canAdvancePublication('closed','merged'));
+ assert(!canAdvancePublication('failed','queued'));
 });
 
 test('machine origin never serves management UI or assets, and requires OIDC', async()=>{
