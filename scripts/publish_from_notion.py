@@ -47,7 +47,7 @@ TAIPEI = ZoneInfo('Asia/Taipei')
 NOTION_API = 'https://api.' + 'notion' + '.com/v1'  # split so the public-link scanner does not treat the API as content
 CONTRACT = 'huiwen-pilot-publisher/1'
 SUPPORTED_SCHEMA = {'events': {2}, 'legal-schedule': {2}}
-DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json'}
+DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json'}
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
@@ -55,6 +55,13 @@ ALLOWED_PATHS = {
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
         row['path'] for row in page_catalog(ROOT)
         if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'}
+    },
+    'achievement-content': {'data/achievements.json', 'data/achievements-public.json', 'data/achievement-map.json',
+                            'data/search-index.json', 'sitemap.xml', 'achievements.html', 'assets/og/manifest.json'} | {
+        row['path'] for row in page_catalog(ROOT) if row['path'].startswith('achievement-')
+    } | {
+        'assets/og/' + row['path'].removesuffix('.html') + '.png' for row in page_catalog(ROOT)
+        if row['path'].startswith('achievement-')
     },
 }
 BRANCH_PREFIX = 'notion-publish/'
@@ -547,6 +554,13 @@ def materialize(candidate, repo, *, quality=True):
     (Path(repo) / DATA_FILES[candidate.domain]).write_text(candidate.new_text, encoding='utf-8')
     try:
         run([sys.executable, 'scripts/build_all.py'], repo)
+        if candidate.domain == 'achievement-content':
+            slug = candidate.record_key.removesuffix('.html')
+            cards = json.loads((Path(repo) / 'assets/og/manifest.json').read_text(encoding='utf-8'))
+            cases = json.loads((Path(repo) / 'data/achievements.json').read_text(encoding='utf-8'))
+            case = next(row for row in cases if 'achievement-' + row['id'] == slug)
+            if cards[slug]['title'] != case['title']:
+                run([sys.executable, 'scripts/build_share_cards.py', '--only', slug], repo)
         if quality:
             run([sys.executable, 'scripts/quality.py'], repo)
     except subprocess.CalledProcessError as exc:
@@ -819,7 +833,7 @@ def parse_verification_artifact(zip_bytes):
 
 
 def http_check(domain, record_key, record_name=None, fetch=None):
-    if domain == 'page-copy':
+    if domain in {'page-copy', 'achievement-content'}:
         route = '' if record_key == 'index.html' else record_key[:-10] if record_key.endswith('/index.html') else record_key
         url = 'https://www.huiwen.tw/' + route
         try:

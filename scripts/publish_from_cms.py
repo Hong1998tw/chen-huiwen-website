@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import publish_from_notion as engine
 from page_authority import catalog
+from validate_achievements import validate as validate_achievements, valid_date
+from case_media import classify as classify_media
 
 ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +113,78 @@ def validate_page_payload(value):
     return fields
 
 
+CASE_FIELDS = {'title', 'summary', 'updated', 'paragraphs', 'history', 'sources', 'media', 'imageMetadata'}
+
+
+def case_candidate(item, root, path, draft):
+    if draft.get('fields'):
+        raise engine.PublishError('VALIDATION', ['政績結構化草稿不能同時包含舊式頁面文字覆寫'])
+    edits = draft.get('case')
+    if not isinstance(edits, dict) or set(edits) != CASE_FIELDS:
+        raise engine.PublishError('VALIDATION', ['政績專頁欄位格式不正確'])
+    baseline = draft.get('caseBase')
+    if not isinstance(baseline, dict) or set(baseline) != CASE_FIELDS:
+        raise engine.PublishError('VALIDATION', ['政績草稿缺少原始版本；請重新載入頁面'])
+    if not isinstance(edits['title'], str) or not edits['title'].strip() or not isinstance(edits['summary'], str) or not valid_date(edits['updated']):
+        raise engine.PublishError('VALIDATION', ['標題、摘要或整理日期不正確'])
+    if not isinstance(edits['paragraphs'], list) or len(edits['paragraphs']) > 30 or any(not isinstance(p, str) or not p.strip() or len(p) > 4000 for p in edits['paragraphs']):
+        raise engine.PublishError('VALIDATION', ['背景段落格式不正確'])
+    if not isinstance(edits['history'], list) or len(edits['history']) > 50 or any(not isinstance(h, dict) or set(h) != {'date', 'title', 'text'} for h in edits['history']):
+        raise engine.PublishError('VALIDATION', ['推動歷程格式不正確'])
+    if not isinstance(edits['sources'], list) or not 0 < len(edits['sources']) <= 50 or any(not isinstance(s, dict) or set(s) - {'title', 'url', 'sourceType', 'sourceDate'} for s in edits['sources']):
+        raise engine.PublishError('VALIDATION', ['資料來源格式不正確'])
+    for source in edits['sources']:
+        link = source.get('url')
+        try:
+            parsed = urllib.parse.urlsplit(link)
+            host = (parsed.hostname or '').lower()
+            safe = (isinstance(link, str) and len(link) <= 1200 and parsed.scheme == 'https' and
+                    bool(host) and '.' in host and not parsed.username and not parsed.password and
+                    parsed.port in (None, 443) and not re.fullmatch(r'[\d.]+', host) and
+                    host not in {'drive.google.com', 'docs.google.com'} and
+                    not host.endswith(('.local', '.internal', '.lan', '.home', '.corp')) and
+                    not re.search(r'(?:token|api_key|secret|password)=', parsed.query, re.I))
+        except (TypeError, ValueError):
+            safe = False
+        if not safe:
+            raise engine.PublishError('VALIDATION', ['資料來源必須是公開 HTTPS 網址'])
+    if not isinstance(edits['media'], list) or len(edits['media']) > 24 or any(not isinstance(m, dict) or set(m) != {'kind', 'url', 'alt', 'caption', 'credit', 'publicAccessConfirmed'} or m.get('publicAccessConfirmed') is not True or not classify_media(m.get('url',''), m.get('kind','')) for m in edits['media']):
+        raise engine.PublishError('VALIDATION', ['照片或影片網址、公開權限確認不正確'])
+    if not isinstance(edits['imageMetadata'], dict):
+        raise engine.PublishError('VALIDATION', ['原有照片說明格式不正確'])
+    source_path = root / 'data/achievements.json'
+    cases = json.loads(source_path.read_text(encoding='utf-8'))
+    case_id = path.removeprefix('achievement-').removesuffix('.html')
+    match = next((c for c in cases if c.get('id') == case_id), None)
+    if not match:
+        raise engine.PublishError('VALIDATION', ['找不到此政績專頁的原始資料'])
+    for key in CASE_FIELDS:
+        default = [] if key == 'media' else {} if key == 'imageMetadata' else None
+        if match.get(key, default) != baseline[key]:
+            raise engine.PublishError('BASE_DRIFT', ['這筆政績資料已有更新；請重新載入正式頁面後再編輯'])
+    if set(edits['imageMetadata']) - set(match.get('images', [])):
+        raise engine.PublishError('VALIDATION', ['照片說明不屬於此頁'])
+    overlay = json.loads(page_text(root)).get('pages', {}).get(path, {})
+    if overlay.get('edits'):
+        raise engine.PublishError('VALIDATION', ['此頁有舊式文字覆寫；請先由網站工程維護對齊後再發布'])
+    revised = copy.deepcopy(cases)
+    target = next(c for c in revised if c['id'] == case_id)
+    target.update(edits)
+    if not edits['media'] and 'media' not in match:
+        target.pop('media', None)
+    if not edits['imageMetadata'] and 'imageMetadata' not in match:
+        target.pop('imageMetadata', None)
+    villages = json.loads((root / 'data/villages.json').read_text(encoding='utf-8'))
+    errors, _ = validate_achievements(revised, villages)
+    if errors:
+        raise engine.PublishError('VALIDATION', ['政績來源或內容檢查未通過；請檢查日期、公開來源與媒體權限'] + errors[:3])
+    new_text = json.dumps(revised, ensure_ascii=False, indent=2) + '\n'
+    old_text = source_path.read_text(encoding='utf-8')
+    digest = engine.sha({'path': path, 'version': item['version'], 'case': edits})
+    return engine.Candidate('achievement-content', item['id'], path, edits, item['base_commit'], new_text,
+                            new_text != old_text, f'政績：{path}\n操作：publish', digest)
+
+
 def page_candidate(item, root=ROOT):
     path, operation = item.get('path'), item.get('operation')
     if not isinstance(path, str) or not re.fullmatch(r'(?:[a-z0-9-]+/)*[a-z0-9-]+\.html', path):
@@ -133,7 +207,10 @@ def page_candidate(item, root=ROOT):
     entry = copy.deepcopy(state['pages'].get(path, {'edits': {}}))
     if not isinstance(entry, dict) or set(entry) - {'edits', 'status', 'lastmod'}:
         raise engine.PublishError('FORMAT_DRIFT', ['data/page-content.json'])
-    fields = validate_page_payload(json.loads(item['payload']))
+    draft = json.loads(item['payload'])
+    if operation == 'publish' and 'case' in draft:
+        return case_candidate(item, root, path, draft)
+    fields = validate_page_payload({'fields': draft.get('fields', {})} if 'case' in draft else draft)
     if operation == 'publish':
         changed_fields = entry.get('edits', {}) != fields or entry.get('status', 'published') != 'published'
         entry['edits'] = fields
@@ -187,7 +264,8 @@ def reconcile_page(item, gh):
     _, pr = gh.request('GET', f"/pulls/{int(item['pr_number'])}")
     if pr.get('state') == 'closed' and not pr.get('merged_at'):
         return {'id': item['id'], 'status': 'closed', 'message': '發布請求已關閉，頁面維持原狀。'}
-    layers, revision = engine.layered_status(gh, item['pr_number'], 'page-copy', item['path'], item['operation'],
+    domain = 'achievement-content' if item['operation'] == 'publish' and 'case' in json.loads(item['payload']) else 'page-copy'
+    layers, revision = engine.layered_status(gh, item['pr_number'], domain, item['path'], item['operation'],
         single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''))
     state = 'verified' if all(v == 'PASS' for v in layers.values()) else 'deployed' if layers['deployed'] == 'PASS' else 'merged' if layers['merged'] == 'PASS' else 'pr_created'
     details = '；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k, v in layers.items())

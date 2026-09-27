@@ -215,6 +215,8 @@ h2 {
   color: var(--muted);
   font-weight: 400;
 }
+.case-editor{padding:24px;border-top:1px solid var(--line);background:#fff}.case-editor h3{margin:0}.case-editor-group{padding:18px 0;border-top:1px solid var(--line)}.case-editor-group:first-child{border-top:0}.case-editor-group header{position:static;padding:0;background:none;color:var(--ink);border:0}.case-editor-row{padding:16px;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--paper)}.case-editor-row .field{margin-bottom:12px}.case-editor-row .field:last-child{margin-bottom:0}.case-editor .field{max-width:100%}.case-editor .field textarea{min-height:88px}.case-editor-actions{display:flex;gap:12px;flex-wrap:wrap}.case-editor [type=checkbox]{width:auto;display:inline-block;margin-right:8px}.case-editor .field:has([type=checkbox]){display:flex;align-items:center;font-weight:500}.case-editor-row button{margin-top:8px}.case-editor p.hint{margin:8px 0 18px}
+.case-local-thumbnail{display:block;max-width:240px;max-height:160px;object-fit:contain;margin:10px 0;border-radius:6px}
 .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
