@@ -206,6 +206,7 @@ try {
   await page.locator("#open-page-drawer").click();
   await page.getByRole("button", { name: /A 專頁/ }).click();
   await page.getByText(/基準已安全對齊/).waitFor();
+  await page.waitForFunction(() => document.body.dataset.pageDrawer === "closed");
   assert.equal(await page.locator("#content-publish-conflict").isHidden(), true, "content already live no longer conflicts with SEO");
   assert.equal(await page.locator("#page-save").isDisabled(), false, "safe baseline rebase requires a draft save");
   assert.equal(await page.locator("#page-publish").isDisabled(), true, "rebased baseline is not publishable until saved");
