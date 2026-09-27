@@ -292,6 +292,20 @@ h2 {
 #notice:empty {
   display: none;
 }
+#notice.notice-error {
+  color: #8c1d18;
+  background: #fff1f1;
+  border-color: #b42318;
+}
+.workflow-error {
+  margin: 16px 24px;
+  padding: 12px 16px;
+  color: #8c1d18;
+  background: #fff1f1;
+  border: 1px solid #b42318;
+  border-left-width: 4px;
+  border-radius: 6px;
+}
 details {
   border-top: 1px solid var(--line);
   margin-top: 25px;
