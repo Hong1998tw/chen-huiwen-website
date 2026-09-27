@@ -30,6 +30,7 @@ export function canAdvancePublication(current: string, next: string): boolean {
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 const iso = () => new Date().toISOString();
 const idOK = (id: string) => /^[a-z0-9-]{1,100}$/.test(id);
+const retryablePagePublicationMessage = "網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。";
 const version = (v: unknown) => {
   if (!Number.isSafeInteger(v) || Number(v) < 1)
     throw new HttpError(400, "版本不正確");
@@ -538,6 +539,30 @@ async function handle(request: Request, env: Env) {
       .bind(old.payload,old.base_commit,iso(),actor.id,path,expected).run();
     if (result.meta.changes < 1) throw new HttpError(409,"另一個視窗已儲存新版本");
     return json({path,version:expected+1});
+  }
+  if (u.pathname === "/api/page-draft/retry" && request.method === "POST") {
+    const b = await boundedJSON(request), id = String(b.id || "");
+    const expected = Number.isSafeInteger(b.version) && Number(b.version) >= 1 ? Number(b.version) : -1;
+    if (!idOK(id) || expected < 1) throw new HttpError(400, "發布重送要求格式不正確");
+    const previous = await env.DB.prepare(
+      "SELECT path,version,status,operation,message FROM page_publications WHERE id=?",
+    ).bind(id).first<{path:string;version:number;status:string;operation:string;message:string}>();
+    if (!previous || previous.status !== "failed" || previous.operation !== "publish" ||
+        previous.version !== expected || previous.message !== retryablePagePublicationMessage)
+      throw new HttpError(409, "這筆失敗原因不能安全重送，請先檢查草稿與正式頁面");
+    const path = previous.path;
+    await isEditablePage(path);
+    const now = iso(), nextVersion = expected + 1, nextId = crypto.randomUUID();
+    const retryMessage = `由失敗的 v${expected} 發布要求重新送出；原失敗紀錄保留。`;
+    const result = await env.DB.batch([
+      env.DB.prepare("UPDATE page_edits SET version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")
+        .bind(now,actor.id,path,expected),
+      env.DB.prepare("INSERT INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor,message) SELECT ?,path,version,payload,base_commit,'publish','queued',?,?,?,? FROM page_edits WHERE path=? AND version=?")
+        .bind(nextId,now,now,actor.id,retryMessage,path,nextVersion),
+    ]);
+    if (result[0]?.meta?.changes !== 1 || result[1]?.meta?.changes !== 1)
+      throw new HttpError(409, "草稿版本已有更新，沒有建立重送要求；請重新載入後檢查");
+    return json({path,version:nextVersion,id:nextId,status:"queued"},202);
   }
   const pageOperation = u.pathname === "/api/page-draft/publish" && request.method === "POST";
   if (pageOperation) {
