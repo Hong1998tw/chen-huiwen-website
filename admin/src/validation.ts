@@ -80,12 +80,11 @@ export function validate(
   const time = (s: unknown) =>
     typeof s === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(s);
   if (domain === "events") {
-    for (const k of ["start", "end"])
-      if (
-        !/^20\d\d-\d\d-\d\dT\d\d:\d\d(?::\d\d)?\+08:00$/.test(String(p[k])) ||
-        !Number.isFinite(Date.parse(String(p[k])))
-      )
+    for (const k of ["start", "end"]) {
+      const match = String(p[k]).match(/^(20\d\d-\d\d-\d\d)T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\+08:00$/);
+      if (!match || !day(match[1]))
         throw new HttpError(400, "活動時間請使用台灣時間");
+    }
     if (Date.parse(String(p.end)) <= Date.parse(String(p.start)))
       throw new HttpError(400, "結束時間必須晚於開始");
     if (!["scheduled", "rescheduled", "cancelled"].includes(String(p.status)))
