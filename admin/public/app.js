@@ -1022,6 +1022,14 @@ async function submitPageOperation(operation, confirmed = false) {
   await Promise.all([publications(), loadPages()]);
   pageControls();
 }
+async function retryFailedPagePublication(publication) {
+  if (!publication?.path || publication.operation !== "publish" || publication.status !== "failed" ||
+      publication.message !== retryablePublicationMessage) return;
+  if (!confirm(`重新建立 ${publication.path} 的發布要求？系統會將同一份 v${publication.version} 草稿保留成新版本，再以目前正式來源重新檢查；原失敗紀錄會保留。`)) return;
+  const receipt = await api("/api/page-draft/retry", "POST", {id:publication.id,version:publication.version});
+  notice(`已建立新的發布要求 v${receipt.version}；舊失敗紀錄保留，請查看發布中心狀態。`);
+  await Promise.all([publications(),loadPages()]);
+}
 window.addEventListener("message", (event) => {
   if (event.origin !== "null" || event.source !== $("#page-frame").contentWindow) return;
   const data = event.data;
@@ -1255,6 +1263,12 @@ async function publications() {
     disclosure.open = releaseIndex++ === 0;
     disclosure.append(el("summary", "查看 PR、CI、授權、部署及驗證階段"), chain);
     row.append(disclosure);
+    if (p.path && p.operation === "publish" && p.status === "failed" && p.message === retryablePublicationMessage) {
+      const retry = el("button", "以最新版本重新送出", "secondary");
+      retry.type = "button";
+      retry.onclick = () => action(() => retryFailedPagePublication(p));
+      row.append(retry);
+    }
     if (p.pr_number) {
       const a = el("a", `檢視發布 #${p.pr_number} ↗`);
       a.href = `https://github.com/Hong1998tw/chen-huiwen-website/pull/${p.pr_number}`;

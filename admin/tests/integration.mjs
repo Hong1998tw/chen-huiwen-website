@@ -14,6 +14,7 @@ const port = 18794,
   issuer = `http://127.0.0.1:${issuerPort}`;
 const email = "cms-test@example.com",
   emailHash = createHash("sha256").update(email).digest("hex");
+const retryablePageFailure = "網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。";
 const { privateKey, publicKey } = await generateKeyPair("RS256");
 const jwk = {
   ...(await exportJWK(publicKey)),
@@ -75,6 +76,12 @@ try {
       "--command", "INSERT INTO published_pages VALUES('index.html','首頁','data/civic-home.json','composite','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z'),('service-guides.html','市民服務指南','data/service-guides.json','generated','partial','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-27T00:00:00Z')"],
     { cwd: root, stdio: "pipe" },
   );
+  execFileSync(
+    process.execPath,
+    [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
+      "--command", `INSERT INTO page_edits(path,payload,base_commit,version,publication_status,updated_at,actor) VALUES('service-guides.html','{"fields":{}}','${"a".repeat(40)}',1,'published','2026-09-27T00:00:00Z','github:126787497'); INSERT INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor,lease,lease_until,attempts,pr_number,message,commit_sha) VALUES('stale-release','service-guides.html',1,'{"fields":{}}','${"a".repeat(40)}','publish','failed','2026-09-27T00:00:00Z','2026-09-27T00:01:00Z','github:126787497',NULL,NULL,1,NULL,'${retryablePageFailure}',NULL);`],
+    { cwd: root, stdio: "pipe" },
+  );
   server = spawn(
     process.execPath,
     [
@@ -117,6 +124,8 @@ try {
   assert.equal((await fetch(origin + "/api/pages")).status, 401);
   assert.equal((await fetch(origin + "/api/page-preview?path=index.html")).status, 401,
     "the published-page preview must require the authenticated owner");
+  assert.equal((await fetch(origin + "/api/page-draft/retry", { method: "POST" })).status, 401,
+    "failed page publication retry must require the authenticated owner");
   const pageCatalog = await fetch(origin + "/api/pages", { headers }).then((r) => r.json());
   assert.equal(pageCatalog.pages.length, 2);
   assert.equal(pageCatalog.pages[0].source_path, "data/civic-home.json");
@@ -159,6 +168,23 @@ try {
       },
       body: JSON.stringify(body),
     });
+  const retryReceipt = await mutate("/api/page-draft/retry", "POST", {id:"stale-release",version:1});
+  assert.equal(retryReceipt.status,202,await retryReceipt.clone().text());
+  const retriedRelease = await retryReceipt.json();
+  assert.equal(retriedRelease.version,2);
+  assert.equal(retriedRelease.status,"queued");
+  assert.notEqual(retriedRelease.id,"stale-release");
+  const duplicateRetry = await mutate("/api/page-draft/retry", "POST", {id:"stale-release",version:1}).then(r=>r.json());
+  assert.equal(duplicateRetry.id,retriedRelease.id,"duplicate retry clicks return the same new release instead of creating another attempt");
+  const retryDraft = await fetch(origin + "/api/page-draft?path=service-guides.html",{headers}).then(r=>r.json());
+  assert.equal(retryDraft.draft.version,2);
+  assert.equal(retryDraft.draft.base_commit,"a".repeat(40),"retry must preserve the source baseline for publisher conflict checks");
+  assert.deepEqual(JSON.parse(retryDraft.draft.payload),{fields:{}},"retry must preserve the exact original draft payload");
+  const retryRecords = await fetch(origin + "/api/publications",{headers}).then(r=>r.json());
+  const pageRetryRecords = retryRecords.publications.filter(row=>row.path==="service-guides.html");
+  assert.deepEqual(pageRetryRecords.map(row=>row.status).sort(),["failed","queued"],"old failed record and new queued retry both remain auditable");
+  assert.equal((await mutate("/api/page-draft/retry", "POST", {id:pageRetryRecords.find(row=>row.status==="queued").id,version:2})).status,409,
+    "only the specific retryable stale-checkout failure can be retried");
   const createdPage = await mutate("/api/page-create", "POST", {section:"news",slug:"local-test",title:"本機新聞專頁"});
   assert.equal(createdPage.status,201);
   const createdPath = "page-news-local-test.html";
@@ -278,7 +304,7 @@ try {
   const pending = await fetch(origin + "/api/publications", { headers }).then(
     (r) => r.json(),
   );
-  assert.equal(pending.publications.length, 5);
+  assert.equal(pending.publications.length, 7);
   assert.equal(pending.publications.filter((row) => row.path === "index.html").length, 4);
   assert.equal(
     (await fetch(origin + "/internal/claim", { headers })).status,

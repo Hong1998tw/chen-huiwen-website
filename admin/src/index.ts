@@ -552,16 +552,35 @@ async function handle(request: Request, env: Env) {
       throw new HttpError(409, "這筆失敗原因不能安全重送，請先檢查草稿與正式頁面");
     const path = previous.path;
     await isEditablePage(path);
-    const now = iso(), nextVersion = expected + 1, nextId = crypto.randomUUID();
-    const retryMessage = `由失敗的 v${expected} 發布要求重新送出；原失敗紀錄保留。`;
-    const result = await env.DB.batch([
-      env.DB.prepare("UPDATE page_edits SET version=version+1,updated_at=?,actor=? WHERE path=? AND version=?")
-        .bind(now,actor.id,path,expected),
-      env.DB.prepare("INSERT INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor,message) SELECT ?,path,version,payload,base_commit,'publish','queued',?,?,?,? FROM page_edits WHERE path=? AND version=?")
-        .bind(nextId,now,now,actor.id,retryMessage,path,nextVersion),
-    ]);
-    if (result[0]?.meta?.changes !== 1 || result[1]?.meta?.changes !== 1)
+    const nextVersion = expected + 1;
+    const retryMessage = `重新送出失敗要求 ${id} 的同一草稿；原失敗紀錄保留。`;
+    const current = await env.DB.prepare(
+      "SELECT payload,base_commit,version,updated_at FROM page_edits WHERE path=?",
+    ).bind(path).first<{payload:string;base_commit:string;version:number;updated_at:string}>();
+    if (!current) throw new HttpError(409, "找不到原草稿，沒有建立重送要求");
+    const findRetry = () => env.DB.prepare(
+      "SELECT id,status FROM page_publications WHERE path=? AND version=? AND operation='publish' AND message=?",
+    ).bind(path,nextVersion,retryMessage).first<{id:string;status:string}>();
+    if (current.version === nextVersion) {
+      const existing = await findRetry();
+      if (existing) return json({path,version:nextVersion,...existing},202);
+    }
+    if (current.version !== expected)
       throw new HttpError(409, "草稿版本已有更新，沒有建立重送要求；請重新載入後檢查");
+    const now = new Date(Math.max(Date.now(),Date.parse(current.updated_at) + 1)).toISOString();
+    const nextId = crypto.randomUUID();
+    const result = await env.DB.batch([
+      env.DB.prepare("UPDATE page_edits SET version=version+1,updated_at=?,actor=? WHERE path=? AND version=? AND payload=? AND base_commit=?")
+        .bind(now,actor.id,path,expected,current.payload,current.base_commit),
+      env.DB.prepare("INSERT OR IGNORE INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor,message) SELECT ?,path,version,payload,base_commit,'publish','queued',?,?,?,? FROM page_edits WHERE path=? AND version=? AND payload=? AND base_commit=? AND updated_at=?")
+        .bind(nextId,now,now,actor.id,retryMessage,path,nextVersion,current.payload,current.base_commit,now),
+    ]);
+    // The page_edits update also writes its history row through a trigger, so its change count can exceed one.
+    if ((result[0]?.meta?.changes ?? 0) < 1 || (result[1]?.meta?.changes ?? 0) < 1) {
+      const existing = await findRetry();
+      if (existing) return json({path,version:nextVersion,...existing},202);
+      throw new HttpError(409, "草稿版本已有更新，沒有建立重送要求；請重新載入後檢查");
+    }
     return json({path,version:nextVersion,id:nextId,status:"queued"},202);
   }
   const pageOperation = u.pathname === "/api/page-draft/publish" && request.method === "POST";
