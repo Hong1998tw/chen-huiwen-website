@@ -712,6 +712,15 @@ class PathGuardTests(unittest.TestCase):
                             ['data/achievements.json', 'admin/src/index.ts'])
         self.assertFalse(rejected)
 
+    def test_home_order_executor_only_changes_curated_source_and_derived_home(self):
+        branch='notion-publish/home-content/index.html-abcdef01'
+        allowed, _ = guard(branch, 'huiwen-publisher[bot]', 'Bot', '',
+                           ['data/civic-home.json', 'index.html', 'data/search-index.json'])
+        self.assertTrue(allowed)
+        rejected, _ = guard(branch, 'huiwen-publisher[bot]', 'Bot', '',
+                            ['data/civic-home.json', 'admin/src/index.ts'])
+        self.assertFalse(rejected)
+
 
 if __name__ == '__main__':
     unittest.main()

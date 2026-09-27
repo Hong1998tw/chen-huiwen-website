@@ -30,5 +30,6 @@ jobs:
         env:
           CMS_BROWSER: '1'
       - run: node admin/tests/editor-order.mjs
+      - run: node admin/tests/home-order.mjs
       - run: python -m unittest discover -s tests -p test_standalone_cms.py
       - run: npx --prefix admin wrangler deploy --config admin/wrangler.jsonc --dry-run --outdir /tmp/huiwen-cms-build
