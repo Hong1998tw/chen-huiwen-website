@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
@@ -228,6 +228,9 @@ try {
   assert.equal(created.status, 201);
   const { id } = await created.json();
   const path = `/api/documents/${id}`;
+  assert.equal((await fetch(origin + path + "/published")).status,401,"published baseline remains owner-only");
+  assert.deepEqual(await fetch(origin + path + "/published",{headers}).then(r=>r.json()),{source:null},
+    "new drafts have no published baseline and must not invent a comparison");
   assert.equal(
     (
       await mutate(path, "PUT", {
@@ -302,6 +305,13 @@ try {
       const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cfasync="false" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">if(window.self!==window.top&&document.currentScript?.dataset.cmsEditorEnabled==='true')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
       const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
       const editorRuntime = readFileSync(root + "../cms-page-editor.js", "utf8");
+      const axeScript = readFileSync(root + "../tests/donation/node_modules/axe-core/axe.min.js", "utf8");
+      await page.route(`${origin}/axe.min.js`, route=>route.fulfill({status:200,contentType:"application/javascript",body:axeScript}));
+      await page.route(`${origin}/api/home`, route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
+        home:{featured:"a",reading:["b"],summaries:{a:"首頁主題",b:"延伸閱讀"}},
+        cases:[{id:"a",title:"專題 A",summary:"首頁主題",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]},
+          {id:"b",title:"專題 B",summary:"延伸閱讀",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]}]
+      })}));
       page.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
       await page.route("https://www.huiwen.tw/**", route => {
         const path = new URL(route.request().url()).pathname;
@@ -320,36 +330,97 @@ try {
       assert.equal(editorManifestRequests,0,'ordinary public visits must not download editor manifests');
       assert.equal(await publicVisitor.locator('[data-cms-edit-id]').count(),0,'public HTML must not carry editor selectors');
       await publicVisitor.close();
-      for(const width of [390,1440]) {
-        await page.setViewportSize({width,height:960});
+      const screenshotDir=process.env.CMS_SCREENSHOTS;
+      if(screenshotDir)mkdirSync(screenshotDir,{recursive:true});
+      const capture=async name=>{if(screenshotDir)await page.screenshot({path:`${screenshotDir}/${name}.png`,fullPage:!name.startsWith('mobile-')});};
+      for(const [width,height] of [[390,844],[430,932],[768,1024],[1440,900]]) {
+        await page.setViewportSize({width,height});
         await page.goto(origin);
         console.log(`CMS_BROWSER: dashboard loaded at ${width}px`);
+        assert(await page.getByRole('heading',{name:'今天要更新什麼？'}).isVisible());
+        if(width===390 || width===1440){
+          await page.addScriptTag({url:`${origin}/axe.min.js`});
+          const report=await page.evaluate(()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}}));
+          console.log(`CMS_AXE dashboard ${width}px: ${report.violations.map(item=>item.id+':'+item.nodes.length).join(',')||'0 violations'}`);
+        }
+        if(width===1440)await capture('desktop-dashboard');
+        await page.locator('.primary-nav [data-workspace-target="content"]').click();
+        assert(await page.getByRole('heading',{name:'內容',exact:true}).isVisible());
+        if(width===1440){
+          await page.locator('#open-command').click();
+          await page.locator('#command-query').fill('service');
+          assert(await page.locator('#command-results button').count()>0,'command search finds pages by path');
+          await page.keyboard.press('Escape');
+          await page.locator('#command-dialog').waitFor({state:'hidden'});
+          assert.equal(await page.evaluate(()=>document.activeElement?.id),'open-command','dialog restores focus');
+        }
+        if(width<=760){
+          await page.locator('#open-page-drawer').click();
+          assert(await page.locator('#page-explorer').isVisible());
+          if(width===390)await capture('mobile-page-drawer-390');
+          await page.keyboard.press('Escape');
+          assert.equal(await page.locator('#page-explorer').isVisible(),false,'Escape closes page drawer');
+          assert.equal(await page.evaluate(()=>document.activeElement?.id),'open-page-drawer','drawer restores focus');
+          await page.locator('#open-page-drawer').click();
+        }
+        await page.locator('#page-filter').fill('首頁');
+        await page.waitForFunction(()=>document.querySelector('#page-list-status')?.textContent?.startsWith('顯示 1 /'));
         const priorRuntimeRequests=editorRuntimeRequests;
-        await page.getByRole('button',{name:/首頁/}).click();
+        await page.locator('#page-tree .tree-page').first().click();
         console.log('CMS_BROWSER: page selected');
         assert(await page.getByRole('heading',{name:'首頁',exact:true}).isVisible());
+        if(width<=760) assert.equal(await page.locator('#page-explorer').isVisible(),false,'mobile drawer closes after selecting a page');
+        await page.waitForFunction(()=>!document.querySelector('#page-draft-status')?.textContent?.includes('正在讀取'));
+        await page.locator('#tab-seo').click();
+        assert.equal(await page.locator('#tab-seo').getAttribute('aria-selected'),'true');
+        if(width===1440)await capture('desktop-seo');
+        await page.locator('#tab-versions').click();
+        await page.locator('#tab-content').click();
         await page.waitForFunction(()=>document.querySelector('#page-frame')?.getAttribute('src')?.startsWith('/api/page-preview?'));
         assert.equal(new URL(await page.locator('#page-frame').getAttribute('src'),origin).pathname,'/api/page-preview');
         assert.equal((await page.locator('#page-frame').getAttribute('sandbox')).includes('allow-same-origin'),false,
           'published page scripts must not share the authenticated admin origin');
         const frame=page.frameLocator('#page-frame');
         await frame.locator('h1[contenteditable="true"]').waitFor();
+        if(width===390)await capture('mobile-content-390');
+        if(width===1440)await capture('desktop-content');
+        if(width===390 || width===1440){
+          const report=await page.evaluate(()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}}));
+          console.log(`CMS_AXE content ${width}px: ${report.violations.map(item=>item.id+':'+item.nodes.length).join(',')||'0 violations'}`);
+        }
+        await page.evaluate(()=>window.scrollTo(0,800));
+        await page.waitForTimeout(50);
+        const toolbarBox=await page.locator('.visual-toolbar').boundingBox();
+        if(width<=430)assert(toolbarBox.y>=-2 && toolbarBox.y<=4,`selected-page toolbar must remain sticky at ${width}px: ${toolbarBox.y}`);
+        await page.evaluate(()=>window.scrollTo(0,0));
         assert.equal(editorRuntimeRequests,priorRuntimeRequests+1,'admin iframe must load the editor runtime');
-        assert.equal(editorManifestRequests,width===390?1:2,'admin iframe must load its page-specific editor manifest');
+        assert.equal(editorManifestRequests,editorRuntimeRequests,'admin iframe must load its page-specific editor manifest');
         await frame.locator('h1[contenteditable="true"]').fill('測試已修改');
         await page.getByText('頁面文字有變更 · 儲存後才會進入發布流程',{exact:true}).waitFor();
         assert.equal(await page.locator('#page-save').isEnabled(),true,'editing the rendered page enables draft save');
-        await page.locator('#structured-records > summary').click();
+        if(width===390)await capture('mobile-editor-390');
+        await page.locator('.primary-nav [data-workspace-target="services"]').click();
         console.log('CMS_BROWSER: structured editor opened');
         await page.getByRole('button',{name:/本機測試草稿/}).click();
         assert(await page.getByLabel('活動名稱',{exact:true}).isVisible());
+        if(width===1440)await capture('desktop-activity');
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'editor must fit viewport');
         await page.getByRole('button',{name:'預覽發布內容',exact:true}).click();
-        assert(await page.getByRole('dialog').isVisible());
-        assert(await page.getByRole('button',{name:'確認並送出發布'}).isVisible());
+        await page.locator('#preview-dialog').waitFor({state:'visible'});
+        assert(await page.getByRole('button',{name:/確認發布/}).isVisible());
         await page.getByRole('button',{name:'關閉',exact:true}).click();
+        await page.locator('.primary-nav [data-workspace-target="publishing"]').click();
+        assert(await page.getByRole('heading',{name:'從草稿到上線'}).isVisible());
+        assert.match(await page.locator('#publications').textContent(),/HTTP 驗證.*Snapshot 驗證.*Native 驗證/s);
+        assert.match(await page.locator('#publications').textContent(),/NOT CHECKED/);
+        await page.locator('[data-release-filter="queued"]').click();
+        assert.equal(await page.locator('#publications .publication:not([hidden]):not([data-status="queued"])').count(),0);
+        await page.locator('[data-release-filter="all"]').click();
+        if(width===1440)await capture('desktop-publishing');
+        await page.locator('.primary-nav [data-workspace-target="system"]').click();
+        assert(await page.getByRole('heading',{name:'目前權限'}).isVisible());
         await page.evaluate(()=>window.scrollTo(0,0));
-        if(process.env.CMS_SCREENSHOTS)await page.screenshot({path:process.env.CMS_SCREENSHOTS+'/'+width+'.png',fullPage:true});
+        if(screenshotDir)await capture(`viewport-${width}`);
       }
       const indexCards = Array.from({length: 11}, (_, index) =>
         `<article data-news-categories="public"><h2>項目 ${index + 1}</h2></article>`).join("");

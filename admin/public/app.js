@@ -22,7 +22,9 @@ let session,
   editorialDraft = null,
   editorialBase = null,
   extraBlocks = null,
-  extraBlocksBase = null;
+  extraBlocksBase = null,
+  publicationRecords = [],
+  documentFilter = "all";
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
 const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
@@ -123,6 +125,7 @@ async function load() {
   if (!documents.length)
     list.append(el("p", "正在等待首次同步網站內容，請稍後更新狀態。"));
   for (const d of documents) {
+    if (documentFilter !== "all" && d.domain !== documentFilter) continue;
     const p = JSON.parse(d.payload),
       b = el(
         "button",
@@ -142,10 +145,16 @@ function renderPages() {
   const query = $("#page-filter").value.trim().toLocaleLowerCase();
   const openGroups = new Map([...list.querySelectorAll("details.tree-group")].map(group => [group.dataset.group, group.open]));
   list.replaceChildren();
+  const workFilter = $("#page-work-filter").value;
   const matching = pages.filter((p) =>
-    [p.title, p.path, p.source_path].some((s) => String(s || "").toLocaleLowerCase().includes(query)),
+    [p.title, p.path, p.source_path].some((s) => String(s || "").toLocaleLowerCase().includes(query)) &&
+    (workFilter === "all" || workFilter === "draft" && Boolean(p.draft_version) ||
+      workFilter === "pending" && Boolean(p.pending_operation) ||
+      workFilter === "read-only" && !isPageEditable(p) ||
+      workFilter === "recent" && Boolean(p.draft_updated_at)),
   );
   $("#page-count").textContent = `${pages.length} 頁`;
+  $("#page-list-status").textContent = `顯示 ${matching.length} / ${pages.length} 個頁面`;
   if (!matching.length) {
     list.append(el("p", "沒有符合的頁面。", "tree-empty"));
     return;
@@ -190,8 +199,11 @@ function renderPages() {
       button.setAttribute("aria-current", String(selectedPage?.path === p.path ? "page" : "false"));
       const title = el("span", p.title || p.path);
       const sub = p.path === "index.html" ? "/" : `/${p.path}`;
-      const state = p.publication_status === "deleted" ? "垃圾桶" : p.publication_status === "unpublished" ? "已下架" : p.draft_version ? `草稿 v${p.draft_version}` : p.editor_scope === "partial" ? "可編輯" : "僅檢視";
-      button.append(title, el("small", `${sub} · ${state}`));
+      const states = [p.publication_status === "deleted" ? "垃圾桶" : p.publication_status === "unpublished" ? "已下架" : p.publication_status === "draft" ? "新頁草稿" : "正式"];
+      if (p.draft_version) states.push(`草稿 v${p.draft_version}`);
+      if (p.pending_operation) states.push("發布中");
+      if (!isPageEditable(p)) states.push("僅檢視");
+      button.append(title, el("small", sub), el("small", states.join(" · "), "tree-states"));
       button.onclick = () => action(() => selectPage(p));
       children.append(button);
     }
@@ -226,8 +238,13 @@ function pageControls() {
   }
   const removed = editable && ["deleted", "unpublished"].includes(selectedPage?.publication_status);
   const pending = pages.some((p) => p.path === selectedPage?.path && p.pending_operation);
+  const unchanged = publicationRecords.some(p => p.path === selectedPage?.path && p.version === pageDraft?.version && p.status === "no_change");
+  const publishable = editable && (live || newEditorialReady) && Boolean(pageDraft?.version) && !pageDirty && !pending && !unchanged;
+  $("#page-status").textContent = selectedPage ? [pageStatusLabel(selectedPage),
+    pageDirty ? "有未儲存變更" : pageDraft?.version ? `草稿 v${pageDraft.version} 已儲存` : "無未儲存變更",
+    pending ? "發布中" : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
   $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
-  $("#page-publish").disabled = !editable || !(live || newEditorialReady) || !pageDraft?.version || pageDirty || pending;
+  $("#page-publish").disabled = !publishable;
   $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
   $("#page-delete").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
   $("#page-restore").hidden = !removed;
@@ -262,15 +279,26 @@ function renderSeoEditor() {
     input.name = `seo-${key}`; input.value = seoDraft[key] || "";
     if (key === "image") input.type = "url";
     if (multiline) input.rows = 3;
+    const counter = ["title", "description"].includes(key) ? el("small", `${input.value.length} 字`, "character-count") : null;
     input.addEventListener("input", () => {
       seoDraft[key] = input.value;
+      if (counter) counter.textContent = `${input.value.length} 字`;
       pageDirty = true;
       setPageStatus("SEO 有變更 · 儲存並發布後才會更新正式頁面");
       pageControls();
       $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
     });
-    field.append(input); target.append(field);
+    field.append(input);
+    if (counter) field.append(counter);
+    target.append(field);
   }
+  const preview = el("div", undefined, "og-preview");
+  preview.append(el("small", "OPEN GRAPH 預覽"), el("strong", seoDraft.title || "尚未設定標題"), el("p", seoDraft.description || "尚未設定說明"));
+  target.append(preview);
+  for (const input of target.querySelectorAll("input,textarea")) input.addEventListener("input", () => {
+    preview.querySelector("strong").textContent = seoDraft.title || "尚未設定標題";
+    preview.querySelector("p").textContent = seoDraft.description || "尚未設定說明";
+  });
 }
 const editorialBlankBlock = (type = "paragraph") => ({ type, title:"", text:"", date:"", url:"", alt:"", credit:"", address:"", publicAccessConfirmed:false });
 function editorialChanged() {
@@ -306,8 +334,11 @@ function editorialInput(label, value, update, options = {}) {
 }
 function renderEditorialEditor() {
   const panel = $("#editorial-editor"), target = $("#editorial-editor-fields");
+  const seoTarget = $("#editorial-seo-fields");
   panel.hidden = !editorialDraft;
   target.replaceChildren();
+  seoTarget.replaceChildren();
+  seoTarget.hidden = !editorialDraft;
   if (!editorialDraft) return;
   const p = editorialDraft;
   target.append(
@@ -316,12 +347,14 @@ function renderEditorialEditor() {
     editorialInput("內容整理日期", p.updated, v => p.updated = v, {dateKind:"day",placeholder:"20260927 或 2026-09-27"}),
     editorialInput("事件開始（選填，台灣時間）", p.eventStart, v => p.eventStart = v, {dateKind:"dateTime",placeholder:"202609271930 或 2026-09-27T19:30+08:00"}),
     editorialInput("事件結束（選填）", p.eventEnd, v => p.eventEnd = v, {dateKind:"dateTime"}),
-    el("h4", "搜尋與社群分享 SEO"),
+    el("h4", "頁面區塊與順序")
+  );
+  seoTarget.append(
+    el("h3", "搜尋與社群分享 SEO"),
     editorialInput("SEO 標題", p.seo.title, v => p.seo.title = v),
     editorialInput("SEO 描述", p.seo.description, v => p.seo.description = v, {multiline:true}),
     editorialInput("分享圖片（本站 assets 圖片網址）", p.seo.image, v => p.seo.image = v, {type:"url"}),
     editorialInput("分享圖片替代文字", p.seo.imageAlt, v => p.seo.imageAlt = v),
-    el("h4", "頁面區塊與順序")
   );
   renderBlockEditor(target,p.blocks,editorialChanged);
 }
@@ -479,6 +512,8 @@ function caseChanged() {
   pageDirty = true;
   setPageStatus("政績內容有變更 · 儲存後才會進入發布流程");
   pageControls();
+  const health = $(".source-health");
+  if (health && caseDraft) health.textContent = `${caseDraft.sources.length} 筆來源 · ${caseDraft.sources.filter(item => item.url).length} 筆有公開網址。網址可達不代表主張已核實；內容核對仍須由人工確認。`;
   if (pageReady && caseDraft) $("#page-frame").contentWindow?.postMessage({
     type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft,
   }, "*");
@@ -562,20 +597,28 @@ function caseRowActions(key, index, title, removable = true) {
     remove.onclick = () => { caseDraft[key].splice(index, 1); renderCaseEditor(); caseChanged(); };
     actions.append(remove);
   }
-  return actions;
+  const disclosure = el("details", undefined, "case-row-menu");
+  disclosure.append(el("summary", "順序與操作 ⋯"), actions);
+  return disclosure;
 }
 function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
   const group = el("section", undefined, "case-editor-group");
   group.dataset.caseGroup = key;
   group.dataset.caseSection = sectionKey;
-  group.append(caseSectionHeader(title, sectionKey));
+  const heading=caseSectionHeader(title, sectionKey);
+  heading.querySelector("h4").textContent=`${title}  ${caseDraft[key].length}`;
+  const collapse=el("button","收合","quiet");collapse.type="button";collapse.setAttribute("aria-expanded","true");
+  const body=el("div",undefined,"case-group-body");
+  collapse.onclick=()=>{body.hidden=!body.hidden;collapse.setAttribute("aria-expanded",String(!body.hidden));collapse.textContent=body.hidden?"展開":"收合";};
+  heading.append(collapse);
+  group.append(heading);
   for (let i = 0; i < caseDraft[key].length; i++) {
     const row = el("div", undefined, "case-editor-row");
     row.dataset.caseList = key;
     row.dataset.caseIndex = String(i);
     row.append(...inputs(caseDraft[key][i], i));
     row.append(caseRowActions(key, i, title));
-    group.append(row);
+    body.append(row);
   }
   const add = el("button", `＋ 新增${title}`, "secondary");
   add.type = "button";
@@ -586,7 +629,8 @@ function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
     caseChanged();
     document.querySelector('[data-case-list="' + key + '"][data-case-index="' + (caseDraft[key].length - 1) + '"] input, [data-case-list="' + key + '"][data-case-index="' + (caseDraft[key].length - 1) + '"] textarea')?.focus();
   };
-  group.append(add);
+  body.append(add);
+  group.append(body);
   return group;
 }
 function renderCaseEditor() {
@@ -614,6 +658,8 @@ function renderCaseEditor() {
     caseInput("公開網址", item.url, (v) => item.url = v, { type: "url" }),
     caseInput("來源類型（選填）", item.sourceType, (v) => item.sourceType = v),
   ], 50);
+  const sourceCount = caseDraft.sources.filter(item => item.url).length;
+  groups.sources.prepend(el("p", `${caseDraft.sources.length} 筆來源 · ${sourceCount} 筆有公開網址。網址可達不代表主張已核實；內容核對仍須由人工確認。`, "source-health hint"));
   groups.media = caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item) => {
     const kind = el("label", "類型", "field"), select = document.createElement("select");
     for (const [value, label] of [["photo", "照片"], ["video", "影片"]]) { const option = el("option", label); option.value = value; select.append(option); }
@@ -823,7 +869,7 @@ async function savePageDraft() {
   $("#page-history-panel").hidden = !history.versions?.length;
   setPageStatus(`草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
 }
-async function submitPageOperation(operation) {
+async function submitPageOperation(operation, confirmed = false) {
   if (!selectedPage || !isPageEditable(selectedPage)) return;
   if (pageDirty) {
     if (!confirm("目前有未儲存的文字，先儲存草稿再繼續？")) return;
@@ -836,7 +882,7 @@ async function submitPageOperation(operation) {
     delete: "將此頁移至可還原的垃圾桶？它會從正式官網下架，原始來源不會被刪除。",
     restore: "還原此頁並重新發布？必要檢查通過後會重新出現在正式官網。",
   };
-  if (!confirm(prompts[operation])) return;
+  if (!confirmed && !confirm(prompts[operation])) return;
   const receipt = await api("/api/page-draft/publish", "POST", { path: selectedPage.path, version: pageDraft.version, operation });
   setPageStatus(`已送出${operation === "publish" ? "發布" : operation === "unpublish" ? "下架" : operation === "delete" ? "移入垃圾桶" : "還原發布"}要求 · ${statusNames[receipt.status] || receipt.status}`);
   await Promise.all([publications(), loadPages()]);
@@ -961,6 +1007,7 @@ function render() {
   $("#preview").disabled = !selected.id;
   $("#editor-form").oninput = () => {
     dirty = true;
+    $("#version").textContent = `${selected.id ? `草稿 v${selected.version}` : "新活動"} · 有未儲存變更`;
     $("#preview").disabled = true;
   };
 }
@@ -1043,18 +1090,34 @@ async function history() {
 }
 async function publications() {
   const result = await api("/api/publications");
+  publicationRecords = result.publications;
   const target = $("#publications");
   target.replaceChildren();
   if (!result.publications.length)
     target.append(el("p", "尚未送出發布要求。", "hint"));
+  let releaseIndex = 0;
   for (const p of result.publications) {
     const row = el("article", undefined, "publication");
+    row.dataset.status = p.status;
     row.append(
       el("strong", statusNames[p.status] || p.status),
-      el("span", `v${p.version} · ${displayDate(p.updated_at)}`, "badge"),
+      el("span", `v${p.version} · 送出 ${displayDate(p.created_at)}`, "badge"),
       ...(p.path ? [el("p", `${p.path} · ${({ publish: "發布更新", unpublish: "下架", delete: "移至垃圾桶", restore: "還原發布" }[p.operation] || p.operation)}`)] : []),
       el("p", p.message || "已保存發布要求，等待處理。"),
     );
+    const chain = el("dl", undefined, "verification-chain");
+    const stages = [["PR", "已建立 PR"], ["CI", "CI 通過"], ["發布授權", "發布授權"],
+      ["合併", "已合併"], ["部署", "已部署"], ["HTTP 驗證", "HTTP 驗證"],
+      ["Snapshot 驗證", "Snapshot 驗證"], ["Native 驗證", "Native 驗證"]].map(([label, source]) => {
+      const found = String(p.message || "").match(new RegExp(`${source}：(PASS|PENDING|FAIL|BLOCKED|UNKNOWN)`));
+      const state = found?.[1] || (label === "PR" && p.pr_number ? `#${p.pr_number}` : "NOT CHECKED");
+      return [label, state === "BLOCKED" && label === "Native 驗證" ? "BLOCKED · 詳細原因目前沒有由 verification backend 回傳" : state];
+    });
+    for (const [label, state] of stages) chain.append(el("dt", label), el("dd", state));
+    const disclosure = el("details", undefined, "release-chain");
+    disclosure.open = releaseIndex++ === 0;
+    disclosure.append(el("summary", "查看 PR、CI、授權、部署及驗證階段"), chain);
+    row.append(disclosure);
     if (p.pr_number) {
       const a = el("a", `檢視發布 #${p.pr_number} ↗`);
       a.href = `https://github.com/Hong1998tw/chen-huiwen-website/pull/${p.pr_number}`;
@@ -1069,27 +1132,40 @@ $("#editor-form").onsubmit = (e) => {
   e.preventDefault();
   action(save);
 };
-$("#preview").onclick = () => {
+$("#preview").onclick = () => action(async () => {
   if (dirty || !selected?.id) return;
   previewVersion = selected.version;
   const target = $("#preview-content");
   target.replaceChildren();
   const p = JSON.parse(selected.payload);
-  for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
+  const published = await api(`/api/documents/${selected.id}/published`);
+  const baseline = published.source ? JSON.parse(published.source.payload) : null;
+  const changed = (selected.domain === "events" ? eventKeys : legalKeys).filter(key =>
+    !baseline || JSON.stringify(p[key] ?? null) !== JSON.stringify(baseline[key] ?? null));
+  target.append(el("h3", `發布 ${changed.length} 項變更`));
+  if (!baseline) target.append(el("p", "尚無已發布版本；以下為首次發布的資料。", "hint"));
+  const renderValue = (key, value) => key === "status" ? ({scheduled:"排定",rescheduled:"改期",cancelled:"取消"}[value] || value || "—") :
+    ["start", "end"].includes(key) && value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}) :
+    key === "sessions" ? (value || []).map(s => `${s.date} ${s.start}–${s.end}`).join("\n") || "—" : value || "—";
+  const renderField = (key) => {
     const dl = el("dl", undefined, "preview-item");
-    dl.append(
-      el("dt", labels[key]),
-      el(
-        "dd",
-        key === "sessions"
-          ? p.sessions.map((s) => `${s.date} ${s.start}–${s.end}`).join("\n")
-          : p[key] || "—",
-      ),
-    );
-    target.append(dl);
+    dl.append(el("dt", labels[key]));
+    if (baseline) dl.append(el("dd", renderValue(key, baseline[key]), "previous-value"), el("dd", `→ ${renderValue(key, p[key])}`));
+    else dl.append(el("dd", renderValue(key, p[key])));
+    return dl;
+  };
+  for (const key of changed) target.append(renderField(key));
+  const unchanged = (selected.domain === "events" ? eventKeys : legalKeys).filter(key => !changed.includes(key));
+  if (unchanged.length) {
+    const details = el("details", undefined, "review-all"), summary = el("summary", `查看完整資料（其餘 ${unchanged.length} 欄）`);
+    details.append(summary, ...unchanged.map(renderField)); target.append(details);
   }
+  const readiness = el("dl", undefined, "review-readiness");
+  for (const [label, state] of [["必填與內容格式", "PASS · 已通過草稿儲存驗證"], ["來源事實核對", "NOT CHECKED"], ["外部連結可達性", "NOT CHECKED"], ["SEO", "NOT CHECKED"], ["正式頁面預覽", "NOT CHECKED"]]) readiness.append(el("dt", label), el("dd", state));
+  target.append(el("h3", "發布前檢查"), readiness);
+  $("#publish").textContent = `確認發布 ${changed.length} 項變更`;
   $("#preview-dialog").showModal();
-};
+});
 $("#close-preview").onclick = () => $("#preview-dialog").close();
 $("#publish").onclick = () =>
   action(async () => {
@@ -1144,6 +1220,10 @@ window.addEventListener("beforeunload", (e) => {
 });
 $("#page-filter").oninput = renderPages;
 $("#page-sort").onchange = renderPages;
+$("#page-work-filter").onchange = () => {
+  if ($("#page-work-filter").value === "recent") $("#page-sort").value = "recent";
+  renderPages();
+};
 $("#page-create-form").onsubmit = (event) => {
   event.preventDefault();
   action(async () => {
