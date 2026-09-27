@@ -324,7 +324,7 @@ async function handle(request: Request, env: Env) {
     const ids = [home.featured, ...home.reading];
     if (!Array.isArray(cases) || ids.some(id => !cases.some(row => row?.id === id)))
       throw new HttpError(502, "首頁專題與公開資料不一致");
-    return json({ home, cases: cases.filter(row => ids.includes(row?.id)) });
+    return json({ home, cases });
   }
   if (u.pathname === "/api/page-preview" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
@@ -398,9 +398,6 @@ async function handle(request: Request, env: Env) {
     if (isCase) validateCaseDraft(b.caseBase);
     const homeDraft = b.home !== undefined ? validateHomeDraft(b.home) : undefined;
     const homeBase = b.homeBase !== undefined ? validateHomeDraft(b.homeBase) : undefined;
-    if (homeDraft && homeBase && (JSON.stringify([...Object.keys(homeDraft.summaries)].sort()) !== JSON.stringify([...Object.keys(homeBase.summaries)].sort()) ||
-        Object.keys(homeBase!.summaries).some(id => homeDraft!.summaries[id] !== homeBase!.summaries[id])))
-      throw new HttpError(400, "此處僅可調整現有專題順序");
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;

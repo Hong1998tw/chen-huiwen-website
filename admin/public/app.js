@@ -253,27 +253,63 @@ function renderHomeEditor() {
     }
     const position = el("label", "移至位置 ", "field");
     const select = document.createElement("select"); select.dataset.homeAction = "position";
-    ["主打專題", "右側 01", "右側 02", "右側 03"].forEach((label, n) => {
-      const option = new Option(label, String(n)); select.add(option);
-    });
+    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `右側 ${String(n).padStart(2, "0")}`, String(n))));
     select.value = String(index);
     select.onchange = () => moveHomeStory(index, Number(select.value));
     position.append(select); actions.append(position); row.append(actions); target.append(row);
+    const summary = el("label", "首頁卡片摘要", "field");
+    const textarea = document.createElement("textarea");
+    textarea.value = homeDraft.summaries[order[index]] || "";
+    textarea.maxLength = 500;
+    textarea.dataset.homeSummary = order[index];
+    textarea.oninput = () => { homeDraft.summaries[order[index]] = textarea.value; homeChanged(); };
+    summary.append(textarea); row.append(summary);
+    const remove = el("button", "從首頁移除", "secondary");
+    remove.type = "button"; remove.dataset.homeAction = "remove";
+    remove.disabled = order.length <= 2;
+    remove.onclick = () => {
+      const updated = order.filter((_, position) => position !== index);
+      delete homeDraft.summaries[order[index]];
+      homeDraft.featured = updated[0]; homeDraft.reading = updated.slice(1);
+      renderHomeEditor(); homeChanged();
+    };
+    row.append(remove);
   }
+  const available = [...homeCases.values()].filter(record => !order.includes(record.id))
+    .sort((a, b) => pageCollator.compare(a.title || a.id, b.title || b.id));
+  const addRow = el("div", undefined, "case-editor-row");
+  const label = el("label", "新增公開專題", "field");
+  const chooser = document.createElement("select"); chooser.id = "home-add-select";
+  for (const record of available) chooser.add(new Option(`${record.title} · ${record.id}`, record.id));
+  label.append(chooser); addRow.append(label);
+  const add = el("button", "加入首頁", "secondary");
+  add.type = "button"; add.id = "home-add";
+  add.disabled = !available.length || order.length >= 13;
+  add.onclick = () => {
+    const record = homeCases.get(chooser.value);
+    if (!record || [homeDraft.featured, ...homeDraft.reading].includes(record.id)) return;
+    homeDraft.reading.push(record.id);
+    homeDraft.summaries[record.id] = record.summary || record.title;
+    renderHomeEditor(); homeChanged();
+  };
+  addRow.append(add); target.append(addRow);
+}
+function homeChanged() {
+  pageDirty = true;
+  setPageStatus("首頁專題選片、摘要或順序有變更 · 儲存並發布後才會更新正式首頁");
+  pageControls();
+  if (pageReady) $("#page-frame").contentWindow?.postMessage({
+    type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()],
+  }, "*");
 }
 function moveHomeStory(from, to) {
-  if (!homeDraft || from === to || to < 0 || to > 3) return;
+  if (!homeDraft || from === to || to < 0 || to >= homeDraft.reading.length + 1) return;
   const order = [homeDraft.featured, ...homeDraft.reading];
   order.splice(to, 0, ...order.splice(from, 1));
   homeDraft.featured = order[0];
   homeDraft.reading = order.slice(1);
   renderHomeEditor();
-  pageDirty = true;
-  setPageStatus("首頁專題順序有變更 · 儲存並發布後才會更新正式首頁");
-  pageControls();
-  if (pageReady) $("#page-frame").contentWindow?.postMessage({
-    type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()],
-  }, "*");
+  homeChanged();
 }
 function caseInput(label, value, update, options = {}) {
   const field = el("label", label, "field");
@@ -514,6 +550,7 @@ async function selectPage(page) {
   homeDraft = null;
   homeBase = null;
   homeCases = new Map();
+  let homeUnavailable = false;
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -545,15 +582,21 @@ async function selectPage(page) {
       }
     }
     if (page.path === "index.html") {
-      const current = await api("/api/home");
-      homeCases = new Map(current.cases.map(record => [record.id, record]));
-      if (!homeDraft) homeDraft = structuredClone(current.home);
-      if (!homeBase) homeBase = structuredClone(current.home);
+      try {
+        const current = await api("/api/home");
+        homeCases = new Map(current.cases.map(record => [record.id, record]));
+        if (!homeDraft) homeDraft = structuredClone(current.home);
+        if (!homeBase) homeBase = structuredClone(current.home);
+      } catch (error) {
+        if (homeDraft) throw error;
+        homeUnavailable = true;
+      }
     }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
     renderPageHistory(history.versions || []);
     $("#page-history-panel").hidden = !history.versions?.length;
-    setPageStatus(pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
+    setPageStatus(homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
+      pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
   } else {
     $("#page-history-panel").hidden = true;
   }

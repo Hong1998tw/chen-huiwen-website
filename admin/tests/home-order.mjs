@@ -4,12 +4,13 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, style, dateTimeScript] = await Promise.all([
+const [html, script, style, dateTimeScript, editorRuntime] = await Promise.all([
   readFile(new URL("index.html", root)), readFile(new URL("app.js", root)),
   readFile(new URL("style.css", root)), readFile(new URL("date-time.js", root)),
+  readFile(new URL("../../cms-page-editor.js", import.meta.url)),
 ]);
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "摘要 A", b: "摘要 B", c: "摘要 C", d: "摘要 D" } };
-const cases = ["a", "b", "c", "d"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], updated: "2026-09-27", images: [] }));
+const cases = ["a", "b", "c", "d", "e"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], updated: "2026-09-27", images: [] }));
 const pages = [{ path: "index.html", title: "首頁", source_path: "data/civic-home.json", source_kind: "generated", editor_scope: "partial", commit_sha: "a".repeat(40), publication_status: "published", draft_version: 0 }];
 let draft = null, saved = null;
 const send = (res, body, type = "application/json") => { res.writeHead(200, { "content-type": type }); res.end(body); };
@@ -19,7 +20,8 @@ const server = createServer(async (req, res) => {
   if (path === "/app.js") return send(res, script, "application/javascript");
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
-  if (path === "/api/page-preview") return send(res, "<!doctype html><html><body><main><div class='civic-story-grid'></div></main></body></html>", "text/html; charset=utf-8");
+  if (path === "/api/page-preview") return send(res,
+    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"></head><body><main><div class="civic-story-grid"></div></main><script src="https://www.huiwen.tw/cms-page-editor.js" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json"></script></body></html>`, "text/html; charset=utf-8");
   if (path === "/api/session") return send(res, JSON.stringify({ login: "owner@example.test", csrf: "test" }));
   if (path === "/api/documents") return send(res, JSON.stringify({ documents: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
@@ -43,19 +45,36 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 850 } });
   page.setDefaultTimeout(10000);
   page.on("pageerror", error => { throw error; });
+  await page.route("https://www.huiwen.tw/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/cms-page-editor.js") return route.fulfill({ status: 200, contentType: "application/javascript", body: editorRuntime });
+    if (path === "/cms-editor-manifests/test.json") return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ schemaVersion: 1, path: "index.html", fields: [] }) });
+    return route.abort();
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.locator("#page-tree .tree-page").click();
+  const preview = page.frameLocator("#page-frame");
+  await preview.locator(".civic-feature h3").getByText("專題 A").waitFor();
   await page.locator('[data-home-index="0"] select').selectOption("2");
   assert.deepEqual(await page.locator("#home-editor-fields .case-editor-row p").allTextContents(),
     ["專題 B", "專題 C", "專題 A", "專題 D"]);
   await page.locator('[data-home-index="3"] [data-home-action="up"]').click();
+  await page.locator("#home-add-select").selectOption("e");
+  await page.locator("#home-add").click();
+  await page.locator('[data-home-index="1"] [data-home-action="remove"]').click();
+  await page.locator('[data-home-summary="b"]').fill("自訂首頁摘要");
+  await preview.locator(".civic-feature h3").getByText("專題 B").waitFor();
+  assert.deepEqual(await preview.locator(".civic-reading-row h3").allTextContents(), ["專題 D", "專題 A", "專題 E"]);
   await page.locator("#page-save").click();
   await page.getByText("草稿 v1 已儲存；正式頁面尚未變更。", { exact: true }).waitFor();
   assert.equal(saved.home.featured, "b");
-  assert.deepEqual(saved.home.reading, ["c", "d", "a"]);
+  assert.deepEqual(saved.home.reading, ["d", "a", "e"]);
+  assert.equal(saved.home.summaries.b, "自訂首頁摘要");
+  assert.equal(saved.home.summaries.e, "摘要 e");
+  assert.equal(saved.home.summaries.c, undefined);
   assert.deepEqual(saved.homeBase, home);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  console.log("PASS: homepage featured story and numbered reading cards reorder in CMS");
+  console.log("PASS: homepage story selection, summary editing, removal and ordering in CMS");
 } finally {
   await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
 }

@@ -210,8 +210,8 @@ def home_candidate(item, root, draft):
         if not isinstance(value, dict) or set(value) != {'featured', 'reading', 'summaries'}:
             return False
         ids = [value['featured'], *(value['reading'] if isinstance(value['reading'], list) else [])]
-        return (len(ids) == 4 and all(isinstance(i, str) and re.fullmatch(r'[a-z0-9-]{1,100}', i) for i in ids)
-                and len(set(ids)) == 4 and isinstance(value['summaries'], dict)
+        return (2 <= len(ids) <= 13 and all(isinstance(i, str) and re.fullmatch(r'[a-z0-9-]{1,100}', i) for i in ids)
+                and len(set(ids)) == len(ids) and isinstance(value['summaries'], dict)
                 and set(value['summaries']) == set(ids)
                 and all(isinstance(s, str) and s.strip() and len(s) <= 500 and
                         not re.search(r'[\x00-\x1f\x7f]|<\s*/?[a-z!?]', s, re.I) for s in value['summaries'].values()))
@@ -222,8 +222,6 @@ def home_candidate(item, root, draft):
     current = json.loads(original_text)
     if current != baseline:
         raise engine.PublishError('BASE_DRIFT', ['首頁專題已有更新；請重新載入正式頁面後再排序'])
-    if set([edits['featured'], *edits['reading']]) != set([baseline['featured'], *baseline['reading']]) or edits['summaries'] != baseline['summaries']:
-        raise engine.PublishError('VALIDATION', ['此處僅可調整既有四則專題的順序'])
     public = {row['id'] for row in json.loads((root / 'data/achievements.json').read_text(encoding='utf-8')) if is_public(row)}
     if not set([edits['featured'], *edits['reading']]) <= public:
         raise engine.PublishError('VALIDATION', ['首頁專題必須是可公開的資料'])

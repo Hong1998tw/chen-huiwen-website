@@ -165,6 +165,13 @@ class StandaloneCMS(unittest.TestCase):
         self.assertEqual(json.loads(candidate.new_text)['featured'],order[1])
         self.assertEqual(json.loads(candidate.new_text)['reading'][0],order[0])
         self.assertEqual(engine.http_check('home-content','index.html','publish',fetch=lambda _: (200,'<html>ok</html>')),'PASS')
+        edited['reading'].append('wende-school-center')
+        edited['summaries']['wende-school-center']='文德國小周邊公開建設進度'
+        edited['reading'].remove(order[3]); del edited['summaries'][order[3]]
+        item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':baseline})
+        selected=cms.page_candidate(item)
+        self.assertIn('wende-school-center',json.loads(selected.new_text)['reading'])
+        self.assertNotIn(order[3],json.loads(selected.new_text)['reading'])
         stale=json.loads(json.dumps(baseline)); stale['summaries'][order[0]]+=' 已更新'
         item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':stale})
         with self.assertRaises(engine.PublishError) as error:

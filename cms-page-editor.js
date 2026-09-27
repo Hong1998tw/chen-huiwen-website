@@ -40,7 +40,7 @@
     if (!grid || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
     const cases = new Map(records.map(record => [record.id, record]));
     const ids = [home.featured, ...home.reading];
-    if (ids.length !== 4 || new Set(ids).size !== 4 || ids.some(id => !cases.has(id))) return;
+    if (ids.length < 2 || ids.length > 13 || new Set(ids).size !== ids.length || ids.some(id => !cases.has(id))) return;
     const story = (id, featured, index) => {
       const record = cases.get(id), url = `achievement-${id}.html`;
       const article = node("article", undefined, featured ? "civic-feature" : "civic-reading-row");

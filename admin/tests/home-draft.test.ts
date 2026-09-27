@@ -4,9 +4,12 @@ import { validateHomeDraft } from "../src/home-draft.ts";
 
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "甲", b: "乙", c: "丙", d: "丁" } };
 
-test("homepage order keeps four unique stories and their existing summaries", () => {
+test("homepage selection keeps a featured story, public reading slots and matching summaries", () => {
   assert.deepEqual(validateHomeDraft(home), home);
   assert.throws(() => validateHomeDraft({ ...home, reading: ["a", "c", "d"] }));
-  assert.throws(() => validateHomeDraft({ ...home, reading: ["b", "c"] }));
+  assert.deepEqual(validateHomeDraft({ featured: "a", reading: ["b"], summaries: { a: "甲", b: "乙" } }).reading, ["b"]);
+  assert.throws(() => validateHomeDraft({ ...home, reading: [] }));
+  assert.throws(() => validateHomeDraft({ ...home, reading: Array.from({length: 13}, (_, i) => `r${i}`) }));
+  assert.throws(() => validateHomeDraft({ ...home, reading: ["b", "c", "e"] }));
   assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, b: "<script>bad</script>" } }));
 });
