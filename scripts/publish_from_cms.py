@@ -203,8 +203,10 @@ def case_candidate(item, root, path, draft):
 
 
 def home_candidate(item, root, draft):
-    if draft.get('fields'):
-        raise engine.PublishError('VALIDATION', ['首頁專題排序請與其他首頁文字分開發布；先發布文字後重新載入'])
+    fields = validate_page_payload({'fields': draft.get('fields', {})})
+    published_fields = json.loads(page_text(root)).get('pages', {}).get('index.html', {}).get('edits', {})
+    if fields and fields != published_fields:
+        raise engine.PublishError('VALIDATION', ['首頁專題選片請與尚未發布的首頁文字分開發布；先發布文字後重新載入'])
     edits, baseline = draft.get('home'), draft.get('homeBase')
     def valid(value):
         if not isinstance(value, dict) or set(value) != {'featured', 'reading', 'summaries'}:

@@ -172,6 +172,10 @@ class StandaloneCMS(unittest.TestCase):
         selected=cms.page_candidate(item)
         self.assertIn('wende-school-center',json.loads(selected.new_text)['reading'])
         self.assertNotIn(order[3],json.loads(selected.new_text)['reading'])
+        item['payload']=json.dumps({'fields':{'main>p:nth-of-type(1)':{'sourceHash':'a'*64,'value':'尚未發布的文字'}},'home':edited,'homeBase':baseline})
+        with self.assertRaises(engine.PublishError) as error:
+            cms.page_candidate(item)
+        self.assertEqual(error.exception.code,'VALIDATION')
         stale=json.loads(json.dumps(baseline)); stale['summaries'][order[0]]+=' 已更新'
         item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':stale})
         with self.assertRaises(engine.PublishError) as error:
