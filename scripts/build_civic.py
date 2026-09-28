@@ -2,7 +2,6 @@
 from pathlib import Path
 import json, html, re, hashlib
 from achievement_metadata import is_public
-from build_updates import homepage_fragment
 R=Path(__file__).resolve().parents[1]
 def e(v): return html.escape(str(v),quote=True)
 def block(text,name,body):
@@ -26,6 +25,6 @@ def build():
     rows=[]
     for index,id in enumerate(config['reading'],1):
         c=data[id];rows.append(f'<article class="civic-reading-row"><span class="civic-number" aria-hidden="true">0{index}</span><div><p class="civic-kicker">{e(c["categories"][0])} · {e(c["status"])}</p><h3><a href="achievement-{e(id)}.html">{e(c["title"])}</a></h3><p>{e(summaries.get(id,c["summary"]))}</p><small>內容整理 <time datetime="{e(c["updated"])}">{e(c["updated"])}</time></small></div></article>')
-    page=R/'index.html';text=page.read_text();text=block(text,'civic-stories',feature+'<div class="civic-reading">'+''.join(rows)+'</div>');text=block(text,'home-updates',homepage_fragment(json.loads((R/'data/content-updates.json').read_text())));page.write_text(text)
+    page=R/'index.html';text=page.read_text();text=block(text,'civic-stories',feature+'<div class="civic-reading">'+''.join(rows)+'</div>');page.write_text(text)
     print('Built public civic home selections')
 if __name__=='__main__': build()

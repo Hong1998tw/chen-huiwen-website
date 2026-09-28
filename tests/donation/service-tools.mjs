@@ -26,9 +26,10 @@ try{
     const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
     assert.deepEqual(axe.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[]);
    });
-   if(path==='index.html')await check(`${width} home hours occur once and additions have usable paths`,async()=>{
+   if(path==='index.html')await check(`${width} home hours occur once and update log stays off homepage`,async()=>{
     const text=await page.locator('main').innerText();assert.equal((text.match(/週一至週五/g)||[]).length,1);
-    assert.equal(await page.locator('.home-contact').count(),0);assert.equal(await page.locator('.home-update-entries article').count(),2);
+    assert.equal(await page.locator('.home-contact').count(),0);assert.equal(await page.locator('.civic-latest-updates,.home-update-entries').count(),0);
+    assert(await page.locator('a[href="updates.html"]').count()>=1);
     assert(await page.locator('.hero-portrait').isVisible());
    });
    if(path==='service-guides.html'){
@@ -50,6 +51,8 @@ try{
     assert.match(await page.locator('main').innerText(),/並非即時名額/);
    });
    if(path==='updates.html')await check(`${width} website additions never masquerade as new events`,async()=>{
+    assert.equal(await page.locator('.content-update').count(),2);
+    assert.equal(await page.locator('a[href="updates.xml"]').count(),1);
     assert.equal(await page.locator('.update-dates dd').filter({hasText:'不適用（本次為網站內容補充）'}).count(),2);
     for(const href of await page.locator('.content-update nav a').evaluateAll(links=>links.map(a=>a.getAttribute('href')))){
      const target=new URL(href,base);const response=await context.request.get(target.href);assert(response.ok());
