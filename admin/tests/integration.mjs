@@ -380,7 +380,7 @@ try {
           await page.locator('#command-dialog').waitFor({state:'hidden'});
           assert.equal(await page.evaluate(()=>document.activeElement?.id),'open-command','dialog restores focus');
         }
-        if(width<=760){
+        if(width<=860){
           await page.locator('#open-page-drawer').click();
           assert(await page.locator('#page-explorer').isVisible());
           if(width===390)await capture('mobile-page-drawer-390');
@@ -395,7 +395,7 @@ try {
         await page.locator('#page-tree .tree-page').first().click();
         console.log('CMS_BROWSER: page selected');
         assert(await page.getByRole('heading',{name:'首頁',exact:true}).isVisible());
-        if(width<=760) assert.equal(await page.locator('#page-explorer').isVisible(),false,'mobile drawer closes after selecting a page');
+        if(width<=860) assert.equal(await page.locator('#page-explorer').isVisible(),false,'compact drawer closes after selecting a page');
         await page.waitForFunction(()=>!document.querySelector('#page-draft-status')?.textContent?.includes('正在讀取'));
         await page.locator('#tab-seo').click();
         assert.equal(await page.locator('#tab-seo').getAttribute('aria-selected'),'true');

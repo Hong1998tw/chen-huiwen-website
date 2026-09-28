@@ -498,8 +498,8 @@ async function handle(request: Request, env: Env) {
     const blocks = b.blocks === undefined ? undefined : validateEditorialBlocks(b.blocks);
     const blocksBase = b.blocksBase === undefined ? undefined : validateEditorialBlocks(b.blocksBase);
     if ((b.seo === undefined) !== (b.seoBase === undefined)) throw new HttpError(400, "SEO 草稿缺少原始版本");
-    const seo = b.seo === undefined ? undefined : validatePageSeo(b.seo);
     const seoBase = b.seoBase === undefined ? undefined : validatePageSeo(b.seoBase);
+    const seo = b.seo === undefined ? undefined : validatePageSeo(b.seo, "seo", seoBase);
     const existing = await env.DB.prepare("SELECT payload,version FROM page_edits WHERE path=?").bind(path)
       .first<{payload:string;version:number}>();
     const currentVersion = existing?.version || 0;

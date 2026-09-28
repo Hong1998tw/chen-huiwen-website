@@ -88,7 +88,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px max(24px, calc((100vw - 1360px) / 2));
+  padding: 10px max(24px, calc((100vw - 2200px) / 2 + 24px));
   background: var(--ink);
   color: white;
   border-bottom: 4px solid var(--accent);
@@ -134,7 +134,7 @@ header > div {
 .mobile-only { display:none; }
 kbd { font:12px ui-monospace,monospace; background:#f0f2ed; padding:3px 6px; border-radius:4px; }
 main {
-  max-width: 1280px;
+  max-width: 2200px;
   padding: 38px 24px 70px;
   margin: auto;
 }
@@ -245,6 +245,24 @@ h2 {
   font-weight: 400;
   font-size: 16px;
 }
+.date-period-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 170px) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 7px;
+}
+.field .date-period-controls input,
+.field .date-period-controls select { min-width: 0; margin-top: 0; }
+.compact-date-entry { margin-top: 6px; color: var(--muted); font-size: 13px; font-weight: 500; }
+.compact-date-entry summary { width: max-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.field .compact-date-entry input { margin-top: 5px; padding: 8px 10px; font-size: 14px; }
+.sessions-editor .legal-session-list { display: grid; gap: 10px; margin-top: 10px; }
+.legal-session-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(120px, 1fr) minmax(120px, 1fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.session-control { display: block; min-width: 0; font-weight: 600; }
+.session-control span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 13px; }
+.field .session-control input { margin: 0; min-width: 0; }
+.session-remove { white-space: nowrap; }
+.sessions-editor > small { margin: 8px 0; }
 .field textarea {
   resize: vertical;
   min-height: 120px;
@@ -340,8 +358,8 @@ summary {
 .page-item .badge { justify-self: start; }
 .page-workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: clamp(340px, 22vw, 420px) minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
   margin: 26px 0 36px;
 }
@@ -390,6 +408,9 @@ summary {
   background: transparent;
   font-size: 14px;
   font-weight: 580;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .tree-page:hover { background: #f3f5ee; }
 .tree-page[aria-current="page"] { background: #e8f0dd; box-shadow: inset 3px 0 var(--ink); }
@@ -534,7 +555,7 @@ dialog::backdrop {
 .skip:focus {
   top: 10px;
 }
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   header {
     padding: 10px 14px;
     flex-wrap:wrap;
@@ -603,3 +624,4 @@ dialog::backdrop {
 #fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 20px; }
 .field.wide { grid-column: 1 / -1; }
 @media(max-width:760px){#fields {grid-template-columns:1fr;}}
+@media(max-width:680px){.legal-session-row{grid-template-columns:1fr 1fr}.legal-session-row .session-control:first-child{grid-column:1/-1}.legal-session-row .session-remove{justify-self:start}}

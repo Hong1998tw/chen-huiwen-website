@@ -46,6 +46,15 @@ test("media validation returns the exact field path for inline correction", () =
   assert.throws(() => validateCaseDraft(draft), error => error instanceof Error && (error as any).field === "case.media.0.credit");
 });
 
+test("history explanations and media captions may be left blank", () => {
+  const draft = base();
+  draft.history.push({ date: "2026-09-24", title: "公開進度", text: "" });
+  draft.media.push({ kind: "photo", url: "https://example.gov.tw/photo.jpg", alt: "現場照片", caption: "", credit: "服務處", publicAccessConfirmed: true });
+  const saved = validateCaseDraft(draft);
+  assert.equal(saved.history[0].text, "");
+  assert.equal(saved.media[0].caption, "");
+});
+
 test("source URL and date edits reject private documents and invented invalid dates", () => {
   const draft = base();
   draft.sources[0].url = "https://drive.google.com/file/d/1234567890abcdef/view";

@@ -1,7 +1,7 @@
 import { HttpError } from "./security.ts";
 
 export type PageSeo = { title: string; description: string; image: string; imageAlt: string };
-export function validatePageSeo(value: unknown, fieldPrefix = "seo"): PageSeo {
+export function validatePageSeo(value: unknown, fieldPrefix = "seo", fallback?: PageSeo): PageSeo {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).sort().join() !== "description,image,imageAlt,title")
     throw new HttpError(400, "SEO 欄位格式不正確", fieldPrefix);
@@ -10,10 +10,15 @@ export function validatePageSeo(value: unknown, fieldPrefix = "seo"): PageSeo {
   const result = {} as PageSeo;
   for (const key of Object.keys(limits) as (keyof PageSeo)[]) {
     const text = row[key];
-    if (typeof text !== "string" || !text.trim() || text.length > limits[key] ||
+    if (typeof text !== "string" || text.length > limits[key] ||
         /[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069<>]/u.test(text))
       throw new HttpError(400, `SEO ${key} 不正確`, `${fieldPrefix}.${key}`);
-    result[key] = text.trim();
+    const normalized = text.trim();
+    const inherited = fallback?.[key];
+    const effective = normalized || (typeof inherited === "string" ? inherited.trim() : "");
+    if (!effective)
+      throw new HttpError(400, `SEO ${key} 尚無可沿用的正式值`, `${fieldPrefix}.${key}`);
+    result[key] = effective;
   }
   let image: URL;
   try { image = new URL(result.image); } catch { throw new HttpError(400, "SEO 分享圖網址不正確", `${fieldPrefix}.image`); }

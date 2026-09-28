@@ -66,7 +66,7 @@ export function validateCaseDraft(value: unknown) {
   const history = list(source.history, "推動歷程", 50).map((row, i) => {
     const r = object(row, ["date", "title", "text"], `歷程 ${i + 1}`);
     if (!period(r.date)) throw new HttpError(400, `歷程 ${i + 1} 日期或期間不正確`, `case.history.${i}.date`);
-    return { date: r.date as string, title: string(r.title, "歷程標題", 500, true, `case.history.${i}.title`), text: string(r.text, "歷程說明", 4000, true, `case.history.${i}.text`) };
+    return { date: r.date as string, title: string(r.title, "歷程標題", 500, true, `case.history.${i}.title`), text: string(r.text, "歷程說明", 4000, false, `case.history.${i}.text`) };
   });
   const sources = list(source.sources, "資料來源", 50).map((row, i) => {
     const r = object(row, ["title", "url", "sourceType", "sourceDate"], `來源 ${i + 1}`);
@@ -84,7 +84,7 @@ export function validateCaseDraft(value: unknown) {
     if (!mediaProvider(link, String(r.kind))) throw new HttpError(400, "媒體網址須為 Drive 檔案、Facebook 貼文、YouTube 影片或直接圖片／影片檔", `${field}.url`);
     if (r.publicAccessConfirmed !== true) throw new HttpError(400, "請先確認媒體不需登入即可公開檢視", `${field}.publicAccessConfirmed`);
     return { kind: r.kind as string, url: link, alt: string(r.alt, "媒體替代文字", 500, true, `${field}.alt`),
-      caption: string(r.caption, "媒體說明", 500, true, `${field}.caption`), credit: string(r.credit, "媒體來源", 500, true, `${field}.credit`), publicAccessConfirmed: true };
+      caption: string(r.caption, "媒體說明", 500, false, `${field}.caption`), credit: string(r.credit, "媒體來源", 500, true, `${field}.credit`), publicAccessConfirmed: true };
   });
   if (!source.imageMetadata || typeof source.imageMetadata !== "object" || Array.isArray(source.imageMetadata))
     throw new HttpError(400, "原有照片說明格式不正確");
@@ -97,7 +97,7 @@ export function validateCaseDraft(value: unknown) {
     if (!/^[a-zA-Z0-9_.-]+\.(?:jpe?g|png|webp|avif)$/.test(filename)) throw new HttpError(400, "原有照片檔名不正確");
     const item = object(raw, ["alt", "caption", "credit", "sourceUrl"], "原有照片說明");
     const field = `case.imageMetadata.${filename}`;
-    imageMetadata[filename] = { alt: string(item.alt, "照片替代文字", 500, true, `${field}.alt`), caption: string(item.caption, "照片說明", 500, true, `${field}.caption`),
+    imageMetadata[filename] = { alt: string(item.alt, "照片替代文字", 500, true, `${field}.alt`), caption: string(item.caption, "照片說明", 500, false, `${field}.caption`),
       credit: string(item.credit, "照片來源", 500, true, `${field}.credit`), sourceUrl: url(item.sourceUrl, "照片原始網址", false, `${field}.sourceUrl`) };
   }
   return { title: string(source.title, "標題", 500, true, "case.title"), summary: string(source.summary, "摘要", 4000, false, "case.summary"),

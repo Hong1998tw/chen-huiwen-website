@@ -49,7 +49,10 @@ export function validate(
     )
       throw new HttpError(400, `${k} 含不允許的文字或長度`, `document.${k}`);
   }
-  for (const k of keys.filter((k) => !["changeNote", "sessions"].includes(k)))
+  const requiredKeys = domain === "events"
+    ? ["name", "start", "end", "sourceUrl", "verifiedAt", "status"]
+    : ["month", "observedAt", "sourceUrl", "sessions"];
+  for (const k of requiredKeys.filter((key) => key !== "sessions"))
     if (typeof p[k] !== "string" || !(p[k] as string).trim())
       throw new HttpError(400, `${k} 尚未填寫`, `document.${k}`);
   let url: URL;
@@ -92,12 +95,14 @@ export function validate(
     if (p.status !== "scheduled" && !p.changeNote)
       throw new HttpError(400, "改期或取消請填寫原因", "document.changeNote");
     for (const k of ["verifiedAt", "updatedAt", "reviewDueAt"])
-      if (!day(p[k])) throw new HttpError(400, `${k} 日期不正確`, `document.${k}`);
+      if (p[k] && !day(p[k])) throw new HttpError(400, `${k} 日期不正確`, `document.${k}`);
+    if (p.status !== "scheduled" && !day(p.updatedAt))
+      throw new HttpError(400, "改期或取消請填寫來源更新日", "document.updatedAt");
   } else {
     if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(String(p.month)))
       throw new HttpError(400, "月份不正確", "document.month");
     if (!day(p.observedAt)) throw new HttpError(400, "核對日期不正確", "document.observedAt");
-    if (!day(p.nextReviewAt)) throw new HttpError(400, "下次核對日期不正確", "document.nextReviewAt");
+    if (p.nextReviewAt && !day(p.nextReviewAt)) throw new HttpError(400, "下次核對日期不正確", "document.nextReviewAt");
     if (
       !Array.isArray(p.sessions) ||
       !p.sessions.length ||
@@ -120,10 +125,10 @@ export function validate(
         throw new HttpError(400, `第 ${index + 1} 個時段日期、時間或重複日期有誤`, "document.sessions");
       dates.add(s.date);
     }
-    if (
+    if (p.nextReviewAt && (
       String(p.nextReviewAt) < String(p.observedAt) ||
       !String(p.nextReviewAt).startsWith(String(p.month))
-    )
+    ))
       throw new HttpError(400, "下次核對須在核對日之後且在該月份內", "document.nextReviewAt");
   }
   return p;
