@@ -43,20 +43,20 @@ const statusNames = {
 const retryablePublicationMessage = "網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。";
 const labels = {
   name: "活動名稱",
-  start: "開始時間",
-  end: "結束時間",
-  content: "活動說明",
-  registration: "參與／報名方式",
+  start: "開始時間（台灣時間）",
+  end: "結束時間（台灣時間）",
+  content: "活動說明（選填）",
+  registration: "參與／報名方式（選填）",
   sourceUrl: "公開來源網址",
   verifiedAt: "來源核對日",
   status: "活動狀態",
-  changeNote: "異動原因",
-  updatedAt: "來源更新日",
-  reviewDueAt: "下次複查日",
+  changeNote: "異動原因（改期／取消必填）",
+  updatedAt: "來源更新日（排定時選填）",
+  reviewDueAt: "下次複查日（選填）",
   month: "月表月份",
   observedAt: "核對日",
-  sourceTitle: "來源圖卡標題",
-  nextReviewAt: "下次核對日",
+  sourceTitle: "來源圖卡標題（選填）",
+  nextReviewAt: "下次核對日（選填）",
   sessions: "諮詢時段",
 };
 const eventKeys = [
@@ -87,7 +87,7 @@ function el(tag, text, cls) {
   return n;
 }
 function makeField(label, options = {}) {
-  const field = el("label", undefined, "field"), caption = el("span", undefined, "field-label");
+  const field = el(options.group ? "div" : "label", undefined, "field"), caption = el(options.group ? "div" : "span", undefined, "field-label");
   caption.append(document.createTextNode(label));
   if (options.required) {
     const marker = el("span", "＊", "required-marker");
@@ -119,12 +119,37 @@ function connectField(field, control, required = false) {
   if (error) field.append(error);
   return field;
 }
+function setFieldRequired(field, control, required) {
+  if (!field || !control) return;
+  const caption = field.querySelector(".field-label");
+  let marker = caption?.querySelector(".required-marker");
+  if (required && caption && !marker) {
+    marker = el("span", "＊", "required-marker");
+    marker.setAttribute("aria-hidden", "true");
+    caption.append(marker);
+  } else if (!required && marker) marker.remove();
+  control.required = required;
+  if (required) control.setAttribute("aria-required", "true");
+  else control.removeAttribute("aria-required");
+}
+function syncOptionalRowRequired(row) {
+  if (!row || row.dataset.optionalEmptyRow !== "true") return;
+  const active = Boolean(row.dataset.forceValidate) ||
+    [...row.querySelectorAll("input:not([type=checkbox]):not([data-case-action]),textarea")]
+      .some(control => String(control.value || "").trim()) ||
+    [...row.querySelectorAll('input[type="checkbox"]')].some(control => control.checked);
+  for (const field of row.querySelectorAll('[data-required="true"]')) {
+    const control = field.querySelector(".date-period-controls input") || field.querySelector("input,textarea,select");
+    setFieldRequired(field, control, active);
+  }
+}
 function clearFieldError(control) {
   const field = control.closest("[data-validation-path]");
   if (!field) return;
   const error = field.querySelector(".field-error");
   const previousMessage = error?.textContent;
   field.classList.remove("has-error");
+  for (const invalid of field.querySelectorAll("[aria-invalid=true]")) invalid.removeAttribute("aria-invalid");
   control.removeAttribute("aria-invalid");
   if (error) { error.textContent = ""; error.hidden = true; }
   if (previousMessage && $("#notice")?.textContent === previousMessage) $("#notice").textContent = "";
@@ -403,6 +428,17 @@ function pageControls() {
 function setPageStatus(message) {
   $("#page-draft-status").textContent = message;
 }
+function effectiveSeoValues(seo, fallback = seoBase, page = editorialDraft) {
+  const keys = ["title", "description", "image", "imageAlt"];
+  const defaults = page ? {
+    title: `${page.title || "新頁面"}｜陳慧文`,
+    description: page.summary || `${page.title || "新頁面"}｜陳慧文，高雄市議員・鳳山區公開資訊。`,
+    image: "https://www.huiwen.tw/assets/site-share-20260909.png",
+    imageAlt: "陳慧文・高雄市議員・鳳山區",
+  } : {};
+  return Object.fromEntries(keys.map(key => [key,
+    typeof seo?.[key] === "string" && seo[key].trim() ? seo[key].trim() : fallback?.[key] || defaults[key] || "" ]));
+}
 function applyDraftToFrame() {
   if (!pageReady || !selectedPage || !pageNonce) return;
   const fields = [...pageFields.entries()].map(([id, value]) => ({ id, ...value }));
@@ -410,8 +446,9 @@ function applyDraftToFrame() {
   frame.contentWindow?.postMessage({ type: "huiwen-cms-apply", nonce: pageNonce, fields }, "*");
   if (caseDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-case-preview", nonce: pageNonce, case: caseDraft }, "*");
   if (homeDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()] }, "*");
-  if (seoDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
+  if (seoDraft) frame.contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: effectiveSeoValues(seoDraft, seoBase, null) }, "*");
   if (editorialDraft) frame.contentWindow?.postMessage({type:"huiwen-cms-editorial-preview",nonce:pageNonce,page:editorialDraft},"*");
+  if (editorialDraft) frame.contentWindow?.postMessage({type:"huiwen-cms-seo-preview",nonce:pageNonce,seo:effectiveSeoValues(editorialDraft.seo, null, editorialDraft)},"*");
   if (extraBlocks) frame.contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
 }
 function renderSeoEditor() {
@@ -423,7 +460,7 @@ function renderSeoEditor() {
     ["title", "搜尋與分享標題", false], ["description", "搜尋與分享說明", true],
     ["image", "分享圖片網址（本站 assets）", false], ["imageAlt", "分享圖片替代文字", false],
   ]) {
-    const field = makeField(label, { required: true, path: `seo.${key}` });
+    const field = makeField(`${label}（選填）`, { path: `seo.${key}` });
     field.classList.add("wide");
     const input = document.createElement(multiline ? "textarea" : "input");
     input.name = `seo-${key}`; input.value = seoDraft[key] || "";
@@ -436,10 +473,11 @@ function renderSeoEditor() {
       pageDirty = true;
       setPageStatus("SEO 有變更 · 儲存並發布後才會更新正式頁面");
       pageControls();
-      $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: seoDraft }, "*");
+      $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: effectiveSeoValues(seoDraft, seoBase, null) }, "*");
     });
     input.addEventListener("input", () => clearFieldError(input));
-    connectField(field, input, true);
+    connectField(field, input);
+    field.append(el("small", "留白會沿用目前正式頁面的設定。"));
     if (counter) field.append(counter);
     target.append(field);
   }
@@ -456,7 +494,10 @@ function editorialChanged() {
   pageDirty = true;
   setPageStatus("專頁內容、區塊或 SEO 有變更 · 儲存並發布後才會更新正式頁面");
   pageControls();
-  if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-editorial-preview",nonce:pageNonce,page:editorialDraft},"*");
+  if (pageReady) {
+    $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-editorial-preview",nonce:pageNonce,page:editorialDraft},"*");
+    $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-seo-preview",nonce:pageNonce,seo:effectiveSeoValues(editorialDraft.seo,null,editorialDraft)},"*");
+  }
 }
 function extraChanged() {
   pageDirty = true;
@@ -464,24 +505,68 @@ function extraChanged() {
   pageControls();
   if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
 }
+function installCompactEntry(field, picker, label, kind, commit, parent = field) {
+  const details = el("details", undefined, "compact-date-entry"), summary = el("summary", "快速輸入"), text = document.createElement("input");
+  const type = {day:"date",month:"month",dateTime:"datetime-local",time:"time"}[kind];
+  text.type = "text";
+  text.placeholder = ({day:"20260927",month:"202609",dateTime:"202609271930",time:"1930"})[kind] || "簡寫日期／時間";
+  text.setAttribute("aria-label", `${label}快速輸入`);
+  const error = field.querySelector(".field-error");
+  if (error) text.setAttribute("aria-describedby", error.id);
+  details.append(summary, text);
+  if (parent === field && error) parent.insertBefore(details, error);
+  else parent.append(details);
+  text.addEventListener("input", () => clearFieldError(text));
+  text.addEventListener("blur", () => {
+    const raw = text.value.trim();
+    if (!raw) {
+      picker.value = "";
+      clearFieldError(text);
+      commit("");
+      return;
+    }
+    const source = kind === "dateTime" ? raw.replace(/(?:Z|[+-]\d{2}:\d{2})$/, "") : raw;
+    const normalized = dateTime[kind](source), probe = document.createElement("input");
+    probe.type = type;
+    probe.value = normalized;
+    if (!normalized || probe.value !== normalized) {
+      field.classList.add("has-error");
+      const message = `格式不正確，請使用日曆／時間選擇器或輸入 ${text.placeholder} 格式。`;
+      if (error) { error.textContent = message; error.hidden = false; }
+      text.setAttribute("aria-invalid", "true");
+      return;
+    }
+    picker.value = normalized;
+    text.value = normalized;
+    clearFieldError(text);
+    commit(normalized);
+  });
+}
 function editorialInput(label, value, update, options = {}) {
-  const field = makeField(label, { required: options.required, path: options.path });
+  const field = makeField(label, { required: options.required, path: options.path, group: Boolean(options.dateKind && options.dateKind !== "period") });
   field.classList.add("wide");
   const input = document.createElement(options.multiline ? "textarea" : "input");
   if (options.multiline) input.rows = options.rows || 3;
-  else input.type = options.type || "text";
-  input.value = value || "";
+  else input.type = options.type || ({day:"date",month:"month",dateTime:"datetime-local"}[options.dateKind] || "text");
+  const localDateTime = String(value || "").replace(/(?:Z|[+-]\d{2}:\d{2})$/, "").slice(0, 16);
+  input.value = options.dateKind === "dateTime" ? dateTime.dateTime(localDateTime) : options.dateKind && options.dateKind !== "period" ? dateTime[options.dateKind](value) : value || "";
   input.placeholder = options.placeholder || "";
   const signal = options.onChange || editorialChanged;
-  input.addEventListener("input", () => { clearFieldError(input); update(input.value); signal(); });
-  if (options.dateKind) input.addEventListener("blur", () => {
-    const raw = input.value.replace(/\+08:00$/, "");
-    const normalized = dateTime[options.dateKind](raw);
-    const output = options.dateKind === "dateTime" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)
-      ? normalized + "+08:00" : normalized;
-    if (output !== input.value) { input.value = output; update(output); signal(); }
-  });
+  const changed = () => {
+    clearFieldError(input);
+    const normalized = options.dateKind ? dateTime[options.dateKind](input.value) : input.value;
+    update(options.dateKind === "dateTime" && normalized ? `${normalized}+08:00` : normalized);
+    syncOptionalRowRequired(input.closest('[data-optional-empty-row="true"]'));
+    signal();
+  };
+  input.addEventListener("input", changed);
+  input.addEventListener("change", changed);
   connectField(field, input, options.required);
+  if (options.dateKind && options.dateKind !== "period") installCompactEntry(field, input, label, options.dateKind, raw => {
+    update(options.dateKind === "dateTime" && raw ? `${raw}+08:00` : raw);
+    syncOptionalRowRequired(field.closest('[data-optional-empty-row="true"]'));
+    signal();
+  });
   return field;
 }
 function renderEditorialEditor() {
@@ -495,18 +580,18 @@ function renderEditorialEditor() {
   const p = editorialDraft;
   target.append(
     editorialInput("頁面標題", p.title, v => p.title = v, {required:true,path:"editorial.title"}),
-    editorialInput("導讀摘要", p.summary, v => p.summary = v, {multiline:true,required:true,path:"editorial.summary"}),
+    editorialInput("導讀摘要（選填）", p.summary, v => p.summary = v, {multiline:true,path:"editorial.summary"}),
     editorialInput("內容整理日期", p.updated, v => p.updated = v, {dateKind:"day",placeholder:"20260927 或 2026-09-27",required:true,path:"editorial.updated"}),
     editorialInput("事件開始（選填，台灣時間）", p.eventStart, v => p.eventStart = v, {dateKind:"dateTime",placeholder:"202609271930 或 2026-09-27T19:30+08:00"}),
-    editorialInput("事件結束（選填）", p.eventEnd, v => p.eventEnd = v, {dateKind:"dateTime"}),
+    editorialInput("事件結束（選填，台灣時間）", p.eventEnd, v => p.eventEnd = v, {dateKind:"dateTime"}),
     el("h4", "頁面區塊與順序")
   );
   seoTarget.append(
     el("h3", "搜尋與社群分享 SEO"),
-    editorialInput("SEO 標題", p.seo.title, v => p.seo.title = v, {required:true,path:"editorial.seo.title"}),
-    editorialInput("SEO 描述", p.seo.description, v => p.seo.description = v, {multiline:true,required:true,path:"editorial.seo.description"}),
-    editorialInput("分享圖片（本站 assets 圖片網址）", p.seo.image, v => p.seo.image = v, {type:"url",required:true,path:"editorial.seo.image"}),
-    editorialInput("分享圖片替代文字", p.seo.imageAlt, v => p.seo.imageAlt = v, {required:true,path:"editorial.seo.imageAlt"}),
+    editorialInput("SEO 標題（選填）", p.seo.title, v => p.seo.title = v, {path:"editorial.seo.title"}),
+    editorialInput("SEO 描述（選填）", p.seo.description, v => p.seo.description = v, {multiline:true,path:"editorial.seo.description"}),
+    editorialInput("分享圖片（選填；留白使用預設圖）", p.seo.image, v => p.seo.image = v, {type:"url",path:"editorial.seo.image"}),
+    editorialInput("分享圖片替代文字（選填）", p.seo.imageAlt, v => p.seo.imageAlt = v, {path:"editorial.seo.imageAlt"}),
   );
   renderBlockEditor(target,p.blocks,editorialChanged,"editorial.blocks");
 }
@@ -538,7 +623,7 @@ function renderBlockEditor(target, blocks, changed, pathPrefix) {
     const input = (label,value,update,options={}) => editorialInput(label,value,update,{...options,onChange:changed});
     if (["heading","timeline","source"].includes(block.type)) row.append(input("標題",block.title,v=>block.title=v,{required:true,path:`${path}.title`}));
     if (block.type === "map") row.append(input("標題（選填）",block.title,v=>block.title=v,{path:`${path}.title`}));
-    if (["paragraph","timeline"].includes(block.type)) row.append(input(block.type === "paragraph" ? "段落內容" : "說明／圖說",block.text,v=>block.text=v,{multiline:true,required:true,path:`${path}.text`}));
+    if (["paragraph","timeline"].includes(block.type)) row.append(input(block.type === "paragraph" ? "段落內容" : "說明／圖說（選填）",block.text,v=>block.text=v,{multiline:true,required:block.type === "paragraph",path:`${path}.text`}));
     if (["photo","video"].includes(block.type)) row.append(input("說明／圖說（選填）",block.text,v=>block.text=v,{multiline:true,path:`${path}.text`}));
     if (["timeline","source"].includes(block.type)) row.append(input("日期",block.date,v=>block.date=v,{dateKind:"day",placeholder:"20260927",required:block.type === "timeline",path:`${path}.date`}));
     if (["source","photo","video"].includes(block.type)) row.append(input("公開網址",block.url,v=>block.url=v,{type:"url",required:true,path:`${path}.url`}));
@@ -546,7 +631,7 @@ function renderBlockEditor(target, blocks, changed, pathPrefix) {
       row.append(input("替代文字",block.alt,v=>block.alt=v,{required:true,path:`${path}.alt`}), input("來源署名",block.credit,v=>block.credit=v,{required:true,path:`${path}.credit`}));
       const confirmation=makeField("我已確認此網址不需登入即可公開瀏覽",{required:true,path:`${path}.publicAccessConfirmed`}), check=document.createElement("input");
       check.type="checkbox"; check.checked=Boolean(block.publicAccessConfirmed);
-      check.onchange=()=>{clearFieldError(check);block.publicAccessConfirmed=check.checked;changed();};
+      check.onchange=()=>{clearFieldError(check);block.publicAccessConfirmed=check.checked;syncOptionalRowRequired(row);changed();};
       confirmation.insertBefore(check,confirmation.firstChild); check.required=true; check.setAttribute("aria-required","true");
       confirmation.append(confirmation.querySelector(".field-error")); row.append(confirmation);
     }
@@ -559,6 +644,7 @@ function renderBlockEditor(target, blocks, changed, pathPrefix) {
       }
     }
     target.append(row);
+    syncOptionalRowRequired(row);
   }
   const addRow = el("div",undefined,"case-editor-row"), select = document.createElement("select");
   for (const [value,label] of [["heading","標題"],["paragraph","段落"],["timeline","時間軸"],["source","資料來源"],["photo","照片"],["video","影片"],["map","地圖"]]) {
@@ -596,13 +682,13 @@ function renderHomeEditor() {
     select.value = String(index);
     select.onchange = () => moveHomeStory(index, Number(select.value));
     position.append(select); actions.append(position); row.append(actions); target.append(row);
-    const summary = makeField("首頁卡片摘要",{required:true,path:`home.summaries.${order[index]}`});
+    const summary = makeField("首頁卡片摘要（選填；留白使用政績摘要）",{path:`home.summaries.${order[index]}`});
     const textarea = document.createElement("textarea");
     textarea.value = homeDraft.summaries[order[index]] || "";
     textarea.maxLength = 500;
     textarea.dataset.homeSummary = order[index];
     textarea.oninput = () => { clearFieldError(textarea); homeDraft.summaries[order[index]] = textarea.value; homeChanged(); };
-    connectField(summary,textarea,true); row.append(summary);
+    connectField(summary,textarea); row.append(summary);
     const remove = el("button", "從首頁移除", "secondary");
     remove.type = "button"; remove.dataset.homeAction = "remove";
     remove.disabled = order.length <= 2;
@@ -650,19 +736,91 @@ function moveHomeStory(from, to) {
   renderHomeEditor();
   homeChanged();
 }
-function caseInput(label, value, update, options = {}) {
-  const field = makeField(label,{required:options.required,path:options.path});
-  const input = document.createElement(options.multiline ? "textarea" : "input");
-  if (!options.multiline) input.type = options.type || "text";
-  if (options.dateKind) input.inputMode = "numeric";
-  input.value = value || "";
-  if (options.placeholder) input.placeholder = options.placeholder;
-  input.addEventListener("input", () => { clearFieldError(input); update(input.value); caseChanged(); });
-  if (options.dateKind) input.addEventListener("blur", () => {
-    const normalized = dateTime[options.dateKind](input.value);
-    if (normalized !== input.value) { input.value = normalized; update(normalized); caseChanged(); }
+function periodKind(value) {
+  if (/^20\d\d-\d\d-\d\d$/.test(String(value || ""))) return "day";
+  if (/^20\d\d-\d\d$/.test(String(value || ""))) return "month";
+  if (/^20\d\d$/.test(String(value || ""))) return "year";
+  return "custom";
+}
+function periodValue(kind, value) {
+  if (kind === "day") return dateTime.day(value);
+  if (kind === "month") return dateTime.month(value);
+  if (kind === "year") return String(value || "").trim();
+  return dateTime.period(value);
+}
+function periodControlValue(kind, value) {
+  const raw = String(value || "").trim();
+  if (kind === "day") return /^20\d\d-\d\d$/.test(raw) ? `${raw}-01` : /^20\d\d$/.test(raw) ? `${raw}-01-01` : raw;
+  if (kind === "month") return /^20\d\d-\d\d-\d\d$/.test(raw) ? raw.slice(0, 7) : /^20\d\d$/.test(raw) ? `${raw}-01` : raw;
+  if (kind === "year") return raw.match(/^20\d\d/)?.[0] || "";
+  return raw;
+}
+function casePeriodInput(label, value, update, options = {}) {
+  const field = makeField(label, { required: options.required, path: options.path, group: true });
+  const controls = el("div", undefined, "date-period-controls"), select = document.createElement("select");
+  const error = field.querySelector(".field-error");
+  error?.remove();
+  select.setAttribute("aria-label", `${label}格式`);
+  for (const [kind, text] of [["day", "選日期"], ["month", "選月份"], ["year", "選年份"], ["custom", "自訂期間"]]) {
+    const option = el("option", text); option.value = kind; select.append(option);
+  }
+  let kind = periodKind(value), input;
+  select.value = kind;
+  const makeControl = (nextKind, currentValue) => {
+    const next = document.createElement("input");
+    next.type = nextKind === "day" ? "date" : nextKind === "month" ? "month" : nextKind === "year" ? "number" : "text";
+    if (nextKind === "year") { next.min = "2000"; next.max = "2099"; next.step = "1"; }
+    next.value = periodControlValue(nextKind, currentValue);
+    next.setAttribute("aria-label", `${label}：${select.selectedOptions[0]?.textContent || "日期"}`);
+    if (options.required) { next.required = true; next.setAttribute("aria-required", "true"); }
+    const error = field.querySelector(".field-error");
+    if (error) next.setAttribute("aria-describedby", error.id);
+    next.addEventListener("input", changed);
+    next.addEventListener("change", changed);
+    return next;
+  };
+  input = makeControl(kind, value);
+  function changed() {
+    clearFieldError(input);
+    update(periodValue(kind, input.value));
+    syncOptionalRowRequired(field.closest('[data-optional-empty-row="true"]'));
+    caseChanged();
+  }
+  select.addEventListener("change", () => {
+    const previous = input.value;
+    const normalizedPrevious = periodValue(kind, previous);
+    kind = select.value;
+    const nextValue = kind === "custom" ? normalizedPrevious : periodControlValue(kind, normalizedPrevious);
+    const next = makeControl(kind, nextValue);
+    input.replaceWith(next);
+    input = next;
+    clearFieldError(input);
+    update(periodValue(kind, input.value));
+    syncOptionalRowRequired(field.closest('[data-optional-empty-row="true"]'));
+    caseChanged();
   });
-  return connectField(field,input,options.required);
+  controls.append(select, input);
+  field.append(controls);
+  if (error) field.append(error);
+  return field;
+}
+function caseInput(label, value, update, options = {}) {
+  if (options.dateKind === "period") return casePeriodInput(label, value, update, options);
+  const field = makeField(label,{required:options.required,path:options.path,group:Boolean(options.dateKind)});
+  const input = document.createElement(options.multiline ? "textarea" : "input");
+  if (!options.multiline) input.type = options.type || (options.dateKind === "day" ? "date" : "text");
+  input.value = options.dateKind ? dateTime[options.dateKind](value) : value || "";
+  if (options.placeholder) input.placeholder = options.placeholder;
+  const changed = () => { clearFieldError(input); update(options.dateKind ? dateTime[options.dateKind](input.value) : input.value); syncOptionalRowRequired(input.closest('[data-optional-empty-row="true"]')); caseChanged(); };
+  input.addEventListener("input", changed);
+  input.addEventListener("change", changed);
+  connectField(field,input,options.required);
+  if (options.dateKind) installCompactEntry(field, input, label, options.dateKind, raw => {
+    update(raw);
+    syncOptionalRowRequired(field.closest('[data-optional-empty-row="true"]'));
+    caseChanged();
+  });
+  return field;
 }
 function caseChanged() {
   pageDirty = true;
@@ -784,6 +942,7 @@ function caseGroup(title, key, blank, inputs, maxCount, sectionKey = key) {
     row.append(...inputs(caseDraft[key][i], i));
     row.append(caseRowActions(key, i, title));
     body.append(row);
+    syncOptionalRowRequired(row);
   }
   const add = el("button", `＋ 新增${title}`, "secondary");
   add.type = "button";
@@ -815,7 +974,7 @@ function renderCaseEditor() {
   groups.history = caseGroup("推動歷程", "history", { date: "", title: "", text: "" }, (item,i) => [
     caseInput("日期或期間（例如 2026-09-24、2026-09、2026）", item.date, (v) => item.date = v, { dateKind: "period",required:true,path:`case.history.${i}.date` }),
     caseInput("標題", item.title, (v) => item.title = v,{required:true,path:`case.history.${i}.title`}),
-    caseInput("說明", item.text, (v) => item.text = v, { multiline: true,required:true,path:`case.history.${i}.text` }),
+    caseInput("說明（選填）", item.text, (v) => item.text = v, { multiline: true,path:`case.history.${i}.text` }),
   ], 50);
   groups.sources = caseGroup("資料來源", "sources", { title: "", url: "", sourceType: "", sourceDate: "" }, (item,i) => [
     caseInput("來源日期或期間（選填）", item.sourceDate, (v) => item.sourceDate = v, { dateKind: "period",path:`case.sources.${i}.sourceDate` }),
@@ -827,22 +986,22 @@ function renderCaseEditor() {
   groups.sources.prepend(el("p", `${caseDraft.sources.length} 筆來源 · ${sourceCount} 筆有公開網址。網址可達不代表主張已核實；內容核對仍須由人工確認。`, "source-health hint"));
   groups.media = caseGroup("照片與影片", "media", { kind: "photo", url: "", alt: "", caption: "", credit: "", publicAccessConfirmed: false }, (item,i) => {
     const path = `case.media.${i}`;
-    const kind = makeField("類型",{required:true,path:`${path}.kind`}), select = document.createElement("select");
+    const kind = makeField("類型",{path:`${path}.kind`}), select = document.createElement("select");
     for (const [value, label] of [["photo", "照片"], ["video", "影片"]]) { const option = el("option", label); option.value = value; select.append(option); }
     select.value = item.kind;
-    select.onchange = () => { clearFieldError(select); select.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.kind = select.value; caseChanged(); };
-    connectField(kind,select,true);
+    select.onchange = () => { clearFieldError(select); select.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.kind = select.value; syncOptionalRowRequired(select.closest('[data-optional-empty-row="true"]')); caseChanged(); };
+    connectField(kind,select);
     const access = makeField("我已確認此網址不需登入即可公開檢視",{required:true,path:`${path}.publicAccessConfirmed`});
     const check = document.createElement("input"); check.type = "checkbox"; check.checked = Boolean(item.publicAccessConfirmed);
     check.required=true;check.setAttribute("aria-required","true");
-    check.onchange = () => { clearFieldError(check); if (check.checked) check.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.publicAccessConfirmed = check.checked; caseChanged(); };
+    check.onchange = () => { clearFieldError(check); if (check.checked) check.closest("[data-optional-empty-row]")?.setAttribute("data-force-validate","true"); item.publicAccessConfirmed = check.checked; syncOptionalRowRequired(check.closest('[data-optional-empty-row="true"]')); caseChanged(); };
     const error=access.querySelector(".field-error");
     if(error)check.setAttribute("aria-describedby",error.id);
     access.insertBefore(check,access.firstChild);
     return [kind,
       caseInput("Drive／Facebook／YouTube 或圖片、影片公開網址", item.url, (v) => item.url = v, { type: "url",required:true,path:`${path}.url` }),
       caseInput("替代文字／影片名稱", item.alt, (v) => item.alt = v,{required:true,path:`${path}.alt`}),
-      caseInput("說明", item.caption, (v) => item.caption = v, { multiline: true,required:true,path:`${path}.caption` }),
+      caseInput("說明（選填）", item.caption, (v) => item.caption = v, { multiline: true,path:`${path}.caption` }),
       caseInput("拍攝者／刊登來源", item.credit, (v) => item.credit = v,{required:true,path:`${path}.credit`}), access];
   }, 24);
   const local = el("div", undefined, "case-local-group");
@@ -852,7 +1011,7 @@ function renderCaseEditor() {
     const row = el("div", undefined, "case-editor-row");
     row.dataset.caseList = "images";
     row.dataset.caseIndex = String(index);
-    row.dataset.optionalEmptyRow = item ? "false" : "true";
+    row.dataset.optionalEmptyRow = caseBase?.imageMetadata?.[filename] ? "false" : "true";
     row.append(el("strong", filename));
     const thumbnail = document.createElement("img");
     thumbnail.src = `https://www.huiwen.tw/assets/${encodeURIComponent(filename)}`;
@@ -868,7 +1027,7 @@ function renderCaseEditor() {
       const field = `case.imageMetadata.${filename}`;
       row.append(
         caseInput("替代文字", item.alt, (v) => item.alt = v,{required:true,path:`${field}.alt`}),
-        caseInput("照片說明", item.caption, (v) => item.caption = v,{required:true,path:`${field}.caption`}),
+        caseInput("照片說明（選填）", item.caption, (v) => item.caption = v,{path:`${field}.caption`}),
         caseInput("照片來源", item.credit, (v) => item.credit = v,{required:true,path:`${field}.credit`}),
         caseInput("原始刊登網址", item.sourceUrl, (v) => item.sourceUrl = v, { type: "url",required:true,path:`${field}.sourceUrl` }));
       if (!caseBase?.imageMetadata?.[filename]) {
@@ -879,6 +1038,7 @@ function renderCaseEditor() {
       }
     }
     row.append(caseRowActions("images", index, "既有網站照片", false));
+    syncOptionalRowRequired(row);
     local.append(row);
   }
   if (caseDraft.images.length) groups.media.append(local);
@@ -1133,6 +1293,80 @@ async function select(d) {
   render();
   await history();
 }
+function markDocumentDirty() {
+  dirty = true;
+  $("#version").textContent = `${selected.id ? `草稿 v${selected.version}` : "新活動"} · 有未儲存變更`;
+  $("#preview").disabled = true;
+}
+function renderSessionField(sessionsValue, required) {
+  const field = makeField(labels.sessions, { group: true, required, path: "document.sessions" });
+  field.id = "field-sessions";
+  field.classList.add("wide", "sessions-editor");
+  const list = el("div", undefined, "legal-session-list");
+  const error = field.querySelector(".field-error");
+  let sessions = Array.isArray(sessionsValue) ? structuredClone(sessionsValue) : [];
+  if (!sessions.length) sessions = [{ date: "", start: "", end: "" }];
+
+  const renderRows = () => {
+    list.replaceChildren();
+    sessions.forEach((session, index) => {
+      const row = el("div", undefined, "legal-session-row");
+      row.dataset.sessionIndex = String(index);
+      for (const [key, caption, type] of [["date", "服務日期", "date"], ["start", "開始時間", "time"], ["end", "結束時間", "time"]]) {
+        const controlLabel = el("div", undefined, "session-control"), text = el("span", caption), input = document.createElement("input");
+        input.type = type;
+        if (type === "time") input.step = "60";
+        input.value = session[key] || "";
+        input.required = true;
+        input.setAttribute("aria-required", "true");
+        input.setAttribute("aria-label", `第 ${index + 1} 個時段${caption}`);
+        if (error) input.setAttribute("aria-describedby", error.id);
+        input.addEventListener("input", () => {
+          session[key] = input.value;
+          clearFieldError(input);
+        });
+        input.addEventListener("change", () => {
+          session[key] = input.value;
+          clearFieldError(input);
+        });
+        controlLabel.append(text, input);
+        installCompactEntry(field, input, `第 ${index + 1} 個時段${caption}`, type === "date" ? "day" : "time", value => {
+          session[key] = value;
+          clearFieldError(input);
+        }, controlLabel);
+        row.append(controlLabel);
+      }
+      const remove = el("button", "移除此時段", "quiet");
+      remove.type = "button";
+      remove.classList.add("session-remove");
+      remove.setAttribute("aria-label", `移除第 ${index + 1} 個諮詢時段`);
+      remove.disabled = sessions.length === 1;
+      remove.onclick = () => {
+        if (sessions.length === 1) sessions[0] = { date: "", start: "", end: "" };
+        else sessions.splice(index, 1);
+        renderRows();
+        clearFieldError(field.querySelector("input"));
+        markDocumentDirty();
+        field.querySelector(".legal-session-row input")?.focus();
+      };
+      row.append(remove);
+      list.append(row);
+    });
+  };
+  renderRows();
+  const add = el("button", "＋ 新增諮詢時段", "secondary");
+  add.type = "button";
+  add.disabled = sessions.length >= 31;
+  add.onclick = () => {
+    sessions.push({ date: "", start: "", end: "" });
+    renderRows();
+    markDocumentDirty();
+    field.querySelector(`.legal-session-row[data-session-index="${sessions.length - 1}"] input`)?.focus();
+  };
+  error.remove();
+  field.append(list, add, el("small", "每個時段請選日期、開始與結束時間；同一天只填一次。"), error);
+  return field;
+}
 function render() {
   const p = JSON.parse(selected.payload),
     container = $("#fields");
@@ -1150,8 +1384,13 @@ function render() {
   $("#history-panel").hidden = !selected.id;
   $("#refresh").disabled = !selected.id;
   for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
-    const required = key !== "changeNote";
-    const label = makeField(labels[key],{required,path:`document.${key}`});
+    const required = documentFieldRequired(key, selected.domain, p.status || "scheduled");
+    if (key === "sessions") {
+      container.append(renderSessionField(p.sessions, required));
+      continue;
+    }
+    const pickerKind = ["start", "end"].includes(key) ? "dateTime" : key === "month" ? "month" : /At$/.test(key) || key === "observedAt" ? "day" : null;
+    const label = makeField(labels[key],{required,path:`document.${key}`,group:Boolean(pickerKind)});
     let input;
     if (key === "status") {
       input = el("select");
@@ -1164,78 +1403,67 @@ function render() {
         o.value = v;
         input.append(o);
       }
-    } else if (["content", "sessions"].includes(key)) {
+    } else if (key === "content") {
       input = el("textarea");
-      input.rows = key === "sessions" ? 8 : 6;
+      input.rows = 6;
     } else {
       input = el("input");
-      input.type = key === "sourceUrl" ? "url" : "text";
-      if (key === "month" || /At$/.test(key) || ["start", "end"].includes(key)) {
-        input.inputMode = "numeric";
-        input.placeholder = key === "month" ? "202610 或 2026-10" : ["start", "end"].includes(key)
-          ? "202610011930 或 2026-10-01 19:30" : "20261001 或 2026-10-01";
-        input.addEventListener("blur", () => {
-          const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : "day";
-          input.value = dateTime[kind](input.value);
-        });
-      }
+      input.type = key === "sourceUrl" ? "url" : pickerKind === "dateTime" ? "datetime-local" : pickerKind === "month" ? "month" : pickerKind === "day" ? "date" : "text";
+      if (["start", "end"].includes(key)) input.step = "60";
     }
     input.name = key;
     input.id = `field-${key}`;
-    input.required = required;
-    input.value =
-      key === "sessions"
-        ? (p.sessions || [])
-            .map((s) => `${s.date} ${s.start} ${s.end}`)
-            .join("\n")
-        : ["start", "end"].includes(key)
-          ? String(p[key] || "").slice(0, 16)
-          : (p[key] ?? "");
-    if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle", "sessions"].includes(key)) label.classList.add("wide");
+    const rawValue = p[key] ?? "";
+    input.value = ["start", "end"].includes(key)
+      ? dateTime.dateTime(String(rawValue).replace(/(?:Z|[+-]\d{2}:\d{2})$/, "")).slice(0, 16)
+      : key === "month" ? dateTime.month(rawValue)
+        : input.type === "date" ? dateTime.day(rawValue) : rawValue;
+    if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
     connectField(label,input,required);
+    if (pickerKind) installCompactEntry(label, input, labels[key], pickerKind, () => {});
+    if (key === "status") input.addEventListener("change", () => updateDocumentRequirements());
     input.addEventListener("input",()=>clearFieldError(input));
-    if (key === "sessions")
-      label.append(
-        el("small", "每行一個時段：20261001 1930 2100 或 2026-10-01 19:30 21:00。每個日期只填一次。"),
-      );
-    if (key === "sessions") input.addEventListener("blur", () => {
-      input.value = normalizeSessions(input.value);
-    });
     container.append(label);
   }
   $("#preview").disabled = !selected.id;
-  $("#editor-form").oninput = () => {
-    dirty = true;
-    $("#version").textContent = `${selected.id ? `草稿 v${selected.version}` : "新活動"} · 有未儲存變更`;
-    $("#preview").disabled = true;
-  };
+  $("#editor-form").oninput = markDocumentDirty;
 }
-function normalizeSessions(value) {
-  return value.split("\n").map((line) => {
-    const parts = line.trim().split(/\s+/);
-    return parts.length === 3
-      ? `${dateTime.day(parts[0])} ${dateTime.time(parts[1])} ${dateTime.time(parts[2])}`
-      : line;
-  }).join("\n");
+function documentFieldRequired(key, domain, status) {
+  if (domain === "events") {
+    if (["name", "start", "end", "sourceUrl", "verifiedAt", "status"].includes(key)) return true;
+    return status !== "scheduled" && ["changeNote", "updatedAt"].includes(key);
+  }
+  return ["month", "observedAt", "sourceUrl", "sessions"].includes(key);
+}
+function updateDocumentRequirements() {
+  if (!selected) return;
+  const status = $("#field-status")?.value || "scheduled";
+  for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
+    const field = $(`[data-validation-path="document.${key}"]`);
+    const control = key === "sessions" ? field?.querySelector("input[type=date]") : $(`#field-${key}`);
+    const required = documentFieldRequired(key, selected.domain, status);
+    if (!required && control?.required) clearFieldError(control);
+    setFieldRequired(field, control, required);
+  }
 }
 function read() {
   const out = {};
-  for (const [key, value] of new FormData($("#editor-form"))) {
+  const values = new FormData($("#editor-form"));
+  for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
+    if (key === "sessions") {
+      out.sessions = [...$("#field-sessions").querySelectorAll(".legal-session-row")].map(row => ({
+        date: row.querySelector('input[type="date"]').value,
+        start: row.querySelectorAll('input[type="time"]')[0].value,
+        end: row.querySelectorAll('input[type="time"]')[1].value,
+      })).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+      continue;
+    }
+    const value = values.get(key) ?? "";
     const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : /At$/.test(key) ? "day" : null;
     out[key] =
-      key === "sessions"
-        ? normalizeSessions(value)
-            .trim()
-            .split("\n")
-            .map((line) => {
-              const [date, start, end, ...extra] = line.trim().split(/\s+/);
-              if (extra.length)
-                throw new Error("每行時段只需填日期、開始、結束。");
-              return { date: dateTime.day(date), start: dateTime.time(start), end: dateTime.time(end) };
-            })
-        : ["start", "end"].includes(key)
-          ? `${dateTime.dateTime(value)}:00+08:00`
-          : kind ? dateTime[kind](value) : value || null;
+      ["start", "end"].includes(key)
+        ? value ? `${dateTime.dateTime(value)}:00+08:00` : ""
+        : kind ? dateTime[kind](value) : value || null;
   }
   return out;
 }
@@ -1441,7 +1669,7 @@ $("#page-create-form").onsubmit = (event) => {
     await loadPages();
     const page = pages.find(item => item.path === result.path);
     if (page) await selectPage(page);
-    notice("已建立新頁草稿；填妥摘要、SEO 與至少一個內容區塊後再儲存及發布。");
+    notice("已建立新頁草稿。摘要與 SEO 可留白；發布時至少需要一個完整內容區塊。");
     $("#page-create-panel").open = false;
   });
 };

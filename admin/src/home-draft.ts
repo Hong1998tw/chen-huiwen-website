@@ -15,11 +15,11 @@ export function validateHomeDraft(value: unknown) {
   const summaries = row.summaries as Record<string, unknown>;
   if (Object.keys(summaries).sort().join(",") !== [row.featured, ...row.reading].sort().join(",") ||
       Object.entries(summaries).some(([id, text]) => {
-        const invalid = typeof text !== "string" || !text.trim() || text.length > 500 ||
+        const invalid = typeof text !== "string" || text.length > 500 ||
           /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]|<\s*\/?[a-z!?]/i.test(text);
         if (invalid) throw new HttpError(400, "首頁專題摘要格式不正確", `home.summaries.${id}`);
         return false;
       }))
     throw new HttpError(400, "首頁專題摘要格式不正確", "home.summaries");
-  return { featured: row.featured, reading: row.reading, summaries };
+  return { featured: row.featured, reading: row.reading, summaries: Object.fromEntries(Object.entries(summaries).map(([id, text]) => [id, (text as string).trim()])) };
 }

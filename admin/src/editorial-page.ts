@@ -36,16 +36,21 @@ export function validateEditorialPage(path: string, value: unknown) {
   const p = value as Record<string, unknown>;
   if (Object.keys(p).sort().join() !== "blocks,eventEnd,eventStart,section,seo,summary,title,updated" || p.section !== match[1])
     throw new HttpError(400, "頁面區塊與欄位不正確");
-  const title = text(p.title, "頁面標題", 150, true, "editorial.title"), summary = text(p.summary, "頁面摘要", 500, true, "editorial.summary");
+  const title = text(p.title, "頁面標題", 150, true, "editorial.title"), summary = text(p.summary, "頁面摘要", 500, false, "editorial.summary");
   if (typeof p.updated !== "string" || !fullDay(p.updated)) throw new HttpError(400, "內容整理日期不正確", "editorial.updated");
   const eventStart = taipei(p.eventStart, "開始時間", "editorial.eventStart"), eventEnd = taipei(p.eventEnd, "結束時間", "editorial.eventEnd");
   if (eventEnd && (!eventStart || eventEnd <= eventStart)) throw new HttpError(400, "結束時間必須晚於開始時間", "editorial.eventEnd");
-  const seo = validatePageSeo(p.seo, "editorial.seo");
-  const blocks = validateEditorialBlocks(p.blocks, true, "editorial.blocks");
+  const seo = validatePageSeo(p.seo, "editorial.seo", {
+    title: `${title}｜陳慧文`,
+    description: summary || `${title}｜陳慧文，高雄市議員・鳳山區公開資訊。`,
+    image: "https://www.huiwen.tw/assets/site-share-20260909.png",
+    imageAlt: "陳慧文・高雄市議員・鳳山區",
+  });
+  const blocks = validateEditorialBlocks(p.blocks, false, "editorial.blocks");
   return { section: match[1], title, summary, updated: p.updated, eventStart, eventEnd, seo, blocks };
 }
 export function validateEditorialBlocks(value: unknown, required = false, fieldPrefix = "blocks") {
-  if (!Array.isArray(value) || value.length > 80 || required && value.length < 1) throw new HttpError(400, "頁面區塊最多 80 個；新頁面至少一個", fieldPrefix);
+  if (!Array.isArray(value) || value.length > 80) throw new HttpError(400, "頁面區塊最多 80 個", fieldPrefix);
   const blocks = value.map((raw, index) => {
     const field = `${fieldPrefix}.${index}`;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new HttpError(400, `區塊 ${index+1} 格式不正確`, field);
@@ -55,11 +60,11 @@ export function validateEditorialBlocks(value: unknown, required = false, fieldP
       date: text(b.date, "區塊日期", 25, false, `${field}.date`), url: text(b.url, "區塊網址", 1200, false, `${field}.url`), alt: text(b.alt, "替代文字", 250, false, `${field}.alt`),
       credit: text(b.credit, "來源署名", 250, false, `${field}.credit`), address: text(b.address, "地址", 300, false, `${field}.address`), publicAccessConfirmed:b.publicAccessConfirmed };
     if (typeof row.publicAccessConfirmed !== "boolean") throw new HttpError(400,"媒體公開狀態格式不正確", `${field}.publicAccessConfirmed`);
+    if (![row.title,row.text,row.date,row.url,row.alt,row.credit,row.address].some(Boolean) && !row.publicAccessConfirmed) return null;
     if (row.type === "heading" && !row.title) throw new HttpError(400, `區塊 ${index+1} 標題必填`, `${field}.title`);
     if (row.type === "paragraph" && !row.text) throw new HttpError(400, `區塊 ${index+1} 內容必填`, `${field}.text`);
     if (row.type === "timeline") {
       if (!row.title) throw new HttpError(400, `區塊 ${index+1} 標題必填`, `${field}.title`);
-      if (!row.text) throw new HttpError(400, `區塊 ${index+1} 說明必填`, `${field}.text`);
       if (!fullDay(row.date)) throw new HttpError(400, `區塊 ${index+1} 日期不正確`, `${field}.date`);
     }
     if (row.type === "source") { if (!row.title) throw new HttpError(400, "來源名稱必填", `${field}.title`); publicUrl(row.url, `${field}.url`); if (row.date && !fullDay(row.date)) throw new HttpError(400, "來源日期不正確", `${field}.date`); }
@@ -72,6 +77,7 @@ export function validateEditorialBlocks(value: unknown, required = false, fieldP
     }
     if (row.type === "map" && !/^高雄市[^\s，,]{1,12}(?:區|鄉|鎮|市)[^\s，,]{2,}(?:\d+號|[路街巷]口)$/.test(row.address)) throw new HttpError(400, "請填高雄市、行政區、道路與門牌或路口，並用地圖核對", `${field}.address`);
     return row;
-  });
+  }).filter((row): row is NonNullable<typeof row> => row !== null);
+  if (required && blocks.length < 1) throw new HttpError(400, "新頁面至少需要一個有內容的區塊", fieldPrefix);
   return blocks;
 }

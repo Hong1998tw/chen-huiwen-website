@@ -14,7 +14,9 @@ test("homepage selection keeps a featured story, public reading slots and matchi
   assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, b: "<script>bad</script>" } }));
 });
 
-test("homepage summary errors identify the specific card", () => {
-  assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, c: " " } }),
+test("homepage card summaries may be blank and normalize to empty for the public fallback", () => {
+  const result = validateHomeDraft({ ...home, summaries: { ...home.summaries, c: "  " } });
+  assert.equal(result.summaries.c, "");
+  assert.throws(() => validateHomeDraft({ ...home, summaries: { ...home.summaries, c: "<script>bad</script>" } }),
     error => error instanceof Error && (error as any).field === "home.summaries.c");
 });

@@ -178,6 +178,12 @@ test("editor rejects XSS, private sources, reversed time and unknown fields", ()
   ])
     assert.throws(() => validate("events", { ...event, ...patch }));
 });
+test("activity content and review dates are optional while core event facts stay required", () => {
+  const optional = { ...event, content: "", registration: "", updatedAt: "", reviewDueAt: "" };
+  assert.equal(validate("events", optional).name, "公開活動");
+  assert.throws(() => validate("events", { ...optional, name: "" }));
+  assert.throws(() => validate("events", { ...optional, status: "cancelled", changeNote: "取消" }));
+});
 test("monthly schedule rejects duplicate days and out-of-month appointments", () => {
   const legal = {
     month: "2026-10",
@@ -188,6 +194,7 @@ test("monthly schedule rejects duplicate days and out-of-month appointments", ()
     sessions: [{ date: "2026-10-01", start: "19:30", end: "21:00" }],
   };
   assert.equal(validate("legal-schedule", legal).month, "2026-10");
+  assert.equal(validate("legal-schedule", { ...legal, sourceTitle: "", nextReviewAt: "" }).month, "2026-10");
   assert.throws(() =>
     validate("legal-schedule", {
       ...legal,

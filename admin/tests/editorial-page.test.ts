@@ -35,3 +35,16 @@ test("editorial validation identifies the invalid editor field", () => {
   invalid.blocks = [block()]; invalid.seo.image = "https://example.com/share.png";
   assert.throws(() => validateEditorialPage(path, invalid), error => error instanceof Error && (error as any).field === "editorial.seo.image");
 });
+
+test("editorial summary and SEO can be blank and empty starter blocks are ignored in drafts", () => {
+  const draft:any = page();
+  draft.summary = "";
+  draft.seo = { title:"", description:"", image:"", imageAlt:"" };
+  draft.blocks = [{...block(), text:""}, {...block(), type:"heading", title:"", text:""}];
+  const saved = validateEditorialPage(path, draft);
+  assert.equal(saved.summary, "");
+  assert.equal(saved.seo.title, "議會公開資料整理｜陳慧文");
+  assert.equal(saved.seo.description, "議會公開資料整理｜陳慧文，高雄市議員・鳳山區公開資訊。");
+  assert.deepEqual(saved.blocks, []);
+  assert.throws(() => validateEditorialBlocks([{...block(), text:""}], true), /至少需要一個有內容的區塊/);
+});
