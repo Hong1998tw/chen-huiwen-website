@@ -212,13 +212,16 @@ class StandaloneCMS(unittest.TestCase):
         self.assertEqual(json.loads(candidate.new_text)['featured'],order[1])
         self.assertEqual(json.loads(candidate.new_text)['reading'][0],order[0])
         self.assertEqual(engine.http_check('home-content','index.html','publish',fetch=lambda _: (200,'<html>ok</html>')),'PASS')
-        edited['reading'].append('wende-school-center')
-        edited['summaries']['wende-school-center']='文德國小周邊公開建設進度'
-        edited['reading'].remove(order[3]); del edited['summaries'][order[3]]
+        public=json.loads((ROOT/'data/achievements.json').read_text(encoding='utf-8'))
+        replacement=next(row['id'] for row in public if cms.is_public(row) and row['id'] not in order)
+        removed=order[-1] if len(order)>2 else order[0]
+        edited['reading'].append(replacement)
+        edited['summaries'][replacement]='新增公開專題的摘要'
+        edited['reading'].remove(removed); del edited['summaries'][removed]
         item['payload']=json.dumps({'fields':{},'home':edited,'homeBase':baseline})
         selected=cms.page_candidate(item)
-        self.assertIn('wende-school-center',json.loads(selected.new_text)['reading'])
-        self.assertNotIn(order[3],json.loads(selected.new_text)['reading'])
+        self.assertIn(replacement,json.loads(selected.new_text)['reading'])
+        self.assertNotIn(removed,json.loads(selected.new_text)['reading'])
         item['payload']=json.dumps({'fields':{'main>p:nth-of-type(1)':{'sourceHash':'a'*64,'value':'尚未發布的文字'}},'home':edited,'homeBase':baseline})
         with self.assertRaises(engine.PublishError) as error:
             cms.page_candidate(item)
@@ -228,7 +231,8 @@ class StandaloneCMS(unittest.TestCase):
         with self.assertRaises(engine.PublishError) as error:
             cms.page_candidate(item)
         self.assertEqual(error.exception.code,'BASE_DRIFT')
-        item['payload']=json.dumps({'fields':{},'home':{**edited,'reading':[order[0],order[0],order[3]]},'homeBase':baseline})
+        duplicate=edited['reading'][0]
+        item['payload']=json.dumps({'fields':{},'home':{**edited,'reading':[duplicate,duplicate]},'homeBase':baseline})
         with self.assertRaises(engine.PublishError) as error:
             cms.page_candidate(item)
         self.assertEqual(error.exception.code,'VALIDATION')
