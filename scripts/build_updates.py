@@ -106,15 +106,6 @@ def render_page_body(data):
     return body + (''.join(render_item(item) for item in items) or '<p>目前沒有新增的網站補充紀錄。</p>') + '</section>'
 
 
-def homepage_fragment(data, limit=2):
-    """Optional small source-built fragment; never writes the homepage itself."""
-    rows = []
-    for index, item in enumerate(ordered_updates(data)[:limit], 1):
-        day = website_time(item['websiteUpdatedAt']).date().isoformat()
-        rows.append(f'<article class="civic-reading-row"><span class="civic-number" aria-hidden="true">{index:02}</span><div><p class="civic-kicker">網站補充 · <time datetime="{e(item["websiteUpdatedAt"])}">{day}</time></p><h3><a href="updates.html#update-{e(item["id"])}">{e(item["title"])}</a></h3><p>{e(item["summary"])}</p></div></article>')
-    return ''.join(rows)
-
-
 def render_rss(data):
     items = ordered_updates(data)
     atom = 'http://www.w3.org/2005/Atom'

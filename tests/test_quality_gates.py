@@ -77,6 +77,7 @@ class QualityMutationTests(unittest.TestCase):
         text=(self.root/'index.html').read_text()
         self.assertIn('Fixture &lt;script&gt;alert(1)&lt;/script&gt; title',text)
         self.assertNotIn('Fixture <script>alert(1)</script> title',text)
+        self.assertNotIn('civic-latest-updates',text)
     def test_media_news_text_propagates_to_search(self):
         self.edit('news.html','</main>','<article><h2>Fixture uniquely searchable media event</h2></article></main>')
         self.assertEqual(self.gate('build_search.py').returncode,0)
