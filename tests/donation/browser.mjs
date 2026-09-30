@@ -336,7 +336,7 @@ try {
       const lead = await page.locator('.case-latest > p:not([class])').boundingBox();
       assert(latest && navigation && latest.y < navigation.y);
       assert(lead && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert.match(await page.locator('.case-latest').innerText(), /並非即時工程進度/);
+      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
       await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
       const sources = page.locator('#case-sources');
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
