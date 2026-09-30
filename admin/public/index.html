@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant-TW">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -27,7 +27,7 @@
         ><a href="/cdn-cgi/access/logout">登出</a>
       </div>
     </header>
-    <main id="main">
+    <main id="main" tabindex="-1">
       <p id="notice" role="status" aria-live="polite"></p>
       <div id="dashboard" class="dashboard">
       <div class="intro">
@@ -44,18 +44,23 @@
           >查看官網 ↗</a
         >
       </div>
+      <ol class="editorial-steps" aria-label="內容更新流程">
+        <li><span aria-hidden="true">01</span><div><strong>選擇內容</strong><small>接續草稿，或開始新的更新</small></div></li>
+        <li><span aria-hidden="true">02</span><div><strong>編輯與儲存</strong><small>儲存草稿不會更動正式官網</small></div></li>
+        <li><span aria-hidden="true">03</span><div><strong>預覽後送出</strong><small>發布中心追蹤檢查與上線狀態</small></div></li>
+      </ol>
       <div class="dashboard-cards" aria-label="今日工作概況">
         <button type="button" data-dashboard-target="draft"><strong id="count-draft">—</strong><span>草稿紀錄</span></button>
         <button type="button" data-dashboard-target="pending"><strong id="count-pending">—</strong><span>待發布／發布中</span></button>
         <button type="button" data-dashboard-target="verification"><strong id="count-verification">—</strong><span>待驗證</span></button>
         <button type="button" data-dashboard-target="review"><strong id="count-review">—</strong><span>需要複查</span></button>
       </div>
-      <section class="dashboard-section" aria-labelledby="continue-title"><h2 id="continue-title">繼續上次工作</h2><div id="recent-work"></div></section>
-      <section class="dashboard-section" aria-labelledby="attention-title"><h2 id="attention-title">需要注意</h2><div id="attention-work"></div></section>
-      <button type="button" class="secondary" data-workspace-target="content">瀏覽全部內容</button>
+      <div class="dashboard-work-grid"><section class="dashboard-section" aria-labelledby="continue-title"><h2 id="continue-title">繼續上次工作</h2><div id="recent-work"><p class="hint">正在讀取近期草稿…</p></div></section>
+      <section class="dashboard-section" aria-labelledby="attention-title"><h2 id="attention-title">需要注意</h2><div id="attention-work"><p class="hint">正在確認發布與複查狀態…</p></div></section>
+      </div><button type="button" class="secondary" data-workspace-target="content">瀏覽全部內容</button>
       </div>
       <section id="workspace-content" class="workspace-view" aria-label="內容工作區" hidden>
-      <div class="workspace-intro"><div><p class="eyebrow">CONTENT EXPLORER</p><h1>內容</h1></div><button id="open-command" type="button" class="secondary">快速搜尋 <kbd>⌘ K</kbd></button></div>
+      <div class="workspace-intro"><div><p class="eyebrow">CONTENT EXPLORER</p><h1>內容</h1></div><button id="open-command" type="button" class="secondary">快速搜尋 <kbd aria-hidden="true">⌘ / Ctrl K</kbd></button></div>
       <button id="open-page-drawer" type="button" class="secondary mobile-only" aria-expanded="false" aria-controls="page-explorer">☰ 頁面</button>
       <button id="page-drawer-backdrop" type="button" aria-label="關閉頁面選單" hidden></button>
       <section class="page-workspace" aria-label="全站頁面編輯器">
@@ -103,7 +108,7 @@
           <div class="visual-toolbar">
             <div class="page-heading">
               <p class="eyebrow">正式頁面預覽與編輯</p>
-              <h2 id="page-editor-title">請從左側選擇頁面</h2>
+              <h2 id="page-editor-title" tabindex="-1">請從左側選擇頁面</h2>
               <p id="page-path" class="page-path">登入後可管理每一頁及子頁。</p>
             </div>
             <span id="page-status" class="badge">尚未選取</span>
@@ -126,7 +131,8 @@
           <p id="content-publish-conflict" class="field-error workflow-error" role="alert" hidden></p>
           <div id="page-editor-empty" class="editor-empty">
             <span aria-hidden="true">↖</span>
-            <p>選擇左側頁面，正式網站的版面會在這裡載入。</p>
+            <p>選擇「網站頁面」清單中的頁面，即可檢視版面與編輯草稿。</p>
+            <button id="page-retry" class="secondary" type="button" hidden>重新讀取此頁</button>
           </div>
           <iframe id="page-frame" title="正式網站頁面視覺編輯器" hidden referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms"></iframe>
           <section id="case-editor" class="case-editor" aria-labelledby="case-editor-heading" hidden>
@@ -167,8 +173,8 @@
           </div>
           <div id="panel-publishing" role="tabpanel" aria-labelledby="tab-publishing" hidden>
           <div class="publishing-page-actions toolbar">
-            <button id="page-unpublish" type="button" class="secondary" disabled>下架</button>
-            <button id="page-delete" type="button" class="danger" disabled>移至垃圾桶</button>
+            <button id="page-unpublish" type="button" class="secondary" aria-describedby="page-action-help" disabled>下架</button>
+            <button id="page-delete" type="button" class="danger" aria-describedby="page-action-help" disabled>移至垃圾桶</button>
             <button id="page-restore" type="button" class="secondary" hidden>還原並重新發布</button>
           </div>
           <div id="page-release-state" class="release-state"></div>
@@ -227,7 +233,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">發布歷程</p>
-            <h2 id="publication-title">從草稿到上線</h2>
+            <h1 id="publication-title">從草稿到上線</h1>
           </div>
           <button id="reload" type="button" class="secondary">更新狀態</button>
         </div>
@@ -244,7 +250,7 @@
           <button type="button" data-release-filter="history" aria-pressed="false">歷史</button>
         </div>
         <p id="release-filter-empty" class="hint" hidden>此狀態目前沒有紀錄。</p>
-        <div id="publications"></div>
+        <div id="publications"><p class="hint">正在讀取發布紀錄…</p></div>
       </section>
       </section>
       <section id="workspace-system" class="workspace-view" aria-label="系統與權限" hidden>

@@ -25,6 +25,9 @@ let session,
   extraBlocksBase = null,
   publicationRecords = [],
   documentFilter = "all";
+let pageSelectionRequest = 0, pageLoading = false, pageLoadFailed = false;
+let pageEditRevision = 0, pageSaveBusy = false, documentEditRevision = 0, documentSaveBusy = false;
+let previewDocument = null;
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
 const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
@@ -179,6 +182,8 @@ function showFieldError(path, message) {
     const toggle = body.parentElement?.querySelector(".case-section-head .quiet");
     if (toggle) { toggle.textContent = "收合"; toggle.setAttribute("aria-expanded", "true"); }
   }
+  const panel = field.closest('[role="tabpanel"]');
+  if (panel?.hidden && typeof showEditorTab === "function") showEditorTab(panel.id.replace("panel-", ""));
   markFieldError(field, field.querySelector("input,textarea,select,button") || field, message);
 }
 function validateRequiredFields(root, includeHidden = false) {
@@ -221,18 +226,21 @@ function notice(text, kind = "info") {
   target.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
 }
 async function api(path, method = "GET", body) {
-  const r = await fetch(path, {
+  let r;
+  try { r = await fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(session ? { "X-CSRF-Token": session.csrf } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  }); } catch {
+    throw new Error("連線未完成。表單內容仍保留，請確認網路後重試；重新載入前請先保留未儲存內容。");
+  }
   if (!r.ok) {
     let body = {};
     try { body = await r.json(); } catch {}
-    const error = new Error(body.error || "連線中斷或登入已失效，請重新載入；未儲存內容仍保留在表單。");
+    const error = new Error(body.error || "連線或登入驗證未完成。表單內容仍保留；重新載入前請先保留未儲存內容。");
     error.field = body.field;
     throw error;
   }
@@ -269,6 +277,7 @@ async function load() {
     b.onclick = () => action(() => select(d));
     list.append(b);
   }
+  if (documents.length && !list.children.length) list.append(el("p", "這個類別目前沒有內容，請選擇其他類別或新增活動。", "hint"));
   await publications();
 }
 function renderPages() {
@@ -392,7 +401,7 @@ function pageStatusLabel(page) {
   return status === "draft" ? "新頁面草稿" : status === "deleted" ? "在垃圾桶，可還原" : status === "unpublished" ? "已下架，可還原" : "正式頁面";
 }
 function pageControls() {
-  const editable = isPageEditable(selectedPage);
+  const editable = isPageEditable(selectedPage) && !pageLoading && !pageLoadFailed;
   const live = editable && (selectedPage?.publication_status || "published") === "published";
   const newEditorial = editable && selectedPage?.source_kind === "editorial-draft";
   let newEditorialReady = false;
@@ -416,12 +425,13 @@ function pageControls() {
   $("#page-status").textContent = selectedPage ? [pageStatusLabel(selectedPage),
     pageDirty ? "有未儲存變更" : pageDraft?.version ? `草稿 v${pageDraft.version} 已儲存` : "無未儲存變更",
     pending ? `${pendingLabel}${pendingSuffix}` : hasPublishConflict ? "來源需分次發布" : unchanged ? "草稿與正式版相同" : publishable ? "草稿可發布" : ""].filter(Boolean).join(" · ") : "尚未選取";
-  $("#page-save").disabled = !editable || (!pageDirty && Boolean(pageDraft));
-  $("#page-publish").disabled = !publishable;
-  $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
-  $("#page-delete").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending;
+  $("#page-save").disabled = !editable || pageSaveBusy || (!pageDirty && Boolean(pageDraft));
+  $("#page-save").textContent = pageSaveBusy ? "儲存中…" : "儲存草稿";
+  $("#page-publish").disabled = !publishable || pageSaveBusy;
+  $("#page-unpublish").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending || pageSaveBusy;
+  $("#page-delete").disabled = !editable || !live || !pageDraft?.version || pageDirty || pending || pageSaveBusy;
   $("#page-restore").hidden = !removed;
-  $("#page-restore").disabled = !removed || !pageDraft?.version || pageDirty || pending;
+  $("#page-restore").disabled = !removed || !pageDraft?.version || pageDirty || pending || pageSaveBusy;
   $("#page-open-live").href = `https://www.huiwen.tw${pageUrl(selectedPage?.path || "index.html")}`;
   $("#page-open-live").hidden = !selectedPage || newEditorial;
 }
@@ -471,6 +481,7 @@ function renderSeoEditor() {
       seoDraft[key] = input.value;
       if (counter) counter.textContent = `${input.value.length} 字`;
       pageDirty = true;
+  pageEditRevision++;
       setPageStatus("SEO 有變更 · 儲存並發布後才會更新正式頁面");
       pageControls();
       $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: effectiveSeoValues(seoDraft, seoBase, null) }, "*");
@@ -492,6 +503,7 @@ function renderSeoEditor() {
 const editorialBlankBlock = (type = "paragraph") => ({ type, title:"", text:"", date:"", url:"", alt:"", credit:"", address:"", publicAccessConfirmed:false });
 function editorialChanged() {
   pageDirty = true;
+  pageEditRevision++;
   setPageStatus("專頁內容、區塊或 SEO 有變更 · 儲存並發布後才會更新正式頁面");
   pageControls();
   if (pageReady) {
@@ -501,6 +513,7 @@ function editorialChanged() {
 }
 function extraChanged() {
   pageDirty = true;
+  pageEditRevision++;
   setPageStatus("頁面延伸區塊有變更 · 儲存並發布後才會更新正式頁面");
   pageControls();
   if (pageReady) $("#page-frame").contentWindow?.postMessage({type:"huiwen-cms-extra-preview",nonce:pageNonce,blocks:extraBlocks},"*");
@@ -721,6 +734,7 @@ function renderHomeEditor() {
 }
 function homeChanged() {
   pageDirty = true;
+  pageEditRevision++;
   setPageStatus("首頁專題選片、摘要或順序有變更 · 儲存並發布後才會更新正式首頁");
   pageControls();
   if (pageReady) $("#page-frame").contentWindow?.postMessage({
@@ -824,6 +838,7 @@ function caseInput(label, value, update, options = {}) {
 }
 function caseChanged() {
   pageDirty = true;
+  pageEditRevision++;
   setPageStatus("政績內容有變更 · 儲存後才會進入發布流程");
   pageControls();
   const health = $(".source-health");
@@ -1067,6 +1082,11 @@ function applyCurrentPageEdits() {
 }
 async function selectPage(page) {
   if (pageDirty && !confirm("這一頁有尚未儲存的文字，確定切換頁面？")) return;
+  const request = ++pageSelectionRequest;
+  pageLoading = true;
+  pageLoadFailed = false;
+  pageReady = false;
+  pageNonce = null;
   selectedPage = page;
   pageDirty = false;
   pageDraft = null;
@@ -1088,8 +1108,18 @@ async function selectPage(page) {
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
   setPageStatus(isPageEditable(page) ? "正在讀取此頁草稿…" : "此頁僅供檢視，無法從這裡修改來源。");
+  $("#page-retry").hidden = true;
+  $("#page-frame").hidden = true;
+  $("#page-frame").removeAttribute("src");
+  $("#page-editor-empty").hidden = false;
+  $("#page-editor-empty p").textContent = "正在讀取頁面與草稿，請稍候…";
+  for (const id of ["case-editor", "home-editor", "seo-editor", "editorial-editor", "editorial-seo-fields", "extra-blocks-editor", "page-history-panel"]) $("#" + id).hidden = true;
+  $(".visual-editor").setAttribute("aria-busy", "true");
+  pageControls();
+  try {
   if (isPageEditable(page)) {
     const result = await api(`/api/page-draft?path=${encodeURIComponent(page.path)}`);
+    if (request !== pageSelectionRequest) return false;
     pageDraft = result.draft;
     if (pageDraft?.payload) {
       const saved = JSON.parse(pageDraft.payload);
@@ -1102,6 +1132,7 @@ async function selectPage(page) {
     }
     if (isCasePage(page)) {
       const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
+    if (request !== pageSelectionRequest) return false;
       const currentCase = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
         paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
         media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {},
@@ -1119,31 +1150,37 @@ async function selectPage(page) {
       if (caseDraft && caseBase && !sameValue(caseBase, currentCase) && sameValue(caseDraft, currentCase)) {
         caseBase = structuredClone(currentCase);
         pageDirty = true;
+  pageEditRevision++;
         caseBaselineRebased = true;
       }
     }
     if (page.path === "index.html") {
       try {
         const current = await api("/api/home");
+    if (request !== pageSelectionRequest) return false;
         homeCases = new Map(current.cases.map(record => [record.id, record]));
         if (!homeDraft) homeDraft = structuredClone(current.home);
         if (!homeBase) homeBase = structuredClone(current.home);
       } catch (error) {
+        if (request !== pageSelectionRequest) return false;
         if (homeDraft) throw error;
         homeUnavailable = true;
       }
     }
     if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
       const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
+    if (request !== pageSelectionRequest) return false;
       if (!editorialDraft) editorialDraft = structuredClone(current);
       if (!editorialBase) editorialBase = structuredClone(current);
     }
     if (!editorialDraft && page.source_kind !== "editorial-draft" && page.path !== "index.html" && !isCasePage(page)) {
       const currentBlocks = (await api(`/api/page-blocks?path=${encodeURIComponent(page.path)}`)).blocks;
+    if (request !== pageSelectionRequest) return false;
       if (!extraBlocks) extraBlocks = structuredClone(currentBlocks);
       if (!extraBlocksBase) extraBlocksBase = structuredClone(currentBlocks);
     }
     const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
+    if (request !== pageSelectionRequest) return false;
     renderPageHistory(history.versions || []);
     $("#page-history-panel").hidden = !history.versions?.length;
     setPageStatus(caseBaselineRebased ? "正式政績內容已包含此草稿變更；基準已安全對齊，儲存草稿後即可發布其他獨立變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
@@ -1151,6 +1188,7 @@ async function selectPage(page) {
   } else {
     $("#page-history-panel").hidden = true;
   }
+  pageLoading = false;
   pageControls();
   renderCaseEditor();
   renderHomeEditor();
@@ -1159,6 +1197,21 @@ async function selectPage(page) {
   renderExtraBlocksEditor();
   renderPages();
   applyCurrentPageEdits();
+  return true;
+  } catch (error) {
+    if (request !== pageSelectionRequest) return false;
+    pageLoadFailed = true;
+    $("#page-editor-empty p").textContent = "此頁暫時無法載入。草稿未被修改，請重試或選擇其他頁面。";
+    $("#page-retry").hidden = false;
+    setPageStatus("載入未完成 · 編輯功能暫停，避免覆蓋資料");
+    throw error;
+  } finally {
+    if (request === pageSelectionRequest) {
+      pageLoading = false;
+      $(".visual-editor").setAttribute("aria-busy", "false");
+      pageControls();
+    }
+  }
 }
 function renderPageHistory(versions) {
   const target = $("#page-history");
@@ -1181,15 +1234,21 @@ function renderPageHistory(versions) {
   }
 }
 async function savePageDraft() {
-  if (!selectedPage || !isPageEditable(selectedPage)) return;
+  if (!selectedPage || !isPageEditable(selectedPage) || pageLoading || pageLoadFailed || pageSaveBusy) return false;
   for (const id of ["case-editor-fields","home-editor-fields","editorial-editor-fields","editorial-seo-fields","extra-blocks-fields","seo-editor-fields"]) {
     if (!validateRequiredFields(document.getElementById(id), true)) return false;
   }
+  const savingPage = selectedPage;
+  const request = pageSelectionRequest;
+  const revision = pageEditRevision;
   const cleanedCase = cleanCaseDraft();
+  pageSaveBusy = true;
+  pageControls();
+  try {
   const result = await api("/api/page-draft", "PUT", {
-    path: selectedPage.path,
+    path: savingPage.path,
     version: pageDraft?.version || 0,
-    baseCommit: selectedPage.commit_sha,
+    baseCommit: savingPage.commit_sha,
     fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
     ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
     ...(homeDraft ? { home: homeDraft, homeBase } : {}),
@@ -1197,21 +1256,30 @@ async function savePageDraft() {
     ...(editorialDraft ? { editorial: editorialDraft, editorialBase } : {}),
     ...(extraBlocks ? { blocks: extraBlocks, blocksBase: extraBlocksBase } : {}),
   });
-  if (cleanedCase) { caseDraft = cleanedCase; renderCaseEditor(); }
-  pageDirty = false;
-  const updated = await api(`/api/page-draft?path=${encodeURIComponent(selectedPage.path)}`);
+  if (request !== pageSelectionRequest) return false;
+  pageDraft = { ...pageDraft, version: result.version };
+  if (cleanedCase && revision === pageEditRevision) { caseDraft = cleanedCase; renderCaseEditor(); }
+  const updated = await api(`/api/page-draft?path=${encodeURIComponent(savingPage.path)}`);
+  if (request !== pageSelectionRequest) return false;
   pageDraft = updated.draft;
+  pageDirty = revision !== pageEditRevision;
   selectedPage.draft_version = result.version;
   pageControls();
   await loadPages();
-  const history = await api(`/api/page-draft/history?path=${encodeURIComponent(selectedPage.path)}`);
+  if (request !== pageSelectionRequest) return false;
+  const history = await api(`/api/page-draft/history?path=${encodeURIComponent(savingPage.path)}`);
+  if (request !== pageSelectionRequest) return false;
   renderPageHistory(history.versions || []);
   $("#page-history-panel").hidden = !history.versions?.length;
-  setPageStatus(`草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
-  return true;
+  setPageStatus(pageDirty ? `草稿 v${result.version} 已儲存；儲存期間的新修改仍保留，請再儲存。` : `草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
+  return !pageDirty;
+  } finally {
+    pageSaveBusy = false;
+    pageControls();
+  }
 }
 async function submitPageOperation(operation, confirmed = false) {
-  if (!selectedPage || !isPageEditable(selectedPage)) return;
+  if (!selectedPage || !isPageEditable(selectedPage) || pageLoading || pageLoadFailed || pageSaveBusy) return;
   if (operation === "publish") {
     const conflicts = renderPagePublishConflicts();
     if (conflicts.content.length || conflicts.seo.length) {
@@ -1282,6 +1350,7 @@ window.addEventListener("message", (event) => {
   if (data.type === "huiwen-cms-change" && data.field && typeof data.field.id === "string") {
     pageFields.set(data.field.id, { sourceHash: data.field.sourceHash, value: data.field.value });
     pageDirty = true;
+  pageEditRevision++;
     setPageStatus("頁面文字有變更 · 儲存後才會進入發布流程");
     pageControls();
   }
@@ -1295,6 +1364,7 @@ async function select(d) {
 }
 function markDocumentDirty() {
   dirty = true;
+  documentEditRevision++;
   $("#version").textContent = `${selected.id ? `草稿 v${selected.version}` : "新活動"} · 有未儲存變更`;
   $("#preview").disabled = true;
 }
@@ -1468,26 +1538,43 @@ function read() {
   return out;
 }
 async function save() {
-  if (!validateRequiredFields($("#fields"), true)) return;
+  if (documentSaveBusy || !selected || !validateRequiredFields($("#fields"), true)) return;
+  const savingDocument = selected;
+  const revision = documentEditRevision;
   const payload = read();
-  const result = selected.id
-    ? await api(`/api/documents/${selected.id}`, "PUT", {
-        version: selected.version,
-        payload,
-      })
-    : await api("/api/documents", "POST", { domain: "events", payload });
-  dirty = false;
-  await load();
-  selected = documents.find((d) => d.id === result.id);
-  render();
-  await history();
-  notice("草稿已儲存，官網尚未變更。");
+  documentSaveBusy = true;
+  $("#save").disabled = true;
+  $("#save").textContent = "儲存中…";
+  try {
+    const result = savingDocument.id
+      ? await api(`/api/documents/${savingDocument.id}`, "PUT", { version: savingDocument.version, payload })
+      : await api("/api/documents", "POST", { domain: "events", payload });
+    await load();
+    if (selected !== savingDocument) return;
+    const updated = documents.find((d) => d.id === result.id);
+    if (!updated) throw new Error("草稿已送出，但清單尚未回傳此筆資料。請保留目前表單，稍後更新狀態。");
+    selected = updated;
+    dirty = revision !== documentEditRevision;
+    if (!dirty) render();
+    else {
+      $("#version").textContent = `草稿 v${selected.version} · 有未儲存變更`;
+      $("#preview").disabled = true;
+    }
+    await history();
+    notice(dirty ? "草稿已儲存；儲存期間的新修改仍保留，請再儲存。" : "草稿已儲存，官網尚未變更。");
+  } finally {
+    documentSaveBusy = false;
+    $("#save").disabled = false;
+    $("#save").textContent = "儲存草稿";
+  }
 }
 async function history() {
   const target = $("#history");
   target.replaceChildren();
   if (!selected.id) return;
-  const data = await api(`/api/documents/${selected.id}/history`);
+  const record = selected;
+  const data = await api(`/api/documents/${record.id}/history`);
+  if (selected !== record) return;
   for (const v of data.versions) {
     const row = el(
       "div",
@@ -1567,12 +1654,17 @@ $("#editor-form").onsubmit = (e) => {
   action(save);
 };
 $("#preview").onclick = () => action(async () => {
-  if (dirty || !selected?.id) return;
-  previewVersion = selected.version;
+  if (dirty || !selected?.id || documentSaveBusy) return;
+  const reviewingDocument = selected;
+  const revision = documentEditRevision;
+  previewVersion = reviewingDocument.version;
+  previewDocument = null;
   const target = $("#preview-content");
   target.replaceChildren();
   const p = JSON.parse(selected.payload);
-  const published = await api(`/api/documents/${selected.id}/published`);
+  const published = await api(`/api/documents/${reviewingDocument.id}/published`);
+  if (selected !== reviewingDocument || dirty || revision !== documentEditRevision) return;
+  previewDocument = { id: reviewingDocument.id, version: reviewingDocument.version };
   const baseline = published.source ? JSON.parse(published.source.payload) : null;
   const changed = (selected.domain === "events" ? eventKeys : legalKeys).filter(key =>
     !baseline || JSON.stringify(p[key] ?? null) !== JSON.stringify(baseline[key] ?? null));
@@ -1603,11 +1695,16 @@ $("#preview").onclick = () => action(async () => {
 $("#close-preview").onclick = () => $("#preview-dialog").close();
 $("#publish").onclick = () =>
   action(async () => {
+    if (!previewDocument || dirty || selected?.id !== previewDocument.id || selected.version !== previewDocument.version) {
+      $("#preview-dialog").close();
+      notice("內容已變更，請重新儲存並預覽後再發布。", "error");
+      return;
+    }
     const b = $("#publish");
     b.disabled = true;
     try {
-      await api(`/api/documents/${selected.id}/publish`, "POST", {
-        version: previewVersion,
+      await api(`/api/documents/${previewDocument.id}/publish`, "POST", {
+        version: previewDocument.version,
       });
       $("#preview-dialog").close();
       notice("發布要求已保存。請在下方查看檢查與部署進度。");
@@ -1676,6 +1773,7 @@ $("#page-create-form").onsubmit = (event) => {
 $("#page-create-form").addEventListener("input", event => clearFieldError(event.target));
 $("#page-create-form").addEventListener("change", event => clearFieldError(event.target));
 $("#page-save").onclick = () => action(savePageDraft);
+$("#page-retry").onclick = () => action(() => selectedPage && selectPage(selectedPage));
 $("#page-publish").onclick = () => action(() => submitPageOperation("publish"));
 $("#page-unpublish").onclick = () => action(() => submitPageOperation("unpublish"));
 $("#page-delete").onclick = () => action(() => submitPageOperation("delete"));

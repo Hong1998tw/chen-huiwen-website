@@ -5,8 +5,12 @@ let currentWorkspace = "dashboard";
 let currentEditorTab = "content";
 let drawerReturnFocus = null;
 let commandReturnFocus = null;
+const mobilePageDrawer = window.matchMedia("(max-width: 860px)");
+let drawerInertTargets = [];
+let pageReviewTarget = null;
 
-function showWorkspace(name) {
+function showWorkspace(name, moveFocus = true) {
+  const previous = currentWorkspace;
   currentWorkspace = workspaces.includes(name) ? name : "dashboard";
   document.querySelector("#dashboard").hidden = currentWorkspace !== "dashboard";
   for (const workspace of workspaces) {
@@ -18,6 +22,12 @@ function showWorkspace(name) {
   if (currentWorkspace !== "content") closePageDrawer(false);
   window.location.hash = currentWorkspace === "dashboard" ? "" : currentWorkspace;
   window.scrollTo({top: 0, behavior: "instant"});
+  if (moveFocus && previous !== currentWorkspace) {
+    const view = document.querySelector(currentWorkspace === "dashboard" ? "#dashboard" : `#workspace-${currentWorkspace}`);
+    const heading = view.querySelector("h1, h2");
+    heading?.setAttribute("tabindex", "-1");
+    heading?.focus({preventScroll:true});
+  }
 }
 function showEditorTab(name) {
   currentEditorTab = ["content", "seo", "versions", "publishing"].includes(name) ? name : "content";
@@ -29,10 +39,16 @@ function showEditorTab(name) {
   }
 }
 function openPageDrawer() {
+  if (!mobilePageDrawer.matches || document.body.dataset.pageDrawer === "open") return;
   drawerReturnFocus = document.activeElement;
   document.body.dataset.pageDrawer = "open";
   document.querySelector("#page-drawer-backdrop").hidden = false;
   document.querySelector("#open-page-drawer").setAttribute("aria-expanded", "true");
+  const panel = document.querySelector("#page-explorer");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  drawerInertTargets = [document.querySelector("header"), document.querySelector(".skip"), document.querySelector(".visual-editor"), ...document.querySelectorAll("#workspace-content > :not(.page-workspace):not(#page-drawer-backdrop)")].filter(Boolean).map(node => [node, node.inert]);
+  for (const [node] of drawerInertTargets) node.inert = true;
   document.querySelector("#page-filter").focus();
 }
 function closePageDrawer(restoreFocus = true) {
@@ -40,8 +56,14 @@ function closePageDrawer(restoreFocus = true) {
   document.body.dataset.pageDrawer = "closed";
   document.querySelector("#page-drawer-backdrop").hidden = true;
   document.querySelector("#open-page-drawer").setAttribute("aria-expanded", "false");
+  const panel = document.querySelector("#page-explorer");
+  panel.removeAttribute("role");
+  panel.removeAttribute("aria-modal");
+  for (const [node, previous] of drawerInertTargets) node.inert = previous;
+  drawerInertTargets = [];
   if (restoreFocus) (drawerReturnFocus || document.querySelector("#open-page-drawer")).focus();
 }
+mobilePageDrawer.addEventListener("change", event => { if (!event.matches) closePageDrawer(false); });
 function localDate(value) {
   if (!value || Number.isNaN(Date.parse(value))) return "時間未提供";
   return new Date(value).toLocaleString("zh-TW", {timeZone:"Asia/Taipei", year:"numeric", month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"});
@@ -50,7 +72,7 @@ function updateDashboard() {
   const pending = publicationRecords.filter(p => ["queued", "processing", "pr_created"].includes(p.status));
   const verifying = publicationRecords.filter(p => ["merged", "deployed"].includes(p.status));
   const failed = publicationRecords.filter(p => p.status === "failed");
-  const now = new Date().toISOString().slice(0, 10);
+  const now = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const review = documents.filter(d => {
     try { const p = JSON.parse(d.payload); return Boolean((p.reviewDueAt || p.nextReviewAt) && (p.reviewDueAt || p.nextReviewAt) <= now); }
     catch { return false; }
@@ -139,7 +161,8 @@ function diffForReview(target, label, before, after, depth = 0) {
   return count;
 }
 function openPageReview() {
-  if (!selectedPage || !pageDraft?.version || pageDirty) return;
+  if (!selectedPage || !pageDraft?.version || pageDirty || pageLoading || pageLoadFailed || pageSaveBusy) return;
+  pageReviewTarget = { path: selectedPage.path, version: pageDraft.version, request: pageSelectionRequest };
   const target=document.querySelector("#page-review-content"); target.replaceChildren();
   let count=0;
   for (const [label, draft, base] of [["政績內容",caseDraft,caseBase],["首頁專題",homeDraft,homeBase],["SEO 與分享",seoDraft,seoBase],["子頁內容",editorialDraft,editorialBase],["延伸區塊",extraBlocks,extraBlocksBase]]) {
@@ -150,7 +173,7 @@ function openPageReview() {
   if (!count) target.append(el("p", "未偵測到可呈現的欄位差異；後端仍會檢查草稿與來源。", "hint"));
   const readiness=el("dl",undefined,"review-readiness");
   for (const [label,state] of [["草稿儲存", "PASS · v"+pageDraft.version],["內容格式","NOT CHECKED · 發布流程會檢查"],["來源事實核對","NOT CHECKED"],["外部連結","NOT CHECKED"],["SEO","NOT CHECKED"],["預覽載入",pageReady ? "已載入；非發布驗證" : "NOT CHECKED"]]) readiness.append(el("dt",label),el("dd",state));
-  target.append(el("h3","Readiness Summary"),readiness);
+  target.append(el("h3","發布前檢查"),readiness);
   document.querySelector("#confirm-page-publish").textContent=`確認發布 ${count} 個變更區域`;
   document.querySelector("#page-review-dialog").showModal();
 }
@@ -176,7 +199,13 @@ document.querySelector("#page-explorer").addEventListener("keydown",event=>{
   if (event.shiftKey && document.activeElement===items[0]) {event.preventDefault();items.at(-1).focus();}
   else if (!event.shiftKey && document.activeElement===items.at(-1)) {event.preventDefault();items[0].focus();}
 });
-document.querySelector("#open-command").onclick=()=>{commandReturnFocus=document.activeElement;renderCommandResults();document.querySelector("#command-dialog").showModal();document.querySelector("#command-query").focus();};
+document.querySelector("#open-command").onclick=()=>{
+  if (document.querySelector("dialog[open]")) return;
+  commandReturnFocus=document.activeElement;
+  renderCommandResults();
+  document.querySelector("#command-dialog").showModal();
+  document.querySelector("#command-query").focus();
+};
 document.querySelector("#close-command").onclick=()=>document.querySelector("#command-dialog").close();
 document.querySelector("#command-dialog").addEventListener("close",()=>commandReturnFocus?.focus());
 document.querySelector("#command-query").oninput=renderCommandResults;
@@ -207,19 +236,31 @@ for (const button of document.querySelectorAll("[data-release-filter]")) button.
 document.querySelector("#page-publish").onclick=openPageReview;
 document.querySelector("#close-page-review").onclick=()=>document.querySelector("#page-review-dialog").close();
 document.querySelector("#confirm-page-publish").onclick=()=>action(async()=>{
+  if (!pageReviewTarget || pageReviewTarget.path !== selectedPage?.path || pageReviewTarget.version !== pageDraft?.version || pageReviewTarget.request !== pageSelectionRequest || pageDirty || pageLoading || pageLoadFailed || pageSaveBusy) {
+    document.querySelector("#page-review-dialog").close();
+    notice("頁面內容已變更，請重新儲存並預覽後再發布。", "error");
+    return;
+  }
   const button=document.querySelector("#confirm-page-publish");button.disabled=true;
   try {document.querySelector("#page-review-dialog").close();await submitPageOperation("publish",true);} finally {button.disabled=false;}
 });
 const originalSelectPage=selectPage;
 selectPage=async function(page) {
-  const previous=selectedPage;
+  const fromDrawer = document.body.dataset.pageDrawer === "open";
+  const previousRequest = pageSelectionRequest;
   const loading=originalSelectPage(page);
-  if (selectedPage===page) closePageDrawer(false);
-  await loading;
-  if (selectedPage !== previous || selectedPage?.path===page.path) {
-    closePageDrawer(false); showEditorTab("content"); updateSelectedRelease();
-    if (window.matchMedia("(max-width: 760px)").matches) document.querySelector("#page-editor-title").scrollIntoView({block:"start"});
+  const request = pageSelectionRequest;
+  if (selectedPage===page && request !== previousRequest) {
+    closePageDrawer(false);
+    showEditorTab("content");
+    if (fromDrawer) document.querySelector("#page-editor-title").focus({preventScroll:true});
   }
+  const loaded = await loading;
+  if (loaded && request === pageSelectionRequest) {
+    showEditorTab("content");
+    updateSelectedRelease();
+  }
+  return loaded;
 };
 const originalLoadPages=loadPages;
 loadPages=async function(){await originalLoadPages();updateDashboard();};
@@ -233,6 +274,6 @@ setInterval(async()=>{
   releasePollBusy=true;
   try{await Promise.all([publications(),loadPages()]);}catch{}finally{releasePollBusy=false;}
 },30000);
-showWorkspace(location.hash.slice(1));
+showWorkspace(location.hash.slice(1), false);
 showEditorTab("content");
 window.addEventListener("hashchange",()=>{const target=location.hash.slice(1);if(target!==currentWorkspace)showWorkspace(target);});
