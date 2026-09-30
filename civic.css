@@ -14,8 +14,8 @@ body .topline a{color:#fff}
 body .brand-name{letter-spacing:.04em}
 body .site-header nav a{border-radius:3px}
 body .site-header nav a[href="service.html"]{display:inline-flex}
-body .page-head{padding:52px 0 32px}
-body .page-head h1{font-family:var(--civic-serif);font-weight:800;letter-spacing:.01em;line-height:1.3;font-size:clamp(2.1rem,4.3vw,3.7rem)}
+body .page-head{padding:32px 0 20px}
+body .page-head h1{font-family:var(--civic-serif);font-weight:800;letter-spacing:.01em;line-height:1.3;font-size:clamp(2rem,3.8vw,3.2rem)}
 body .page-head p:not(.eyebrow){line-height:1.85}
 body .case-card{border-radius:4px;box-shadow:none;border:1px solid var(--civic-line);border-top:3px solid #75957d;padding:24px}
 body .case-card h3{font-family:var(--civic-serif);line-height:1.5}
@@ -133,7 +133,7 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
  .civic-home .hero-intro{font-size:.9rem;margin-top:14px}.civic-home .hero-portrait figcaption{display:none}
  .civic-service-routes{grid-template-columns:1fr}.civic-service-routes a{border-right:0;border-bottom:1px solid var(--civic-line);padding:18px 0}.civic-service-routes a:last-child{border:0}
  .civic-article-nav{gap:4px 20px}.civic-article-nav span{width:100%;margin-left:0;padding-bottom:6px}.civic-list-only #case-list{grid-template-columns:1fr}
- body .page-head{padding:32px 0 24px}body .case-card{padding:20px}body .case-body>p{font-size:1rem}
+ body .page-head{padding:24px 0 16px}body .case-card{padding:20px}body .case-body>p{font-size:1rem}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 @media print{.site-header,.topline,.footer,.external-embed,.civic-view-controls,.global-search-trigger,.menu-backdrop{display:none!important}body{background:white;color:black}.case-layout,.civic-story-grid{display:block!important}.case-aside{position:static!important}.case-sources a::after{content:" (" attr(href) ")";font-size:9pt;overflow-wrap:anywhere}}
@@ -219,10 +219,10 @@ body .platform-content>.source-note{display:block!important;font-size:.85rem;lin
 }
 @media(min-width:781px) and (max-width:1100px){body .site-header .nav-wrap{gap:8px}body .site-header nav .nav-group>summary{padding-inline:7px;font-size:.82rem}body .brand-name{font-size:1.3rem}body .brand-mark{width:36px;height:36px;font-size:1.5rem}}
 @media(max-width:780px){
- body .site-header nav{grid-template-columns:1fr 1fr!important;gap:20px 12px!important;align-content:start;padding:20px!important}
- body .site-header nav .nav-group>summary{padding:0 0 8px;min-height:36px;font-size:.84rem;border-bottom:1px solid var(--civic-line);background:transparent!important}
- body .site-header nav .nav-group-links{border:0;min-width:0;padding:6px 0 0;background:transparent}
- body .site-header nav .nav-group-links>a{padding:8px 4px;font-size:.85rem}
+ body .site-header nav{grid-template-columns:minmax(0,1fr)!important;gap:4px!important;align-content:start;padding:12px!important;overscroll-behavior:contain}
+ body .site-header nav .nav-group>summary{padding:12px;min-height:48px;font-size:1rem;border-bottom:1px solid var(--civic-line);background:transparent!important}
+ body .site-header nav .nav-group-links{border:0;min-width:0;padding:4px 0 8px 12px;background:transparent}
+ body .site-header nav .nav-group-links>a{padding:10px 12px;font-size:.95rem}
  .civic-home .hero-actions{grid-column:1/-1;grid-row:4;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
  .civic-home .hero-actions .button{padding:12px 8px;font-size:.88rem;justify-content:center}
  .civic-home .hero-intro{grid-row:5}.civic-home .hero-election-status{grid-row:3}
@@ -303,3 +303,9 @@ body .updates-list{max-width:900px;margin-bottom:64px}.content-update{padding:28
 .guide-layout{display:grid;grid-template-columns:210px minmax(0,800px);gap:48px;align-items:start;margin-bottom:60px}.guide-index{position:sticky;top:calc(var(--site-header-height,80px) + 24px);display:grid;border-top:3px solid var(--green)}.guide-index a{padding:16px 0;border-bottom:1px solid var(--line);font-weight:650;line-height:1.65}.guide-index a:hover{text-decoration:underline}.guide-content{min-width:0}.service-guide{padding:0 0 40px;margin-bottom:40px;border-bottom:1px solid var(--line)}.service-guide h2{font-size:clamp(1.7rem,3vw,2.3rem)}.guide-summary{color:var(--muted);font-size:1.1rem}.guide-sections h3{font-size:1.15rem;margin-block:24px 10px}.guide-sections li{margin-block:8px}.guide-sections p{margin-bottom:10px}.guide-actions{gap:12px;margin-top:20px}.guide-actions .button{font-size:.95rem}.guide-sources{margin-top:24px;padding:16px 20px;background:#edf1e9;font-size:.875rem}.guide-sources h3{font-size:1rem;margin:0}.guide-sources ul{margin-bottom:0}.guide-sources .source-note{display:block;font-size:.8rem}.guide-office{padding:24px;border:1px solid var(--line)}.guide-office h2{font-size:1.45rem}.guide-contact-list{display:grid;grid-template-columns:120px 1fr;gap:10px 20px}.guide-contact-list dd{margin:0;overflow-wrap:anywhere}.guide-print-note{font-size:.875rem;margin-top:24px;overflow-wrap:anywhere}
 @media(max-width:780px){.guide-layout{grid-template-columns:1fr;gap:28px}.guide-index{position:static}.guide-index a{padding:12px 0}.guide-contact-list{grid-template-columns:1fr;gap:4px}.guide-contact-list dd{margin-bottom:12px}.guide-sources{padding:16px}.service-guide{padding-bottom:28px;margin-bottom:28px}}
 @media print{.guide-layout{display:block}.guide-index{display:none}.service-guide{break-inside:auto;break-after:page;padding-bottom:0;margin-bottom:0}.guide-sections{display:grid;grid-template-columns:1fr 1fr;gap:4mm 10mm}.guide-sources{background:none;border-top:1px solid #999}.guide-actions{display:none}.guide-office{break-inside:avoid}.guide-print-note{margin-bottom:0}}
+
+/* Evidence must be as readable as the narrative it supports. */
+body .case-sources .source-links,body .case-sources .source-caption{font-size:1rem;line-height:1.85;color:var(--civic-muted)}
+body .case-sources .source-links li{padding-block:8px}
+body .case-sources .source-links a{color:var(--civic-ink);text-underline-offset:4px;overflow-wrap:anywhere}
+body .case-photos figcaption,body .record-boundary{font-size:.9rem;line-height:1.8;color:var(--civic-muted)}
