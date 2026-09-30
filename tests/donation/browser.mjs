@@ -233,6 +233,22 @@ try {
       assert.equal(await page.locator('.news-media-grid > *').count(), 10);
       assert.equal(await page.locator('#news-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
       assert((await page.locator('.news-media-grid .news-tag').count()) > 0);
+      const firstReport = page.locator('.news-report-card').first();
+      const reportDetails = firstReport.locator('.news-card-details');
+      assert.equal(await reportDetails.getAttribute('open'), null);
+      assert(await firstReport.locator('.news-card-lead').isVisible());
+      assert.match(await firstReport.locator('.news-card-lead').innerText(), /尚非調薪完成/);
+      const sourceURLs = await firstReport.locator('a[href]').evaluateAll(links => links.map(link => link.getAttribute('href')));
+      assert.deepEqual(sourceURLs, ['https://www.taisounds.com/news/content/71/288751','https://youngnews3631.com/news_detail.php?NewsID=18015']);
+      const disclosure = reportDetails.locator('summary');
+      await disclosure.focus();
+      await page.keyboard.press('Enter');
+      assert(await firstReport.locator('.news-source-links a').first().isVisible());
+      assert.doesNotMatch(await reportDetails.innerText(), /漾新聞｜漾新聞｜/);
+      await page.keyboard.press('Enter');
+      assert.equal(await reportDetails.getAttribute('open'), null);
+      assert(await disclosure.evaluate(element => element === document.activeElement));
+
       await page.locator('[data-filter-menu="topic"] summary').click();
       await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
       await page.locator('[data-filter-menu="topic"] input[value="transport"]').check();
@@ -310,6 +326,19 @@ try {
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
     assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   });
+
+  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
+    await check(`news first-screen complete lead ${viewport.width}px`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(base + 'news.html');
+      await page.locator('.news-card-lead').first().waitFor({state:'visible'});
+      const lead = await page.locator('.news-card-lead').first().boundingBox();
+      assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
+    });
+  }
+
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
     await check(`no JavaScript: ${file}`, async () => {
       await nojsPage.goto(base + file);
