@@ -4,18 +4,19 @@ from pathlib import Path
 from html import escape
 import json,re
 from build_events import calendar_url
+from achievement_metadata import history_date_key, latest_history_event
 ROOT=Path(__file__).resolve().parents[1]
 TRACKABLE={'持續追蹤','爭取規劃','政策實施'}
 def e(v): return escape(str(v),quote=True)
-def latest(item): return max(item.get('history',[]),key=lambda h:h.get('date',''),default=None)
+def latest(item): return latest_history_event(item.get('history', []))
 def tracking_items(items):
-    return sorted((i for i in items if i.get('status') in TRACKABLE and i.get('sources')),key=lambda i:(latest(i) or {}).get('date',''),reverse=True)
+    return sorted((i for i in items if i.get('status') in TRACKABLE and i.get('sources')),key=lambda i:history_date_key((latest(i) or {}).get('date','')),reverse=True)
 def render_tracking(items):
     cards=[]
     for item in tracking_items(items):
         event=latest(item);url=f'achievement-{e(item["id"])}.html'
         source=next((s for s in reversed(item['sources']) if event and s.get('sourceDate')==event['date']),None)
-        when='日期尚未確認'
+        when='紀錄未載日期'
         if event:
             attr=f' datetime="{e(event["date"])}"' if re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',event['date']) else ''
             when=f'<time{attr}>{e(event["date"])}</time>'
