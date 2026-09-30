@@ -22,7 +22,7 @@ try {
     try { if ((await fetch(base)).ok) break; } catch {}
     await new Promise(r=>setTimeout(r,100));
   }
-  for (const width of [320,390,430,768,1024,1440]) {
+  for (const width of [320,360,390,430,768,1024,1440]) {
     const context = await browser.newContext({viewport:{width,height:844}, reducedMotion:'reduce'});
     await context.route('**/*', r=>new URL(r.request().url()).origin === new URL(base).origin ? r.continue() : r.abort());
     const page = await context.newPage();
@@ -60,6 +60,14 @@ try {
         assert(menu.y + menu.height <= 844);
         assert(await page.locator('main').evaluate(el=>el.inert));
         await page.screenshot({path:fileURLToPath(new URL(width + '-menu.png',out))});
+        assert.equal(await page.locator('#navigation .nav-group[open]').count(),0);
+        const groups = page.locator('#navigation .nav-group');
+        for (const group of await groups.all()) {
+          await group.locator('summary').focus();
+          await page.keyboard.press('Enter');
+          await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
+          assert(await group.locator('a').first().isVisible());
+        }
         await page.locator('#navigation a').last().scrollIntoViewIfNeeded();
         const last = await page.locator('#navigation a').last().boundingBox();
         assert(last.y >= menu.y && last.y+last.height <= 844);
