@@ -6,6 +6,8 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
+const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
+const platformEvidenceCount=Object.values(platforms.itemsById).filter(item=>item.year===2026&&item.relatedRecordIds?.length).length;
 const publicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
 // Schedule expectations are derived from the published data so a monthly update never breaks CI (WP0.4).
 const legal=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
@@ -90,7 +92,9 @@ try{
   await check(width+' original platform and accountability gaps',async()=>{
    assert.equal(await page.locator('#platform-2026 .platform-theme li').count(),13);
    assert.match(await page.locator('.platform-accountability').innerText(),/量化目標、完成期限與執行分工/);
-   assert.equal(await page.locator('#platform-2026 .platform-evidence').count(),13);
+   assert.equal(await page.locator('#platform-2026 .platform-evidence').count(),platformEvidenceCount);
+   assert.equal(await page.locator('#platform-2026 .platform-evidence').filter({has:page.locator('a')}).count(),platformEvidenceCount);
+   assert(!/延續關係：待確認|完成情形：尚未評估|本站尚未為此項連結對應專題/.test(await page.locator('main').innerText()));
    assert(await page.locator('#platform-2026 .source-note').isVisible());
   });
   await page.goto(base+'about.html');

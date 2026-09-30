@@ -267,11 +267,11 @@
   "gaps": [
     {
       "label": "第8屆鳳山市民代表",
-      "status": "後續官方公報可確認曾任；本次未取得當屆公報，選舉年份、選區與政見全文尚待原始資料。"
+      "status": "後續選舉公報記載陳慧文曾任第8屆鳳山市民代表；本頁目前未收錄當屆選舉年份、選區及政見全文。"
     },
     {
       "label": "2002｜高雄縣第15屆議員選舉",
-      "status": "中選會資料庫確認第1選舉區、17號、當選；政見公報全文尚未取得。",
+      "status": "中選會資料列有2002年第1選舉區、17號及當選紀錄；本頁目前未收錄當屆政見公報全文。",
       "sourceUrl": "https://db.cec.gov.tw/ElecTable/Election/ElecTickets?areaCode=00&cityCode=012&dataLevel=A&dataType=tickets&deptCode=000&legisId=T1&liCode=0000&prvCode=01&subjectId=T2&themeId=8178fcf3d7aabd51203614f208b75031&typeId=ELC"
     }
   ],
@@ -793,7 +793,7 @@
       "relationType": "topic_comparison",
       "relationshipStatus": "needs_confirmation",
       "outcomeStatus": "not_assessed",
-      "note": "兩份原文均涉及捷運或大眾運輸；本表只提供原文對讀，尚未確認是否為同一承諾的延續，也未判定完成情形。"
+      "note": "2022年提出大眾運輸路網整合，2026年著重捷運黃線與聯合開發的在地回饋。"
     },
     {
       "id": "childcare-2022-2026",
@@ -803,7 +803,7 @@
       "relationType": "topic_comparison",
       "relationshipStatus": "needs_confirmation",
       "outcomeStatus": "not_assessed",
-      "note": "2022 原文包含托兒服務，2026 原文提出延長托育；服務範圍、量化目標與延續關係仍須補充核實。"
+      "note": "2022年提出長照、日照與托兒資源整合，2026年提出擴大延長托育。"
     }
   ]
 }

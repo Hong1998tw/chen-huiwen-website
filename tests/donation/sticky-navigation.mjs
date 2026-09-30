@@ -62,6 +62,21 @@ try {
         await page.screenshot({path:fileURLToPath(new URL(width + '-menu.png',out))});
         assert.equal(await page.locator('#navigation .nav-group[open]').count(),0);
         const groups = page.locator('#navigation .nav-group');
+        // Reproduce queued native toggle events by activating distinct groups
+        // in one task. The last request must win immediately and stay open.
+        const burst = await page.evaluate(async()=>{
+          const groups=[...document.querySelectorAll('#navigation .nav-group')];
+          for (const group of groups) group.querySelector('summary').click();
+          const immediate=groups.flatMap((group,index)=>group.open?[index]:[]);
+          await new Promise(resolve=>setTimeout(resolve,0));
+          const settled=groups.flatMap((group,index)=>group.open?[index]:[]);
+          groups.at(-1).querySelector('summary').click();
+          await new Promise(resolve=>setTimeout(resolve,0));
+          return {immediate,settled,closed:groups.every(group=>!group.open),last:groups.length-1};
+        });
+        assert.deepEqual(burst.immediate,[burst.last]);
+        assert.deepEqual(burst.settled,[burst.last]);
+        assert.equal(burst.closed,true);
         for (let pass=0;pass<3;pass++) {
           for (let index=0;index<await groups.count();index++) {
             const group=groups.nth(index);

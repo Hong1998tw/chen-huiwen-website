@@ -32,7 +32,7 @@ def build():
         if any(id not in data or id not in guides for id in question_ids):
             raise ValueError('Home questions must reference reviewed public context')
         questions=''.join(f'<article class="civic-feature-copy"><h3>{e(guides[id]["question"])}</h3><a class="civic-read" href="achievement-{e(id)}.html">閱讀議題與來源 <span aria-hidden="true">→</span></a></article>' for id in question_ids)
-        question_html='<section class="wrap civic-reading-guide" id="civic-questions" aria-labelledby="civic-questions-heading"><h2 id="civic-questions-heading">從鳳山日常，問一個具體問題</h2><p>交通、照顧、防汛，先從你關心的問題開始。閱讀最新收錄紀錄，分辨各方角色，再回到原始來源核對。</p><div>'+questions+'</div></section>'
+        question_html='<section class="wrap civic-reading-guide" id="civic-questions" aria-labelledby="civic-questions-heading"><h2 id="civic-questions-heading">從鳳山日常，問一個具體問題</h2><p>從交通、照顧與防汛，了解地方需求、議會提問與市府辦理進度。</p><div>'+questions+'</div></section>'
         text=block(text,'civic-questions',question_html)
     page.write_text(text)
     print('Built public civic home selections')

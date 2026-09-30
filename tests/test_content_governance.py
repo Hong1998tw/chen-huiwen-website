@@ -54,9 +54,17 @@ class PlatformIdentityTests(unittest.TestCase):
 
     def test_unavailable_historical_entries_explain_the_gap(self):
         rendered = render_platforms(self.data, self.records)
-        self.assertIn('資料待補：', rendered)
-        self.assertIn('政見公報全文尚未取得', rendered)
-        self.assertIn('延續關係：待確認', rendered)
+        self.assertIn('本頁目前未收錄當屆政見公報全文', rendered)
+        self.assertNotIn('資料待補：', rendered)
+        self.assertNotIn('延續關係：待確認', rendered)
+        self.assertNotIn('完成情形：尚未評估', rendered)
+        self.assertNotIn('本站尚未為此項連結對應專題', rendered)
+        for comparison in self.data['crossTermComparisons']:
+            self.assertEqual(comparison['relationshipStatus'], 'needs_confirmation')
+            self.assertEqual(comparison['outcomeStatus'], 'not_assessed')
+        expected = sum(1 for item in self.data['itemsById'].values()
+                       if item['year'] == 2026 and item.get('relatedRecordIds'))
+        self.assertEqual(rendered.count('class="platform-evidence"'), expected)
 
 
 class EventLifecycleTests(unittest.TestCase):

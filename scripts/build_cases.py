@@ -33,7 +33,7 @@ def source_link(source):
  link=ext(source['url'],source['title'])
  if is_council_index(source['url']):
   link=ext(source['url'],source['title']+'（議員查詢入口）')
-  link+='<p class="source-caption source-lookup-note">議員紀錄查詢入口，非本筆原件直達連結。請在官方系統依本列日期與標題查找；本站尚未取得可直接定位本筆紀錄的網址。</p>'
+  link+='<p class="source-caption source-lookup-note">此連結開啟議會查詢首頁，請依上列日期與標題查找原件。</p>'
  return link
 def main_tags(c):return ''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'])
 def sub_tags(c):return ''.join(f'<span class="case-tag-sub">{E(t)}</span>' for t in c.get('subcategories',[]))
@@ -88,10 +88,10 @@ for c in public_items:
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
  latest=max(c['history'],key=lambda event:event['date']) if c['history'] else None
  latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
- evidence=ext(latest_sources[-1]['url'],'核對此階段來源') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看完整來源 ↓</a>'
+ evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
  narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else ''
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">以上為所列日期的辦理情形，最新進度請見主管機關公告。</p></section>') if latest else ''
  if single_event: current='<div id="case-history">'+current+'</div>'
  section_links={'overview':('case-overview','重點說明',bool(content)), 'media':('case-media','照片與影片',bool(photos)),
                 'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
@@ -101,7 +101,7 @@ for c in public_items:
  if context:
   latest_day=latest['date'] if latest else '未載明'
   source_labels=''.join('<li>'+E(source.get('sourceDate',''))+' '+E(source['title'])+'</li>' for source in c['sources'])
-  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>收錄的最新歷程 · {E(latest_day)}</h2>{narrative}<p>上述為已收錄紀錄，並非即時工程進度；未據此推定完工、核定或新的服務名額。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。完整歷程、議題導讀、原始來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
+  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>最新收錄紀錄 · {E(latest_day)}</h2>{narrative}<p>摘要呈現所列日期的辦理情形；最新工程、政策與服務資訊，請見主管機關公告。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。完整歷程、議題導讀、原始來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
   body=body.replace('</nav>','</nav><div class="wrap print-toolbar"><button class="button button-green print-page" type="button" hidden>列印單頁摘要</button><span>含資料日期與完整紀錄網址</span></div>')+print_sheet
  organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
  structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}

@@ -46,8 +46,15 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     group.open = false;
   });
   arrangeGroups(); mobile.addEventListener('change', arrangeGroups);
-  groups.forEach(group => group.addEventListener('toggle', () => {
-    if (group.open) groups.filter(other => other !== group).forEach(other => { other.open = false; });
+  groups.forEach(group => group.querySelector('summary')?.addEventListener('click', event => {
+    // Native toggle events are queued: an older opening can otherwise close
+    // the next group during fast keyboard navigation. Commit the accordion
+    // state synchronously on activation; Enter/Space still synthesize click.
+    // Without JavaScript, each details/summary remains a native disclosure.
+    event.preventDefault();
+    const opening = !group.open;
+    if (opening) groups.filter(other => other !== group).forEach(other => { other.open = false; });
+    group.open = opening;
   }));
   document.addEventListener('click', event => {
     if (!mobile.matches && !navigation.contains(event.target)) groups.forEach(group => { group.open = false; });
