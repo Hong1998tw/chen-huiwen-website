@@ -314,6 +314,38 @@ try {
     });
   }
 
+  await check('map initial page is bounded while record data is pending', async () => {
+    const pending = await browser.newContext({viewport:{width:390,height:844}});
+    await pending.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await pending.newPage();
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    await p.route('**/data/achievement-map.json*', async route => { await held; await route.continue(); });
+    try {
+      await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
+      assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+      release();
+      await p.waitForFunction(() => Boolean(window.HuiwenCases));
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
+      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().visible.length), items.length);
+    } finally { release(); await pending.close(); }
+  });
+
+  await check('record-data failure restores every server-rendered case', async () => {
+    const fallback = await browser.newContext({viewport:{width:390,height:844}});
+    await fallback.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await fallback.newPage();
+    await p.route('**/data/achievement-map.json*', route => route.abort());
+    try {
+      await p.goto(base + 'achievements.html');
+      await p.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。', {exact:true}).waitFor();
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), items.length);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+    } finally { await fallback.close(); }
+  });
+
   for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
     await check(`news first-screen complete lead ${viewport.width}px`, async () => {
       await page.setViewportSize(viewport);
@@ -368,7 +400,10 @@ try {
       await nojsPage.goto(base + file);
       assert(await nojsPage.locator('h1').isVisible());
       if (file === 'vision.html') assert(await nojsPage.locator('#platform-2005').first().isVisible());
-      if (file === 'achievements.html') assert(await nojsPage.locator('[data-case]').first().isVisible());
+      if (file === 'achievements.html') {
+        assert(await nojsPage.locator('[data-case]').first().isVisible());
+        assert.equal(await nojsPage.locator('#case-list [data-case]:visible').count(), items.length);
+      }
       if (file === 'election.html') assert.match(await nojsPage.locator('main').innerText(), /2026\/10\/23|候選人姓名號次抽籤/);
       if (file === 'news.html') assert((await nojsPage.locator('.news-report-card').count()) >= 20);
       if (file === 'press.html') assert.equal(await nojsPage.locator('.news-press-card').count(), 17);
