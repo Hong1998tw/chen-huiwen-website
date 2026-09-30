@@ -27,7 +27,7 @@ let session,
   documentFilter = "all";
 let pageSelectionRequest = 0, pageLoading = false, pageLoadFailed = false;
 let pageEditRevision = 0, pageSaveBusy = false, documentEditRevision = 0, documentSaveBusy = false;
-let previewDocument = null;
+let previewDocument = null, documentPreviewRequest = 0, documentReplaceBusy = false;
 const defaultCaseSectionOrder = ["overview", "media", "history", "sources"];
 const dateTime = window.HuiwenDateTime;
 const pageCollator = new Intl.Collator("zh-Hant-TW", { numeric: true, sensitivity: "base" });
@@ -244,7 +244,9 @@ async function api(path, method = "GET", body) {
     error.field = body.field;
     throw error;
   }
-  return r.json();
+  try { return await r.json(); } catch {
+    throw new Error("伺服器未回傳可讀取的資料。表單內容仍保留；請稍後重試，重新載入前先保留未儲存內容。");
+  }
 }
 async function action(fn) {
   try {
@@ -481,7 +483,7 @@ function renderSeoEditor() {
       seoDraft[key] = input.value;
       if (counter) counter.textContent = `${input.value.length} 字`;
       pageDirty = true;
-  pageEditRevision++;
+      pageEditRevision++;
       setPageStatus("SEO 有變更 · 儲存並發布後才會更新正式頁面");
       pageControls();
       $("#page-frame").contentWindow?.postMessage({ type: "huiwen-cms-seo-preview", nonce: pageNonce, seo: effectiveSeoValues(seoDraft, seoBase, null) }, "*");
@@ -1117,87 +1119,87 @@ async function selectPage(page) {
   $(".visual-editor").setAttribute("aria-busy", "true");
   pageControls();
   try {
-  if (isPageEditable(page)) {
-    const result = await api(`/api/page-draft?path=${encodeURIComponent(page.path)}`);
-    if (request !== pageSelectionRequest) return false;
-    pageDraft = result.draft;
-    if (pageDraft?.payload) {
-      const saved = JSON.parse(pageDraft.payload);
-      pageFields = new Map(Object.entries(saved.fields || {}));
-      if (isCasePage(page) && saved.case) { caseDraft = saved.case; caseBase = saved.caseBase || null; }
-      if (page.path === "index.html" && saved.home) { homeDraft = saved.home; homeBase = saved.homeBase || null; }
-      if (saved.seo) { seoDraft = saved.seo; seoBase = saved.seoBase || null; }
-      if (saved.editorial) { editorialDraft = saved.editorial; editorialBase = saved.editorialBase || null; }
-      if (saved.blocks) { extraBlocks = saved.blocks; extraBlocksBase = saved.blocksBase || []; }
-    }
-    if (isCasePage(page)) {
-      const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
-    if (request !== pageSelectionRequest) return false;
-      const currentCase = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
-        paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
-        media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {},
-        images: publicCase.images || [], sectionOrder: publicCase.sectionOrder || defaultCaseSectionOrder };
-      if (!caseDraft) caseDraft = structuredClone(currentCase);
-      else {
-        caseDraft.images ??= [...currentCase.images];
-        caseDraft.sectionOrder ??= [...currentCase.sectionOrder];
+    if (isPageEditable(page)) {
+      const result = await api(`/api/page-draft?path=${encodeURIComponent(page.path)}`);
+      if (request !== pageSelectionRequest) return false;
+      pageDraft = result.draft;
+      if (pageDraft?.payload) {
+        const saved = JSON.parse(pageDraft.payload);
+        pageFields = new Map(Object.entries(saved.fields || {}));
+        if (isCasePage(page) && saved.case) { caseDraft = saved.case; caseBase = saved.caseBase || null; }
+        if (page.path === "index.html" && saved.home) { homeDraft = saved.home; homeBase = saved.homeBase || null; }
+        if (saved.seo) { seoDraft = saved.seo; seoBase = saved.seoBase || null; }
+        if (saved.editorial) { editorialDraft = saved.editorial; editorialBase = saved.editorialBase || null; }
+        if (saved.blocks) { extraBlocks = saved.blocks; extraBlocksBase = saved.blocksBase || []; }
       }
-      if (!caseBase) caseBase = structuredClone(currentCase);
-      else {
-        caseBase.images ??= [...currentCase.images];
-        caseBase.sectionOrder ??= [...currentCase.sectionOrder];
-      }
-      if (caseDraft && caseBase && !sameValue(caseBase, currentCase) && sameValue(caseDraft, currentCase)) {
-        caseBase = structuredClone(currentCase);
-        pageDirty = true;
-  pageEditRevision++;
-        caseBaselineRebased = true;
-      }
-    }
-    if (page.path === "index.html") {
-      try {
-        const current = await api("/api/home");
-    if (request !== pageSelectionRequest) return false;
-        homeCases = new Map(current.cases.map(record => [record.id, record]));
-        if (!homeDraft) homeDraft = structuredClone(current.home);
-        if (!homeBase) homeBase = structuredClone(current.home);
-      } catch (error) {
+      if (isCasePage(page)) {
+        const publicCase = (await api(`/api/case?path=${encodeURIComponent(page.path)}`)).case;
         if (request !== pageSelectionRequest) return false;
-        if (homeDraft) throw error;
-        homeUnavailable = true;
+        const currentCase = { title: publicCase.title, summary: publicCase.summary, updated: publicCase.updated,
+          paragraphs: publicCase.paragraphs || [], history: publicCase.history || [], sources: publicCase.sources || [],
+          media: publicCase.media || [], imageMetadata: publicCase.imageMetadata || {},
+          images: publicCase.images || [], sectionOrder: publicCase.sectionOrder || defaultCaseSectionOrder };
+        if (!caseDraft) caseDraft = structuredClone(currentCase);
+        else {
+          caseDraft.images ??= [...currentCase.images];
+          caseDraft.sectionOrder ??= [...currentCase.sectionOrder];
+        }
+        if (!caseBase) caseBase = structuredClone(currentCase);
+        else {
+          caseBase.images ??= [...currentCase.images];
+          caseBase.sectionOrder ??= [...currentCase.sectionOrder];
+        }
+        if (caseDraft && caseBase && !sameValue(caseBase, currentCase) && sameValue(caseDraft, currentCase)) {
+          caseBase = structuredClone(currentCase);
+          pageDirty = true;
+          pageEditRevision++;
+          caseBaselineRebased = true;
+        }
       }
+      if (page.path === "index.html") {
+        try {
+          const current = await api("/api/home");
+          if (request !== pageSelectionRequest) return false;
+          homeCases = new Map(current.cases.map(record => [record.id, record]));
+          if (!homeDraft) homeDraft = structuredClone(current.home);
+          if (!homeBase) homeBase = structuredClone(current.home);
+        } catch (error) {
+          if (request !== pageSelectionRequest) return false;
+          if (homeDraft) throw error;
+          homeUnavailable = true;
+        }
+      }
+      if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
+        const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
+        if (request !== pageSelectionRequest) return false;
+        if (!editorialDraft) editorialDraft = structuredClone(current);
+        if (!editorialBase) editorialBase = structuredClone(current);
+      }
+      if (!editorialDraft && page.source_kind !== "editorial-draft" && page.path !== "index.html" && !isCasePage(page)) {
+        const currentBlocks = (await api(`/api/page-blocks?path=${encodeURIComponent(page.path)}`)).blocks;
+        if (request !== pageSelectionRequest) return false;
+        if (!extraBlocks) extraBlocks = structuredClone(currentBlocks);
+        if (!extraBlocksBase) extraBlocksBase = structuredClone(currentBlocks);
+      }
+      const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
+      if (request !== pageSelectionRequest) return false;
+      renderPageHistory(history.versions || []);
+      $("#page-history-panel").hidden = !history.versions?.length;
+      setPageStatus(caseBaselineRebased ? "正式政績內容已包含此草稿變更；基準已安全對齊，儲存草稿後即可發布其他獨立變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
+        pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；可點選下方正式頁面文字開始編輯。");
+    } else {
+      $("#page-history-panel").hidden = true;
     }
-    if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
-      const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
-    if (request !== pageSelectionRequest) return false;
-      if (!editorialDraft) editorialDraft = structuredClone(current);
-      if (!editorialBase) editorialBase = structuredClone(current);
-    }
-    if (!editorialDraft && page.source_kind !== "editorial-draft" && page.path !== "index.html" && !isCasePage(page)) {
-      const currentBlocks = (await api(`/api/page-blocks?path=${encodeURIComponent(page.path)}`)).blocks;
-    if (request !== pageSelectionRequest) return false;
-      if (!extraBlocks) extraBlocks = structuredClone(currentBlocks);
-      if (!extraBlocksBase) extraBlocksBase = structuredClone(currentBlocks);
-    }
-    const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
-    if (request !== pageSelectionRequest) return false;
-    renderPageHistory(history.versions || []);
-    $("#page-history-panel").hidden = !history.versions?.length;
-    setPageStatus(caseBaselineRebased ? "正式政績內容已包含此草稿變更；基準已安全對齊，儲存草稿後即可發布其他獨立變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
-      pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；直接點選右側正式頁面文字開始編輯。");
-  } else {
-    $("#page-history-panel").hidden = true;
-  }
-  pageLoading = false;
-  pageControls();
-  renderCaseEditor();
-  renderHomeEditor();
-  renderSeoEditor();
-  renderEditorialEditor();
-  renderExtraBlocksEditor();
-  renderPages();
-  applyCurrentPageEdits();
-  return true;
+    pageLoading = false;
+    pageControls();
+    renderCaseEditor();
+    renderHomeEditor();
+    renderSeoEditor();
+    renderEditorialEditor();
+    renderExtraBlocksEditor();
+    renderPages();
+    applyCurrentPageEdits();
+    return true;
   } catch (error) {
     if (request !== pageSelectionRequest) return false;
     pageLoadFailed = true;
@@ -1245,34 +1247,34 @@ async function savePageDraft() {
   pageSaveBusy = true;
   pageControls();
   try {
-  const result = await api("/api/page-draft", "PUT", {
-    path: savingPage.path,
-    version: pageDraft?.version || 0,
-    baseCommit: savingPage.commit_sha,
-    fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
-    ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
-    ...(homeDraft ? { home: homeDraft, homeBase } : {}),
-    ...(seoDraft ? { seo: seoDraft, seoBase } : {}),
-    ...(editorialDraft ? { editorial: editorialDraft, editorialBase } : {}),
-    ...(extraBlocks ? { blocks: extraBlocks, blocksBase: extraBlocksBase } : {}),
-  });
-  if (request !== pageSelectionRequest) return false;
-  pageDraft = { ...pageDraft, version: result.version };
-  if (cleanedCase && revision === pageEditRevision) { caseDraft = cleanedCase; renderCaseEditor(); }
-  const updated = await api(`/api/page-draft?path=${encodeURIComponent(savingPage.path)}`);
-  if (request !== pageSelectionRequest) return false;
-  pageDraft = updated.draft;
-  pageDirty = revision !== pageEditRevision;
-  selectedPage.draft_version = result.version;
-  pageControls();
-  await loadPages();
-  if (request !== pageSelectionRequest) return false;
-  const history = await api(`/api/page-draft/history?path=${encodeURIComponent(savingPage.path)}`);
-  if (request !== pageSelectionRequest) return false;
-  renderPageHistory(history.versions || []);
-  $("#page-history-panel").hidden = !history.versions?.length;
-  setPageStatus(pageDirty ? `草稿 v${result.version} 已儲存；儲存期間的新修改仍保留，請再儲存。` : `草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
-  return !pageDirty;
+    const result = await api("/api/page-draft", "PUT", {
+      path: savingPage.path,
+      version: pageDraft?.version || 0,
+      baseCommit: savingPage.commit_sha,
+      fields: [...pageFields.entries()].map(([id, value]) => ({ id, ...value })),
+      ...(cleanedCase ? { case: cleanedCase, caseBase } : {}),
+      ...(homeDraft ? { home: homeDraft, homeBase } : {}),
+      ...(seoDraft ? { seo: seoDraft, seoBase } : {}),
+      ...(editorialDraft ? { editorial: editorialDraft, editorialBase } : {}),
+      ...(extraBlocks ? { blocks: extraBlocks, blocksBase: extraBlocksBase } : {}),
+    });
+    if (request !== pageSelectionRequest) return false;
+    pageDraft = { ...pageDraft, version: result.version };
+    if (cleanedCase && revision === pageEditRevision) { caseDraft = cleanedCase; renderCaseEditor(); }
+    const updated = await api(`/api/page-draft?path=${encodeURIComponent(savingPage.path)}`);
+    if (request !== pageSelectionRequest) return false;
+    pageDraft = updated.draft;
+    pageDirty = revision !== pageEditRevision;
+    selectedPage.draft_version = result.version;
+    pageControls();
+    await loadPages();
+    if (request !== pageSelectionRequest) return false;
+    const history = await api(`/api/page-draft/history?path=${encodeURIComponent(savingPage.path)}`);
+    if (request !== pageSelectionRequest) return false;
+    renderPageHistory(history.versions || []);
+    $("#page-history-panel").hidden = !history.versions?.length;
+    setPageStatus(pageDirty ? `草稿 v${result.version} 已儲存；儲存期間的新修改仍保留，請再儲存。` : `草稿 v${result.version} 已儲存；正式頁面尚未變更。`);
+    return !pageDirty;
   } finally {
     pageSaveBusy = false;
     pageControls();
@@ -1350,7 +1352,7 @@ window.addEventListener("message", (event) => {
   if (data.type === "huiwen-cms-change" && data.field && typeof data.field.id === "string") {
     pageFields.set(data.field.id, { sourceHash: data.field.sourceHash, value: data.field.value });
     pageDirty = true;
-  pageEditRevision++;
+    pageEditRevision++;
     setPageStatus("頁面文字有變更 · 儲存後才會進入發布流程");
     pageControls();
   }
@@ -1452,7 +1454,7 @@ function render() {
     !selected.published_hash || selected.base_hash === selected.published_hash;
   $("#editor-form").hidden = false;
   $("#history-panel").hidden = !selected.id;
-  $("#refresh").disabled = !selected.id;
+  $("#refresh").disabled = !selected.id || documentReplaceBusy || documentSaveBusy;
   for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
     const required = documentFieldRequired(key, selected.domain, p.status || "scheduled");
     if (key === "sessions") {
@@ -1495,7 +1497,7 @@ function render() {
     input.addEventListener("input",()=>clearFieldError(input));
     container.append(label);
   }
-  $("#preview").disabled = !selected.id;
+  $("#preview").disabled = !selected.id || documentReplaceBusy || documentSaveBusy;
   $("#editor-form").oninput = markDocumentDirty;
 }
 function documentFieldRequired(key, domain, status) {
@@ -1538,7 +1540,7 @@ function read() {
   return out;
 }
 async function save() {
-  if (documentSaveBusy || !selected || !validateRequiredFields($("#fields"), true)) return;
+  if (documentSaveBusy || documentReplaceBusy || !selected || !validateRequiredFields($("#fields"), true)) return;
   const savingDocument = selected;
   const revision = documentEditRevision;
   const payload = read();
@@ -1564,8 +1566,42 @@ async function save() {
     notice(dirty ? "草稿已儲存；儲存期間的新修改仍保留，請再儲存。" : "草稿已儲存，官網尚未變更。");
   } finally {
     documentSaveBusy = false;
-    $("#save").disabled = false;
+    $("#save").disabled = documentReplaceBusy;
     $("#save").textContent = "儲存草稿";
+    $("#refresh").disabled = !selected?.id || documentReplaceBusy;
+    $("#preview").disabled = dirty || !selected?.id || documentReplaceBusy;
+  }
+}
+async function replaceDocumentDraft(record, endpoint, body, successMessage) {
+  if (!record?.id || documentSaveBusy || documentReplaceBusy) return;
+  const revision = documentEditRevision;
+  documentReplaceBusy = true;
+  $("#refresh").disabled = true;
+  $("#save").disabled = true;
+  $("#preview").disabled = true;
+  try {
+    await api(endpoint, "POST", body);
+    await load();
+    if (selected !== record) {
+      notice("指定草稿已更新；目前另一筆表單的編輯內容保持不變。");
+      return;
+    }
+    const updated = documents.find(item => item.id === record.id);
+    if (!updated) throw new Error("草稿已送出更新，但清單尚未回傳此筆資料。請保留目前表單，稍後更新狀態。");
+    selected = updated;
+    dirty = revision !== documentEditRevision;
+    if (!dirty) render();
+    else {
+      $("#version").textContent = `草稿 v${selected.version} · 有未儲存變更`;
+      $("#preview").disabled = true;
+    }
+    await history();
+    notice(dirty ? "草稿版本已更新；等待期間的新修改仍保留，請確認後再儲存。" : successMessage);
+  } finally {
+    documentReplaceBusy = false;
+    $("#refresh").disabled = !selected?.id;
+    $("#save").disabled = documentSaveBusy;
+    $("#preview").disabled = dirty || !selected?.id || documentSaveBusy;
   }
 }
 async function history() {
@@ -1588,15 +1624,9 @@ async function history() {
         action(async () => {
           if (!confirm(`將 v${v.version} 還原為新草稿？既有歷史版本會保留。`))
             return;
-          await api(`/api/documents/${selected.id}/restore`, "POST", {
-            version: selected.version,
-            restoreVersion: v.version,
-          });
-          dirty = false;
-          const id = selected.id;
-          await load();
-          await select(documents.find((d) => d.id === id));
-          notice("已還原為新草稿，尚未發布。");
+          await replaceDocumentDraft(record, `/api/documents/${record.id}/restore`, {
+            version: record.version, restoreVersion: v.version,
+          }, "已還原為新草稿，尚未發布。");
         });
       row.append(b);
     }
@@ -1654,7 +1684,8 @@ $("#editor-form").onsubmit = (e) => {
   action(save);
 };
 $("#preview").onclick = () => action(async () => {
-  if (dirty || !selected?.id || documentSaveBusy) return;
+  if (dirty || !selected?.id || documentSaveBusy || documentReplaceBusy || $("#preview-dialog").open) return;
+  const request = ++documentPreviewRequest;
   const reviewingDocument = selected;
   const revision = documentEditRevision;
   previewVersion = reviewingDocument.version;
@@ -1663,7 +1694,7 @@ $("#preview").onclick = () => action(async () => {
   target.replaceChildren();
   const p = JSON.parse(selected.payload);
   const published = await api(`/api/documents/${reviewingDocument.id}/published`);
-  if (selected !== reviewingDocument || dirty || revision !== documentEditRevision) return;
+  if (request !== documentPreviewRequest || selected !== reviewingDocument || dirty || revision !== documentEditRevision) return;
   previewDocument = { id: reviewingDocument.id, version: reviewingDocument.version };
   const baseline = published.source ? JSON.parse(published.source.payload) : null;
   const changed = (selected.domain === "events" ? eventKeys : legalKeys).filter(key =>
@@ -1692,7 +1723,8 @@ $("#preview").onclick = () => action(async () => {
   $("#publish").textContent = `確認發布 ${changed.length} 項變更`;
   $("#preview-dialog").showModal();
 });
-$("#close-preview").onclick = () => $("#preview-dialog").close();
+$("#close-preview").onclick = () => { documentPreviewRequest++; $("#preview-dialog").close(); };
+$("#preview-dialog").addEventListener("close", () => { documentPreviewRequest++; previewDocument = null; });
 $("#publish").onclick = () =>
   action(async () => {
     if (!previewDocument || dirty || selected?.id !== previewDocument.id || selected.version !== previewDocument.version) {
@@ -1721,14 +1753,10 @@ $("#refresh").onclick = () =>
       )
     )
       return;
-    const id = selected.id;
-    await api(`/api/documents/${id}/refresh`, "POST", {
-      version: selected.version,
-    });
-    dirty = false;
-    await load();
-    await select(documents.find((d) => d.id === id));
-    notice("已載入網站版本，可以繼續編輯。");
+    const record = selected;
+    await replaceDocumentDraft(record, `/api/documents/${record.id}/refresh`, {
+      version: record.version,
+    }, "已載入網站版本，可以繼續編輯。");
   });
 $("#new-event").onclick = () =>
   action(() =>

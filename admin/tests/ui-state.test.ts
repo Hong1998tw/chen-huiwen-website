@@ -153,8 +153,49 @@ test("document save completion does not replace a different selected record", as
   assert.equal(h.read("dirty"), true);
 });
 
+
+test("refresh completion does not discard a newer record's unsaved changes", async () => {
+  const refreshed = deferred();
+  const h = harness(async () => refreshed.promise);
+  h.context.load = async () => {};
+  h.read("selected={id:1,version:1,payload:'{}'};dirty=true");
+  const pending = h.read("replaceDocumentDraft(selected,'/api/documents/1/refresh',{version:1},'updated')");
+  h.read("selected={id:2,version:5,payload:'{}'};dirty=true;documentEditRevision++");
+  refreshed.resolve({ id: 1 }); await pending;
+  assert.equal(h.read("selected.id"), 2);
+  assert.equal(h.read("dirty"), true);
+  assert.equal(h.node("#preview").disabled, true);
+  assert.equal(h.read("documentReplaceBusy"), false);
+});
+
+test("restore preserves typing during replacement and adopts the restored version", async () => {
+  const restored = deferred();
+  const h = harness(async () => restored.promise);
+  h.context.load = async () => h.read("documents=[{id:1,version:3,payload:'{}'}]");
+  h.read("selected={id:1,version:2,payload:'{}'};dirty=false");
+  const pending = h.read("replaceDocumentDraft(selected,'/api/documents/1/restore',{version:2,restoreVersion:1},'updated')");
+  h.read("dirty=true;documentEditRevision++");
+  restored.resolve({ id: 1 }); await pending;
+  assert.equal(h.read("selected.version"), 3);
+  assert.equal(h.read("dirty"), true);
+  assert.equal(h.node("#save").disabled, false);
+  assert.equal(h.node("#preview").disabled, true);
+});
+
+test("ordinary successful save re-enables preview", async () => {
+  const h = harness(async () => ({ id: 1 }));
+  h.context.load = async () => h.read("documents=[{id:1,version:2,payload:'{}'}]");
+  h.read("selected={id:1,version:1,payload:'{}'};dirty=true");
+  await h.read("save()");
+  assert.equal(h.read("dirty"), false);
+  assert.equal(h.node("#preview").disabled, false);
+  assert.equal(h.node("#refresh").disabled, false);
+});
+
 test("review targets and mobile accessibility protections remain wired", () => {
-  assert.ok(app.includes("selected !== reviewingDocument || dirty || revision !== documentEditRevision"));
+  assert.ok(app.includes("request !== documentPreviewRequest || selected !== reviewingDocument || dirty || revision !== documentEditRevision"));
+  assert.ok(consoleScript.includes("documentPreviewRequest++"));
+  assert.ok(consoleScript.includes('heading.scrollIntoView({block:"start", behavior:"instant"})'));
   assert.ok(app.includes('api(`/api/documents/${previewDocument.id}/publish`'));
   assert.ok(consoleScript.includes("pageReviewTarget.request !== pageSelectionRequest"));
   assert.ok(consoleScript.includes('window.matchMedia("(max-width: 860px)")'));

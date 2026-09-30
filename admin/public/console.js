@@ -11,6 +11,7 @@ let pageReviewTarget = null;
 
 function showWorkspace(name, moveFocus = true) {
   const previous = currentWorkspace;
+  documentPreviewRequest++;
   currentWorkspace = workspaces.includes(name) ? name : "dashboard";
   document.querySelector("#dashboard").hidden = currentWorkspace !== "dashboard";
   for (const workspace of workspaces) {
@@ -253,7 +254,11 @@ selectPage=async function(page) {
   if (selectedPage===page && request !== previousRequest) {
     closePageDrawer(false);
     showEditorTab("content");
-    if (fromDrawer) document.querySelector("#page-editor-title").focus({preventScroll:true});
+    if (fromDrawer) {
+      const heading = document.querySelector("#page-editor-title");
+      heading.scrollIntoView({block:"start", behavior:"instant"});
+      heading.focus({preventScroll:true});
+    }
   }
   const loaded = await loading;
   if (loaded && request === pageSelectionRequest) {
