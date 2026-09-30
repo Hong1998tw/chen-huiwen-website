@@ -708,7 +708,7 @@ dialog .section-head h2 { margin: 0; }
   .dashboard-cards button { min-height: 110px; padding: 18px; }
   body[data-page-drawer="open"] { overflow: hidden; }
   .page-tree-panel { inset: 0 max(16px, 6vw) 0 0; max-height: 100dvh; padding-bottom: max(24px, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
-  .visual-toolbar { position: relative; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .visual-toolbar { position: sticky; top: 0; grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .visual-toolbar > .badge { justify-self: start; max-width: 100%; }
   .page-actions .toolbar { gap: 8px; }
   .page-actions .toolbar button { font-size: 14px; }
