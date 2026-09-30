@@ -5,7 +5,9 @@
   const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const normalize=v=>String(v??'').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW');
   const statuses=new Set(['持續追蹤','爭取規劃','政策實施']);
-  const latest=item=>[...(item.history||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
+  const calendarDate=value=>/^\d{4}(?:-\d{2})?(?:-\d{2})?(?:$|[\s至–—])/.test(String(value??''));
+  const compareDates=(a,b)=>Number(calendarDate(a))-Number(calendarDate(b))||String(a??'').localeCompare(String(b??''));
+  const latest=item=>[...(item.history||[])].sort((a,b)=>compareDates(b.date,a.date))[0];
   const dateLabel=value=>new Intl.DateTimeFormat('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'}).format(new Date(value));
   let expanded=false;
   function announce(id,text) { const n=q(id); if(n) n.textContent=text; }
@@ -28,12 +30,12 @@
   function renderTracking(items) {
     if(!Array.isArray(items))throw new Error('Invalid public records');
     const root=q('#campaign-tracking');if(!root)return;
-    const records=items.filter(i=>statuses.has(i.status)&&(i.sources||[]).length).sort((a,b)=>String(latest(b)?.date||'').localeCompare(String(latest(a)?.date||''))||a.id.localeCompare(b.id));
+    const records=items.filter(i=>statuses.has(i.status)&&(i.sources||[]).length).sort((a,b)=>compareDates(latest(b)?.date,latest(a)?.date)||a.id.localeCompare(b.id));
     root.replaceChildren();
     for(const item of records) {
       const event=latest(item), source=event&&(item.sources||[]).filter(s=>s.sourceDate===event.date).at(-1);
       const url=`achievement-${encodeURIComponent(item.id)}.html`;
-      const time=event?`<time${/^\d{4}-\d{2}(?:-\d{2})?$/.test(event.date)?` datetime="${esc(event.date)}"`:''}>${esc(event.date)}</time>`:'日期尚未確認';
+      const time=event?`<time${/^\d{4}-\d{2}(?:-\d{2})?$/.test(event.date)?` datetime="${esc(event.date)}"`:''}>${esc(event.date)}</time>`:'紀錄未載日期';
       card(root,`<p class="campaign-kicker">紀錄所載狀態 · ${esc(item.status)}</p><h3><a href="${url}">${esc(item.title)}</a></h3><p>${esc(item.summary||'查看公開紀錄與來源。')}</p><p class="campaign-record"><span>最新收錄事件 · ${time}</span>${event?`<strong>${esc(event.title)}</strong>`:''}</p><p class="campaign-note">歷史紀錄；目前狀態請核對最新公告。</p><div class="campaign-actions"><a class="text-link" href="${url}">完整歷程 →</a><a class="text-link" href="${esc(source?.url||url+'#case-sources')}"${source?' target="_blank" rel="noopener noreferrer"':''}>${source?'此階段來源 ↗':'全部來源 →'}</a></div>`,[item.title,item.summary,item.status,...(item.categories||[]),...(item.subcategories||[]),...(item.villages||[]),...(item.history||[]).flatMap(h=>[h.date,h.title,h.text])].join(' '),'campaign-tracking-card');
     }
     announce('#campaign-tracking-count',String(records.length));

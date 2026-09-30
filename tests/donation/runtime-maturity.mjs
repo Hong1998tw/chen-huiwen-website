@@ -41,6 +41,16 @@ try{
   assert.match(await page.locator('#campaign-search-count').innerText(),/搜尋涵蓋全部/);
   await page.locator('#campaign-search').fill('');await page.locator('#campaign-tracking-more').click();assert.equal(await page.locator('.campaign-tracking-card:visible').count(),expected);
  });
+ await check('dated history outranks session labels after client refresh without losing date ranges',async()=>{
+  await page.waitForFunction(()=>document.querySelector('#campaign-tracking')?.dataset.total);
+  await page.locator('#campaign-search').fill('博愛卡');
+  const boai=page.locator('.campaign-tracking-card').filter({has:page.locator('h3 a[href="achievement-boai-card-rehab-bus-points.html"]')});
+  assert.equal(await boai.locator('.campaign-record time').innerText(),'2026-09-22');
+  await page.locator('#campaign-search').fill('過埤');
+  const guopi=page.locator('.campaign-tracking-card').filter({has:page.locator('h3 a[href="achievement-guopi-retaining-wall.html"]')});
+  assert.equal(await guopi.locator('.campaign-record time').innerText(),'2026-07-29 至 08-06');
+  await page.locator('#campaign-search').fill('');
+ });
  await check('zero results delegates existing whole-site search event',async()=>{
   await page.evaluate(()=>document.addEventListener('huiwen:search',e=>window.searchQuery=e.detail.query,{once:true}));
   await page.locator('#campaign-search').fill('找不到的關鍵字987');await page.locator('#campaign-search-all').click();assert.equal(await page.evaluate(()=>window.searchQuery),'找不到的關鍵字987');

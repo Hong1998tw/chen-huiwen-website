@@ -1,5 +1,17 @@
 """Shared public metadata contract. Importing this module never runs a build."""
 import html
+import re
+
+def history_date_key(value):
+    """Prefer explicit calendar prefixes; preserve ranges and never infer a date."""
+    text = str(value or '')
+    calendar = bool(re.match(r'^\d{4}(?:-\d{2})?(?:-\d{2})?(?:$|[\s至–—])', text))
+    return calendar, text
+
+
+def latest_history_event(events):
+    return max(events, key=lambda event: history_date_key(event.get('date', '')), default=None)
+
 
 STATUSES = frozenset({'待核驗', '持續追蹤', '爭取規劃', '已完成', '政策實施'})
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import json,re,html,hashlib
-from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
+from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup, latest_history_event
 from validate_achievements import validate
 from case_context import render_case_context
 from case_media import render as render_media
@@ -86,7 +86,7 @@ for c in public_items:
  if c['related']:
   related_ids=[id for id in c['related'] if id in byid]
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
- latest=max(c['history'],key=lambda event:event['date']) if c['history'] else None
+ latest=latest_history_event(c['history'])
  latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
  evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
