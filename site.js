@@ -39,10 +39,15 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   const links = [...navigation.querySelectorAll('a')];
   const groups = [...navigation.querySelectorAll('.nav-group')];
   const mobile = window.matchMedia('(max-width: 780px)');
-  const arrangeGroups = () => groups.forEach(group => { group.open = mobile.matches; });
+  const arrangeGroups = () => groups.forEach(group => {
+    // Start with a short first-level menu at every width. Native details keeps
+    // each group usable without JavaScript and exposes its expanded state.
+    if (group.open && group.contains(document.activeElement)) group.querySelector('summary')?.focus({preventScroll:true});
+    group.open = false;
+  });
   arrangeGroups(); mobile.addEventListener('change', arrangeGroups);
   groups.forEach(group => group.addEventListener('toggle', () => {
-    if (group.open && !mobile.matches) groups.filter(other => other !== group).forEach(other => { other.open = false; });
+    if (group.open) groups.filter(other => other !== group).forEach(other => { other.open = false; });
   }));
   document.addEventListener('click', event => {
     if (!mobile.matches && !navigation.contains(event.target)) groups.forEach(group => { group.open = false; });
@@ -69,7 +74,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     inertBefore = background.map(node => [node, node.inert]);
     background.forEach(node => { node.inert = true; });
     const search = navigation.querySelector('.global-search-trigger');
-    (search || links.find(link => link.getClientRects().length))?.focus({preventScroll:true});
+    (search || groups[0]?.querySelector('summary') || links.find(link => link.getClientRects().length))?.focus({preventScroll:true});
   }
   toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu(true) : openMenu());
   backdrop.addEventListener('click', () => closeMenu(true));
