@@ -5286,7 +5286,7 @@
   {
     "id": "changle-hexing-youbike",
     "title": "長樂街、和興街口 YouBike 設站",
-    "summary": "陳慧文持續追蹤和興里公共自行車需求，市府辦理情形可確認長樂街與和興街口已有 YouBike 站點。",
+    "summary": "交通局於2023年7月10日回覆，長樂街與和興街口南側已設置「長樂和興街口」YouBike 2.0 公共自行車站。",
     "categories": [
       "交通與基建"
     ],
@@ -5300,13 +5300,12 @@
     "status": "已完成",
     "coordinates": null,
     "locationName": "高雄市鳳山區長樂街與和興街口",
-    "locationNote": "市府公開辦理情形可確認該路口已有公共自行車站。",
+    "locationNote": "站點位於長樂街與和興街口南側。",
     "published": "2026-09-13",
     "updated": "2026-09-13",
     "budget": "",
     "paragraphs": [
-      "和興里居民有公共自行車轉乘需求，相關案件透過提案、會勘與設站評估持續推進。",
-      "市府公開辦理情形可確認長樂街與和興街口已有公共自行車站。官網僅陳述可核對的設站成果，不延伸為其他未證實的功勞。"
+      "交通局於2023年7月10日回覆，已在長樂街與和興街口南側設置「長樂和興街口」YouBike 2.0 公共自行車站，提供民眾租借使用。"
     ],
     "history": [],
     "notes": [],
@@ -5314,7 +5313,7 @@
     "sources": [
       {
         "title": "高雄市議會／市府｜和興里公共自行車站辦理情形",
-        "url": "https://cissearch.kcc.gov.tw/Upload/Attachment/ProposalReplyManager/1166/b4f61fbb-0985-454b-b3ae-64d898a77fec.pdf",
+        "url": "https://cissearch.kcc.gov.tw/Upload/Attachment/ProposalReplyManager/1166/b4f61fbb-0985-454b-b3ae-64d898a77fec.pdf#page=269",
         "sourceType": "政府第一手資料"
       }
     ],

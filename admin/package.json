@@ -13,8 +13,8 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
-    "wrangler": "4.141.0",
+    "@types/node": "24.10.1",
     "typescript": "5.9.3",
-    "@types/node": "24.10.1"
+    "wrangler": "4.143.1"
   }
 }

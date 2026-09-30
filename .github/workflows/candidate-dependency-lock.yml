@@ -1,4 +1,4 @@
-name: Generate reviewed dependency lock
+name: Generate reviewed canonical projections
 
 on:
   pull_request:
@@ -7,72 +7,44 @@ permissions:
   contents: read
 
 jobs:
-  generate-lock:
+  generate-projections:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'release/huiwen-site-admin-20260930'
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    env:
-      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
-      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-      SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          node-version: '24'
-      - name: Preserve original manifest and baseline audit
-        shell: bash
+          python-version: '3.12'
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - name: Generate and export canonical changes without pushing
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          mkdir -p dependency-evidence/before dependency-evidence/after
-          cp admin/package.json admin/package-lock.json dependency-evidence/before/
-          node --version > dependency-evidence/node-version.txt
-          npm --version > dependency-evidence/npm-version.txt
-          set +e
-          npm audit --prefix admin --json > dependency-evidence/audit-before.json
-          printf '%s\n' "$?" > dependency-evidence/audit-before-exit.txt
-          set -e
-      - name: Resolve the published Wrangler patch without installing or running scripts
-        run: npm install --prefix admin --save-dev --save-exact --package-lock-only --ignore-scripts --no-fund wrangler@4.143.1
-      - name: Preserve generated files and exact audit objects
-        shell: bash
-        run: |
-          cp admin/package.json admin/package-lock.json dependency-evidence/after/
-          sha256sum admin/package.json admin/package-lock.json > dependency-evidence/files.sha256
-          git diff -- admin/package.json admin/package-lock.json > dependency-evidence/dependency.patch
-          set +e
-          npm audit --prefix admin --json > dependency-evidence/audit-all.json
-          printf '%s\n' "$?" > dependency-evidence/audit-all-exit.txt
-          npm audit --prefix admin --omit=dev --json > dependency-evidence/audit-production.json
-          printf '%s\n' "$?" > dependency-evidence/audit-production-exit.txt
-          set -e
-          node --input-type=module <<'JS'
-          import {readFileSync, writeFileSync} from 'node:fs';
-          const read = path => JSON.parse(readFileSync(path, 'utf8'));
-          const pkg = read('admin/package.json');
-          const lock = read('admin/package-lock.json');
-          const versions = Object.entries(lock.packages || {}).filter(([path]) => /(?:^|\/)node_modules\/(wrangler|miniflare|undici)$/.test(path)).map(([path, data]) => ({path, version:data.version, resolved:data.resolved, integrity:data.integrity, dev:data.dev}));
-          if (pkg.devDependencies.wrangler !== '4.143.1') throw new Error('Unexpected Wrangler version');
-          writeFileSync('dependency-evidence/receipt.json', JSON.stringify({sourceHead:process.env.SOURCE_HEAD, node:process.version, generatedBy:'npm install --package-lock-only --ignore-scripts', versions}, null, 2)+'\n');
-          JS
-      - name: Upload review evidence only; never push or deploy
+          python scripts/build_all.py
+          mkdir -p projection-evidence
+          git diff --stat > projection-evidence/diff-stat.txt
+          git diff --binary > projection-evidence/generated.patch
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          paths = subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          files = {}
+          for name in paths:
+              path = pathlib.Path(name)
+              if not (name.endswith('.html') or name in {'data/achievements-public.json','data/achievement-map.json','data/search-index.json','sitemap.xml','updates.xml'}):
+                  raise SystemExit('Unexpected builder output: '+name)
+              content = path.read_text(encoding='utf-8')
+              files[name] = {'content':content,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+          pathlib.Path('projection-evidence/generated.json').write_text(json.dumps({'sourceHead':os.environ['SOURCE_HEAD'],'files':files},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
+          python scripts/quality.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: dependency-lock-${{ github.event.pull_request.head.sha }}
-          path: dependency-evidence/
+          name: canonical-projections-${{ github.event.pull_request.head.sha }}
+          path: projection-evidence/
           if-no-files-found: error
           retention-days: 7
-      - name: Require clean known-vulnerability reports before accepting the lock candidate
-        run: |
-          node --input-type=module <<'JS'
-          import {readFileSync} from 'node:fs';
-          for (const name of ['all','production']) {
-            const report = JSON.parse(readFileSync('dependency-evidence/audit-'+name+'.json','utf8'));
-            if (report.error || !report.metadata?.vulnerabilities) throw new Error('Incomplete npm audit '+name);
-            console.log(name, JSON.stringify(report.metadata.vulnerabilities));
-            if (report.metadata.vulnerabilities.total !== 0) throw new Error('Known vulnerabilities remain in '+name);
-          }
-          JS
