@@ -105,6 +105,13 @@ try {
     await page.locator('#news-search').fill('居服員安全');
     const figure = page.locator('[data-photo-source="https://n.yam.com/Article/20241130694798"]');
     await figure.waitFor({ state: 'attached' });
+    const details = page.locator('.news-card-details').filter({has:figure});
+    assert.equal(await details.count(), 1);
+    assert.equal(await details.getAttribute('open'), null);
+    await details.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await figure.waitFor({state:'visible'});
+    assert(await figure.locator('figcaption').isVisible());
     assert.equal(await figure.getAttribute('data-photo-credit'), '陳慧文議員服務處／提供');
     assert.match(await figure.locator('img').getAttribute('src'), /news-20241129-general-interpellation\.jpg$/);
     assert.match(await figure.locator('figcaption').innerText(), /2024年11月29日/);
