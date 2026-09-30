@@ -48,14 +48,14 @@ def render_comparisons(data):
     if not comparisons:
         return ''
     registry = data['itemsById']
-    body = '<section class="platform-comparisons" aria-labelledby="platform-comparisons-heading"><h2 id="platform-comparisons-heading">前後屆政見，放在一起讀</h2><p>以下按相近主題對照原文，並不表示已確認承諾延續或完成。目標、期限與政府執行情形仍須逐項核對。</p>'
+    body = '<section class="platform-comparisons" aria-labelledby="platform-comparisons-heading"><h2 id="platform-comparisons-heading">前後屆政見，放在一起讀</h2><p>依相近主題並列2022與2026政見原文，方便了解各年度的政策方向；實際推動進度請見相關專題。</p>'
     for comparison in comparisons:
         body += f'<details class="platform-comparison" id="comparison-{e(comparison["id"])}"><summary>{e(comparison["title"])}</summary>'
         for key in ('fromItemId', 'toItemId'):
             item_id = comparison[key]
             item = registry[item_id]
             body += f'<p><strong>{item["year"]} 原文</strong></p><blockquote><p>{e(item["sourceText"])}</p></blockquote><a class="text-link" href="#platform-item-{e(item_id)}">閱讀 {item["year"]} 原文與來源 ↓</a>'
-        body += f'<p class="source-note">{e(comparison["note"])}</p><p class="source-note">延續關係：待確認 · 完成情形：尚未評估</p></details>'
+        body += f'<p class="source-note">{e(comparison["note"])}</p></details>'
     return body + '</section>'
 
 
@@ -74,9 +74,9 @@ def render_platforms(data, achievements):
         open_attr = ' open' if year == 2026 and item else ''
         body += f'<section class="platform-row" id="platform-{key}"><div class="platform-year">{year or ""}</div><details class="platform-election"{open_attr}><summary><h2>{e(title)}</h2><span class="platform-toggle" aria-hidden="true">＋</span></summary><div class="platform-content">'
         if gap:
-            body += f'<p class="source-note">資料待補：{e(gap["status"])}</p>'
+            body += f'<p class="source-note">{e(gap["status"])}</p>'
             if gap.get('sourceUrl'):
-                body += f'<p><a class="text-link" href="{e(gap["sourceUrl"])}" target="_blank" rel="noopener noreferrer">已取得的官方資料 ↗</a></p>'
+                body += f'<p><a class="text-link" href="{e(gap["sourceUrl"])}" target="_blank" rel="noopener noreferrer">中選會選舉紀錄 ↗</a></p>'
         if item:
             campaign = item.get('sourceType') == 'campaign_material'
             if campaign:
@@ -86,7 +86,7 @@ def render_platforms(data, achievements):
                 if meta:
                     body += f'<p>{" · ".join(meta)}</p>'
                 if year == 2026:
-                    body += '<aside class="platform-accountability"><h3>這些方向，如何追蹤？</h3><p>原文尚未逐項列出量化目標、完成期限與執行分工。下列連結供核對既有紀錄，不表示 2026 政見已完成；尚缺資訊會明確保留。</p></aside>'
+                    body += '<aside class="platform-accountability"><h3>政策方向與推動進度</h3><p>以下為2026政見原文，相關專題可查看既有推動紀錄。各項政見的量化目標、完成期限與執行分工，原始圖卡尚未列明。</p></aside>'
                 image = item.get('image')
                 if image:
                     body += ('<details class="platform-original"><summary>查看原始政見圖卡</summary><figure class="platform-poster">'
@@ -102,7 +102,8 @@ def render_platforms(data, achievements):
                     body += f'<li id="platform-item-{e(item_id)}"><p>{e(text)}</p>'
                     if year == 2026:
                         links = metadata.get('relatedRecordIds', [])
-                        body += '<div class="platform-evidence">' + ('相關公開紀錄：' + '、'.join(f'<a href="achievement-{e(case_id)}.html">{e(records[case_id]["title"])} →</a>' for case_id in links) if links else '本站尚未為此項連結對應專題。') + '</div>'
+                        if links:
+                            body += '<div class="platform-evidence">相關公開紀錄：' + '、'.join(f'<a href="achievement-{e(case_id)}.html">{e(records[case_id]["title"])} →</a>' for case_id in links) + '</div>'
                     body += '</li>'
                 body += '</ol></section>'
             if campaign:

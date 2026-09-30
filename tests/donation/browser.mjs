@@ -84,8 +84,13 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
       assert(await page.locator('main').evaluate(el => el.inert));
+      assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
+      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
+      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="election.html"]')}).locator('summary').click();
+      await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
+      assert.equal(await page.locator('#navigation a[href="political-donation.html"]').isVisible(), false);
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
@@ -93,7 +98,7 @@ try {
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
-      assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 2);
+      assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
       await page.locator('.menu-backdrop').click({ position: { x: 4, y: 4 } });
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     });
@@ -228,6 +233,23 @@ try {
       assert.equal(await page.locator('.news-media-grid > *').count(), 10);
       assert.equal(await page.locator('#news-sort option').allTextContents().then(x => x.join('|')), '重要優先|日期優先（新到舊）');
       assert((await page.locator('.news-media-grid .news-tag').count()) > 0);
+      const firstReport = page.locator('.news-report-card').first();
+      const reportDetails = firstReport.locator('.news-card-details');
+      assert.equal(await reportDetails.getAttribute('open'), null);
+      assert(await firstReport.locator('.news-card-lead').isVisible());
+      assert.match(await firstReport.locator('.news-card-lead').innerText(), /尚非調薪完成/);
+      const sourceURLs = await firstReport.locator('a[href]').evaluateAll(links => links.map(link => link.getAttribute('href')));
+      assert.deepEqual(sourceURLs, ['https://www.taisounds.com/news/content/71/288751','https://youngnews3631.com/news_detail.php?NewsID=18015']);
+      const disclosure = reportDetails.locator('summary');
+      await disclosure.focus();
+      await page.keyboard.press('Enter');
+      assert(await firstReport.locator('.news-source-links a').first().isVisible());
+      assert.doesNotMatch(await reportDetails.innerText(), /漾新聞｜漾新聞｜/);
+      await firstReport.screenshot({path:fileURLToPath(new URL(`news-expanded-${width}.png`, output))});
+      await page.keyboard.press('Enter');
+      assert.equal(await reportDetails.getAttribute('open'), null);
+      assert(await disclosure.evaluate(element => element === document.activeElement));
+
       await page.locator('[data-filter-menu="topic"] summary').click();
       await page.locator('[data-filter-menu="topic"] input[value="education"]').check();
       await page.locator('[data-filter-menu="topic"] input[value="transport"]').check();
@@ -292,6 +314,73 @@ try {
     });
   }
 
+  await check('map initial page is bounded while record data is pending', async () => {
+    const pending = await browser.newContext({viewport:{width:390,height:844}});
+    await pending.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await pending.newPage();
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    await p.route('**/data/achievement-map.json*', async route => { await held; await route.continue(); });
+    try {
+      await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
+      assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+      release();
+      await p.waitForFunction(() => Boolean(window.HuiwenCases));
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
+      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().visible.length), items.length);
+    } finally { release(); await pending.close(); }
+  });
+
+  await check('record-data failure restores every server-rendered case', async () => {
+    const fallback = await browser.newContext({viewport:{width:390,height:844}});
+    await fallback.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await fallback.newPage();
+    await p.route('**/data/achievement-map.json*', route => route.abort());
+    try {
+      await p.goto(base + 'achievements.html');
+      await p.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。', {exact:true}).waitFor();
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), items.length);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+    } finally { await fallback.close(); }
+  });
+
+  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
+    await check(`news first-screen complete lead ${viewport.width}px`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(base + 'news.html');
+      await page.locator('.news-card-lead').first().waitFor({state:'visible'});
+      const lead = await page.locator('.news-card-lead').first().boundingBox();
+      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
+      assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    });
+  }
+
+
+  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
+    await check(`case latest record before utilities ${viewport.width}px`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(base + 'achievement-metro-green-line.html');
+      const latest = await page.locator('.case-latest').boundingBox();
+      const navigation = await page.locator('.civic-article-nav').boundingBox();
+      const lead = await page.locator('.case-latest > p:not([class])').boundingBox();
+      assert(latest && navigation && latest.y < navigation.y);
+      assert(lead && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
+      await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
+      const sources = page.locator('#case-sources');
+      assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
+      await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
+      await page.goto(base + 'index.html');
+      const questions = page.locator('#civic-questions');
+      assert.equal(await questions.locator('h3').count(),3);
+      await questions.screenshot({path:fileURLToPath(new URL(`home-questions-${viewport.width}.png`, output))});
+
+    });
+  }
+
   await context.close();
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
@@ -305,12 +394,16 @@ try {
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
     assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   });
+
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
     await check(`no JavaScript: ${file}`, async () => {
       await nojsPage.goto(base + file);
       assert(await nojsPage.locator('h1').isVisible());
       if (file === 'vision.html') assert(await nojsPage.locator('#platform-2005').first().isVisible());
-      if (file === 'achievements.html') assert(await nojsPage.locator('[data-case]').first().isVisible());
+      if (file === 'achievements.html') {
+        assert(await nojsPage.locator('[data-case]').first().isVisible());
+        assert.equal(await nojsPage.locator('#case-list [data-case]:visible').count(), items.length);
+      }
       if (file === 'election.html') assert.match(await nojsPage.locator('main').innerText(), /2026\/10\/23|候選人姓名號次抽籤/);
       if (file === 'news.html') assert((await nojsPage.locator('.news-report-card').count()) >= 20);
       if (file === 'press.html') assert.equal(await nojsPage.locator('.news-press-card').count(), 17);

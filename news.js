@@ -52,8 +52,65 @@
     figure.append(image,caption);
     card.prepend(figure);
   });
+
+  // Progressive reading layer: preserve the complete source HTML for no-JS
+  // readers and the CMS; move existing nodes rather than rewrite their claims.
+  const reportDetails = [];
+  grid.querySelectorAll('.news-report-card').forEach(card => {
+    const body = card.querySelector('.card-body');
+    const heading = body?.querySelector(':scope > h2');
+    const lead = body?.querySelector(':scope > p:not([class])');
+    const date = body?.querySelector(':scope > .eyebrow');
+    if (!body || !heading || !lead || !date) return;
+    const children = [...body.children];
+    const sourceLinks = [...body.querySelectorAll('a[href]')];
+    const meta = document.createElement('div');
+    meta.className = 'news-card-meta';
+    meta.append(date);
+    const tag = body.querySelector('.news-tag');
+    if (tag) meta.append(tag.cloneNode(true));
+    lead.classList.add('news-card-lead');
+    const details = document.createElement('details');
+    details.className = 'news-card-details';
+    const summary = document.createElement('summary');
+    summary.textContent = `內容與完整報導（${sourceLinks.length} 篇）`;
+    summary.setAttribute('aria-label', `閱讀「${heading.textContent.trim()}」的內容與完整報導（${sourceLinks.length} 篇）`);
+    details.append(summary);
+    children.filter(node => ![date, heading, lead].includes(node)).forEach(node => details.append(node));
+    const figure = card.querySelector(':scope > .news-report-media');
+    if (figure) details.append(figure);
+    sourceLinks.forEach(link => {
+      // Remove the duplicate display prefix only; keep the full headline and URL.
+      const text = [...link.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+      if (text) text.textContent = text.textContent.replace(/^漾新聞｜漾新聞｜/, '漾新聞｜');
+    });
+    body.replaceChildren(meta, heading, lead, details);
+    reportDetails.push(details);
+  });
+  const hint = section.querySelector('.news-filter-note');
+  if (hint) {
+    const help = document.createElement('details');
+    help.className = 'news-reading-help';
+    const summary = document.createElement('summary');
+    summary.textContent = '篩選與排序說明';
+    hint.before(help);
+    help.append(summary, hint);
+    const orderNote = document.createElement('p');
+    orderNote.textContent = '重要優先沿用編輯排序；日期優先依報導日期由新到舊。';
+    help.append(orderNote);
+  }
+  let beforePrint = [];
+  window.addEventListener('beforeprint', () => {
+    beforePrint = reportDetails.map(details => [details, details.open]);
+    reportDetails.forEach(details => { details.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    beforePrint.forEach(([details, open]) => { details.open = open; });
+    beforePrint = [];
+  });
+
   const cards = [...grid.querySelectorAll('[data-news-categories]')].map((node,index) => {
-    const source = node.querySelector('.card-body > .eyebrow, time[datetime]')?.textContent || node.textContent;
+    const source = node.querySelector('.news-card-meta .eyebrow, .card-body > .eyebrow, time[datetime]')?.textContent || node.textContent;
     const match = source.match(/(20\d{2})[.\/-](\d{2})[.\/-](\d{2})/);
     return {
       node,

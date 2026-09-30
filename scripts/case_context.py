@@ -7,7 +7,7 @@ import json
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-FACT_FIELDS = (('impact', '牽涉什麼'), ('councillorAction', '紀錄中的議員動作'), ('governmentRole', '政府端的工作'))
+FACT_FIELDS = (('impact', '與生活的關係'), ('councillorAction', '慧文的提案與質詢'), ('governmentRole', '市府回應與辦理情形'))
 
 
 def _load(root):
@@ -66,6 +66,8 @@ def render_case_context(record_id, root=ROOT):
     body = f'<section id="case-context" class="case-context" aria-labelledby="{heading_id}"><p class="civic-kicker">閱讀這個議題</p><h2 id="{heading_id}">議題導讀</h2><p class="case-context-updated">導讀整理 <time datetime="{e(context["preparedOn"])}">{e(context["preparedOn"])}</time></p><p class="case-context-question">{e(context["question"])}</p><div class="case-context-grid">'
     for field, title in FACT_FIELDS:
         block = context[field]
+        if field == 'councillorAction' and block['evidenceStatus'] == 'not_collected':
+            continue
         body += f'<div class="case-context-point"><h3>{title}</h3><p>{e(block["text"])}</p>'
         if block['sources']:
             links = []
@@ -75,7 +77,7 @@ def render_case_context(record_id, root=ROOT):
                 links.append(f'<a href="{e(url)}" target="_blank" rel="noopener noreferrer" aria-label="{e(source["title"])}">{e(date)} 閱讀來源 ↗</a>')
             body += '<p class="case-context-sources">' + ' · '.join(links) + '</p>'
         body += '</div>'
-    body += '</div><details class="case-context-next"><summary>下一步查什麼</summary><div><h3>目前資料未能確認</h3>'
+    body += '</div><details class="case-context-next"><summary>後續進度與相關資訊</summary><div><h3>閱讀提醒</h3>'
     body += ''.join(f'<p>{e(text)}</p>' for text in context['notEstablished'])
-    body += '<h3>後續可核對的資料</h3><ul>' + ''.join(f'<li>{e(text)}</li>' for text in context['nextEvidence']) + '</ul></div></details></section>'
+    body += '<h3>後續關注重點</h3><ul>' + ''.join(f'<li>{e(text)}</li>' for text in context['nextEvidence']) + '</ul></div></details></section>'
     return body

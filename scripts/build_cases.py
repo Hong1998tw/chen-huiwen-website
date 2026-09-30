@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the public map and standalone case pages from reviewed public JSON only."""
 from pathlib import Path
+from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import json,re,html,hashlib
 from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup
@@ -25,6 +26,15 @@ byid={x['id']:x for x in public_items}
 assert len({x['id']:x for x in items})==len(items)
 def href(i):return 'achievement-'+i+'.html'
 def ext(url,title):return f'<a href="{E(url)}" target="_blank" rel="noopener noreferrer">{E(title)} ↗</a>'
+def is_council_index(url):
+ parsed=urlsplit(url)
+ return parsed.hostname=='cissearch.kcc.gov.tw' and parsed.path.lower()=='/frame_councilor.aspx'
+def source_link(source):
+ link=ext(source['url'],source['title'])
+ if is_council_index(source['url']):
+  link=ext(source['url'],source['title']+'（議員查詢入口）')
+  link+='<p class="source-caption source-lookup-note">此連結開啟議會查詢首頁，請依上列日期與標題查找原件。</p>'
+ return link
 def main_tags(c):return ''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'])
 def sub_tags(c):return ''.join(f'<span class="case-tag-sub">{E(t)}</span>' for t in c.get('subcategories',[]))
 def asset_version(path):return hashlib.sha256((R/path).read_bytes()).hexdigest()[:12]
@@ -65,7 +75,7 @@ for c in public_items:
  info=facts_html(c,village_by_key)
  content=('<details class="case-background"><summary id="case-overview">完整背景與說明</summary>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])+'</details>') if c['paragraphs'] else ''
  history=('<section class="history-section" id="case-history"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h and not single_event else ''
- sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+(f'<time>{E(source["sourceDate"])}</time> · ' if source.get('sourceDate') else '')+ext(source['url'],source['title'])+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
+ sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+(f'<time>{E(source["sourceDate"])}</time> · ' if source.get('sourceDate') else '')+source_link(source)+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
  context=render_case_context(c['id'],R)
  section_order=c.get('sectionOrder',['overview','media','history','sources'])
  sections={'overview':content,'media':photos,'history':history,'sources':sources}
@@ -78,21 +88,21 @@ for c in public_items:
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
  latest=max(c['history'],key=lambda event:event['date']) if c['history'] else None
  latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
- evidence=ext(latest_sources[-1]['url'],'核對此階段來源') if latest_sources else '<a href="#case-sources">查看完整來源 ↓</a>'
+ evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
  narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">收錄的最新歷程 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">此處呈現本站已收錄的紀錄，並非即時工程進度。後續辦理情形，請一併核對主管機關最新公告。</p></section>') if latest else ''
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">以上為所列日期的辦理情形，最新進度請見主管機關公告。</p></section>') if latest else ''
  if single_event: current='<div id="case-history">'+current+'</div>'
  section_links={'overview':('case-overview','重點說明',bool(content)), 'media':('case-media','照片與影片',bool(photos)),
                 'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
  reading_links=[('case-context','議題導讀',bool(context))]+[section_links[key] for key in section_order]
  reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容整理 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
- body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section>{reading_nav}<div class="wrap case-latest-wrap">{current}</div><div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
+ body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section><div class="wrap case-latest-wrap">{current}</div>{reading_nav}<div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
  if context:
   latest_day=latest['date'] if latest else '未載明'
   source_labels=''.join('<li>'+E(source.get('sourceDate',''))+' '+E(source['title'])+'</li>' for source in c['sources'])
-  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>收錄的最新歷程 · {E(latest_day)}</h2>{narrative}<p>上述為已收錄紀錄，並非即時工程進度；未據此推定完工、核定或新的服務名額。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。完整歷程、議題導讀、原始來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
-  body=body.replace('<div class="wrap case-latest-wrap">','<div class="wrap print-toolbar"><button class="button button-green print-page" type="button" hidden>列印單頁摘要</button><span>含資料日期與完整紀錄網址</span></div><div class="wrap case-latest-wrap">')+print_sheet
+  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>最新收錄紀錄 · {E(latest_day)}</h2>{narrative}<p>摘要呈現所列日期的辦理情形；最新工程、政策與服務資訊，請見主管機關公告。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。完整歷程、議題導讀、原始來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
+  body=body.replace('</nav>','</nav><div class="wrap print-toolbar"><button class="button button-green print-page" type="button" hidden>列印單頁摘要</button><span>含資料日期與完整紀錄網址</span></div>')+print_sheet
  organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
  structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
  if c.get('published'):

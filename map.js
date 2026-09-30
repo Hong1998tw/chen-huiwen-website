@@ -4,6 +4,13 @@
   if (!root) return;
   root.classList.add('leaflet-container');
   const config = JSON.parse(document.getElementById('map-data').textContent);
+  const PAGE_SIZE = 10;
+  const list = document.getElementById('case-list');
+  const cards = [...list.querySelectorAll('[data-case]')];
+  // Match the initial interactive page before the first layout instead of
+  // laying out all records and then hiding most of them after the fetch.
+  // No-JS keeps the complete server-rendered list; a failed fetch restores it.
+  cards.forEach((card, index) => { card.hidden = index >= PAGE_SIZE; });
   const interactive = [...document.querySelectorAll('.map-controls input,.map-controls select,.map-controls button,[data-locate]')];
   interactive.forEach(control=>{control.disabled=true;});
   let data;
@@ -13,6 +20,7 @@
     data=await response.json();
     if(!Array.isArray(data)||!data.length)throw Error('invalid records');
   } catch {
+    cards.forEach(card => { card.hidden = false; });
     const notice=document.querySelector('.case-live-summary');
     notice.textContent='篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。';
     root.textContent='互動地圖暫時無法載入。';
@@ -20,10 +28,7 @@
     return;
   }
   interactive.forEach(control=>{control.disabled=false;});
-  const PAGE_SIZE = 10;
   const controls = Object.fromEntries(['q','village','category','subcategory','status','year'].map((key, i) => [key, document.getElementById(['case-search','village-filter','category-filter','subcategory-filter','status-filter','year-filter'][i])]));
-  const list = document.getElementById('case-list');
-  const cards = [...list.querySelectorAll('[data-case]')];
   const count = document.getElementById('case-count');
   const empty = document.getElementById('case-empty');
   const message = document.getElementById('map-message');

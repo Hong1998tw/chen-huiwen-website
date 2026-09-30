@@ -29,7 +29,7 @@ class CaseContextTests(unittest.TestCase):
         for record_id in ('metro-green-line', 'after-school-care', 'bade-detention'):
             source_urls = {s['url'] for r in self.records if r['id'] == record_id for s in r['sources']}
             soup = BeautifulSoup(render_case_context(record_id, ROOT), 'html.parser')
-            self.assertEqual(len(soup.select('.case-context-point')), 3)
+            self.assertEqual(len(soup.select('.case-context-point')), 2 if record_id == 'bade-detention' else 3)
             self.assertEqual(len(soup.select('h2')), 1)
             self.assertEqual(len(soup.select('#case-context')), 1)
             self.assertEqual(soup.select_one('.case-context-updated time')['datetime'], '2026-09-22')
@@ -62,7 +62,13 @@ class CaseContextTests(unittest.TestCase):
         self.assertEqual(case['councillorAction']['evidenceStatus'], 'not_collected')
         self.assertEqual(case['councillorAction']['sources'], [])
         self.assertIn('尚未收錄', case['councillorAction']['text'])
-        self.assertIn('不等於整體工程已完工', ''.join(case['notEstablished']))
+        self.assertIn('整體完工時間仍須以水利局公告為準', ''.join(case['notEstablished']))
+        self.assertIn('履約期限不能視為全案完工日期', ''.join(case['notEstablished']))
+        rendered = render_case_context('bade-detention', ROOT)
+        self.assertNotIn('慧文的提案與質詢', rendered)
+        self.assertNotIn(case['councillorAction']['text'], rendered)
+        self.assertIn('水利局與施工團隊', rendered)
+        self.assertEqual(len(BeautifulSoup(rendered, 'html.parser').select('.case-context-point')), 2)
 
     def test_external_unapproved_source_fails_closed(self):
         config = copy.deepcopy(self.config)
@@ -79,6 +85,30 @@ class CaseContextTests(unittest.TestCase):
         config['cases'][0]['councillorAction']['sources'] = []
         with self.assertRaises(ValueError):
             render_case_context('metro-green-line', self.fixture(config))
+
+
+    def test_latest_record_precedes_navigation_and_generic_sources_are_labelled(self):
+        for path in ROOT.glob('achievement-*.html'):
+            source = path.read_text()
+            self.assertLess(source.index('class="wrap case-latest-wrap"'), source.index('class="wrap civic-article-nav"'))
+            soup = BeautifulSoup(source, 'html.parser')
+            self.assertFalse(soup.select('.case-latest a[href*="Frame_Councilor.aspx"]'))
+            for link in soup.select('.case-sources a[href*="Frame_Councilor.aspx"]'):
+                self.assertIn('議員查詢入口', link.get_text())
+                self.assertIn('開啟議會查詢首頁', link.parent.select_one('.source-lookup-note').get_text())
+                self.assertIn('依上列日期與標題查找原件', link.parent.select_one('.source-lookup-note').get_text())
+
+    def test_home_questions_come_from_reviewed_case_context(self):
+        soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
+        section = soup.select_one('#civic-questions')
+        expected_ids = ('metro-green-line', 'after-school-care', 'bade-detention')
+        expected = {item['recordId']: item['question'] for item in self.config['cases']}
+        self.assertEqual([h.get_text() for h in section.select('h3')], [expected[id] for id in expected_ids])
+        self.assertEqual([a['href'] for a in section.select('a')], [f'achievement-{id}.html' for id in expected_ids])
+
+    def test_search_index_omits_print_utility_text(self):
+        items = json.loads((ROOT / 'data/search-index.json').read_text())['items']
+        self.assertTrue(all('列印單頁摘要 含資料日期與完整紀錄網址' not in row['keywords'] for row in items))
 
     def test_editorial_content_is_escaped(self):
         config = copy.deepcopy(self.config)

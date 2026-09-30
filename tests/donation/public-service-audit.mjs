@@ -6,6 +6,8 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
+const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
+const platformEvidenceCount=Object.values(platforms.itemsById).filter(item=>item.year===2026&&item.relatedRecordIds?.length).length;
 const publicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
 // Schedule expectations are derived from the published data so a monthly update never breaks CI (WP0.4).
 const legal=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
@@ -41,7 +43,7 @@ try{
   });
   await check(width+' grouped navigation keyboard',async()=>{
    assert.equal(await page.locator('.nav-group').count(),5);
-   if(width<781){await page.locator('.menu-toggle').click();assert(await page.locator('#navigation a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
+   if(width<781){await page.locator('.menu-toggle').click();await page.locator('#navigation .nav-group').first().locator('summary').click();assert(await page.locator('#navigation a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
    else{const group=page.locator('.nav-group').first();await group.locator('summary').focus();await page.keyboard.press('Enter');assert(await group.locator('a').first().isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');assert.equal(await group.getAttribute('open'),null);}
   });
   await check(width+' service intent and accurate highlighting',async()=>{
@@ -83,14 +85,16 @@ try{
   });
   await page.goto(base+'achievement-wufu-2nd-lane81-drainage.html');
   await check(width+' old record not represented as recent construction',async()=>{
-   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);assert.match(await page.locator('.case-latest').innerText(),/並非即時工程進度/);
+   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);assert.match(await page.locator('.case-latest .record-boundary').innerText(),/以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
   });
   await page.goto(base+'vision.html');
   await page.screenshot({path:fileURLToPath(new URL('platform-'+width+'.png',out))});
   await check(width+' original platform and accountability gaps',async()=>{
    assert.equal(await page.locator('#platform-2026 .platform-theme li').count(),13);
    assert.match(await page.locator('.platform-accountability').innerText(),/量化目標、完成期限與執行分工/);
-   assert.equal(await page.locator('#platform-2026 .platform-evidence').count(),13);
+   assert.equal(await page.locator('#platform-2026 .platform-evidence').count(),platformEvidenceCount);
+   assert.equal(await page.locator('#platform-2026 .platform-evidence').filter({has:page.locator('a')}).count(),platformEvidenceCount);
+   assert(!/延續關係：待確認|完成情形：尚未評估|本站尚未為此項連結對應專題/.test(await page.locator('main').innerText()));
    assert(await page.locator('#platform-2026 .source-note').isVisible());
   });
   await page.goto(base+'about.html');

@@ -61,7 +61,7 @@ try{
    });
    if(path.startsWith('achievement-'))await check(`${width} ${path} open questions and dated print summary`,async()=>{
     assert(await page.locator('#case-context').isVisible());await page.locator('.case-context-next summary').click();
-    assert.match(await page.locator('.case-context-next').innerText(),/後續可核對的資料/);
+    assert.match(await page.locator('.case-context-next').innerText(),/後續關注重點/);
     assert.match(await page.locator('.case-print-sheet').textContent(),/紀錄整理日期/);
    });
    await page.screenshot({path:fileURLToPath(new URL(`${engine}-${width}-${path.replace('.html','')}.png`,out)),fullPage:false});

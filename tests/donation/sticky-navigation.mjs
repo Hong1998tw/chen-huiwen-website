@@ -22,7 +22,7 @@ try {
     try { if ((await fetch(base)).ok) break; } catch {}
     await new Promise(r=>setTimeout(r,100));
   }
-  for (const width of [320,390,430,768,1024,1440]) {
+  for (const width of [320,360,390,430,768,1024,1440]) {
     const context = await browser.newContext({viewport:{width,height:844}, reducedMotion:'reduce'});
     await context.route('**/*', r=>new URL(r.request().url()).origin === new URL(base).origin ? r.continue() : r.abort());
     const page = await context.newPage();
@@ -60,6 +60,40 @@ try {
         assert(menu.y + menu.height <= 844);
         assert(await page.locator('main').evaluate(el=>el.inert));
         await page.screenshot({path:fileURLToPath(new URL(width + '-menu.png',out))});
+        assert.equal(await page.locator('#navigation .nav-group[open]').count(),0);
+        const groups = page.locator('#navigation .nav-group');
+        // Reproduce queued native toggle events by activating distinct groups
+        // in one task. The last request must win immediately and stay open.
+        const burst = await page.evaluate(async()=>{
+          const groups=[...document.querySelectorAll('#navigation .nav-group')];
+          for (const group of groups) group.querySelector('summary').click();
+          const immediate=groups.flatMap((group,index)=>group.open?[index]:[]);
+          await new Promise(resolve=>setTimeout(resolve,0));
+          const settled=groups.flatMap((group,index)=>group.open?[index]:[]);
+          groups.at(-1).querySelector('summary').click();
+          await new Promise(resolve=>setTimeout(resolve,0));
+          return {immediate,settled,closed:groups.every(group=>!group.open),last:groups.length-1};
+        });
+        assert.deepEqual(burst.immediate,[burst.last]);
+        assert.deepEqual(burst.settled,[burst.last]);
+        assert.equal(burst.closed,true);
+        for (let pass=0;pass<3;pass++) {
+          for (let index=0;index<await groups.count();index++) {
+            const group=groups.nth(index);
+            const summary=group.locator('summary');
+            await summary.focus();
+            assert(await summary.evaluate(el=>el===document.activeElement));
+            await page.keyboard.press('Enter');
+            // Waiting only for one open group can match the previous group.
+            // Require the group just activated by Enter, then its rendered link.
+            await page.waitForFunction(index=>{
+              const groups=[...document.querySelectorAll('#navigation .nav-group')];
+              return groups[index]?.open && groups.filter(group=>group.open).length===1;
+            },index);
+            await group.locator('a').first().waitFor({state:'visible'});
+            assert(await group.locator('a').first().isVisible());
+          }
+        }
         await page.locator('#navigation a').last().scrollIntoViewIfNeeded();
         const last = await page.locator('#navigation a').last().boundingBox();
         assert(last.y >= menu.y && last.y+last.height <= 844);
