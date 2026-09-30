@@ -62,11 +62,22 @@ try {
         await page.screenshot({path:fileURLToPath(new URL(width + '-menu.png',out))});
         assert.equal(await page.locator('#navigation .nav-group[open]').count(),0);
         const groups = page.locator('#navigation .nav-group');
-        for (const group of await groups.all()) {
-          await group.locator('summary').focus();
-          await page.keyboard.press('Enter');
-          await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
-          assert(await group.locator('a').first().isVisible());
+        for (let pass=0;pass<3;pass++) {
+          for (let index=0;index<await groups.count();index++) {
+            const group=groups.nth(index);
+            const summary=group.locator('summary');
+            await summary.focus();
+            assert(await summary.evaluate(el=>el===document.activeElement));
+            await page.keyboard.press('Enter');
+            // Waiting only for one open group can match the previous group.
+            // Require the group just activated by Enter, then its rendered link.
+            await page.waitForFunction(index=>{
+              const groups=[...document.querySelectorAll('#navigation .nav-group')];
+              return groups[index]?.open && groups.filter(group=>group.open).length===1;
+            },index);
+            await group.locator('a').first().waitFor({state:'visible'});
+            assert(await group.locator('a').first().isVisible());
+          }
         }
         await page.locator('#navigation a').last().scrollIntoViewIfNeeded();
         const last = await page.locator('#navigation a').last().boundingBox();
