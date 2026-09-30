@@ -80,6 +80,29 @@ class CaseContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_case_context('metro-green-line', self.fixture(config))
 
+
+    def test_latest_record_precedes_navigation_and_generic_sources_are_labelled(self):
+        for path in ROOT.glob('achievement-*.html'):
+            source = path.read_text()
+            self.assertLess(source.index('class="wrap case-latest-wrap"'), source.index('class="wrap civic-article-nav"'))
+            soup = BeautifulSoup(source, 'html.parser')
+            self.assertFalse(soup.select('.case-latest a[href*="Frame_Councilor.aspx"]'))
+            for link in soup.select('.case-sources a[href*="Frame_Councilor.aspx"]'):
+                self.assertIn('議員查詢入口', link.get_text())
+                self.assertIn('非本筆原件直達連結', link.parent.select_one('.source-lookup-note').get_text())
+
+    def test_home_questions_come_from_reviewed_case_context(self):
+        soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
+        section = soup.select_one('#civic-questions')
+        expected_ids = ('metro-green-line', 'after-school-care', 'bade-detention')
+        expected = {item['recordId']: item['question'] for item in self.config['cases']}
+        self.assertEqual([h.get_text() for h in section.select('h3')], [expected[id] for id in expected_ids])
+        self.assertEqual([a['href'] for a in section.select('a')], [f'achievement-{id}.html' for id in expected_ids])
+
+    def test_search_index_omits_print_utility_text(self):
+        items = json.loads((ROOT / 'data/search-index.json').read_text())['items']
+        self.assertTrue(all('列印單頁摘要 含資料日期與完整紀錄網址' not in row['keywords'] for row in items))
+
     def test_editorial_content_is_escaped(self):
         config = copy.deepcopy(self.config)
         config['cases'][0]['question'] = '<script>alert(1)</script>'

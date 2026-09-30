@@ -245,6 +245,7 @@ try {
       await page.keyboard.press('Enter');
       assert(await firstReport.locator('.news-source-links a').first().isVisible());
       assert.doesNotMatch(await reportDetails.innerText(), /漾新聞｜漾新聞｜/);
+      await firstReport.screenshot({path:fileURLToPath(new URL(`news-expanded-${width}.png`, output))});
       await page.keyboard.press('Enter');
       assert.equal(await reportDetails.getAttribute('open'), null);
       assert(await disclosure.evaluate(element => element === document.activeElement));
@@ -313,6 +314,41 @@ try {
     });
   }
 
+  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
+    await check(`news first-screen complete lead ${viewport.width}px`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(base + 'news.html');
+      await page.locator('.news-card-lead').first().waitFor({state:'visible'});
+      const lead = await page.locator('.news-card-lead').first().boundingBox();
+      assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
+    });
+  }
+
+
+  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
+    await check(`case latest record before utilities ${viewport.width}px`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(base + 'achievement-metro-green-line.html');
+      const latest = await page.locator('.case-latest').boundingBox();
+      const navigation = await page.locator('.civic-article-nav').boundingBox();
+      const lead = await page.locator('.case-latest > p:not([class])').boundingBox();
+      assert(latest && navigation && latest.y < navigation.y);
+      assert(lead && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert.match(await page.locator('.case-latest').innerText(), /並非即時工程進度/);
+      await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
+      const sources = page.locator('#case-sources');
+      assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
+      await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
+      await page.goto(base + 'index.html');
+      const questions = page.locator('#civic-questions');
+      assert.equal(await questions.locator('h3').count(),3);
+      await questions.screenshot({path:fileURLToPath(new URL(`home-questions-${viewport.width}.png`, output))});
+
+    });
+  }
+
   await context.close();
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
@@ -326,18 +362,6 @@ try {
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
     assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   });
-
-  for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
-    await check(`news first-screen complete lead ${viewport.width}px`, async () => {
-      await page.setViewportSize(viewport);
-      await page.goto(base + 'news.html');
-      await page.locator('.news-card-lead').first().waitFor({state:'visible'});
-      const lead = await page.locator('.news-card-lead').first().boundingBox();
-      assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
-    });
-  }
 
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
     await check(`no JavaScript: ${file}`, async () => {

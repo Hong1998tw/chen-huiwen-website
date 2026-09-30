@@ -25,6 +25,15 @@ def build():
     rows=[]
     for index,id in enumerate(config['reading'],1):
         c=data[id];rows.append(f'<article class="civic-reading-row"><span class="civic-number" aria-hidden="true">0{index}</span><div><p class="civic-kicker">{e(c["categories"][0])} · {e(c["status"])}</p><h3><a href="achievement-{e(id)}.html">{e(c["title"])}</a></h3><p>{e(summaries.get(id,c["summary"]))}</p><small>內容整理 <time datetime="{e(c["updated"])}">{e(c["updated"])}</time></small></div></article>')
-    page=R/'index.html';text=page.read_text();text=block(text,'civic-stories',feature+'<div class="civic-reading">'+''.join(rows)+'</div>');page.write_text(text)
+    page=R/'index.html';text=page.read_text();text=block(text,'civic-stories',feature+'<div class="civic-reading">'+''.join(rows)+'</div>')
+    if '<!-- civic-questions:start -->' in text:
+        guides={item['recordId']:item for item in json.loads((R/'data/case-context.json').read_text())['cases']}
+        question_ids=('metro-green-line','after-school-care','bade-detention')
+        if any(id not in data or id not in guides for id in question_ids):
+            raise ValueError('Home questions must reference reviewed public context')
+        questions=''.join(f'<article class="civic-feature-copy"><h3>{e(guides[id]["question"])}</h3><a class="civic-read" href="achievement-{e(id)}.html">閱讀議題與來源 <span aria-hidden="true">→</span></a></article>' for id in question_ids)
+        question_html='<section class="wrap civic-reading-guide" id="civic-questions" aria-labelledby="civic-questions-heading"><h2 id="civic-questions-heading">從鳳山日常，問一個具體問題</h2><p>交通、照顧、防汛，先從你關心的問題開始。閱讀最新收錄紀錄，分辨各方角色，再回到原始來源核對。</p><div>'+questions+'</div></section>'
+        text=block(text,'civic-questions',question_html)
+    page.write_text(text)
     print('Built public civic home selections')
 if __name__=='__main__': build()
