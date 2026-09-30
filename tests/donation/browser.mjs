@@ -84,8 +84,13 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
       assert(await page.locator('main').evaluate(el => el.inert));
+      assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
+      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
+      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="election.html"]')}).locator('summary').click();
+      await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
+      assert.equal(await page.locator('#navigation a[href="political-donation.html"]').isVisible(), false);
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
@@ -93,7 +98,7 @@ try {
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
-      assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 2);
+      assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
       await page.locator('.menu-backdrop').click({ position: { x: 4, y: 4 } });
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     });
