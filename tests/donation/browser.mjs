@@ -320,9 +320,9 @@ try {
       await page.goto(base + 'news.html');
       await page.locator('.news-card-lead').first().waitFor({state:'visible'});
       const lead = await page.locator('.news-card-lead').first().boundingBox();
+      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
     });
   }
 

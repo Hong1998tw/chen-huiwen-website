@@ -16,8 +16,17 @@ def run(root,args):
 
 def generated(root):
     before=snapshot(root)
+    # Diagnostics only: a mismatch still fails the same publication gate.
+    before_text={name:(root/name).read_text() for name in before}
     for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
-    if before != snapshot(root):
+    after=snapshot(root)
+    if before != after:
+        changed=sorted(name for name in set(before)|set(after) if before.get(name)!=after.get(name))
+        print('Generated output differences: '+', '.join(changed),file=sys.stderr)
+        for name in changed[:8]:
+            old=before_text.get(name,'');new=(root/name).read_text() if (root/name).exists() else ''
+            offset=next((i for i,(a,b) in enumerate(zip(old,new)) if a!=b),min(len(old),len(new)))
+            print(f'{name}: first difference at {offset}; before={old[max(0,offset-60):offset+120]!r}; after={new[max(0,offset-60):offset+120]!r}',file=sys.stderr)
         raise RuntimeError('GENERATED_STALE: rebuild, review and commit generated outputs before checking')
     for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
     if before != snapshot(root): raise RuntimeError('GENERATED_NONDETERMINISTIC')
