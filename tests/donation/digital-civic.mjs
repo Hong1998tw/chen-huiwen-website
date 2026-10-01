@@ -135,7 +135,7 @@ try {
   await page.goto(base + 'achievement-wende-school-center.html');
   await check('achievement public copy uses council action and city response', async () => {
     const mainText = await page.locator('main').innerText();
-    assert.match(mainText, /陳慧文議員再次提出文德國小/);
+    assert.match(mainText, /陳慧文在2025年5月14日市政總質詢中說明/);
     assert.match(mainText, /教育局回應/);
     assert(!/這件事，為什麼重要？|STEP BY STEP|官方公開紀錄/.test(mainText));
     assert.equal(await page.locator('.case-latest h2').count(), 1);
@@ -143,6 +143,8 @@ try {
     assert.match(mainText, /資料來源/);
   });
   await check('achievement timeline progressive reveal and related exploration', async () => {
+    assert.equal(await page.locator('.case-timeline > li').count(), 6, 'Wende preserves all documented stages');
+    await page.goto(base + 'achievement-dade-park-road-opening.html');
     assert.equal(await page.locator('.case-timeline > li').count(), 0, 'single event is not repeated as a second timeline');
     await page.goto(base + 'achievement-metro-green-line.html');
     const timeline = page.locator('.case-timeline > li');
