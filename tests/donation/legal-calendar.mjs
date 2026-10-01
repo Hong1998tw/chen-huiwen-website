@@ -25,7 +25,8 @@ try{
    const shortcut=page.locator('.hero-actions').getByRole('link',{name:'律師諮詢時間 →',exact:true});
    assert(await shortcut.isVisible());
    const size=await shortcut.boundingBox();assert(size.width>=44&&size.height>=44);
-   await shortcut.focus();await page.keyboard.press('Enter');
+   await shortcut.focus();
+   await Promise.all([page.waitForURL(url=>url.pathname.endsWith('/service.html')&&url.hash==='#monthly-heading'),page.keyboard.press('Enter')]);
    assert.equal(new URL(page.url()).hash,'#monthly-heading');
    await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   });
