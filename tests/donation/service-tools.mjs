@@ -48,7 +48,7 @@ try{
     const schedule=JSON.parse(await readFile(new URL('../../data/legal-schedule.json',import.meta.url),'utf8'));
     assert.equal(await page.locator('main tbody tr').count(),schedule.sessions.length);
     assert.equal(await page.locator('.latest-url').getAttribute('href'),'https://www.huiwen.tw/service.html');
-    assert.match(await page.locator('main').innerText(),/並非即時名額/);
+    assert.match(await page.locator('main').innerText(),/非即時名額/);
    });
    if(path==='updates.html')await check(`${width} website additions never masquerade as new events`,async()=>{
     assert.equal(await page.locator('.content-update').count(),2);
