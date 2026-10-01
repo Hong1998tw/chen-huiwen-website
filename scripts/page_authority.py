@@ -51,6 +51,9 @@ class Title(HTMLParser):
 
 
 def classify(path):
+    from build_events import EVENT_PATH
+    if EVENT_PATH.fullmatch(path):
+        return ('data/events.json', 'generated', 'partial')
     if path in DATA_PAGES:
         return DATA_PAGES[path]
     if path in SYSTEM_PAGES:

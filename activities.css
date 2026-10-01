@@ -1,0 +1,72 @@
+/* Public activity timeline and stable event detail pages. */
+.activities-page{--event-ink:#173f33;--event-muted:#4f6256;--event-line:#c4d0c3;--event-paper:#f5f7f1}
+.activities-page .page-head{padding-bottom:36px}
+.activities-page .event-announcements{padding-bottom:72px}
+.activities-page .event-timeline{list-style:none;margin:0;padding:0}
+.activities-page .event-timeline-item{display:grid;grid-template-columns:112px minmax(0,1fr);gap:34px;position:relative;padding-bottom:34px}
+.activities-page .event-date-rail{display:flex;flex-direction:column;gap:4px;align-items:flex-end;padding-top:24px;font-size:.88rem;color:var(--event-muted);line-height:1.5}
+.activities-page .event-date-rail strong{font-size:1.8rem;color:var(--event-ink);letter-spacing:-.04em;line-height:1.25}
+.activities-page .event-timeline-item::before{position:absolute;content:"";left:128px;top:33px;bottom:-33px;border-left:1px solid var(--event-line)}
+.activities-page .event-timeline-item:last-child::before{bottom:36px}
+.activities-page .event-timeline-item::after{position:absolute;content:"";left:123px;top:33px;width:11px;height:11px;background:var(--event-ink);border-radius:50%}
+.activities-page .event-card{min-width:0;margin:0;padding:28px 30px;border:1px solid var(--event-line);border-radius:18px;background:#fff;box-shadow:none;scroll-margin-top:160px}
+.activities-page .event-card h2{font-size:clamp(1.4rem,2.6vw,1.85rem);line-height:1.5;margin:0 0 18px;letter-spacing:-.02em}
+.activities-page .event-card h2 a{color:var(--event-ink);text-decoration:none;text-underline-offset:5px}
+.activities-page .event-card h2 a:hover{text-decoration:underline}
+.activities-page .event-status{display:inline-block;color:var(--event-ink);background:#e9f0e5;padding:5px 10px;border-radius:6px;font-size:.85rem;font-weight:700;line-height:1.6;margin:0 0 12px}
+.activities-page [data-event-status="cancelled"] .event-status{background:#f6e9e4;color:#7d3126}
+.activities-page [data-event-status="rescheduled"] .event-status{background:#fff0cf;color:#694f12}
+.activities-page .event-facts{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr);column-gap:20px;row-gap:10px;margin:0 0 18px;line-height:1.7}
+.activities-page .event-facts dt{font-weight:700;color:var(--event-ink)}
+.activities-page .event-facts dd{margin:0;min-width:0}
+.activities-page .event-end-note{display:block;color:var(--event-muted);font-size:.9rem}
+.activities-page .event-summary{font-size:1rem;line-height:1.8;margin:0 0 20px;color:#283e32}
+.activities-page .event-actions{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:20px 0}
+.activities-page .button{white-space:normal;text-align:center;min-height:44px;max-width:100%;padding:11px 17px;font-size:.9rem;line-height:1.55;overflow-wrap:anywhere}
+.activities-page .event-reminder{max-width:100%;min-width:0;flex:0 1 auto}
+.activities-page .event-reminder summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:center}
+.activities-page .event-reminder summary::-webkit-details-marker{display:none}
+.activities-page .event-reminder summary::after{content:"＋";margin-left:8px}
+.activities-page .event-reminder[open] summary::after{content:"－"}
+.activities-page .event-reminder-body{background:var(--event-paper);padding:18px;margin-top:10px;border:1px solid var(--event-line);border-radius:12px;max-width:430px}
+.activities-page .event-reminder-body p{margin:0 0 12px;line-height:1.7}
+.activities-page .event-reminder-body label{display:block;font-weight:700;margin-bottom:8px}
+.activities-page .event-reminder-duration{display:block;width:100%;max-width:100%;min-height:44px;font:inherit;padding:10px;border:1px solid #687d6e;border-radius:6px;background:#fff;color:var(--event-ink);margin-bottom:14px}
+.activities-page [hidden]{display:none!important}
+.activities-page .event-reminder-status:empty{display:none}
+.activities-page .source-note{font-size:.85rem;line-height:1.8;color:var(--event-muted);margin:10px 0 0}
+.activities-page .event-change-note{background:#fff2d5;padding:12px 16px;border-left:3px solid #806019;line-height:1.8}
+.activities-page .event-detail-wrap{max-width:1080px;padding-bottom:72px}
+.activities-page .event-breadcrumb{display:block;position:static;overflow:visible;font-size:.9rem;line-height:1.8;padding:28px 0;color:var(--event-muted)}
+.activities-page .event-breadcrumb a{display:inline;padding:0;color:var(--event-ink)}
+.activities-page .event-detail{scroll-margin-top:150px;max-width:100%;padding:0 0 28px}
+.activities-page .event-detail h1{max-width:25em;font-size:clamp(1.8rem,4.3vw,3.1rem);line-height:1.4;letter-spacing:-.035em;margin:8px 0 26px;overflow-wrap:anywhere}
+.activities-page .event-detail .event-facts{background:var(--event-paper);padding:24px;border-radius:14px}
+.activities-page .event-detail-section{margin:34px 0}
+.activities-page .event-detail-section h2{font-size:1.4rem;margin:0 0 16px}
+.activities-page .event-detail-section p{max-width:48em;line-height:1.9}
+.activities-page .event-posters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start;margin:20px 0}
+.activities-page .event-posters figure{margin:0;min-width:0}
+.activities-page .event-posters img{display:block;width:100%;height:auto;border-radius:12px;border:1px solid var(--event-line)}
+.activities-page .event-posters figcaption{font-size:.85rem;color:var(--event-muted);margin:12px 0 8px;line-height:1.7}
+.activities-page .text-link{display:inline-flex;min-height:44px;align-items:center;line-height:1.6}
+.activities-page :is(a,summary,select):focus-visible{outline:3px solid var(--event-ink);outline-offset:4px}
+@media(max-width:700px){
+.activities-page .event-timeline-item{grid-template-columns:1fr;gap:12px;padding:0 0 30px 20px}
+.activities-page .event-date-rail{flex-direction:row;align-items:baseline;flex-wrap:wrap;gap:10px;padding:0}
+.activities-page .event-date-rail strong{font-size:1.5rem}
+.activities-page .event-timeline-item::before{left:3px;top:12px;bottom:-12px}
+.activities-page .event-timeline-item:last-child::before{bottom:30px}
+.activities-page .event-timeline-item::after{left:-2px;top:10px}
+.activities-page .event-card{padding:20px 18px;border-radius:14px}
+.activities-page .event-card h2{font-size:1.4rem}
+.activities-page .event-facts{grid-template-columns:1fr;gap:3px}
+.activities-page .event-facts dd{margin-bottom:10px}
+.activities-page .event-facts dd:last-child{margin-bottom:0}
+.activities-page .event-actions{flex-direction:column;align-items:stretch}
+.activities-page .event-actions>.button,.activities-page .event-reminder{width:100%}
+.activities-page .event-reminder-body{max-width:none}
+.activities-page .event-detail .event-facts{padding:18px}
+.activities-page .event-posters{grid-template-columns:1fr;gap:28px}
+.activities-page .event-detail-section{margin:28px 0}
+}

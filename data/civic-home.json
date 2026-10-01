@@ -1,12 +1,16 @@
 {
-  "featured": "metro-green-line",
+  "featured": "wende-school-center",
   "reading": [
-    "bade-detention",
-    "school-case-review"
+    "metro-green-line",
+    "haibang-bridge",
+    "dingbao-bridge",
+    "guoyong-drain"
   ],
   "summaries": {
-    "metro-green-line": "青線進入鳳山車站，仍在規劃與可行性評估階段。了解轉乘需求與市府回應。",
-    "bade-detention": "滯洪功能與全案完工是兩件事。查看八德滯洪池的階段性防汛功能、工程經費與公開來源。",
-    "school-case-review": "校事案件如何分流？閱讀質詢提出的問題，以及教育局對專業支持與研習的回應。"
+    "wende-school-center": "為補足集會、體育與教學所需的室內空間，陳慧文持續追蹤活動中心規劃、經費與工程進度。",
+    "metro-green-line": "追蹤青線進入鳳山車站的轉乘需求，並要求市府說明路線及可行性評估進度。",
+    "haibang-bridge": "跨越前鎮河，串聯五甲與草衙生活圈。2022年通車，提供車行與無障礙人行空間。",
+    "dingbao-bridge": "多年質詢與提案推進，中央補助、市府興建，頂寶橋於2023年完工。",
+    "guoyong-drain": "陳慧文質詢推動，市府辦理約460公尺明渠加蓋，增加車行空間，2023年3月開放通行。"
   }
 }

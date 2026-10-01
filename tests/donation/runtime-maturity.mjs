@@ -78,10 +78,14 @@ try{
   await page.unroute('**/data/events.json');
  });
  for(const [clock,phase] of [['2026-11-27T12:00:00+08:00','before'],['2026-11-28T07:00:00+08:00','election-day'],['2026-11-28T09:00:00+08:00','voting'],['2026-11-28T16:00:00+08:00','ended'],['2026-11-29T12:00:00+08:00','ended'],['2027-01-01T00:00:00+08:00','historical']]){
-  await check(`same election state on home and election at ${clock}`,async()=>{
-   await page.clock.setFixedTime(new Date(clock));const seen=[];
-   for(const path of ['index.html','election.html']){await page.goto(base+path);await page.waitForFunction(p=>document.querySelector('#campaign-countdown')?.dataset.phase===p,phase);seen.push(await page.locator('#campaign-countdown').innerText());assert(!/勝選/.test(await page.locator('#campaign-countdown').evaluate(el=>el.parentElement.innerText)));}
-   assert.equal(seen[0],seen[1]);
+  await check(`election center retains accurate phase at ${clock}`,async()=>{
+   await page.clock.setFixedTime(new Date(clock));
+   await page.goto(base+'election.html');
+   await page.waitForFunction(p=>document.querySelector('#campaign-countdown')?.dataset.phase===p,phase);
+   assert(!/勝選/.test(await page.locator('#campaign-countdown').evaluate(el=>el.parentElement.innerText)));
+   await page.goto(base+'index.html');
+   assert.equal(await page.locator('#campaign-countdown').count(),0);
+   assert.equal(await page.locator('#navigation a[href="election.html"]').count(),1);
   });
  }
  const nojs=await browser.newContext({javaScriptEnabled:false});const plain=await nojs.newPage();

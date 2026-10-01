@@ -22,12 +22,13 @@ jobs:
       - name: Preserve deterministic generation evidence
         run: |
           mkdir -p /tmp/activity-generated
-          git diff --name-only -- '*.html' 'data/*.json' 'sitemap.xml' 'updates.xml' > /tmp/activity-generated/changed-files.txt
           python - <<'PY'
           from pathlib import Path
-          import json, shutil
+          import json, shutil, subprocess
           out=Path('/tmp/activity-generated')
-          changed=(out/'changed-files.txt').read_text().splitlines()
+          patterns=['*.html','data/*.json','sitemap.xml','updates.xml']
+          changed=sorted(set(subprocess.check_output(['git','diff','--name-only','--',*patterns],text=True).splitlines()) | set(subprocess.check_output(['git','ls-files','--others','--exclude-standard','--',*patterns],text=True).splitlines()))
+          (out/'changed-files.txt').write_text('\n'.join(changed)+'\n')
           for name in changed:
               target=out/name
               target.parent.mkdir(parents=True,exist_ok=True)
@@ -40,11 +41,16 @@ jobs:
           path: /tmp/activity-generated/
           retention-days: 14
       - run: python -m unittest discover -s tests -p test_event_optional_end.py
+      - run: python -m unittest discover -s tests/events
+      - run: python -m unittest discover -s tests -p test_event_path_guard.py
+      - run: node tests/events/reminder-links.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/events.mjs
       - name: Require committed generated outputs
-        run: git diff --exit-code -- '*.html' 'data/*.json' 'sitemap.xml' 'updates.xml'
+        run: |
+          git diff --exit-code -- '*.html' 'data/*.json' 'sitemap.xml' 'updates.xml'
+          test -z "$(git ls-files --others --exclude-standard -- '*.html' 'data/*.json' 'sitemap.xml' 'updates.xml')"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

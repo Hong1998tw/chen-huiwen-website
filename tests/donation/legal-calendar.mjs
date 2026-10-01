@@ -22,7 +22,7 @@ try{
   const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(base);
   await check(width+' homepage consultation shortcut',async()=>{
-   const shortcut=page.locator('.hero-actions').getByRole('link',{name:'律師諮詢時間 →',exact:true});
+   const shortcut=page.locator('main a[href="service.html#monthly-heading"]');
    assert(await shortcut.isVisible());
    const size=await shortcut.boundingBox();assert(size.width>=44&&size.height>=44);
    await shortcut.focus();

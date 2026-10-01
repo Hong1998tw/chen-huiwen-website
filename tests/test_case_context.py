@@ -98,14 +98,14 @@ class CaseContextTests(unittest.TestCase):
                 self.assertIn('開啟議會查詢首頁', link.parent.select_one('.source-lookup-note').get_text())
                 self.assertIn('依上列日期與標題查找原件', link.parent.select_one('.source-lookup-note').get_text())
 
-    def test_home_questions_come_from_reviewed_case_context(self):
+    def test_home_selection_does_not_delete_unselected_case_context(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
-        section = soup.select_one('#civic-questions')
-        expected_ids = ('metro-green-line', 'after-school-care', 'bade-detention')
-        expected = {item['recordId']: item['question'] for item in self.config['cases']}
-        self.assertEqual([h.get_text() for h in section.select('h3')], [expected[id] for id in expected_ids])
-        self.assertEqual([a['href'] for a in section.select('a')], [f'achievement-{id}.html' for id in expected_ids])
-
+        selected = json.loads((ROOT / 'data/civic-home.json').read_text())
+        expected = [selected['featured'], *selected['reading']]
+        self.assertEqual([node['data-record-id'] for node in soup.select('.civic-story-grid [data-record-id]')], expected)
+        # The removed homepage question does not remove the public case or its evidence.
+        self.assertTrue((ROOT / 'achievement-bade-detention.html').is_file())
+        self.assertIn('bade-detention', {item['recordId'] for item in self.config['cases']})
     def test_search_index_omits_print_utility_text(self):
         items = json.loads((ROOT / 'data/search-index.json').read_text())['items']
         self.assertTrue(all('列印單頁摘要 含資料日期與完整紀錄網址' not in row['keywords'] for row in items))

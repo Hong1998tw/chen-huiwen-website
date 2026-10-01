@@ -21,16 +21,22 @@ class ReadingDesignTests(unittest.TestCase):
     def test_home_story_precedes_secondary_discovery(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
         main = soup.select_one('main')
-        classes = [' '.join(node.get('class', [])) for node in main.find_all(recursive=False)]
-        self.assertLess(classes.index('wrap civic-stories'), classes.index('wrap civic-lead'))
+        self.assertLess(str(main).index('id="projects"'), str(main).index('id="map"'))
         self.assertFalse(soup.select('.civic-tasknav'))
         self.assertEqual(len(soup.select('#civic-query')), 1)
         self.assertEqual(len(soup.select('.hero-portrait')), 1)
-        feature_image = soup.select_one('.civic-feature-photo img')
-        self.assertEqual(feature_image.get('loading'), 'lazy')
+        config = json.loads((ROOT / 'data/civic-home.json').read_text())
+        records = {r['id']: r for r in json.loads((ROOT / 'data/achievements-public.json').read_text())}
         feature = soup.select_one('.civic-feature')
+        self.assertEqual(feature['data-record-id'], config['featured'])
         self.assertIn('civic-feature-copy', feature.find(recursive=False).get('class', []))
-        self.assertLess(str(feature).index('civic-feature-copy'), str(feature).index('civic-feature-photo'))
+        record = records[config['featured']]
+        if record.get('funding'):
+            self.assertIsNotNone(feature.select_one('.civic-feature-funding'))
+        elif record.get('images'):
+            self.assertEqual(feature.select_one('.civic-feature-photo img')['loading'], 'lazy')
+        for image in soup.select('.civic-story-grid img'):
+            self.assertEqual(image['loading'], 'lazy')
     def test_overview_does_not_invent_uncollected_attribution(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
         byid = {r['id']: r for r in records}

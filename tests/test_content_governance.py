@@ -78,7 +78,7 @@ class EventLifecycleTests(unittest.TestCase):
         from urllib.parse import urlsplit, parse_qs
         details = parse_qs(urlsplit(calendar_url(self.event)).query)['details'][0]
         self.assertIn('不會自動更新', details)
-        self.assertIn('#event-lifecycle-fixture', details)
+        self.assertIn('https://www.huiwen.tw/event-lifecycle-fixture.html', details)
 
     def test_cancelled_record_remains_without_registration_or_calendar(self):
         event = {**self.event, 'status': 'cancelled', 'changeNote': '主辦單位公告取消', 'registrationUrl': 'https://example.gov.tw/register'}
@@ -94,8 +94,8 @@ class EventLifecycleTests(unittest.TestCase):
         event = {**self.event, 'status': 'rescheduled', 'changeNote': '主辦單位公告改期',
                  'previousSchedule': {'start': '2026-10-07T16:00:00+08:00', 'end': '2026-10-07T16:50:00+08:00'}}
         rendered = render_events([event])
-        self.assertIn('2026/10/07 16:00', rendered)
-        self.assertIn('2026/10/08 16:00', rendered)
+        self.assertIn('2026/10/07（三）16:00', rendered)
+        self.assertIn('2026/10/08（四）16:00', rendered)
         self.assertIn('時間已更改', rendered)
 
     def test_status_changes_require_evidence_and_previous_time(self):

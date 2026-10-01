@@ -89,6 +89,20 @@ jobs:
           LEGAL_LIVE_URL: https://www.huiwen.tw/
         run: node tests/donation/legal-calendar.mjs
 
+      - name: Verify published homepage sources and responsive interactions
+        id: home_design
+        continue-on-error: true
+        env:
+          HOME_LIVE_URL: https://www.huiwen.tw/
+        run: node tests/donation/homepage-production.mjs
+
+      - name: Verify published event timeline, sharing pages and calendar links
+        id: events
+        continue-on-error: true
+        env:
+          EVENTS_LIVE_URL: https://www.huiwen.tw/
+        run: node tests/donation/events.mjs
+
       - name: Upload production verification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -98,16 +112,20 @@ jobs:
             tests/donation/results/production-live/
             tests/donation/results/native-edge/
             tests/donation/results/legal-calendar/
+            tests/donation/results/homepage-production/
+            tests/donation/results/events/
             tests/donation/results/*.json
             tests/donation/results/*.png
 
       - name: Fail production verification when a check failed
-        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success') }}
+        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success') }}
         run: |
           echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
           echo "All public pages outcome: ${{ steps.all_pages.outcome }}"
           echo "Live production browser QA outcome: ${{ steps.browser.outcome }}"
           echo "Native edge QA outcome: ${{ steps.native.outcome }} (BLOCKED is not PASS)"
           echo "Published monthly card download outcome: ${{ steps.legal_card.outcome }}"
+          echo "Published homepage design outcome: ${{ steps.home_design.outcome }}"
+          echo "Published event timeline and sharing outcome: ${{ steps.events.outcome }}"
           echo "Independent Production Verification failed or blocked; inspect reports."
           exit 1

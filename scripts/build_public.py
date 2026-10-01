@@ -30,7 +30,7 @@ ROOT_FILES = (
     'civic.css', 'digital.css', 'home.css', 'campaign.css', 'embeds.css',
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
-    'legal-calendar.js', 'legal-calendar.css', 'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
+    'activities.js', 'activities.css', 'legal-calendar.js', 'legal-calendar.css', 'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -39,7 +39,7 @@ LEGACY_PAGES = (
     '398bd146805480f98aecedb69d2e1070/index.html', 'renwu-anju-social-housing/index.html',
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
-VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt'}
+VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
 
 
@@ -148,6 +148,12 @@ def public_paths(root=ROOT):
             inactive = {name for name, entry in state['pages'].items()
                         if isinstance(entry, dict) and entry.get('status', 'published') in {'unpublished', 'deleted'}}
     paths.difference_update(inactive)
+    # Event routes are generated from validated immutable ids, never an HTML glob.
+    from build_events import event_path, public_events
+    event_source = root / 'data/events.json'
+    if event_source.is_file():
+        paths.update(event_path(event) for event in public_events(json.loads(event_source.read_text()))
+                     if event_path(event) not in inactive)
     # The sitemap is the reviewed page allowlist, not an arbitrary *.html glob.
     for loc in ET.parse(root / 'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc'):
         url = urlsplit(loc.text or '')

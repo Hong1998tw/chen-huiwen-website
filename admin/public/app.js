@@ -48,6 +48,7 @@ const labels = {
   name: "活動名稱",
   start: "開始時間（台灣時間）",
   end: "結束時間（台灣時間，未公布可留空）",
+  location: "已公開活動地點或地址（選填）",
   content: "活動說明（選填）",
   registration: "參與／報名方式（選填）",
   sourceUrl: "公開來源網址",
@@ -69,6 +70,7 @@ const eventKeys = [
   "name",
   "start",
   "end",
+  "location",
   "content",
   "registration",
   "sourceUrl",
@@ -687,7 +689,7 @@ function renderHomeEditor() {
     const record = homeCases.get(order[index]);
     const row = el("div", undefined, "case-editor-row");
     row.dataset.homeIndex = String(index);
-    row.append(el("strong", index === 0 ? "主打專題（左側）" : `右側 0${index}`),
+    row.append(el("strong", index === 0 ? "主打專題" : `閱讀專題 0${index}`),
       el("p", record?.title || order[index]));
     const actions = el("div", undefined, "case-editor-actions");
     for (const [label, offset] of [["上移", -1], ["下移", 1]]) {
@@ -699,7 +701,7 @@ function renderHomeEditor() {
     }
     const position = el("label", "移至位置 ", "field");
     const select = document.createElement("select"); select.dataset.homeAction = "position";
-    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `右側 ${String(n).padStart(2, "0")}`, String(n))));
+    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `閱讀專題 ${String(n).padStart(2, "0")}`, String(n))));
     select.value = String(index);
     select.onchange = () => moveHomeStory(index, Number(select.value));
     position.append(select); actions.append(position); row.append(actions); target.append(row);
@@ -1444,7 +1446,7 @@ function render() {
       ? dateTime.dateTime(String(rawValue).replace(/(?:Z|[+-]\d{2}:\d{2})$/, "")).slice(0, 16)
       : key === "month" ? dateTime.month(rawValue)
         : input.type === "date" ? dateTime.day(rawValue) : rawValue;
-    if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
+    if (["name", "location", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
     connectField(label,input,required);
     const monthChanged=()=> {
       if(key!=="month")return;

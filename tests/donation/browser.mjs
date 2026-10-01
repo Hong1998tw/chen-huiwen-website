@@ -166,29 +166,22 @@ try {
 
     await check(`homepage ${width}px: portrait first, civic entry and CLS`, async () => {
       await page.goto(base + 'index.html');
-      await page.waitForFunction(() => /^\d+$/.test(document.querySelector('#campaign-countdown')?.textContent || ''));
-      const electionStatus = page.locator('.hero-election-status');
-      assert.match(await electionStatus.innerText(), /距離投票日/);
-      assert.match(await electionStatus.innerText(), /2026\.11\.28/);
-      assert.doesNotMatch(await page.locator('main').innerText(), /候選人姓名號次抽籤|10\/23/);
-      assert.equal(await electionStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
-      const box = await img.boundingBox();
+      assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
+      assert.equal(await img.getAttribute('loading'),'eager');
+      const frame = await page.locator('.portrait-frame').boundingBox();
       const heading = await page.locator('.hero-copy h1').boundingBox();
       assert.equal(await page.locator('h1').count(),1);
       assert(await page.locator('.civic-search').isVisible());
-      assert.equal(await page.locator('main > section').first().getAttribute('class'), 'hero');
+      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
       assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.civic-lead').boundingBox()).y);
-      assert(box && heading);
-      assert(Math.abs(box.width / box.height - 1348 / 1728) < 0.01);
-      assert(box.x + box.width <= heading.x);
-      if (width === 390) assert(box.width >= 140 && box.width <= 160);
-      const hero = await page.locator('.hero-grid').boundingBox();
-      const header = await page.locator('.site-header').boundingBox();
-      assert(hero && header);
-      assert(hero.x >= header.x, 'hero stays within the page header alignment');
-      assert(hero.x + hero.width <= header.x + header.width, 'hero stays within the page header width');
+      assert(frame && heading);
+      assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+      assert(frame.x >= 0 && frame.x + frame.width <= width);
+      assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
+      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+      assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;
@@ -375,9 +368,10 @@ try {
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const questions = page.locator('#civic-questions');
-      assert.equal(await questions.locator('h3').count(),3);
-      await questions.screenshot({path:fileURLToPath(new URL(`home-questions-${viewport.width}.png`, output))});
+      const stories = page.locator('.civic-story-grid');
+      assert.equal(await stories.locator('.civic-reading-row').count(),4);
+      assert.equal(await stories.locator('[data-record-id="bade-detention"]').count(),0);
+      await stories.screenshot({path:fileURLToPath(new URL(`home-stories-${viewport.width}.png`, output))});
 
     });
   }
