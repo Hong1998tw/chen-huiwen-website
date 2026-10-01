@@ -22,14 +22,14 @@ for path in paths:
         element.decompose()
     # Collections with separate detail pages index their intro.
     # Media reports only live on news.html; retain their text so search can find them.
-    if path.name in ('achievements.html', 'press.html'):
+    if path.name in ('achievements.html', 'press.html', 'activities.html'):
         for element in main.select('article, #case-list'):
             element.decompose()
     rel = path.relative_to(R).as_posix()
     url = path.parent.name + '/' if rel.endswith('/index.html') else path.name
-    kind = '政績' if path.name.startswith('achievement-') else '新聞' if path.name.startswith('news-') else '活動' if path.name.startswith('activity-') else '政見' if path.name == 'vision.html' else '頁面'
+    kind = '政績' if path.name.startswith('achievement-') else '新聞' if path.name.startswith('news-') else '活動' if path.name.startswith(('activity-', 'event-')) else '政見' if path.name == 'vision.html' else '頁面'
     keywords = ' '.join(main.stripped_strings)
-    items.append(dict(title=title, url=url, description=description, type=kind, keywords=keywords, priority=80 if kind == '政績' else 60 if kind == '新聞' else 40))
+    items.append(dict(title=title, url=url, description=description, type=kind, keywords=keywords, priority=80 if kind == '政績' else 60 if kind in {'新聞', '活動'} else 40))
 items.extend(json.loads((R/'data/service-search.json').read_text()))
 result = {'version': 1, 'count': len(items), 'items': items}
 (R/'data/search-index.json').write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':'))+'\n')

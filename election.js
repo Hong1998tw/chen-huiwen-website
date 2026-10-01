@@ -44,7 +44,7 @@
   function calendarURL(event) {
     if (!event.end) throw new Error('Calendar range requires a confirmed end');
     const fmt=v=>new Date(v).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
-    return 'https://calendar.google.com/calendar/render?'+new URLSearchParams({action:'TEMPLATE',text:event.name,dates:`${fmt(event.start)}/${fmt(event.end)}`,ctz:'Asia/Taipei',details:`${event.content||''}\n\n儲存的是當下副本，不會自動更新；出發前請回本站確認。\nhttps://www.huiwen.tw/activities.html#event-${event.id}`,location:event.location||''});
+    return 'https://calendar.google.com/calendar/r/eventedit?'+new URLSearchParams({action:'TEMPLATE',text:event.name,dates:`${fmt(event.start)}/${fmt(event.end)}`,stz:'Asia/Taipei',etz:'Asia/Taipei',details:`${event.content||''}\n\n儲存的是當下副本，不會自動更新；出發前請回本站確認。\nhttps://www.huiwen.tw/event-${encodeURIComponent(event.id)}.html`,location:event.location||''});
   }
   function renderEvents(data) {
     const root=q('#campaign-events');if(!root)return;
@@ -56,7 +56,7 @@
       const cancelled=event.status==='cancelled',rescheduled=event.status==='rescheduled';
       const state=cancelled?'已取消':rescheduled?'已改期':'已公告行程';
       const previous=rescheduled&&event.previousSchedule?`<p>原時間：${esc(dateLabel(event.previousSchedule.start))}；請以新時間為準。</p>`:'';
-      card(root,`<p class="campaign-kicker">${state}</p><h3>${esc(event.name)}</h3><time datetime="${esc(event.start)}">${esc(dateLabel(event.start))}</time>${event.end?'':' 開始'}${previous}${event.changeNote?`<p>${esc(event.changeNote)}</p>`:''}<p>${esc(event.content||'')}</p><p class="campaign-note">資料更新：${esc(event.updatedAt||event.verifiedAt||'尚未標示')}</p><div class="campaign-actions"><a class="text-link" href="activities.html#event-${encodeURIComponent(event.id)}">行程詳情與圖卡 →</a>${event.sourceUrl?`<a class="text-link" href="${esc(event.sourceUrl)}" target="_blank" rel="noopener noreferrer">官方資訊 ↗</a>`:''}${!cancelled&&event.end?`<a class="text-link" href="${esc(calendarURL(event))}" target="_blank" rel="noopener noreferrer">加入 Google Calendar ↗</a>`:''}</div>${!cancelled&&event.end?'<p class="campaign-note">儲存的是當下副本，不會自動更新；出發前請回本站確認。</p>':''}`,[event.name,event.content,event.location,state].join(' '),'campaign-event');
+      card(root,`<p class="campaign-kicker">${state}</p><h3>${esc(event.name)}</h3><time datetime="${esc(event.start)}">${esc(dateLabel(event.start))}</time>${event.end?'':' 開始'}${previous}${event.changeNote?`<p>${esc(event.changeNote)}</p>`:''}<p>${esc(event.content||'')}</p><p class="campaign-note">資料更新：${esc(event.updatedAt||event.verifiedAt||'尚未標示')}</p><div class="campaign-actions"><a class="text-link" href="event-${encodeURIComponent(event.id)}.html">行程詳情與圖卡 →</a>${event.sourceUrl?`<a class="text-link" href="${esc(event.sourceUrl)}" target="_blank" rel="noopener noreferrer">官方資訊 ↗</a>`:''}${!cancelled&&event.end?`<a class="text-link" href="${esc(calendarURL(event))}" target="_blank" rel="noopener noreferrer">加入 Google Calendar ↗</a>`:''}</div>${!cancelled&&event.end?'<p class="campaign-note">儲存的是當下副本，不會自動更新；出發前請回本站確認。</p>':''}`,[event.name,event.content,event.location,state].join(' '),'campaign-event');
     }
     if(!events.length)root.innerHTML='<p class="campaign-empty">目前沒有即將舉行的公開行程。<a href="activities.html">查看行程紀錄 →</a></p>';
     announce('#campaign-event-count',String(events.filter(e=>e.status!=='cancelled').length));

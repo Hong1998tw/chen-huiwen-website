@@ -280,6 +280,16 @@ def main() -> int:
             expected = {"Article"}
         if name.startswith("achievement-"):
             expected = {"WebPage", "BreadcrumbList"}
+        if name.startswith("event-"):
+            expected = {"WebPage", "Event", "BreadcrumbList"}
+            from build_events import event_path, public_events, structured_event
+            records = public_events(json.loads((root / 'data/events.json').read_text()))
+            event = next((item for item in records if event_path(item) == name), None)
+            nodes = [node for value in parsed_jsonld for node in walk_schema(value) if node.get('@type') == 'Event']
+            if event is None or nodes != [structured_event(event)]:
+                fail(f"{name}: Event JSON-LD must match data/events.json")
+            if c != BASE + name:
+                fail(f"{name}: event canonical must identify its stable page")
         if expected and not expected.issubset(types):
             missing_schema.append(name)
             fail(f"{name}: missing JSON-LD types {sorted(expected - types)}")

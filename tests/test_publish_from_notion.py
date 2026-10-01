@@ -127,7 +127,7 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(rec['location'], '鳳山區公所 3 樓')
         self.assertEqual(rec['registrationUrl'], 'https://example.gov.tw/register')
         self.assertEqual(rec['x-editorNote'], '未知但合法的欄位必須原樣保留')
-        self.assertIn('location', cand.preview)
+        self.assertIn('活動地點：鳳山區公所 3 樓', cand.preview)
         self.assertEqual(json.loads(cand.new_text)['x-fixtureOrigin'], json.loads(GOLDEN_TEXT)['x-fixtureOrigin'])
 
     def test_unknown_schema_version_fails_closed(self):

@@ -72,6 +72,30 @@ def build(root=ROOT):
             entry = ET.SubElement(tree.getroot(), '{'+NS+'}url')
             ET.SubElement(entry, '{'+NS+'}loc').text = BASE + name
             ET.SubElement(entry, '{'+NS+'}lastmod').text = metadata[name]['contentUpdated']
+    # Stable event pages share the same editorial dates and immutable ids as the timeline.
+    from build_events import event_path, public_events
+    events = public_events(json.loads((root / 'data/events.json').read_text()))
+    event_entries = []
+    for event in sorted(events, key=lambda item: item['id']):
+        name = event_path(event)
+        if managed.get(name, {}).get('status', 'published') != 'published':
+            continue
+        lastmod = event.get('updatedAt') or event.get('verifiedAt') or metadata['activities.html']['contentUpdated']
+        entry = entries.get(name)
+        if entry is None:
+            entry = ET.Element('{'+NS+'}url')
+            ET.SubElement(entry, '{'+NS+'}loc').text = BASE + name
+            ET.SubElement(entry, '{'+NS+'}lastmod')
+        else:
+            tree.getroot().remove(entry)
+        entry.find('{'+NS+'}lastmod').text = lastmod
+        event_entries.append(entry)
+    # Always reinsert before case pages: repeat builds keep identical ordering.
+    insertion = next((index for index, entry in enumerate(tree.getroot())
+                      if (entry.find('{'+NS+'}loc').text or '').startswith(BASE + 'achievement-')),
+                     len(tree.getroot()))
+    for offset, entry in enumerate(event_entries):
+        tree.getroot().insert(insertion + offset, entry)
     ET.indent(tree, space='  ')
     (root / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding='unicode') + '\n')
     print('Built sitemap from recorded content dates')

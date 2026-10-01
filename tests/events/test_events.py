@@ -12,7 +12,9 @@ class EventTests(unittest.TestCase):
         q = parse_qs(urlsplit(calendar_url(self.event)).query)
         self.assertEqual(q['dates'], ['20260930T153000Z/20260930T170000Z'])
         self.assertEqual(q['text'], ['測試 & 時間'])
-        self.assertEqual(q['ctz'], ['Asia/Taipei'])
+        self.assertEqual(q['stz'], ['Asia/Taipei'])
+        self.assertEqual(q['etz'], ['Asia/Taipei'])
+        self.assertEqual(urlsplit(calendar_url(self.event)).path, '/calendar/r/eventedit')
     def test_no_fake_registration_and_escape_html(self):
         s = render_events([self.event])
         self.assertNotIn('<script>', s)

@@ -33,10 +33,13 @@ class OptionalEndTests(unittest.TestCase):
             self.assertIn('2026/10/31（六）15:50', html)
             self.assertNotIn('calendar.google.com', html)
             self.assertNotIn('calendar.google.com', E.render_events({'events': [event]}))
-            self.assertEqual(html.count('<img '), 2)
+            self.assertIn('加入 Google 日曆（開始提醒）', html)
+            self.assertIn('<option value="">請選擇提醒長度</option>', html)
+            detail = B.render_detail(event)
+            self.assertEqual(detail.count('<img '), 2)
             for image in event['images']:
                 self.assertTrue((ROOT / image['src']).is_file())
-                self.assertIn(image['src'], html)
+                self.assertIn(image['src'], detail)
             with self.assertRaises(ValueError): B.calendar_url(event)
         for end in ['', False, 0, 'bad', '2026-10-31T15:00:00+08:00', '2026-10-31T16:00:00']:
             with self.assertRaises(ValueError): B.validate({**self.event, 'end': end})

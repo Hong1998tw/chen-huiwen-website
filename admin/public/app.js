@@ -48,6 +48,7 @@ const labels = {
   name: "活動名稱",
   start: "開始時間（台灣時間）",
   end: "結束時間（台灣時間，未公布可留空）",
+  location: "已公開活動地點或地址（選填）",
   content: "活動說明（選填）",
   registration: "參與／報名方式（選填）",
   sourceUrl: "公開來源網址",
@@ -69,6 +70,7 @@ const eventKeys = [
   "name",
   "start",
   "end",
+  "location",
   "content",
   "registration",
   "sourceUrl",
@@ -1444,7 +1446,7 @@ function render() {
       ? dateTime.dateTime(String(rawValue).replace(/(?:Z|[+-]\d{2}:\d{2})$/, "")).slice(0, 16)
       : key === "month" ? dateTime.month(rawValue)
         : input.type === "date" ? dateTime.day(rawValue) : rawValue;
-    if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
+    if (["name", "location", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
     connectField(label,input,required);
     const monthChanged=()=> {
       if(key!=="month")return;

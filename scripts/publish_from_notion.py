@@ -53,7 +53,7 @@ DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedu
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'deployment-control': {deployment_target.REQUEST_FILE},
-    'events': {'data/events.json', 'index.html', 'activities.html', 'election.html', 'data/search-index.json'},
+    'events': {'data/events.json', 'index.html', 'activities.html', 'election.html', 'data/search-index.json', 'sitemap.xml'},
     'legal-schedule': {'data/legal-schedule.json', 'index.html', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
         row['path'] for row in page_catalog(ROOT)
@@ -73,7 +73,7 @@ BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
 # Direct merge endpoints are forbidden. Auto-merge may be enabled only through the guarded helper below.
 FORBIDDEN_GITHUB = re.compile(r'/pulls/\d+/merge\b|/merges\b|mergePullRequest', re.I)
-EVENT_FIELDS = ('name', 'start', 'end', 'content', 'registration', 'sourceUrl', 'verifiedAt',
+EVENT_FIELDS = ('name', 'start', 'end', 'location', 'content', 'registration', 'sourceUrl', 'verifiedAt',
                 'status', 'changeNote', 'updatedAt', 'reviewDueAt')
 NEW_EVENT_ORDER = ('id', 'name', 'start', 'end', 'content', 'registration', 'sourceUrl', 'verifiedAt',
                    'status', 'updatedAt', 'previousSchedule', 'changeNote', 'reviewDueAt')
@@ -303,6 +303,7 @@ def normalize_event(fields):
         'name': clean_text(fields.get('name'), '活動名稱', errors, max_len=120),
         'start': clean_datetime(fields.get('start'), '開始', errors),
         'end': clean_datetime(fields.get('end'), '結束', errors, required=False),
+        'location': clean_text(fields.get('location'), '已公開活動地點或地址', errors, required=False, max_len=500),
         'content': clean_text(fields.get('content'), '活動說明', errors, multiline=True, max_len=4000),
         'registration': clean_text(fields.get('registration'), '報名方式', errors, max_len=300),
         'sourceUrl': clean_url(fields.get('sourceUrl'), '來源網址', errors),
@@ -333,6 +334,8 @@ def build_event_record(managed, site_id, main_record):
         record = {key: None for key in NEW_EVENT_ORDER}
     record['id'] = site_id
     for key in EVENT_FIELDS:
+        if key == 'location' and managed[key] is None and key not in record:
+            continue  # Preserve missing optional keys byte-for-byte.
         record[key] = managed[key]
     status = managed['status']
     if status == 'scheduled':
@@ -370,7 +373,7 @@ def event_preview(record, main_record, preserved):
         lines = [f"【活動｜新增】{record['name']}", f'時間：{when}']
     else:
         lines = [f"【活動｜{'取消' if status == 'cancelled' else '改期' if status == 'rescheduled' else '修改'}】{record['name']}"]
-        labels = {'name': '活動名稱', 'content': '活動說明', 'registration': '報名方式', 'sourceUrl': '來源網址',
+        labels = {'name': '活動名稱', 'location': '活動地點', 'content': '活動說明', 'registration': '報名方式', 'sourceUrl': '來源網址',
                   'verifiedAt': '來源核對日', 'status': '狀態', 'changeNote': '異動說明', 'updatedAt': '來源更新日',
                   'reviewDueAt': '下次複查'}
         if (main_record.get('start'), main_record.get('end')) != (record['start'], record['end']):
@@ -388,6 +391,8 @@ def event_preview(record, main_record, preserved):
         lines.append(f"正式頁會同時顯示原定時間：{label_time(record['previousSchedule']['start'])}")
     content = record['content']
     lines.append('活動說明：' + (content if len(content) <= 300 else content[:300] + '…'))
+    if record.get('location'):
+        lines.append(f"活動地點：{record['location']}")
     lines.append(f"報名：{record['registration']}")
     lines.append(f"來源：{host_of(record['sourceUrl'])}（核對 {record['verifiedAt']}；來源更新 {record['updatedAt']}）")
     lines.append(f"下次複查：{record['reviewDueAt']}")
@@ -407,6 +412,8 @@ def prepare_event(row, main_text):
     if len(matches) > 1:
         raise PublishError('FORMAT_DRIFT', [f'重複的活動 ID：{site_id}'])
     main_record = data['events'][matches[0]] if matches else None
+    if 'location' not in row.get('fields', {}) and main_record is not None:
+        managed['location'] = main_record.get('location')  # Legacy Notion rows do not manage this field.
     if system.get('siteId') and main_record is None and system.get('syncedHash'):
         errors.append('網站 ID：網站上找不到這筆已同步的活動，請通知網站工程維護')
     base_hash = sha(main_record) if main_record is not None else 'absent'
@@ -612,6 +619,13 @@ def changed_files(repo):
 
 def allowed_for(candidate):
     allowed = set(ALLOWED_PATHS[candidate.domain])
+    if candidate.domain == 'events':
+        try:
+            events = build_events.public_events(json.loads(candidate.new_text))
+            event = next(item for item in events if item['id'] == candidate.record_key)
+            allowed.add(build_events.event_path(event))
+        except (ValueError, TypeError, StopIteration) as exc:
+            raise PublishError('PATH_NOT_ALLOWED', [candidate.record_key]) from exc
     if candidate.domain == 'editorial-page':
         from editorial_pages import PATH, SECTIONS
         matched = PATH.fullmatch(candidate.record_key)

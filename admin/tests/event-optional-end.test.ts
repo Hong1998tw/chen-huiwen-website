@@ -10,3 +10,11 @@ test('unannounced ends are normalized, while invalid ends and missing starts are
     assert.throws(()=>validate('events',{...event,end}));
   assert.throws(()=>validate('events',{...event,start:null,end:null}));
 });
+
+test('public location is optional plain text, supports clearing and rejects unsafe values', () => {
+  assert.equal(validate('events',{...event}).location,undefined);
+  for (const location of [null,'','  ']) assert.equal(validate('events',{...event,location}).location,null);
+  assert.equal(validate('events',{...event,location:' 高雄市鳳山區錦田路231號 '}).location,'高雄市鳳山區錦田路231號');
+  for (const location of [false,0,[],{},'<script>alert(1)</script>','x'.repeat(501)])
+    assert.throws(()=>validate('events',{...event,location}));
+});
