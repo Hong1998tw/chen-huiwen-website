@@ -43,7 +43,9 @@ for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
  if f.name=='offline.html':continue  # Standalone, no-network recovery document validated by validate_site.
  require(len(doc.select('#navigation a[href="political-donation.html"],#navigation a[href="/political-donation.html"]'))==1,f'{f.name}: header entry')
- require(doc.select_one('#navigation .nav-group summary').get_text(strip=True)=='市民服務',f'{f.name}: service-first navigation')
+ require([el.get_text(strip=True) for el in doc.select('#navigation .nav-group summary')]==['地方與議題','慧文的工作','關於慧文','服務處','2026 選舉'],f'{f.name}: approved task navigation order')
+ require(len(doc.select('#navigation a[href="service.html"],#navigation a[href="/service.html"]'))==1,f'{f.name}: service contact entry')
+ require(len(doc.select('#navigation a[href="service.html#monthly-heading"],#navigation a[href="/service.html#monthly-heading"]'))==1,f'{f.name}: lawyer schedule entry')
  require(len(doc.select('footer a[href="political-donation.html"],footer a[href="/political-donation.html"]'))==1,f'{f.name}: footer entry')
  ids=[el['id'] for el in doc.select('[id]')]
  require(len(ids)==len(set(ids)),f'{f.name}: duplicate IDs')

@@ -396,3 +396,7 @@ body .footer-bottom{font-size:.875rem;line-height:1.8}
  .platform-topic-nav a{flex:1 1 calc(50% - 8px);justify-content:center;padding-inline:8px}
 }
 @media(prefers-reduced-motion:reduce){.hero-election-status{transition:none}}
+
+/* Muted counts stay readable on the shared light-paper background. */
+body .explore-summary .digital-stat span{color:var(--civic-muted)}
+
