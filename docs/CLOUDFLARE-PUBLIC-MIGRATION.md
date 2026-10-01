@@ -21,6 +21,11 @@ Keep www and the old Pages site unchanged until Cloudflare preview has passed:
 
 The preview workflow does not submit forms or touch authenticated management data. Only after preview passes may the approved hostname move to the new static Worker. Then confirm the domain binding, live deployment manifest, exact source revision, public delivery job and the complete production checks. A build result or domain change alone is not production verification.
 
+## Canonical hostname configuration
+After the approved preview checks pass, bind www.huiwen.tw to huiwen-website and merge the reviewed custom-domain configuration. The canonical domain is explicitly listed in wrangler.public.jsonc so subsequent Builds deployments preserve it. The workers.dev origin remains available for read-only preview QA; versioned preview URLs are disabled. No DNS, Access or WAF policy is managed by application code.
+
+The legacy proxied CNAME must be saved before removing it for Cloudflare's custom-domain binding. Confirm the native binding and production receipt after cutover. Do not use a failing preview as permission to change the hostname.
+
 ## Pages recovery
 pages.yml no longer deploys on every main push. Its existing manual workflow remains available as a recovery tool. Do not stop or delete the old Pages deployment before migration verification.
 

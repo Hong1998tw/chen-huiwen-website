@@ -14,6 +14,8 @@ class StaticDeliveryTests(unittest.TestCase):
     def test_assets_only_configuration(self):
         config=json.loads((ROOT/'wrangler.public.jsonc').read_text())
         self.assertEqual(config['name'],'huiwen-website')
+        self.assertEqual(config['routes'],[{'pattern':'www.huiwen.tw','custom_domain':True}])
+        self.assertFalse(config['preview_urls'])
         self.assertNotIn('main',config)
         self.assertNotIn('triggers',config)
         self.assertNotIn('d1_databases',config)
