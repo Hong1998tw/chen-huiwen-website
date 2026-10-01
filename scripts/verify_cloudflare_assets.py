@@ -8,6 +8,15 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+def public_request(url):
+    # Identify this read-only verifier consistently, including aliases and absence checks.
+    return Request(url, headers={'User-Agent':'huiwen-public-asset-verifier','Accept-Encoding':'identity','Cache-Control':'no-cache'})
+
+def error_summary(error):
+    if isinstance(error, HTTPError):
+        return 'HTTP ' + str(error.code) + '; content-type=' + str(error.headers.get('Content-Type', ''))
+    return type(error).__name__
+
 def verify(base, root):
     root = Path(root)
     publication = json.loads((root / 'publication-manifest.json').read_text())
@@ -17,31 +26,33 @@ def verify(base, root):
     def check(pair):
         name, expected = pair
         try:
-            req = Request(base.rstrip('/') + '/' + name, headers={'User-Agent':'huiwen-public-asset-verifier','Accept-Encoding':'identity','Cache-Control':'no-cache'})
+            req = public_request(base.rstrip('/') + '/' + name)
             with urlopen(req, timeout=25) as response:
                 body = response.read()
                 ok = response.status == 200 and hashlib.sha256(body).hexdigest() == expected
             return None if ok else name + ': bytes differ'
         except (HTTPError, OSError) as error:
-            return name + ': ' + type(error).__name__
+            return name + ': ' + error_summary(error)
     with ThreadPoolExecutor(max_workers=8) as pool:
         failures = [error for error in pool.map(check, files.items()) if error]
     routes = {'/':'index.html'}
     routes.update({'/' + name.removesuffix('index.html'):name for name in files if name.endswith('/index.html')})
     for route, name in routes.items():
         try:
-            with urlopen(base.rstrip('/') + route, timeout=25) as response:
-                if hashlib.sha256(response.read()).hexdigest() != files[name]:
+            with urlopen(public_request(base.rstrip('/') + route), timeout=25) as response:
+                if response.status != 200 or hashlib.sha256(response.read()).hexdigest() != files[name]:
                     failures.append(route + ': directory route differs')
         except (HTTPError, OSError) as error:
-            failures.append(route + ': ' + type(error).__name__)
+            failures.append(route + ': ' + error_summary(error))
     for private in ('data/case-context.json','data/deployment-target.json','data/deployment-request.json','scripts/build_all.py','admin/wrangler.jsonc'):
         try:
-            with urlopen(base.rstrip('/') + '/' + private, timeout=25) as response:
+            with urlopen(public_request(base.rstrip('/') + '/' + private), timeout=25) as response:
                 failures.append(private + ': non-public path was exposed')
         except HTTPError as error:
             if error.code != 404:
-                failures.append(private + ': expected 404, got ' + str(error.code))
+                failures.append(private + ': expected 404, got ' + error_summary(error))
+        except OSError as error:
+            failures.append(private + ': ' + error_summary(error))
     return {'status':'PASS' if not failures else 'FAIL','base':base,'checkedFiles':len(files),'checkedAliases':len(routes),'failures':failures}
 
 def main():

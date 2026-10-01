@@ -6,5 +6,6 @@
     "directory": "./_site",
     "html_handling": "none",
     "not_found_handling": "404-page"
-  }
+  },
+  "preview_urls": false
 }

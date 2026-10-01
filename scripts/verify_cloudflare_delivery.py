@@ -27,8 +27,10 @@ def verify(expected_sha, artifact_digest, base_url, attempts=90, delay=5):
         try:
             with urlopen(request, timeout=20) as response:
                 value = json.loads(response.read())
-            result.update(status='PASS' if check_receipt(value,expected_sha,artifact_digest) else 'PENDING',
-                          observed=value,attempt=attempt)
+                http_status = response.status
+            result.pop('reason', None)
+            result.update(status='PASS' if http_status == 200 and check_receipt(value,expected_sha,artifact_digest) else 'PENDING',
+                          observed=value,attempt=attempt,httpStatus=http_status)
             if result['status'] == 'PASS':
                 return result
         except HTTPError as error:
