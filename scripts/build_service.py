@@ -1,4 +1,4 @@
-"""Render service-office schedules with dated, separate historical records."""
+"""Render the current service schedule while retaining validated source history."""
 import json, re
 from pathlib import Path
 from datetime import date, time
@@ -119,7 +119,7 @@ def render_schedule(data):
     validate_schedule(data)
     year,month=map(int,data['month'].split('-'))
     month_label=f'{year} 年 {month} 月'
-    return f'''<div class="schedule-text" data-schedule-month="{e(data['month'])}"><p class="civic-kicker">公益法律諮詢 · 採預約制</p><h2>{month_label}律師時間表</h2><p class="schedule-guidance">先來電確認日期、時間與名額，再前往服務處。下表只列所示月份已公布的時段，不能當成其他月份的預約安排。</p><p class="schedule-period-note" role="status">本表僅適用於{month_label}；預約其他月份請先來電確認，勿依過期月表直接前往。</p><div class="schedule-call"><a class="button button-green schedule-phone-cta" href="tel:+88678212536">來電預約 <span class="phone-number">07-821-2536</span></a><a class="text-link" href="#legal">預約前須知 ↓</a></div>{interactive_markup(data)}<table><caption>{month_label}公開諮詢時段（非即時名額）</caption><thead><tr><th scope="col">日期／星期</th><th scope="col">時段</th><th scope="col">律師</th></tr></thead><tbody>{rows_markup(data, current=True)}</tbody></table><p class="source-note">{source_markup(data)}；核對日期 <time datetime="{e(data['observedAt'])}">{e(data['observedAt'])}</time>。律師、異動與名額請以服務處確認為準。</p></div>{history_markup(data)}'''
+    return f'''<div class="schedule-text" data-schedule-month="{e(data['month'])}"><p class="civic-kicker">公益法律諮詢 · 採預約制</p><h2>{month_label}律師時間表</h2><p class="schedule-guidance">先來電確認日期、時間與名額，再前往服務處。下表只列所示月份已公布的時段，不能當成其他月份的預約安排。</p><p class="schedule-period-note" role="status">本表僅適用於{month_label}；預約其他月份請先來電確認，勿依過期月表直接前往。</p><div class="schedule-call"><a class="button button-green schedule-phone-cta" href="tel:+88678212536">來電預約 <span class="phone-number">07-821-2536</span></a><a class="text-link" href="#legal">預約前須知 ↓</a></div>{interactive_markup(data)}<table><caption>{month_label}公開諮詢時段（非即時名額）</caption><thead><tr><th scope="col">日期／星期</th><th scope="col">時段</th><th scope="col">律師</th></tr></thead><tbody>{rows_markup(data, current=True)}</tbody></table><p class="source-note">{source_markup(data)}；核對日期 <time datetime="{e(data['observedAt'])}">{e(data['observedAt'])}</time>。律師、異動與名額請以服務處確認為準。</p></div>'''
 
 def build():
     data=json.loads((R/'data/legal-schedule.json').read_text())

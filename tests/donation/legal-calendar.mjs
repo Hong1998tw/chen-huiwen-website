@@ -37,6 +37,7 @@ try{
    assert.equal(published.month,data.month);assert.deepEqual(published.sessions,data.sessions);
    assert.equal(await page.locator('[data-legal-calendar] .has-session').count(),data.sessions.length);
    assert.equal(await page.locator('#month-picker,#editor,.lawyer-month-editor').count(),0);
+   assert.equal(await page.locator('.schedule-original,.schedule-archive,.schedule-auto-embed,iframe[src*="canva.com"]').count(),0);
    await page.getByRole('button',{name:'列表',exact:true}).click();
    assert.equal(await page.locator('.schedule-text tbody tr').count(),data.sessions.length);
    for(const s of data.sessions)assert.match(await page.locator('[data-session-date="'+s.date+'"]').textContent(),new RegExp(s.lawyer));
