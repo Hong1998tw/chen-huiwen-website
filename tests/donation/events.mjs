@@ -36,6 +36,10 @@ const assertPicker=async (page,container)=>{
  assert(await picker.evaluate(el=>el.open));
  for(const minutes of ['15','30','60']){
   await select.selectOption(minutes);
+  if(minutes==='15'){
+   await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:false})));
+   assert.equal(await select.inputValue(),minutes,'Initial load must preserve a choice made during navigation');
+  }
   assert(await link.isVisible());
   const url=new URL(await link.getAttribute('href'));
   assert.equal(url.origin,'https://calendar.google.com');
