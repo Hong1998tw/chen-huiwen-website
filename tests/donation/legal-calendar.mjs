@@ -7,16 +7,18 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 const root=fileURLToPath(new URL('../../',import.meta.url)),out=root+'tests/donation/results/legal-calendar/';
 await mkdir(out,{recursive:true});
 const data=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
-const server=spawn('python3',['-m','http.server','8795','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
-const base='http://127.0.0.1:8795/';
-for(let n=0;n<50;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
-const report={checks:[],failures:[],sessions:data.sessions.length,month:data.month};
+const live=process.env.LEGAL_LIVE_URL;
+assert(!live||live==='https://www.huiwen.tw/','live checks use the canonical public origin only');
+const server=live?null:spawn('python3',['-m','http.server','8795','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
+const base=live||'http://127.0.0.1:8795/',baseHost=new URL(base).hostname;
+if(!live)for(let n=0;n<50;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+const report={checks:[],failures:[],sessions:data.sessions.length,month:data.month,baseUrl:base};
 const check=async(name,fn)=>{try{await fn();report.checks.push({name,status:'Passed'});}catch(e){report.failures.push(name);report.checks.push({name,status:'Failed',error:String(e)});}};
 const browser=await chromium.launch({headless:true});
 try{
  for(const width of [320,390,1440]){
   const ctx=await browser.newContext({viewport:{width,height:900},acceptDownloads:true});
-  await ctx.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.fulfill({status:204,body:''}));
+  await ctx.route('**/*',route=>new URL(route.request().url()).hostname===baseHost?route.continue():route.fulfill({status:204,body:''}));
   const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(base);
   await check(width+' homepage consultation shortcut',async()=>{
@@ -30,6 +32,8 @@ try{
   await page.goto(base+'service.html#monthly-heading');
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   await check(width+' published read-only calendar and list',async()=>{
+   const published=JSON.parse(await page.locator('#legal-schedule-data').textContent());
+   assert.equal(published.month,data.month);assert.deepEqual(published.sessions,data.sessions);
    assert.equal(await page.locator('[data-legal-calendar] .has-session').count(),data.sessions.length);
    assert.equal(await page.locator('#month-picker,#editor,.lawyer-month-editor').count(),0);
    await page.getByRole('button',{name:'列表',exact:true}).click();
@@ -55,7 +59,7 @@ try{
   await ctx.close();
  }
  const ctx=await browser.newContext({viewport:{width:1440,height:900}}),page=await ctx.newPage();
- await ctx.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.fulfill({status:204,body:''}));
+ await ctx.route('**/*',route=>new URL(route.request().url()).hostname===baseHost?route.continue():route.fulfill({status:204,body:''}));
  await page.goto(base+'service.html');
  await check('leap-year and year-boundary cards use requested month, without inferred sessions',async()=>{
   const cases=[{month:'2028-02',sessions:[{date:'2028-02-29',start:'16:30',end:'18:00',lawyer:'陳順得'}]},{month:'2027-01',sessions:[]}];
@@ -65,5 +69,5 @@ try{
   }
  });
  await ctx.close();
-}finally{await browser.close();server.kill();await writeFile(out+'report.json',JSON.stringify(report,null,2));}
+}finally{await browser.close();server?.kill();await writeFile(out+'report.json',JSON.stringify(report,null,2));}
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
