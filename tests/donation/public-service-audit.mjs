@@ -123,6 +123,6 @@ try{
   assert.equal(current.match(/<main[\s\S]*?<\/main>/)[0],old.match(/<main[\s\S]*?<\/main>/)[0]);
  });
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'service.html');
- await check('no JS schedule and original available',async()=>{assert.equal(await page.locator('.schedule-text tbody tr').count(),sessionTotal);await page.locator('.schedule-original > summary').click();assert(await page.locator('.schedule-auto-embed a').isVisible());});await ctx.close();
+ await check('no JS schedule and original available',async()=>{assert.equal(await page.locator('.schedule-text tbody tr').count(),sessionTotal);assert.equal(await page.locator('.schedule-original').getAttribute('open'),'');assert(await page.locator('.schedule-auto-embed a').isVisible());});await ctx.close();
 }finally{await browser.close();server?.kill();await writeFile(new URL('report.json',out),JSON.stringify(report,null,2));}
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
