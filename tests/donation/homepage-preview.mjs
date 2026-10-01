@@ -21,6 +21,7 @@ try{
   await page.evaluate(()=>window.scrollTo(0,0));
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),width+' overflow');
   const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+  await page.screenshot({path:out+'review-debug-'+width+'.png',fullPage:true});
   assert.deepEqual(axe.violations.map(v=>v.id),[],JSON.stringify(axe.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))));
   await page.screenshot({path:out+'preview-'+width+'-full.png',fullPage:true});
   await page.screenshot({path:out+'preview-'+width+'-top.png'});
