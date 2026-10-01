@@ -1,0 +1,33 @@
+name: Cloudflare public delivery verification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-public-delivery
+  cancel-in-progress: false
+jobs:
+  delivery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - name: Rebuild the reviewed public artifact without deploying
+        run: python scripts/build_cloudflare_public.py
+      - name: Wait for the exact source revision and artifact at the production origin
+        run: python scripts/verify_cloudflare_delivery.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cloudflare-public-delivery
+          retention-days: 30
+          path: tests/donation/results/cloudflare-public-delivery/

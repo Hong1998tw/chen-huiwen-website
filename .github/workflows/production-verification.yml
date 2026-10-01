@@ -2,7 +2,7 @@ name: Production live verification
 
 on:
   workflow_run:
-    workflows: ['Deploy public Pages artifact']
+    workflows: ['Cloudflare public delivery verification']
     types: [completed]
     branches: [main]
   workflow_dispatch:
