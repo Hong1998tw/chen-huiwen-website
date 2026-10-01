@@ -18,10 +18,20 @@ class PublicContactCompletenessTests(unittest.TestCase):
             'dadong-park-governance':'光遠路及博愛路段',
             'nanhe-park-youbike':'南光街與南正一路口南側',
         }
+        evidence_urls = {
+            "wende-school-center": "https://employ.kh.edu.tw/Html/2026/6/%E9%B3%B3%E5%B1%B1%E5%8D%80115%E5%AD%B8%E5%B9%B4%E5%BA%A6%E6%96%87%E5%BE%B7%E5%9C%8B%E5%B0%8F%E7%AC%AC1%E8%99%9F%E7%AC%AC2%E6%AC%A1%E5%85%AC%E5%91%8A%E7%B0%A1%E7%AB%A0.html",
+            "school-crossing-flags": "https://employ.kh.edu.tw/Html/2026/8/%E9%B3%B3%E5%B1%B1%E5%8D%80115%E5%AD%B8%E5%B9%B4%E5%BA%A6%E4%B8%AD%E5%B1%B1%E5%9C%8B%E5%B0%8F%E7%AC%AC4%E8%99%9F%E7%AC%AC1%E6%AC%A1%E5%85%AC%E5%91%8A%E7%B0%A1%E7%AB%A0.html",
+            "fengshan-columbarium-capacity": "https://mso.kcg.gov.tw/cp.aspx?n=7EEA0D306412ED3A",
+            "fengshan-second-market": "https://edbkcg.kcg.gov.tw/cp.aspx?n=58B03765A9BD67E6",
+            "fengxin-softball-lighting": "https://www.bip.gov.tw/info.aspx?cid=7d36b488de635c9a&pageid=9aef2da48d1c26b7",
+            "bade-detention": "https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=2afb5f34-d4d0-48c2-8f7a-7633695e3f4f",
+            "dadong-park-governance": "https://khh.travel/zh-tw/attractions/detail/152/",
+            "nanhe-park-youbike": "https://www.youbike.com.tw/region/kcg/news/status/6a05222fcaacd6244e0236a2/"
+        }
         for identity,address in expected.items():
             row=rows[identity]
             self.assertIn(address,row['locationName'])
-            self.assertTrue(any(s.get('sourceType')=='公共設施官方地址資料' and s.get('checkedAt')=='2026-10-01' for s in row['sources']))
+            self.assertIn(evidence_urls[identity], [s['url'] for s in row['sources']], identity)
         self.assertIsNone(rows['fengshan-columbarium-capacity']['coordinates'])
         self.assertNotIn('官網將本案呈現',' '.join(rows['fengshan-columbarium-capacity']['paragraphs']))
     def test_canonical_contact_and_print_share_the_verified_fax(self):
