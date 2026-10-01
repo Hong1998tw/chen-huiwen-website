@@ -7,5 +7,11 @@
     "html_handling": "none",
     "not_found_handling": "404-page"
   },
-  "preview_urls": false
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "www.huiwen.tw",
+      "custom_domain": true
+    }
+  ]
 }
