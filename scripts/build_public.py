@@ -40,7 +40,7 @@ LEGACY_PAGES = (
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
 VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt'}
-MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years'}
+MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
 
 
 def encoded(value):
@@ -110,7 +110,10 @@ def validate_map(root, records):
     rows = json.loads((root / 'data/achievement-map.json').read_text())
     if not isinstance(rows, list) or {r.get('id') for r in rows} != {r['id'] for r in records} or len(rows) != len(records):
         raise ValueError('Map/public projection IDs differ')
+    by_id = {r['id']: r for r in records}
     for row in rows:
+        if row.get('funding') != by_id[row['id']].get('funding'):
+            raise ValueError('Map funding differs from reviewed public source')
         if row.keys() - MAP_FIELDS or not is_public(row):
             raise ValueError('Map contains a non-public field or record')
         for event in row.get('history', []):

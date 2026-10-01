@@ -66,7 +66,12 @@
         "maxItems": 4,
         "items": {
           "type": "string",
-          "enum": ["overview", "media", "history", "sources"]
+          "enum": [
+            "overview",
+            "media",
+            "history",
+            "sources"
+          ]
         }
       },
       "notes": {
@@ -217,14 +222,38 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": {"type": "string", "enum": ["photo", "video"]},
-            "url": {"type": "string", "pattern": "^https://"},
-            "alt": {"type": "string"},
-            "caption": {"type": "string"},
-            "credit": {"type": "string"},
-            "publicAccessConfirmed": {"type": "boolean"}
+            "kind": {
+              "type": "string",
+              "enum": [
+                "photo",
+                "video"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "alt": {
+              "type": "string"
+            },
+            "caption": {
+              "type": "string"
+            },
+            "credit": {
+              "type": "string"
+            },
+            "publicAccessConfirmed": {
+              "type": "boolean"
+            }
           },
-          "required": ["kind", "url", "alt", "caption", "credit", "publicAccessConfirmed"]
+          "required": [
+            "kind",
+            "url",
+            "alt",
+            "caption",
+            "credit",
+            "publicAccessConfirmed"
+          ]
         }
       },
       "villageHeadPartners": {
@@ -275,6 +304,61 @@
           },
           "required": []
         }
+      },
+      "funding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "type": "string",
+            "enum": [
+              "核定總經費"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "TWD"
+            ]
+          },
+          "total": {
+            "type": "integer"
+          },
+          "centralGrant": {
+            "type": "integer"
+          },
+          "approvedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "approvalReference": {
+            "type": "string",
+            "minLength": 1
+          },
+          "collaboration": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceTitle": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://"
+          }
+        },
+        "required": [
+          "basis",
+          "currency",
+          "total",
+          "centralGrant",
+          "approvedOn",
+          "approvalReference",
+          "collaboration",
+          "sourceTitle",
+          "sourceUrl"
+        ]
       }
     },
     "required": [

@@ -156,7 +156,21 @@
     for (const cases of separated) {
       const pop = document.createElement('div'); pop.className = 'map-popup';
       const title = document.createElement('strong'); title.textContent = cases.length > 1 ? `${cases.length} 個附近專題（放大地圖可分開查看）` : cases[0].title; pop.append(title);
-      for (const c of cases) { const a = document.createElement('a'); a.href = `achievement-${c.id}.html`; a.textContent = c.title + ' →'; pop.append(a); }
+      for (const c of cases) {
+        const item = document.createElement('section'); item.className = 'map-popup-case';
+        const a = document.createElement('a'); a.href = `achievement-${c.id}.html`; a.textContent = c.title + ' →'; item.append(a);
+        if (c.funding) {
+          const f = c.funding, amount = value => (value / 10000).toLocaleString('zh-TW', {maximumFractionDigits: 2}) + '萬元';
+          const total = document.createElement('p'); total.className = 'case-funding-total'; total.textContent = f.basis + ' ' + amount(f.total); item.append(total);
+          const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = '經費與共同爭取'; details.append(summary);
+          for (const text of ['中央補助 ' + amount(f.centralGrant), f.approvedOn + ' 核定 · ' + f.approvalReference, f.collaboration, '新臺幣核定計畫口徑，非決算或已撥款。']) {
+            const p = document.createElement('p'); p.textContent = text; details.append(p);
+          }
+          const source = document.createElement('a'); source.href = f.sourceUrl; source.textContent = f.sourceTitle + ' ↗'; source.target = '_blank'; source.rel = 'noopener noreferrer'; details.append(source);
+          const full = document.createElement('a'); full.href = `achievement-${c.id}.html#case-sources`; full.textContent = '完整經費說明與來源 →'; details.append(full); item.append(details);
+        }
+        pop.append(item);
+      }
       const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[44,44],iconAnchor:[22,22]}), title:cases.map(c=>c.title).join('、'),caseIds:cases.map(c=>c.id),keyboard:true}).bindPopup(pop,{maxWidth:320,autoPan:false}).addTo(markers);
       marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id)));
       marker.getElement()?.addEventListener('keydown', event => {
