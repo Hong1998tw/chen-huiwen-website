@@ -27,6 +27,7 @@ def evaluate(head_ref, author, author_type, app_login, files):
         return False, f'unknown publish domain: {domain!r}'
     if not files:
         return False, 'executor pull request changes no files'
+    # deployment-control has exactly one non-public metadata path; no runtime/config writes.
     allowed = set(ALLOWED_PATHS[domain])
     if domain == 'editorial-page':
         from editorial_pages import PATH, SECTIONS
@@ -55,3 +56,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

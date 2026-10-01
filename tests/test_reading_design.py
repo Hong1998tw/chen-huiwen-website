@@ -26,6 +26,9 @@ class ReadingDesignTests(unittest.TestCase):
         self.assertFalse(soup.select('.civic-tasknav'))
         self.assertEqual(len(soup.select('#civic-query')), 1)
         self.assertEqual(len(soup.select('.hero-portrait')), 1)
+        feature_image = soup.select_one('.civic-feature-photo img')
+        self.assertEqual(feature_image.get('loading'), 'eager')
+        self.assertEqual(feature_image.get('fetchpriority'), 'high')
     def test_overview_does_not_invent_uncollected_attribution(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
         byid = {r['id']: r for r in records}

@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import uuid
 import urllib.error
 import urllib.request
 import zipfile
@@ -42,14 +43,16 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import build_events  # noqa: E402  (the current builder is the schema authority for events)
 from build_public import public_paths  # noqa: E402
 from page_authority import catalog as page_catalog  # noqa: E402
+import deployment_target  # noqa: E402
 
 TAIPEI = ZoneInfo('Asia/Taipei')
 NOTION_API = 'https://api.' + 'notion' + '.com/v1'  # split so the public-link scanner does not treat the API as content
 CONTRACT = 'huiwen-pilot-publisher/1'
 SUPPORTED_SCHEMA = {'events': {2}, 'legal-schedule': {2}}
-DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json', 'home-content': 'data/civic-home.json', 'editorial-page': 'data/editorial-pages.json'}
+DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedule.json', 'page-copy': 'data/page-content.json', 'achievement-content': 'data/achievements.json', 'home-content': 'data/civic-home.json', 'editorial-page': 'data/editorial-pages.json', 'deployment-control': deployment_target.REQUEST_FILE}
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
+    'deployment-control': {deployment_target.REQUEST_FILE},
     'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
     'legal-schedule': {'data/legal-schedule.json', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
@@ -565,9 +568,12 @@ def check_allowed(domain, files, candidate=None):
 
 def materialize(candidate, repo, *, quality=True):
     """Write the candidate into `repo` (a disposable worktree), rebuild and verify. Returns changed files."""
+    if candidate.domain == 'deployment-control' and (Path(repo) / deployment_target.REQUEST_FILE).is_symlink():
+        raise PublishError('PATH_NOT_ALLOWED', [deployment_target.REQUEST_FILE])
     (Path(repo) / DATA_FILES[candidate.domain]).write_text(candidate.new_text, encoding='utf-8')
     try:
-        run([sys.executable, 'scripts/build_all.py'], repo)
+        if candidate.domain != 'deployment-control':
+            run([sys.executable, 'scripts/build_all.py'], repo)
         if candidate.domain == 'achievement-content':
             slug = candidate.record_key.removesuffix('.html')
             cards = json.loads((Path(repo) / 'assets/og/manifest.json').read_text(encoding='utf-8'))
@@ -847,6 +853,23 @@ def parse_verification_artifact(zip_bytes):
 
 
 def http_check(domain, record_key, record_name=None, fetch=None):
+    if domain == 'deployment-control':
+        try:
+            if fetch:
+                response = fetch('https://www.huiwen.tw/deployment.json')
+                status, body = response if isinstance(response, tuple) else (200, response)
+            else:
+                request = urllib.request.Request('https://www.huiwen.tw/deployment.json?redeploy-verify=' + str(int(time.time())),
+                                                 headers={'User-Agent': 'huiwen-deployment-verifier'})
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    status, body = response.status, response.read(65537).decode('utf-8')
+            value = json.loads(body)
+            valid = status == 200 and isinstance(value, dict) and type(value.get('schemaVersion')) is int and value.get('schemaVersion') == 1 \
+                and value.get('provider') == deployment_target.CLOUDFLARE_PROVIDER \
+                and re.fullmatch(r'[a-f0-9]{40}', record_key or '') and value.get('sourceCommit') == record_key
+            return 'PASS' if valid else 'FAIL'
+        except (OSError, ValueError, TypeError):
+            return 'FAIL'
     if domain in {'page-copy', 'achievement-content', 'home-content', 'editorial-page'}:
         route = '' if record_key == 'index.html' else record_key[:-10] if record_key.endswith('/index.html') else record_key
         url = 'https://www.huiwen.tw/' + route
@@ -884,7 +907,38 @@ def http_check(domain, record_key, record_name=None, fetch=None):
     return 'PASS' if ok else 'FAIL'
 
 
-def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None, *, single_maintainer=False, auto_publish=False, publisher_login=''):
+def deployment_provider(repo=ROOT):
+    try:
+        return deployment_target.provider(repo)
+    except (OSError, ValueError, TypeError) as exc:
+        raise PublishError('CONFIG', ['部署目的地設定無效；未切換或重新部署。']) from exc
+
+
+def deployment_receipt(gh, commit_sha, provider):
+    """A provider's fixed delivery workflow must report this exact production commit."""
+    if provider not in deployment_target.DEPLOYMENT_WORKFLOWS:
+        raise PublishError('CONFIG', ['不支援的部署目的地'])
+    cloudflare = provider == deployment_target.CLOUDFLARE_PROVIDER
+    if cloudflare and not re.fullmatch(r'[a-f0-9]{40}', commit_sha or ''):
+        raise PublishError('CONFIG', ['部署版本不是完整 Git commit SHA'])
+    workflow, artifact_name = deployment_target.DEPLOYMENT_WORKFLOWS[provider]
+    status, out = gh.request('GET', f'/actions/workflows/{workflow}/runs?head_sha={commit_sha}&per_page=5')
+    if status != 200:
+        raise PublishError('GITHUB_BUSY', ['無法讀取正式部署收據'], retryable=True)
+    deploy = next((r for r in (out or {}).get('workflow_runs', [])
+                   if r.get('head_sha') == commit_sha and (not cloudflare or r.get('head_branch') == 'main')), None)
+    if not deploy or deploy.get('status') != 'completed':
+        return 'PENDING', {}
+    state = 'PASS' if deploy.get('conclusion') == 'success' else 'FAIL'
+    _, arts = gh.request('GET', f"/actions/runs/{deploy['id']}/artifacts")
+    art = next((a for a in (arts or {}).get('artifacts', []) if a.get('name') == artifact_name), {})
+    revision = {'deployRunId': deploy['id'], 'deployedSha': deploy.get('head_sha'), 'artifactDigest': art.get('digest')}
+    if cloudflare:
+        revision['provider'] = provider
+    return state, revision
+
+
+def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=None, *, single_maintainer=False, auto_publish=False, publisher_login='', repo=ROOT):
     layers = {k: 'PENDING' for k in LAYERS}
     revision = {}
     _, pr = gh.request('GET', f'/pulls/{pr_number}')
@@ -916,18 +970,13 @@ def layered_status(gh, pr_number, domain, record_key, record_name=None, fetch=No
         return layers, revision
     layers['merged'] = 'PASS'
     merge_sha = pr['merge_commit_sha']
-    _, pages = gh.request('GET', f'/actions/workflows/pages.yml/runs?head_sha={merge_sha}&per_page=5')
-    deploy = next(iter((pages or {}).get('workflow_runs', [])), None)
-    if deploy and deploy.get('status') == 'completed':
-        layers['deployed'] = 'PASS' if deploy.get('conclusion') == 'success' else 'FAIL'
-        _, arts = gh.request('GET', f"/actions/runs/{deploy['id']}/artifacts")
-        art = next((a for a in (arts or {}).get('artifacts', []) if a.get('name') == 'github-pages'), {})
-        revision = {'deployRunId': deploy['id'], 'deployedSha': deploy.get('head_sha'), 'artifactDigest': art.get('digest')}
+    provider = deployment_provider(repo)
+    layers['deployed'], revision = deployment_receipt(gh, merge_sha, provider)
     if layers['deployed'] != 'PASS':
         return layers, revision
-    layers['http_verified'] = http_check(domain, record_key, record_name, fetch)
+    layers['http_verified'] = http_check(domain, merge_sha if domain == 'deployment-control' else record_key, record_name, fetch)
     _, pv = gh.request('GET', f'/actions/workflows/production-verification.yml/runs?head_sha={merge_sha}&per_page=5')
-    verify = next(iter((pv or {}).get('workflow_runs', [])), None)
+    verify = next((r for r in (pv or {}).get('workflow_runs', []) if r.get('head_sha') == merge_sha), None)
     if verify and verify.get('status') == 'completed':
         _, arts = gh.request('GET', f"/actions/runs/{verify['id']}/artifacts")
         art = next((a for a in (arts or {}).get('artifacts', []) if a.get('name') == 'production-live-verification'), None)
@@ -1174,7 +1223,7 @@ def pr_body(cand, base_sha):
         f'- 建立時間：{now_iso()}', '',
         '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
         '**不得繞過 required checks。** GitHub auto-merge 只會在既有 ruleset 條件全數滿足後合併。',
-        '合併後由 Pages 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
+        '合併後由受審 deployment target 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 
 
 def publish(source, repo, domain, row, gh, push, *, build=True, single_maintainer=False, auto_publish=False):
@@ -1263,10 +1312,135 @@ def _latest_redeploy_run(actions_gh, since):
     return None
 
 
-def request_redeploy(source, actions_gh, row):
+def _deployment_control_candidate(request_id, requested_at, repo):
+    """Opaque, stable request identity; no content or Notion identifiers enter Git."""
+    if not re.fullmatch(r'[a-f0-9]{32}', request_id or ''):
+        raise PublishError('CONFIG', ['重新部署請求識別碼無效'])
+    try:
+        parse_datetime(requested_at)
+    except (TypeError, ValueError):
+        raise PublishError('CONFIG', ['重新部署請求時間無效']) from None
+    managed = {'schemaVersion': 1, 'provider': deployment_target.CLOUDFLARE_PROVIDER,
+               'requestId': request_id, 'requestedAt': requested_at}
+    path = Path(repo) / deployment_target.REQUEST_FILE
+    if path.is_symlink():
+        raise PublishError('PATH_NOT_ALLOWED', [deployment_target.REQUEST_FILE])
+    previous = path.read_text(encoding='utf-8') if path.exists() else ''
+    new_text = json.dumps(managed, ensure_ascii=False, indent=2) + '\n'
+    return Candidate('deployment-control', '', request_id, managed, sha(previous), new_text,
+                     previous != new_text, '只更新部署控制收據；公開內容來源不變。', sha(managed))
+
+
+def _fresh_deploy_control(source, page_id):
+    row = next((r for r in source.deploy_rows() if r['pageId'] == page_id), None)
+    if row is None:
+        raise PublishError('CONFIG', ['找不到重新部署授權列'])
+    return row
+
+
+def _request_cloudflare_redeploy(source, gh, row, *, repo, push, single_maintainer, auto_publish):
+    """Claim once, reconcile by a deterministic PR branch, and keep every existing merge gate."""
+    page = row['pageId']
+    try:
+        if gh is None or push is None or not auto_publish:
+            raise PublishError('CONFIG', ['Cloudflare 重新部署需要既有 publisher 與 auto-publish 模式'])
+        gate_preflight(gh, single_maintainer=single_maintainer, auto_publish=auto_publish)
+        fresh = _fresh_deploy_control(source, page)
+        active = fresh.get('state') == '重新部署中'
+        run_id = str(fresh.get('runId') or '')
+        if active and run_id.startswith('cf-pr:'):
+            source.deploy_write(page, requestRedeploy=False)
+            return {'pageId': page, 'outcome': 'REDEPLOY_PENDING'}
+        if active and run_id.startswith('cf-request:'):
+            request_id, requested_at = run_id.removeprefix('cf-request:'), fresh.get('lastRun')
+        else:
+            if not fresh.get('requestRedeploy'):
+                return {'pageId': page, 'outcome': 'REDEPLOY_SKIPPED'}
+            request_id, requested_at = uuid.uuid4().hex, now_iso()
+        cand = _deployment_control_candidate(request_id, requested_at, repo)
+        base = run(['git', 'rev-parse', 'HEAD'], repo).stdout.strip()
+        if gh.branch_sha('main') != base:
+            raise PublishError('STALE_CHECKOUT', retryable=True)
+        # Persist the stable claim before any Git write. A timeout resumes the same branch.
+        source.deploy_write(page, state='重新部署中', requestRedeploy=False,
+                            runId='cf-request:' + request_id, lastRun=requested_at,
+                            result='正在建立受控重新部署 PR；必要檢查與自動合併規則不變。')
+        title = 'Website deployment: rebuild current main on Cloudflare'
+        with Worktree(repo, base) as wt:
+            materialize(cand, wt)
+            claimed = _fresh_deploy_control(source, page)
+            if claimed.get('runId') != 'cf-request:' + request_id:
+                raise PublishError('PUBLISH_CHANGED_DURING_RUN')
+            if gh.branch_sha('main') != base:
+                raise PublishError('STALE_CHECKOUT', retryable=True)
+            outcome, pr = ensure_pull_request(gh, cand, lambda: push(wt, cand, title), title,
+                'Owner-requested redeploy. Only data/deployment-request.json may change.\n\n'
+                'Required checks and the trusted publication path guard must pass before native auto-merge.\n'
+                f'Candidate digest: {cand.digest}')
+            # Save the PR identity before enabling auto-merge, which itself can time out.
+            source.deploy_write(page, runId=f"cf-pr:{pr['number']}",
+                                result=f"重新部署 PR #{pr['number']} 已建立，等待必要檢查與正式站驗證。")
+            if outcome != 'ALREADY_MERGED':
+                gh.enable_auto_merge(pr['number'], expected_head_sha=gh.branch_sha(cand.branch))
+        return {'pageId': page, 'outcome': 'REDEPLOY_DISPATCHED', 'pr': pr['number']}
+    except RemoteUnknown:
+        source.deploy_write(page, state='重新部署中', result=ERROR_MESSAGES['REMOTE_UNKNOWN'])
+        return {'pageId': page, 'outcome': 'REDEPLOY_PENDING', 'retryable': True}
+    except PublishError as exc:
+        claimed = _fresh_deploy_control(source, page)
+        pending = exc.retryable and str(claimed.get('runId') or '').startswith(('cf-request:', 'cf-pr:'))
+        source.deploy_write(page, state='重新部署中' if pending else '重新部署失敗', result=exc.plain())
+        return {'pageId': page, 'outcome': 'REDEPLOY_PENDING' if pending else exc.code, 'retryable': exc.retryable}
+
+
+def _verify_cloudflare_redeploy(source, gh, row, *, repo, push, single_maintainer, auto_publish, publisher_login):
+    page, run_id = row['pageId'], str(row.get('runId') or '')
+    try:
+        if deployment_provider(repo) != deployment_target.CLOUDFLARE_PROVIDER:
+            raise PublishError('CONFIG', ['部署目的地已變更；舊 Cloudflare 請求未繼續執行'])
+        if run_id.startswith('cf-request:'):
+            return _request_cloudflare_redeploy(source, gh, row, repo=repo, push=push,
+                                                single_maintainer=single_maintainer, auto_publish=auto_publish)
+        if gh is None or not auto_publish or not re.fullmatch(r'cf-pr:[1-9][0-9]*', run_id):
+            raise PublishError('CONFIG', ['Cloudflare 重新部署 PR 收據無效'])
+        number = int(run_id.split(':')[1])
+        status, pr = gh.request('GET', f'/pulls/{number}')
+        if status != 200 or not pr:
+            raise PublishError('GITHUB_BUSY', retryable=True)
+        if not str((pr.get('head') or {}).get('ref', '')).startswith(BRANCH_PREFIX + 'deployment-control/') \
+                or (pr.get('base') or {}).get('ref') != 'main':
+            raise PublishError('CONFIG', ['重新部署 PR 不是受控 deployment-control → main'])
+        if not pr.get('merged_at') and pr.get('state') == 'open':
+            gate_preflight(gh, single_maintainer=single_maintainer, auto_publish=auto_publish)
+            gh.enable_auto_merge(number, expected_head_sha=pr['head']['sha'])
+        layers, revision = layered_status(gh, number, 'deployment-control', '',
+            single_maintainer=single_maintainer, auto_publish=auto_publish, publisher_login=publisher_login, repo=repo)
+        verdict, _ = overall(layers)
+        details = '；'.join(f'{LAYER_ZH[k]}：{layers[k]}' for k in LAYERS)
+        if verdict == 'PASS':
+            state, outcome = '重新部署完成', 'REDEPLOYED'
+        elif verdict == 'FAIL':
+            state, outcome = '重新部署失敗', 'REDEPLOY_FAILED'
+        else:
+            state, outcome = '重新部署中', 'REDEPLOY_PENDING'
+        source.deploy_write(page, state=state, result=f'PR #{number}；{details}', lastRun=now_iso())
+        return {'pageId': page, 'outcome': outcome, 'pr': number, 'revision': revision}
+    except RemoteUnknown:
+        source.deploy_write(page, result=ERROR_MESSAGES['REMOTE_UNKNOWN'])
+        return {'pageId': page, 'outcome': 'REDEPLOY_PENDING', 'retryable': True}
+    except PublishError as exc:
+        source.deploy_write(page, state='重新部署中' if exc.retryable else '重新部署失敗', result=exc.plain())
+        return {'pageId': page, 'outcome': 'REDEPLOY_PENDING' if exc.retryable else exc.code, 'retryable': exc.retryable}
+
+
+def request_redeploy(source, actions_gh, row, *, repo=ROOT, publisher_gh=None, push=None,
+                     single_maintainer=False, auto_publish=False):
     page = row['pageId']
     requested_at = now_iso()
     try:
+        if deployment_provider(repo) == deployment_target.CLOUDFLARE_PROVIDER:
+            return _request_cloudflare_redeploy(source, publisher_gh, row, repo=repo, push=push,
+                                                single_maintainer=single_maintainer, auto_publish=auto_publish)
         source.deploy_write(page, state='重新部署中', result='正在重新 build／deploy current main。',
                             requestRedeploy=False, runId='', lastRun=requested_at)
         actions_gh.dispatch_workflow('pages.yml', ref='main')
@@ -1286,12 +1460,19 @@ def request_redeploy(source, actions_gh, row):
         return {'pageId': page, 'outcome': exc.code, 'retryable': exc.retryable}
 
 
-def verify_redeploy(source, actions_gh, row):
+def verify_redeploy(source, actions_gh, row, *, repo=ROOT, publisher_gh=None, push=None,
+                    single_maintainer=False, auto_publish=False, publisher_login=''):
     if row.get('state') != '重新部署中':
         return {'pageId': row['pageId'], 'outcome': 'REDEPLOY_SKIPPED'}
     run_id = row.get('runId')
+    if str(run_id or '').startswith(('cf-request:', 'cf-pr:')):
+        return _verify_cloudflare_redeploy(source, publisher_gh, row, repo=repo, push=push,
+                                           single_maintainer=single_maintainer, auto_publish=auto_publish,
+                                           publisher_login=publisher_login)
     run_info = None
     try:
+        if deployment_provider(repo) != deployment_target.PAGES_PROVIDER:
+            raise PublishError('CONFIG', ['舊 Pages Run ID 不能作為目前 Cloudflare 正式站部署收據'])
         if run_id:
             run_info = actions_gh.action_run(run_id)
         else:
@@ -1416,7 +1597,7 @@ def main(argv=None):
                         layers, revision = layered_status(gh, number, domain, key, row['fields'].get('name'),
                                                          single_maintainer=single_maintainer,
                                                          auto_publish=auto_publish,
-                                                         publisher_login=publisher_login)
+                                                         publisher_login=publisher_login, repo=a.repo)
                         verdict, state = overall(layers)
                         summary = '；'.join(f'{LAYER_ZH[k]}：{layers[k]}' for k in LAYERS)
                         if revision:
@@ -1434,10 +1615,13 @@ def main(argv=None):
         if a.mode in ('cycle', 'redeploy'):
             for row in source.deploy_rows({'property': DEPLOY_CONTROL_PROPS['requestRedeploy'], 'checkbox': {'equals': True}}):
                 if row.get('requestRedeploy'):
-                    results.append(request_redeploy(source, actions_gh, row))
+                    results.append(request_redeploy(source, actions_gh, row, repo=a.repo, publisher_gh=gh,
+                        push=git_push(env.get('GH_TOKEN', '')), single_maintainer=single_maintainer, auto_publish=auto_publish))
             for row in source.deploy_rows({'property': DEPLOY_CONTROL_PROPS['state'], 'select': {'equals': '重新部署中'}}):
                 if row.get('state') == '重新部署中':
-                    results.append(verify_redeploy(source, actions_gh, row))
+                    results.append(verify_redeploy(source, actions_gh, row, repo=a.repo, publisher_gh=gh,
+                        push=git_push(env.get('GH_TOKEN', '')), single_maintainer=single_maintainer, auto_publish=auto_publish,
+                        publisher_login=publisher_login))
     except PublishError as exc:
         print(json.dumps({'error': exc.code}, ensure_ascii=False), file=sys.stderr)
         return 2

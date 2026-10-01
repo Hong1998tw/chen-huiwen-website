@@ -515,6 +515,11 @@ class DryRunAndPublishTests(DisposableRepo):
 
 
 class RedeployTests(unittest.TestCase):
+    def setUp(self):
+        patcher = unittest.mock.patch.object(P, 'deployment_provider', return_value='github-pages')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def source(self):
         s = P.FileSource.__new__(P.FileSource)
         s.data = {'deployControls': [{
@@ -538,7 +543,8 @@ class RedeployTests(unittest.TestCase):
                 {'id': 123, 'status': 'queued', 'conclusion': None, 'created_at': created}
             ]}))
         ])
-        result = P.request_redeploy(src, gh, src.data['deployControls'][0])
+        with unittest.mock.patch.object(P, 'deployment_provider', return_value='github-pages'):
+            result = P.request_redeploy(src, gh, src.data['deployControls'][0])
         self.assertEqual((result['outcome'], result['run']), ('REDEPLOY_DISPATCHED', 123))
         row = src.data['deployControls'][0]
         self.assertFalse(row['requestRedeploy'])
@@ -640,14 +646,15 @@ class RecoveryAndVerificationTests(unittest.TestCase):
                      ('GET', r'/pulls/7/reviews', (200, {}, reviews)),
                      ('GET', r'pages.yml/runs', (200, {}, {'workflow_runs': [{'id': 11, 'status': 'completed', 'conclusion': deploy, 'head_sha': 'm' * 40}]})),
                      ('GET', r'/runs/11/artifacts', (200, {}, {'artifacts': [{'name': 'github-pages', 'digest': 'sha256:abc'}]})),
-                     ('GET', r'production-verification.yml/runs', (200, {}, {'workflow_runs': [{'id': 12, 'status': 'completed'}]})),
+                     ('GET', r'production-verification.yml/runs', (200, {}, {'workflow_runs': [{'id': 12, 'status': 'completed', 'head_sha': 'm' * 40}]})),
                      ('GET', r'/runs/12/artifacts', (200, {}, {'artifacts': [{'id': 99, 'name': 'production-live-verification'}]})),
                      ('GET', r'/artifacts/99/zip', (200, {}, self.verification_zip(native)))])
 
     def status(self, fake, html='<article id="event-x">名稱</article>', *, single_maintainer=False):
         gh = P.GitHub('t', 'o/r', transport=fake, sleep=lambda s: None)
-        return P.layered_status(gh, 7, 'events', 'x', '名稱', fetch=lambda url: html,
-                                single_maintainer=single_maintainer)
+        with unittest.mock.patch.object(P, 'deployment_provider', return_value='github-pages'):
+            return P.layered_status(gh, 7, 'events', 'x', '名稱', fetch=lambda url: html,
+                                    single_maintainer=single_maintainer)
 
     def test_native_blocked_is_not_pass_and_revision_is_deployment_not_main(self):
         layers, revision = self.status(self.fake(native='BLOCKED'))
@@ -720,6 +727,250 @@ class PathGuardTests(unittest.TestCase):
         rejected, _ = guard(branch, 'huiwen-publisher[bot]', 'Bot', '',
                             ['data/civic-home.json', 'admin/src/index.ts'])
         self.assertFalse(rejected)
+
+
+class DeploymentTargetTests(unittest.TestCase):
+    def test_legacy_default_and_only_two_reviewed_providers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(P.deployment_provider(root), 'github-pages')
+            (root / 'data').mkdir()
+            path = root / 'data/deployment-target.json'
+            for provider in ('github-pages', 'cloudflare-static-assets'):
+                path.write_text(json.dumps({'schemaVersion': 1, 'provider': provider}))
+                self.assertEqual(P.deployment_provider(root), provider)
+            for value in ({}, {'schemaVersion': 2, 'provider': 'cloudflare-static-assets'},
+                          {'schemaVersion': True, 'provider': 'github-pages'},
+                          {'schemaVersion': 1, 'provider': []},
+                          {'schemaVersion': 1, 'provider': 'other'},
+                          {'schemaVersion': 1, 'provider': 'github-pages', 'workflow': 'unsafe.yml'}, []):
+                path.write_text(json.dumps(value))
+                with self.assertRaises(P.PublishError) as caught:
+                    P.deployment_provider(root)
+                self.assertEqual(caught.exception.code, 'CONFIG')
+            path.write_text('{broken')
+            with self.assertRaises(P.PublishError):
+                P.deployment_provider(root)
+
+    def test_read_failure_does_not_fall_back_to_pages(self):
+        with unittest.mock.patch.object(P.deployment_target, 'provider', side_effect=PermissionError):
+            with self.assertRaises(P.PublishError) as caught:
+                P.deployment_provider(ROOT)
+        self.assertEqual(caught.exception.code, 'CONFIG')
+
+    def test_deployment_control_path_gate_is_exactly_one_non_public_file(self):
+        branch = 'notion-publish/deployment-control/' + 'a' * 32 + '-12345678'
+        metadata = 'data/deployment-request.json'
+        self.assertEqual(P.ALLOWED_PATHS['deployment-control'], {metadata})
+        self.assertTrue(guard(branch, 'huiwen-publisher[bot]', 'Bot', '', [metadata])[0])
+        for path in ('scripts/publish_from_notion.py', '.github/workflows/cloudflare-public.yml',
+                     'data/deployment-target.json', 'data/events.json', 'index.html', 'wrangler.public.jsonc', 'CNAME'):
+            self.assertFalse(guard(branch, 'huiwen-publisher[bot]', 'Bot', '', [metadata, path])[0], path)
+        self.assertFalse(guard(branch, 'huiwen-publisher[bot]', 'Bot', '', [])[0])
+        self.assertNotIn(metadata, P.public_paths(ROOT))
+        self.assertNotIn('data/deployment-target.json', P.public_paths(ROOT))
+
+    def test_candidate_is_stable_private_and_rejects_bad_request_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = P._deployment_control_candidate('a' * 32, '2026-10-01T12:00:00+08:00', directory)
+            again = P._deployment_control_candidate('a' * 32, '2026-10-01T12:00:00+08:00', directory)
+            self.assertEqual((first.branch, first.new_text), (again.branch, again.new_text))
+            self.assertEqual(set(json.loads(first.new_text)), {'schemaVersion', 'provider', 'requestId', 'requestedAt'})
+            self.assertNotIn('deploy-page', first.new_text)
+            for request_id in ('', '../unsafe', 'a' * 31):
+                with self.assertRaises(P.PublishError):
+                    P._deployment_control_candidate(request_id, '2026-10-01T12:00:00+08:00', directory)
+
+    def test_materialize_control_does_not_rebuild_content_and_enforces_allowlist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            (root / 'index.html').write_text('unchanged public source')
+            candidate = P._deployment_control_candidate('a' * 32, '2026-10-01T12:00:00+08:00', root)
+            with unittest.mock.patch.object(P, 'run') as run, \
+                    unittest.mock.patch.object(P, 'changed_files', return_value=['data/deployment-request.json']):
+                self.assertEqual(P.materialize(candidate, root), ['data/deployment-request.json'])
+            run.assert_called_once_with([sys.executable, 'scripts/quality.py'], root)
+            self.assertEqual((root / 'index.html').read_text(), 'unchanged public source')
+            with unittest.mock.patch.object(P, 'run'), \
+                    unittest.mock.patch.object(P, 'changed_files', return_value=['data/deployment-request.json', 'index.html']):
+                with self.assertRaises(P.PublishError) as caught:
+                    P.materialize(candidate, root)
+            self.assertEqual(caught.exception.code, 'PATH_NOT_ALLOWED')
+
+    def test_deployment_metadata_symlink_is_never_read_or_written_through(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            candidate = P._deployment_control_candidate('a' * 32, '2026-10-01T12:00:00+08:00', root)
+            target = root / 'must-not-change.txt'
+            target.write_text('unchanged')
+            (root / 'data/deployment-request.json').symlink_to(target)
+            with self.assertRaises(P.PublishError):
+                P._deployment_control_candidate('a' * 32, '2026-10-01T12:00:00+08:00', root)
+            with unittest.mock.patch.object(P, 'run') as run:
+                with self.assertRaises(P.PublishError):
+                    P.materialize(candidate, root)
+                run.assert_not_called()
+            self.assertEqual(target.read_text(), 'unchanged')
+
+
+class CloudflareReceiptTests(unittest.TestCase):
+    merge_sha, head_sha = 'a' * 40, 'b' * 40
+
+    def status(self, *, native='BLOCKED', deploy='success', receipt_sha=None, branch='main', verification_sha=None):
+        pr = {'number': 7, 'state': 'closed', 'head': {'sha': self.head_sha},
+              'merged_at': '2026-10-01T00:00:00Z', 'merge_commit_sha': self.merge_sha,
+              'merged_by': {'type': 'User'}}
+        fake = Fake([
+            ('GET', r'/pulls/7$', (200, {}, pr)),
+            ('GET', r'/check-runs', (200, {}, {'check_runs': [{'name': n, 'conclusion': 'success'} for n in P.REQUIRED_CHECKS]})),
+            ('GET', r'/pulls/7/reviews', (200, {}, [{'state': 'APPROVED', 'user': {'type': 'User'}, 'commit_id': self.head_sha}])),
+            ('GET', r'cloudflare-public.yml/runs', (200, {}, {'workflow_runs': [{
+                'id': 21, 'status': 'completed', 'conclusion': deploy,
+                'head_sha': receipt_sha or self.merge_sha, 'head_branch': branch}]})),
+            ('GET', r'/runs/21/artifacts', (200, {}, {'artifacts': [{'name': 'cloudflare-public-delivery', 'digest': 'sha256:cf'}]})),
+            ('GET', r'production-verification.yml/runs', (200, {}, {'workflow_runs': [{
+                'id': 22, 'status': 'completed', 'head_sha': verification_sha or self.merge_sha}]})),
+            ('GET', r'/runs/22/artifacts', (200, {}, {'artifacts': [{'id': 99, 'name': 'production-live-verification'}]})),
+            ('GET', r'/artifacts/99/zip', (200, {}, RecoveryAndVerificationTests().verification_zip(native)))])
+        gh = P.GitHub('t', 'o/r', transport=fake, sleep=lambda _: None)
+        with unittest.mock.patch.object(P, 'deployment_provider', return_value='cloudflare-static-assets'):
+            layers, revision = P.layered_status(gh, 7, 'events', 'x', '名稱', fetch=lambda _: '<article id="event-x">名稱</article>')
+        self.assertEqual(fake.count('GET', r'workflows/pages.yml'), 0)
+        return layers, revision, fake
+
+    def test_exact_cloudflare_receipt_preserves_blocked_native(self):
+        layers, revision, _ = self.status()
+        self.assertEqual(layers['deployed'], 'PASS')
+        self.assertEqual(layers['native_verified'], 'BLOCKED')
+        self.assertEqual(P.overall(layers)[0], 'DEPLOYED_UNVERIFIED')
+        self.assertEqual(revision, {'provider': 'cloudflare-static-assets', 'deployRunId': 21,
+            'deployedSha': self.merge_sha, 'artifactDigest': 'sha256:cf', 'verificationRunId': 22})
+
+    def test_all_layers_pass_only_when_all_evidence_passes(self):
+        self.assertEqual(P.overall(self.status(native='PASS')[0])[0], 'PASS')
+
+    def test_other_commit_or_preview_branch_cannot_count_as_deployed(self):
+        for kwargs in ({'receipt_sha': 'c' * 40}, {'branch': 'preview'}):
+            layers, revision, _ = self.status(**kwargs)
+            self.assertEqual((layers['deployed'], revision), ('PENDING', {}))
+            self.assertEqual(layers['http_verified'], 'PENDING')
+
+    def test_failed_receipt_is_not_success(self):
+        layers, _, _ = self.status(deploy='failure')
+        self.assertEqual((layers['deployed'], P.overall(layers)[0]), ('FAIL', 'FAIL'))
+
+    def test_other_commit_verification_is_not_adopted(self):
+        layers, _, fake = self.status(native='PASS', verification_sha='c' * 40)
+        self.assertEqual((layers['snapshot_verified'], layers['native_verified']), ('PENDING', 'PENDING'))
+        self.assertEqual(fake.count('GET', r'/runs/22/artifacts'), 0)
+
+    def test_deployment_manifest_requires_provider_and_exact_full_sha(self):
+        value = {'schemaVersion': 1, 'provider': 'cloudflare-static-assets', 'sourceCommit': self.merge_sha}
+        self.assertEqual(P.http_check('deployment-control', self.merge_sha, fetch=lambda _: json.dumps(value)), 'PASS')
+        for changed in ({**value, 'provider': 'github-pages'}, {**value, 'sourceCommit': 'c' * 40},
+                        {**value, 'schemaVersion': True}, {}):
+            self.assertEqual(P.http_check('deployment-control', self.merge_sha, fetch=lambda _: json.dumps(changed)), 'FAIL')
+        self.assertEqual(P.http_check('deployment-control', self.merge_sha[:7], fetch=lambda _: json.dumps(value)), 'FAIL')
+
+
+class CloudflareRedeployTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'data').mkdir()
+        (self.root / 'data/deployment-target.json').write_text(json.dumps({'schemaVersion': 1, 'provider': 'cloudflare-static-assets'}))
+        self.source = RedeployTests().source()
+        self.row = self.source.data['deployControls'][0]
+        self.gh = unittest.mock.Mock()
+        self.gh.find_pull.return_value = None
+        self.gh.branch_sha.side_effect = lambda name: 'a' * 40 if name == 'main' else ('b' * 40 if self.push.called else None)
+        self.gh.create_pull.return_value = {'number': 100, 'state': 'open', 'merged_at': None}
+        self.push = unittest.mock.Mock()
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.gate = self.stack.enter_context(unittest.mock.patch.object(P, 'gate_preflight'))
+        wt = self.stack.enter_context(unittest.mock.patch.object(P, 'Worktree'))
+        wt.return_value.__enter__.return_value = self.root
+        self.stack.enter_context(unittest.mock.patch.object(P, 'materialize', return_value=['data/deployment-request.json']))
+        self.stack.enter_context(unittest.mock.patch.object(P, 'run', return_value=unittest.mock.Mock(stdout='a' * 40)))
+
+    def request(self):
+        return P.request_redeploy(self.source, unittest.mock.Mock(), self.row, repo=self.root,
+            publisher_gh=self.gh, push=self.push, single_maintainer=True, auto_publish=True)
+
+    def test_redeploy_uses_guarded_pr_not_a_cloudflare_token_or_dispatch(self):
+        result = self.request()
+        self.assertEqual((result['outcome'], result['pr']), ('REDEPLOY_DISPATCHED', 100))
+        self.gate.assert_called_once_with(self.gh, single_maintainer=True, auto_publish=True)
+        self.assertEqual(self.row['runId'], 'cf-pr:100')
+        self.assertFalse(self.row['requestRedeploy'])
+        candidate = self.push.call_args.args[1]
+        self.assertEqual(P.allowed_for(candidate), {'data/deployment-request.json'})
+        self.gh.enable_auto_merge.assert_called_once_with(100, expected_head_sha='b' * 40)
+        self.gh.dispatch_workflow.assert_not_called()
+
+    def test_missing_gate_or_auto_publish_prevents_any_git_write(self):
+        self.gate.side_effect = P.PublishError('GATE_NOT_ENFORCED')
+        self.assertEqual(self.request()['outcome'], 'GATE_NOT_ENFORCED')
+        self.push.assert_not_called()
+        self.gh.create_pull.assert_not_called()
+
+    def test_disabled_auto_publish_prevents_any_git_write(self):
+        result = P.request_redeploy(self.source, None, self.row, repo=self.root,
+            publisher_gh=self.gh, push=self.push, single_maintainer=True, auto_publish=False)
+        self.assertEqual(result['outcome'], 'CONFIG')
+        self.gate.assert_not_called()
+        self.push.assert_not_called()
+        self.gh.create_pull.assert_not_called()
+
+    def test_old_pages_run_is_not_a_cloudflare_redeploy_receipt(self):
+        self.row.update(state='重新部署中', runId='123', requestRedeploy=False)
+        actions = unittest.mock.Mock()
+        result = P.verify_redeploy(self.source, actions, self.row, repo=self.root,
+            publisher_gh=self.gh, push=self.push, single_maintainer=True, auto_publish=True)
+        self.assertEqual(result['outcome'], 'CONFIG')
+        actions.action_run.assert_not_called()
+
+    def test_stale_checkout_prevents_pr(self):
+        self.gh.branch_sha.return_value = 'f' * 40
+        self.gh.branch_sha.side_effect = None
+        self.assertEqual(self.request()['outcome'], 'STALE_CHECKOUT')
+        self.push.assert_not_called()
+
+    def test_unknown_auto_merge_result_retains_pr_for_reconciliation(self):
+        self.gh.enable_auto_merge.side_effect = P.RemoteUnknown('graphql')
+        self.assertEqual(self.request()['outcome'], 'REDEPLOY_PENDING')
+        self.assertEqual((self.row['runId'], self.row['state']), ('cf-pr:100', '重新部署中'))
+        self.assertEqual(self.request()['outcome'], 'REDEPLOY_PENDING')
+        self.assertEqual(self.gh.create_pull.call_count, 1)
+        self.assertEqual(self.push.call_count, 1)
+
+    def test_resuming_claim_reuses_same_branch_and_request_timestamp(self):
+        self.row.update(state='重新部署中', runId='cf-request:' + 'c' * 32,
+                        requestRedeploy=False, lastRun='2026-10-01T12:00:00+08:00')
+        expected = P._deployment_control_candidate('c' * 32, self.row['lastRun'], self.root)
+        self.request()
+        candidate = self.push.call_args.args[1]
+        self.assertEqual((candidate.branch, candidate.new_text), (expected.branch, expected.new_text))
+
+    def test_blocked_native_stays_pending_and_provider_rollback_cannot_resume(self):
+        self.row.update(state='重新部署中', runId='cf-pr:100', requestRedeploy=False)
+        self.gh.request.return_value = (200, {'state': 'closed', 'merged_at': '2026-10-01T00:00:00Z',
+            'head': {'ref': 'notion-publish/deployment-control/request'}, 'base': {'ref': 'main'}})
+        layers = dict.fromkeys(P.LAYERS, 'PASS')
+        layers['native_verified'] = 'BLOCKED'
+        with unittest.mock.patch.object(P, 'layered_status', return_value=(layers, {})):
+            result = P.verify_redeploy(self.source, None, self.row, repo=self.root, publisher_gh=self.gh,
+                push=self.push, single_maintainer=True, auto_publish=True)
+        self.assertEqual((result['outcome'], self.row['state']), ('REDEPLOY_PENDING', '重新部署中'))
+        (self.root / 'data/deployment-target.json').write_text(json.dumps({'schemaVersion': 1, 'provider': 'github-pages'}))
+        result = P.verify_redeploy(self.source, None, self.row, repo=self.root, publisher_gh=self.gh,
+            push=self.push, single_maintainer=True, auto_publish=True)
+        self.assertEqual(result['outcome'], 'CONFIG')
+        self.push.assert_not_called()
 
 
 if __name__ == '__main__':

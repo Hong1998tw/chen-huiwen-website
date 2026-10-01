@@ -386,7 +386,7 @@ def reconcile_page(item, gh):
         'achievement-content' if item['operation'] == 'publish' and 'case' in payload and (payload.get('case') != payload.get('caseBase') or 'seo' not in payload) else \
         'home-content' if item['operation'] == 'publish' and payload.get('home') != payload.get('homeBase') and 'home' in payload else 'page-copy'
     layers, revision = engine.layered_status(gh, item['pr_number'], domain, item['path'], item['operation'],
-        single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''))
+        single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''), repo=ROOT)
     state = 'verified' if all(v == 'PASS' for v in layers.values()) else 'deployed' if layers['deployed'] == 'PASS' else 'merged' if layers['merged'] == 'PASS' else 'pr_created'
     details = '；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k, v in layers.items())
     return {'id': item['id'], 'status': state, 'message': details, 'commit_sha': revision.get('deployedSha')}
@@ -422,7 +422,7 @@ def reconcile(item, gh):
         return {'id':item['id'],'status':'closed','message':'發布請求已關閉，未上線。請修改草稿後重新發布。'}
     layers, revision = engine.layered_status(gh, item['pr_number'], item['domain'],
         json.loads(item['payload']).get('month') if item['domain']=='legal-schedule' else item['record_key'],
-        single_maintainer=True,auto_publish=True,publisher_login=os.environ.get('PUBLISHER_APP_LOGIN',''))
+        single_maintainer=True,auto_publish=True,publisher_login=os.environ.get('PUBLISHER_APP_LOGIN',''),repo=ROOT)
     state = ('verified' if all(v=='PASS' for v in layers.values()) else 'deployed' if layers['deployed']=='PASS' else 'merged' if layers['merged']=='PASS' else 'pr_created')
     # A CI failure can be re-run without closing its PR. Keep reconciling the same request.
     details='；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k,v in layers.items())
@@ -466,3 +466,4 @@ if __name__ == '__main__':
         # Do not echo remote bodies, private drafts, credentials, or stack traces.
         print('CMS runner interrupted. Any leased request remains persisted and can resume after its lease expires.',file=sys.stderr)
         raise SystemExit(1)
+
