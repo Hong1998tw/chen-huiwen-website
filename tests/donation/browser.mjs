@@ -296,13 +296,9 @@ try {
       const monthly = await page.locator('.schedule-text').boundingBox();
       assert(legal && monthly && monthly.y < legal.y);
       assert.equal(await page.locator('.monthly-schedule a[href*="canva.com"]').count(), 0);
-      assert(await page.locator('.schedule-original').evaluate(el=>el.open),'shared Canva card remains an open continuously updated entry');
-      await page.locator('.schedule-auto-embed').scrollIntoViewIfNeeded();
-      await page.locator('.schedule-auto-embed iframe').waitFor({ state: 'attached' });
-      assert.equal(await page.locator('.schedule-auto-embed iframe').count(), 1, 'lawyer schedule should auto-load when it enters the viewport');
-      assert.equal(await page.locator('.schedule-auto-embed iframe').getAttribute('title'), '公益律師諮詢時刻表');
-      assert.equal(await page.locator('.schedule-auto-embed a[href^="https://www.canva.com/design/"]').count(), 1, 'lawyer schedule keeps a direct-link fallback');
-      assert(await page.locator('.schedule-auto-embed [data-embed-load]').isVisible(), 'lawyer schedule keeps a reload fallback');
+      assert.equal(await page.locator('.schedule-original,.schedule-archive,.schedule-auto-embed,iframe[src*="canva.com"]').count(), 0, 'retired schedule displays are absent');
+      await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
+      assert(await page.getByRole('button', {name:'下載本月圖卡 PNG',exact:true}).isVisible());
       assert((await page.locator('.schedule-phone-cta').boundingBox()).height >= 44);
       await page.goto(base + 'about.html');
       for (const href of ['https://www.facebook.com/hwcfs/','https://www.threads.com/@huiwen.ifs','https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028']) assert.equal(await page.locator(`.social-grid a[href="${href}"]`).count(), 1);

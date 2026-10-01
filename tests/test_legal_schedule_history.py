@@ -19,19 +19,19 @@ class LegalScheduleHistoryTests(unittest.TestCase):
             'sourceUrl':OWN_SCHEDULE_URL,'sourceTitle':'服務處10月文字公告',
             'sessions':[{'date':'2026-10-28','start':'10:00','end':'11:30'}],
             'history':[self.previous]}
-    def test_text_announcement_and_archive_are_separate(self):
+    def test_public_month_is_current_and_source_history_is_retained(self):
+        original=copy.deepcopy(self.current)
         page=BeautifulSoup(render_schedule(self.current),'html.parser')
         current=page.select_one('.schedule-text')
-        archive=page.select_one('.schedule-archive')
         self.assertEqual(current['data-schedule-month'],'2026-10')
         self.assertIn('10/28（三）',current.get_text())
         self.assertIn('10:00–11:30',current.get_text())
         self.assertIn('服務處10月文字公告',current.get_text())
         self.assertFalse(current.select('a[href*="canva.com"],iframe'))
-        self.assertEqual(archive.select_one('[data-archive-month]')['data-archive-month'],'2026-09')
-        self.assertIn('9/22（二）',archive.get_text())
-        self.assertNotIn('data-session-date',str(archive))
-        self.assertTrue(archive.select_one('a[href*="canva.com"]'))
+        self.assertFalse(page.select('.schedule-archive,[data-archive-month],iframe,a[href*="canva.com"]'))
+        self.assertNotIn('9/22（二）',page.get_text())
+        self.assertEqual(self.current,original)
+        self.assertEqual(self.current['history'],[self.previous])
     def test_invalid_archive_cannot_be_displayed_as_current(self):
         for month in ['2026-10','2026-11']:
             record=copy.deepcopy(self.current)

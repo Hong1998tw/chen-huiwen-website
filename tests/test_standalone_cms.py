@@ -13,6 +13,41 @@ from page_copy import digest as page_digest, render as render_page_copy, render_
 from case_media import classify as classify_media, render as render_media
 
 class StandaloneCMS(unittest.TestCase):
+
+    def test_historical_deployment_reconciliation_never_regresses_or_invents_verification(self):
+        gh = SimpleNamespace(request=lambda *_args: (200, {'state': 'closed', 'merged_at': '2026-09-26'}))
+        layers = {key: 'PASS' for key in engine.LAYERS}
+        layers.update(deployed='PENDING', http_verified='FAIL', snapshot_verified='PENDING', native_verified='PENDING')
+        original = 'a' * 40
+        items = [
+            (cms.reconcile, {'domain': 'legal-schedule', 'record_key': 'current', 'payload': '{"month":"2026-09"}'}),
+            (cms.reconcile_page, {'path': 'service.html', 'operation': 'publish', 'payload': '{"fields":{}}'}),
+        ]
+        with patch.object(engine, 'layered_status', return_value=(layers, {})):
+            for reconcile, data in items:
+                item = {**data, 'id': 'historical-request', 'pr_number': 98, 'status': 'deployed', 'commit_sha': original}
+                receipt = reconcile(item, gh)
+                self.assertEqual(receipt['status'], 'deployed')
+                self.assertEqual(receipt['commit_sha'], original)
+                self.assertIn('HTTP 驗證：FAIL', receipt['message'])
+                self.assertIn('已部署：PENDING', receipt['message'])
+                self.assertIn('最新驗證尚未完成', receipt['message'])
+
+    def test_reconciliation_only_verifies_all_current_layers_and_can_advance(self):
+        layers = {key: 'PASS' for key in engine.LAYERS}
+        item = {'id': 'request', 'status': 'merged', 'commit_sha': 'a' * 40}
+        revision = {'deployedSha': 'b' * 40}
+        for layer in engine.LAYERS:
+            pending = {**layers, layer: 'PENDING'}
+            self.assertNotEqual(cms.reconciliation_receipt(item, pending, revision)['status'], 'verified')
+        missing = {key: value for key, value in layers.items() if key != 'native_verified'}
+        self.assertNotEqual(cms.reconciliation_receipt(item, missing, revision)['status'], 'verified')
+        receipt = cms.reconciliation_receipt(item, {**layers, 'native_verified': 'PENDING'}, revision)
+        self.assertEqual(receipt['status'], 'deployed')
+        self.assertEqual(receipt['commit_sha'], revision['deployedSha'])
+        self.assertEqual(cms.reconciliation_receipt(item, layers, revision)['status'], 'verified')
+
+
     def test_retryable_publish_errors_return_to_queue(self):
         receipt = {"id": "release-id", "lease": "lease-id"}
         retry = cms.receipt_for_publish_error(receipt, engine.PublishError("STALE_CHECKOUT", retryable=True))
