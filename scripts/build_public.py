@@ -30,7 +30,7 @@ ROOT_FILES = (
     'civic.css', 'digital.css', 'home.css', 'campaign.css', 'embeds.css',
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
-    'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
+    'legal-calendar.js', 'legal-calendar.css', 'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -39,7 +39,7 @@ LEGACY_PAGES = (
     '398bd146805480f98aecedb69d2e1070/index.html', 'renwu-anju-social-housing/index.html',
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
-VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt'}
+VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
 
 

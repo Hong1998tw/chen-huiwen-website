@@ -735,3 +735,5 @@ dialog .section-head h2 { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+.lawyer-month-columns{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:16px 0}.lawyer-month-column{min-width:0;border:1px solid var(--line,#d3dfd9);padding:12px;border-radius:12px;background:#f3f7f4}.lawyer-month-column h3{font-size:16px;margin:0 0 12px}.lawyer-month-column label{display:block;font-size:13px;margin-top:12px}.lawyer-month-column input,.lawyer-month-column select{display:block;min-width:0;width:100%;margin-top:5px;min-height:44px;font:inherit;padding:8px;border:1px solid #9db6a7;border-radius:6px;background:#fff;color:#173f33}.lawyer-month-editor .legal-card-preview canvas{max-width:100%;height:auto}.lawyer-month-editor .toolbar{flex-wrap:wrap}@media(max-width:960px){.lawyer-month-columns{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:560px){.lawyer-month-columns{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.lawyer-month-column{padding:8px}}

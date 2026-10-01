@@ -458,13 +458,52 @@ def normalize_legal(fields, sessions):
             errors.append(f'第 {i} 個時段：開始時間必須早於結束時間')
         if day and month and not day.startswith(month):
             errors.append(f'第 {i} 個時段：{day} 不在 {month} 月內')
-        rows.append({'date': day, 'start': start, 'end': end})
-    if not rows:
+        entry = {'date': day, 'start': start, 'end': end}
+        if 'lawyer' in s:
+            entry['lawyer'] = clean_text(s.get('lawyer'), f'第 {i} 個時段律師', errors, max_len=40)
+            if not entry['lawyer']:
+                errors.append(f'第 {i} 個時段：請填律師姓名')
+        rows.append(entry)
+    if not rows and 'closedDates' not in fields:
         errors.append('時段：至少需要一個時段')
     dates = [r['date'] for r in rows if r['date']]
     dupes = sorted({d for d in dates if dates.count(d) > 1})
     if dupes:
         errors.append('時段：同一天只能有一個時段（網站目前格式）：' + '、'.join(dupes))
+    if 'weekdayTimes' in fields:
+        times = fields['weekdayTimes']
+        if not isinstance(times, dict) or set(times) != {'2','3','4','5','6'}:
+            errors.append('每週時段：格式不正確')
+        else:
+            managed['weekdayTimes'] = copy.deepcopy(times)
+            for slot in times.values():
+                if not isinstance(slot, dict) or set(slot) != {'start','end'} or not all(TIME_HHMM.fullmatch(str(slot.get(k,''))) for k in ('start','end')) or slot['start'] >= slot['end']:
+                    errors.append('每週時段：開始與結束時間不正確')
+    if isinstance(managed.get('weekdayTimes'),dict):
+        for slot in rows:
+            if slot['date']:
+                weekday=str((date.fromisoformat(slot['date']).weekday()+1)%7)
+                expected=managed['weekdayTimes'].get(weekday,{})
+                if not isinstance(expected,dict) or any(slot.get(k)!=expected.get(k) for k in ('start','end')):
+                    errors.append('日期時段與該星期設定不一致')
+    if fields.get('unconfirmedDates'):
+        errors.append('輪值仍有待填日期，不得發布')
+    if 'closedDates' in fields:
+        closed = fields['closedDates']
+        if not isinstance(closed, list) or len(closed) > 31:
+            errors.append('未排日：格式不正確')
+            closed = []
+        managed['closedDates'] = sorted(clean_date(d, '未排日', errors) or '' for d in closed)
+        closed = managed['closedDates']
+        if len(set(closed)) != len(closed) or set(closed) & set(dates) or any(not str(d).startswith(month or '-') for d in closed):
+            errors.append('未排日：月份、重複或與時段衝突')
+        if month:
+            year, mon = map(int, month.split('-'))
+            expected = {date(year,mon,d).isoformat() for d in range(1,calendar.monthrange(year,mon)[1]+1) if date(year,mon,d).weekday() in range(1,6)}
+            if not expected <= set(dates) | set(closed):
+                errors.append('請逐日確認週二至週六的輪值或無／停辦')
+        if any(not row.get('lawyer') for row in rows):
+            errors.append('時段：每場需填寫律師姓名')
     managed['sessions'] = sorted(rows, key=lambda r: (r['date'] or '', r['start']))
     if month:
         year, mon = map(int, month.split('-'))
@@ -479,7 +518,7 @@ def legal_preview(managed, main):
     year, mon = map(int, managed['month'].split('-'))
     def fmt(s):
         d = date.fromisoformat(s['date'])
-        return f"{d.month}/{d.day}（{WEEKDAY[d.weekday()]}）{s['start']}–{s['end']}"
+        return f"{d.month}/{d.day}（{WEEKDAY[d.weekday()]}）{s['start']}–{s['end']}" + (f" {s['lawyer']}律師" if s.get('lawyer') else '')
     ss = managed['sessions']
     lines = [f'【律師時間表｜{year} 年 {mon} 月】共 {len(ss)} 個時段',
              '時段：' + '；'.join(fmt(s) for s in ss)]
@@ -503,8 +542,24 @@ def prepare_legal(row, main_text):
     if errors:
         return Candidate('legal-schedule', row['pageId'], key, managed, base_hash, main_text, False, '', '', preserved, errors)
     new = copy.deepcopy(data)
+    if managed['month'] < data['month']:
+        errors.append('不可用較舊月份覆蓋目前月表；請先確認要修訂的版本')
+        return Candidate('legal-schedule', row['pageId'], key, managed, base_hash, main_text, False, '', '', preserved, errors)
+    if managed['month'] > data['month']:
+        archives = copy.deepcopy(data.get('history', []))
+        previous = {k: copy.deepcopy(v) for k,v in data.items() if k != 'history'}
+        archives = [a for a in archives if a['month'] != previous['month']] + [previous]
+        new['history'] = sorted(archives, key=lambda a:a['month'])
     for k in LEGAL_FIELDS:
         new[k] = copy.deepcopy(managed[k])
+    if 'weekdayTimes' in managed:
+        new['weekdayTimes'] = copy.deepcopy(managed['weekdayTimes'])
+    elif managed['month'] != data['month']:
+        new.pop('weekdayTimes',None)
+    if 'closedDates' in managed:
+        new['closedDates'] = copy.deepcopy(managed['closedDates'])
+    elif managed['month'] != data['month']:
+        new.pop('closedDates', None)
     new_text = dump_legal(new)
     digest = candidate_digest('legal-schedule', key, data['schemaVersion'], base_hash, managed)
     preview = legal_preview(managed, data)

@@ -61,6 +61,9 @@ const labels = {
   sourceTitle: "來源圖卡標題（選填）",
   nextReviewAt: "下次核對日（選填）",
   sessions: "諮詢時段",
+  closedDates: "無／停辦日期",
+  unconfirmedDates: "待填日期",
+  weekdayTimes: "每週諮詢時間",
 };
 const eventKeys = [
   "name",
@@ -82,6 +85,9 @@ const legalKeys = [
   "observedAt",
   "nextReviewAt",
   "sessions",
+  "closedDates",
+  "unconfirmedDates",
+  "weekdayTimes",
 ];
 function el(tag, text, cls) {
   const n = document.createElement(tag);
@@ -1374,71 +1380,18 @@ function renderSessionField(sessionsValue, required) {
   const field = makeField(labels.sessions, { group: true, required, path: "document.sessions" });
   field.id = "field-sessions";
   field.classList.add("wide", "sessions-editor");
-  const list = el("div", undefined, "legal-session-list");
-  const error = field.querySelector(".field-error");
-  let sessions = Array.isArray(sessionsValue) ? structuredClone(sessionsValue) : [];
-  if (!sessions.length) sessions = [{ date: "", start: "", end: "" }];
-
-  const renderRows = () => {
-    list.replaceChildren();
-    sessions.forEach((session, index) => {
-      const row = el("div", undefined, "legal-session-row");
-      row.dataset.sessionIndex = String(index);
-      for (const [key, caption, type] of [["date", "服務日期", "date"], ["start", "開始時間", "time"], ["end", "結束時間", "time"]]) {
-        const controlLabel = el("div", undefined, "session-control"), text = el("span", caption), input = document.createElement("input");
-        input.type = type;
-        if (type === "time") input.step = "60";
-        input.value = session[key] || "";
-        input.required = true;
-        input.setAttribute("aria-required", "true");
-        input.setAttribute("aria-label", `第 ${index + 1} 個時段${caption}`);
-        if (error) input.setAttribute("aria-describedby", error.id);
-        input.addEventListener("input", () => {
-          session[key] = input.value;
-          clearFieldError(input);
-        });
-        input.addEventListener("change", () => {
-          session[key] = input.value;
-          clearFieldError(input);
-        });
-        controlLabel.append(text, input);
-        installCompactEntry(field, input, `第 ${index + 1} 個時段${caption}`, type === "date" ? "day" : "time", value => {
-          session[key] = value;
-          clearFieldError(input);
-        }, controlLabel);
-        row.append(controlLabel);
-      }
-      const remove = el("button", "移除此時段", "quiet");
-      remove.type = "button";
-      remove.classList.add("session-remove");
-      remove.setAttribute("aria-label", `移除第 ${index + 1} 個諮詢時段`);
-      remove.disabled = sessions.length === 1;
-      remove.onclick = () => {
-        if (sessions.length === 1) sessions[0] = { date: "", start: "", end: "" };
-        else sessions.splice(index, 1);
-        renderRows();
-        clearFieldError(field.querySelector("input"));
-        markDocumentDirty();
-        field.querySelector(".legal-session-row input")?.focus();
-      };
-      row.append(remove);
-      list.append(row);
-    });
-  };
-  renderRows();
-  const add = el("button", "＋ 新增諮詢時段", "secondary");
-  add.type = "button";
-  add.disabled = sessions.length >= 31;
-  add.onclick = () => {
-    sessions.push({ date: "", start: "", end: "" });
-    renderRows();
+  const payload=JSON.parse(selected.payload);
+  const editor=window.HuiwenLegalEditor.create({...payload,sessions:sessionsValue||[]},()=>{
+    clearFieldError(field.querySelector("input") || field);
     markDocumentDirty();
-    field.querySelector(`.legal-session-row[data-session-index="${sessions.length - 1}"] input`)?.focus();
-  };
-  error.remove();
-  field.append(list, add, el("small", "每個時段請選日期、開始與結束時間；同一天只填一次。"), error);
+  });
+  const error=field.querySelector(".field-error");
+  field.insertBefore(editor.element,error);
+  field.readValue=editor.getValue;
+  field.setMonth=editor.setMonth;
   return field;
 }
+
 function render() {
   const p = JSON.parse(selected.payload),
     container = $("#fields");
@@ -1456,6 +1409,7 @@ function render() {
   $("#history-panel").hidden = !selected.id;
   $("#refresh").disabled = !selected.id || documentReplaceBusy || documentSaveBusy;
   for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
+    if (["closedDates", "unconfirmedDates", "weekdayTimes"].includes(key)) continue;
     const required = documentFieldRequired(key, selected.domain, p.status || "scheduled");
     if (key === "sessions") {
       container.append(renderSessionField(p.sessions, required));
@@ -1492,7 +1446,17 @@ function render() {
         : input.type === "date" ? dateTime.day(rawValue) : rawValue;
     if (["name", "content", "registration", "sourceUrl", "changeNote", "sourceTitle"].includes(key)) label.classList.add("wide");
     connectField(label,input,required);
-    if (pickerKind) installCompactEntry(label, input, labels[key], pickerKind, () => {});
+    const monthChanged=()=> {
+      if(key!=="month")return;
+      $("#field-sessions")?.setMonth(input.value);
+      const review=$("#field-nextReviewAt");if(review)review.value="";
+      const title=$("#field-sourceTitle");if(title && /^20\\d{2}-(0[1-9]|1[0-2])$/.test(input.value)){
+        const [year,month]=input.value.split("-").map(Number);
+        title.value="陳慧文服務處｜"+year+"年"+month+"月公益律師諮詢時間表";
+      }
+    };
+    if (pickerKind) installCompactEntry(label, input, labels[key], pickerKind, monthChanged);
+    if (key==="month") input.addEventListener("change",monthChanged);
     if (key === "status") input.addEventListener("change", () => updateDocumentRequirements());
     input.addEventListener("input",()=>clearFieldError(input));
     container.append(label);
@@ -1519,26 +1483,22 @@ function updateDocumentRequirements() {
   }
 }
 function read() {
-  const out = {};
-  const values = new FormData($("#editor-form"));
+  const out = {}, values = new FormData($("#editor-form"));
   for (const key of selected.domain === "events" ? eventKeys : legalKeys) {
+    if (["closedDates","unconfirmedDates","weekdayTimes"].includes(key)) continue;
     if (key === "sessions") {
-      out.sessions = [...$("#field-sessions").querySelectorAll(".legal-session-row")].map(row => ({
-        date: row.querySelector('input[type="date"]').value,
-        start: row.querySelectorAll('input[type="time"]')[0].value,
-        end: row.querySelectorAll('input[type="time"]')[1].value,
-      })).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+      Object.assign(out,$("#field-sessions").readValue());
       continue;
     }
     const value = values.get(key) ?? "";
     const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : /At$/.test(key) ? "day" : null;
-    out[key] =
-      ["start", "end"].includes(key)
-        ? value ? `${dateTime.dateTime(value)}:00+08:00` : ""
-        : kind ? dateTime[kind](value) : value || null;
+    out[key] = ["start", "end"].includes(key)
+      ? value ? `${dateTime.dateTime(value)}:00+08:00` : ""
+      : kind ? dateTime[kind](value) : value || null;
   }
   return out;
 }
+
 async function save() {
   if (documentSaveBusy || documentReplaceBusy || !selected || !validateRequiredFields($("#fields"), true)) return;
   const savingDocument = selected;
@@ -1693,6 +1653,9 @@ $("#preview").onclick = () => action(async () => {
   const target = $("#preview-content");
   target.replaceChildren();
   const p = JSON.parse(selected.payload);
+  if(selected.domain==="legal-schedule" && p.unconfirmedDates?.length){
+    showFieldError("document.sessions","仍有日期待填；請選律師或無／停辦後再預覽發布");return;
+  }
   const published = await api(`/api/documents/${reviewingDocument.id}/published`);
   if (request !== documentPreviewRequest || selected !== reviewingDocument || dirty || revision !== documentEditRevision) return;
   previewDocument = { id: reviewingDocument.id, version: reviewingDocument.version };
@@ -1703,7 +1666,9 @@ $("#preview").onclick = () => action(async () => {
   if (!baseline) target.append(el("p", "尚無已發布版本；以下為首次發布的資料。", "hint"));
   const renderValue = (key, value) => key === "status" ? ({scheduled:"排定",rescheduled:"改期",cancelled:"取消"}[value] || value || "—") :
     ["start", "end"].includes(key) && value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}) :
-    key === "sessions" ? (value || []).map(s => `${s.date} ${s.start}–${s.end}`).join("\n") || "—" : value || "—";
+    key === "sessions" ? (value || []).map(s => `${s.date} ${s.start}–${s.end}${s.lawyer ? " "+s.lawyer+" 律師" : ""}`).join("\n") || "本月無場次" :
+    key === "weekdayTimes" ? Object.entries(value||{}).map(([w,s])=>"週"+"日一二三四五六"[Number(w)]+" "+s.start+"–"+s.end).join("\n") :
+    Array.isArray(value) ? value.join("、") || "—" : value || "—";
   const renderField = (key) => {
     const dl = el("dl", undefined, "preview-item");
     dl.append(el("dt", labels[key]));

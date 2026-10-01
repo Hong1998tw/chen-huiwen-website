@@ -97,3 +97,9 @@ v2 延續 v1 的政治獻金、人物圖片、歷屆政見、SEO、Accessibility
 服務案件只公開入口 URL，不將 Notion 內案件內容、民眾個資、附件、workspace URL 或 credential 複製到 GitHub／Production。若 Notion publish/share 設定變更，需重新驗證未登入公開可達性。
 
 政治獻金 evidence 仍以 `docs/POLITICAL-DONATION.md` 為 canonical；本次未更改專戶、法規、限額或收受期間等公開事實。歷屆政見 evidence 仍以 `data/platforms.json` 為 canonical。完整 release 追溯見 `docs/RELEASE-2026-09-08-V2.md`。
+
+## Monthly legal consultation card
+
+The calendar, text list, print sheet and downloadable card use the confirmed published month in data/legal-schedule.json. Names are public professional names supplied with the approved schedule. Other months are not inferred from a recurring rotation. The existing authenticated CMS holds private drafts and uses the existing reviewed publication queue.
+
+The Canva design URL is a continuously updated shared entry, not a month-specific historical image. Only archived text schedules retain their original month and observation date; the Canva entry itself stays month-neutral. The supplied official portrait and brand fragments are optimized without replacing the person or changing the approved design. Noto CJK TC font subsets include their original copyright notices and SIL Open Font License at assets/legal/OFL.txt.

@@ -63,7 +63,7 @@ def sources(repo):
     result = [{'id': e['id'], 'domain': 'events', 'record_key': e['id'], 'hash': engine.sha(e),
                'payload': {k: e.get(k) for k in engine.EVENT_FIELDS}} for e in events['events']]
     result.append({'id': 'legal-current', 'domain': 'legal-schedule', 'record_key': 'current',
-                   'hash': engine.sha(legal), 'payload': {k: legal[k] for k in ('month','observedAt','sourceUrl','sourceTitle','nextReviewAt','sessions')}})
+                   'hash': engine.sha(legal), 'payload': {k: legal[k] for k in ('month','observedAt','sourceUrl','sourceTitle','nextReviewAt','sessions','closedDates','weekdayTimes') if k in legal}})
     return result
 
 

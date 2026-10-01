@@ -695,7 +695,7 @@ async function handle(request: Request, env: Env) {
       base = s.source_hash;
     } else if (request.method !== "PUT" || action)
       throw new HttpError(405, "不支援的方法");
-    const clean = validate(d.domain, payload);
+    const clean = validate(d.domain, payload, { draft: true });
     const result = await env.DB.prepare(
       "UPDATE documents SET payload=?,base_hash=?,version=version+1,updated_at=?,actor=? WHERE id=? AND version=?",
     )

@@ -20,10 +20,14 @@ const legalKeys = [
   "sourceTitle",
   "nextReviewAt",
   "sessions",
+  "closedDates",
+  "unconfirmedDates",
+  "weekdayTimes",
 ];
 export function validate(
   domain: string,
   value: unknown,
+  options: { draft?: boolean } = {},
 ): Record<string, unknown> {
   if (
     !domains.includes(domain as (typeof domains)[number]) ||
@@ -37,7 +41,7 @@ export function validate(
   if (Object.keys(p).some((k) => !keys.includes(k)))
     throw new HttpError(400, "包含不允許修改的欄位");
   for (const [k, v] of Object.entries(p)) {
-    if (k === "sessions") continue;
+    if (["sessions", "closedDates", "unconfirmedDates", "weekdayTimes"].includes(k)) continue;
     if (v !== null && typeof v !== "string")
       throw new HttpError(400, `${k} 格式不正確`, `document.${k}`);
     if (
@@ -105,7 +109,7 @@ export function validate(
     if (p.nextReviewAt && !day(p.nextReviewAt)) throw new HttpError(400, "下次核對日期不正確", "document.nextReviewAt");
     if (
       !Array.isArray(p.sessions) ||
-      !p.sessions.length ||
+      (!p.sessions.length && !options.draft && !Array.isArray(p.closedDates)) ||
       p.sessions.length > 31
     )
       throw new HttpError(400, "請填寫 1 至 31 個時段", "document.sessions");
@@ -114,7 +118,7 @@ export function validate(
       if (
         !s ||
         typeof s !== "object" ||
-        Object.keys(s).some((k) => !["date", "start", "end"].includes(k)) ||
+        Object.keys(s).some((k) => !["date", "start", "end", "lawyer"].includes(k)) ||
         !day(s.date) ||
         !s.date.startsWith(p.month) ||
         !time(s.start) ||
@@ -123,7 +127,50 @@ export function validate(
         dates.has(s.date)
       )
         throw new HttpError(400, `第 ${index + 1} 個時段日期、時間或重複日期有誤`, "document.sessions");
+      if (s.lawyer !== undefined && (typeof s.lawyer !== "string" || !s.lawyer.trim() || s.lawyer.length > 40 ||
+          /[<>\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(s.lawyer)))
+        throw new HttpError(400, `第 ${index + 1} 個時段律師姓名不正確`, "document.sessions");
       dates.add(s.date);
+    }
+    if (p.weekdayTimes !== undefined) {
+      const times=p.weekdayTimes;
+      if (!times || typeof times!=="object" || Array.isArray(times) || Object.keys(times).sort().join(",")!=="2,3,4,5,6")
+        throw new HttpError(400, "每週時段格式不正確", "document.sessions");
+      for (const slot of Object.values(times)) {
+        if (!slot || typeof slot!=="object" || Array.isArray(slot) || Object.keys(slot).sort().join(",")!=="end,start" || !time(slot.start) || !time(slot.end) || slot.start>=slot.end)
+          throw new HttpError(400, "每週開始與結束時間不正確", "document.sessions");
+      }
+    }
+    if (p.weekdayTimes && typeof p.weekdayTimes==="object" && !Array.isArray(p.weekdayTimes)) {
+      const weekly=p.weekdayTimes as Record<string,{start:string;end:string}>;
+      for(const slot of p.sessions){
+        const weekday=String(new Date(slot.date+"T12:00:00Z").getUTCDay());
+        if(!weekly[weekday] || slot.start!==weekly[weekday].start || slot.end!==weekly[weekday].end)
+          throw new HttpError(400,"日期時段與該星期設定不一致","document.sessions");
+      }
+    }
+    for (const field of ["closedDates", "unconfirmedDates"]) {
+      if (p[field] === undefined) continue;
+      const values=p[field];
+      if (!Array.isArray(values) || values.length > 31 || values.some(d=>!day(d) || !d.startsWith(String(p.month))) ||
+          new Set(values).size !== values.length || values.some(d=>dates.has(d)))
+        throw new HttpError(400, "未排日與時段日期需分開，且在所選月份內", "document.sessions");
+    }
+    const closedDates = p.closedDates;
+    if (Array.isArray(p.unconfirmedDates) && Array.isArray(closedDates) && p.unconfirmedDates.some(d=>closedDates.includes(d)))
+      throw new HttpError(400, "日期不可同時待填與無場次", "document.sessions");
+    if (!options.draft && Array.isArray(p.unconfirmedDates) && p.unconfirmedDates.length)
+      throw new HttpError(400, "仍有日期待填；請選律師或無／停辦後再發布", "document.sessions");
+    if (Array.isArray(p.closedDates)) {
+      const [year,month]=String(p.month).split("-").map(Number), count=new Date(Date.UTC(year,month,0)).getUTCDate();
+      const covered=new Set([...dates,...p.closedDates,...(options.draft && Array.isArray(p.unconfirmedDates)?p.unconfirmedDates:[])]);
+      for(let d=1;d<=count;d++){
+        const value=String(p.month)+"-"+String(d).padStart(2,"0"), weekday=new Date(value+"T12:00:00Z").getUTCDay();
+        if(weekday>=2 && !covered.has(value))
+          throw new HttpError(400, "請逐日確認週二至週六的輪值或無／停辦", "document.sessions");
+      }
+      if (!options.draft && p.sessions.some(s=>!s.lawyer))
+        throw new HttpError(400, "請填寫每個時段的律師姓名", "document.sessions");
     }
     if (p.nextReviewAt && (
       String(p.nextReviewAt) < String(p.observedAt) ||
