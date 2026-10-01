@@ -19,20 +19,30 @@ try{
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
   const page=await context.newPage();page.setDefaultTimeout(8000);
   page.on('pageerror',e=>report.pageErrors.push(String(e)));
-  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','election.html']){
+  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','election.html']){
    await page.goto(base+file);await page.waitForTimeout(120);
    await check(width+' '+file+' reflow',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(await page.locator('h1').count(),1);});
    if([390,1180].includes(width))await check(width+' '+file+' automated accessibility',async()=>{const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();assert.deepEqual(a.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);});
    await page.screenshot({path:out+'/'+file.replace('.html','')+'-'+width+'.png',fullPage:false});
   }
   if(width===320){
-   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html']){
+   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html']){
     await page.goto(base+file);await page.addStyleTag({content:'html{font-size:200%!important}'});
     await check('200% text '+file,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
     await page.screenshot({path:out+'/'+file.replace('.html','')+'-text-200.png'});
    }
   }
   if(width===390){
+   await check('Verified public contact and dated booking guidance',async()=>{
+    await page.goto(base+'service.html#contact');assert.match(await page.locator('#contact').innerText(),/07-815-1104/);
+    assert.match(await page.locator('.schedule-guidance').innerText(),/不能當成其他月份/);
+    await page.goto(base+'service-print.html');assert.match(await page.locator('main').innerText(),/勿依過期月表直接前往/);
+   });
+   await check('Correct public facility address stays separate from service scope',async()=>{
+    await page.goto(base+'achievement-fengshan-columbarium-capacity.html');
+    assert.match(await page.locator('.case-facts').innerText(),/大寮區內坑里六和路78-12號/);
+    assert.match(await page.locator('.case-facts').innerText(),/07-792-0200/);
+   });
    await check('Search, Escape and focus restoration',async()=>{
     await page.goto(base);await page.locator('#civic-query').fill('文德國小');await page.locator('.civic-search button').click();
     await page.locator('#global-search-dialog').waitFor();await page.locator('.global-search-result').first().waitFor();

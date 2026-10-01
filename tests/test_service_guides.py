@@ -70,7 +70,7 @@ class ServiceGuideTests(unittest.TestCase):
             shutil.copyfile(ROOT / 'data/site-profile.json', root / 'data/site-profile.json')
             source = (ROOT / 'service.html').read_text()
             source = source.replace('07-821-2536', '07-000-0000').replace('tel:+88678212536', 'tel:+88670000000')
-            source = source.replace('高雄市鳳山區錦田路231號', '測試地址').replace('14:00–18:00', '14:00–17:00')
+            source = source.replace('830 高雄市鳳山區錦田路231號', '測試地址').replace('14:00–18:00', '14:00–17:00')
             (root / 'service.html').write_text(source)
             office = load_office(root)
             rendered = render_guides(self.data, office, self.legal)
