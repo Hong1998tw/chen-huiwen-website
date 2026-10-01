@@ -1,4 +1,5 @@
 import copy, json, sys, unittest
+from datetime import date
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -7,8 +8,11 @@ from publish_from_notion import prepare_legal, dump_legal
 from build_legal_shared import FILES
 class MonthlyCalendarTests(unittest.TestCase):
     def setUp(self):
-        self.data=json.loads((ROOT/'data/legal-schedule.json').read_text())
+        self.data={'schemaVersion':2,'month':'2026-10','observedAt':'2026-10-01','sourceUrl':'https://www.huiwen.tw/service.html#monthly-heading','sourceTitle':'測試月表','nextReviewAt':'2026-10-20','sessions':[{'date':'2026-10-01','start':'19:30','end':'21:00','lawyer':'林岡輝'}],
+            'closedDates':[date(2026,10,d).isoformat() for d in range(2,32) if date(2026,10,d).weekday() in range(1,6)],
+            'weekdayTimes':{'2':{'start':'16:30','end':'18:00'},'3':{'start':'10:00','end':'11:30'},'4':{'start':'19:30','end':'21:00'},'5':{'start':'16:30','end':'18:00'},'6':{'start':'10:00','end':'11:30'}}}
     def test_public_sessions_are_named_and_current_october_plan_is_complete(self):
+        validate_schedule(json.loads((ROOT/'data/legal-schedule.json').read_text()))
         validate_schedule(self.data)
         self.assertTrue(all(s.get('lawyer') for s in self.data['sessions']))
         self.assertTrue(all(d.startswith(self.data['month']) for d in self.data['closedDates']))
@@ -35,6 +39,10 @@ class MonthlyCalendarTests(unittest.TestCase):
         validate_schedule(data)
     def test_public_and_authenticated_renderers_are_byte_identical(self):
         for relative in FILES:self.assertEqual((ROOT/relative).read_bytes(),(ROOT/'admin/public'/relative).read_bytes(),relative)
+    def test_weekday_time_drift_is_rejected(self):
+        changed=copy.deepcopy(self.data)
+        changed['weekdayTimes']['4']['start']='18:30'
+        with self.assertRaises(ValueError):validate_schedule(changed)
     def test_public_page_does_not_load_staff_editor(self):
         page=(ROOT/'service.html').read_text()
         self.assertIn('legal-calendar.js',page)

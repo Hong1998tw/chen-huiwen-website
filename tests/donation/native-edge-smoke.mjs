@@ -10,6 +10,7 @@ const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, 
 const registrationSource = await readFile(new URL('../../digital.js', import.meta.url), 'utf8');
 const expectedWorkerVersion = registrationSource.match(/\bconst\s+SERVICE_WORKER_VERSION\s*=\s*(['"])([^'"]+)\1\s*;/)?.[2];
 assert(expectedWorkerVersion, 'Cannot read the reviewed service worker version from digital.js');
+const expectedLegalSchedule=JSON.parse(await readFile(new URL('../../data/legal-schedule.json',import.meta.url),'utf8'));
 const expectedWorkerURL = new URL(`sw.js?v=${encodeURIComponent(expectedWorkerVersion)}`, base).href;
 const output = new URL('./results/native-edge/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -84,7 +85,7 @@ try {
     await check('Service facts remain usable through real edge', async () => {
       await navigate('service.html');
       assert.equal(await page.locator('.schedule-phone-cta').getAttribute('href'), 'tel:+88678212536');
-      assert((await page.locator('.schedule-text tbody tr').count()) > 0);
+      assert.equal(await page.locator('.schedule-text tbody tr').count(),expectedLegalSchedule.sessions.length,'live schedule must match the reviewed month, including explicitly closed months');
       assert((await page.locator('.hours-card').innerText()).includes('09:00'));
     });
     await check('Public data boundary served by the edge', async () => {

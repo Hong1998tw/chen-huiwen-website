@@ -479,6 +479,13 @@ def normalize_legal(fields, sessions):
             for slot in times.values():
                 if not isinstance(slot, dict) or set(slot) != {'start','end'} or not all(TIME_HHMM.fullmatch(str(slot.get(k,''))) for k in ('start','end')) or slot['start'] >= slot['end']:
                     errors.append('每週時段：開始與結束時間不正確')
+    if isinstance(managed.get('weekdayTimes'),dict):
+        for slot in rows:
+            if slot['date']:
+                weekday=str((date.fromisoformat(slot['date']).weekday()+1)%7)
+                expected=managed['weekdayTimes'].get(weekday,{})
+                if not isinstance(expected,dict) or any(slot.get(k)!=expected.get(k) for k in ('start','end')):
+                    errors.append('日期時段與該星期設定不一致')
     if fields.get('unconfirmedDates'):
         errors.append('輪值仍有待填日期，不得發布')
     if 'closedDates' in fields:
@@ -547,6 +554,8 @@ def prepare_legal(row, main_text):
         new[k] = copy.deepcopy(managed[k])
     if 'weekdayTimes' in managed:
         new['weekdayTimes'] = copy.deepcopy(managed['weekdayTimes'])
+    elif managed['month'] != data['month']:
+        new.pop('weekdayTimes',None)
     if 'closedDates' in managed:
         new['closedDates'] = copy.deepcopy(managed['closedDates'])
     elif managed['month'] != data['month']:

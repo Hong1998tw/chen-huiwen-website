@@ -33,6 +33,23 @@ def validate_schedule(data):
         dates.append(slot['date'])
     if len(dates)!=len(set(dates)) or dates!=sorted(dates):
         raise ValueError('Legal schedule dates must be unique and sorted')
+    weekly=data.get('weekdayTimes')
+    if weekly is not None:
+        if not isinstance(weekly,dict) or set(weekly)!={'2','3','4','5','6'}:
+            raise ValueError('Weekday time keys must cover Tuesday through Saturday')
+        for slot in weekly.values():
+            if not isinstance(slot,dict) or set(slot)!={'start','end'}:
+                raise ValueError('Weekday time needs start and end')
+            for key in ('start','end'):
+                if not re.fullmatch(r'\\d{2}:\\d{2}',str(slot[key])):
+                    raise ValueError('Weekday time must be HH:MM')
+                time.fromisoformat(slot[key])
+            if slot['start']>=slot['end']:
+                raise ValueError('Weekday end must follow start')
+        for slot in data['sessions']:
+            weekday=str((date.fromisoformat(slot['date']).weekday()+1)%7)
+            if weekday not in weekly or any(slot[k]!=weekly[weekday][k] for k in ('start','end')):
+                raise ValueError('Session differs from its confirmed weekday time')
     if data.get('unconfirmedDates'):
         raise ValueError('Unconfirmed draft dates cannot be published')
     if 'closedDates' in data:

@@ -141,6 +141,14 @@ export function validate(
           throw new HttpError(400, "每週開始與結束時間不正確", "document.sessions");
       }
     }
+    if (p.weekdayTimes && typeof p.weekdayTimes==="object" && !Array.isArray(p.weekdayTimes)) {
+      const weekly=p.weekdayTimes as Record<string,{start:string;end:string}>;
+      for(const slot of p.sessions){
+        const weekday=String(new Date(slot.date+"T12:00:00Z").getUTCDay());
+        if(!weekly[weekday] || slot.start!==weekly[weekday].start || slot.end!==weekly[weekday].end)
+          throw new HttpError(400,"日期時段與該星期設定不一致","document.sessions");
+      }
+    }
     for (const field of ["closedDates", "unconfirmedDates"]) {
       if (p[field] === undefined) continue;
       const values=p[field];

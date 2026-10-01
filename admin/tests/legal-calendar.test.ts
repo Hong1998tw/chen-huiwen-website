@@ -22,3 +22,9 @@ test("month coverage, duplicate dates, markup and invalid times fail closed",()=
 test("old published schedules without names remain readable",()=>{
  assert.doesNotThrow(()=>validate("legal-schedule",{month,observedAt:"2026-10-01",sourceUrl:payload.sourceUrl,sessions:[{date:"2026-10-01",start:"19:30",end:"21:00"}]}));
 });
+
+test("weekday declarations and individual dates cannot disagree",()=>{
+ const weekdayTimes={2:{start:"16:30",end:"18:00"},3:{start:"10:00",end:"11:30"},4:{start:"19:30",end:"21:00"},5:{start:"16:30",end:"18:00"},6:{start:"10:00",end:"11:30"}};
+ assert.doesNotThrow(()=>validate("legal-schedule",{...payload,weekdayTimes}));
+ assert.throws(()=>validate("legal-schedule",{...payload,weekdayTimes:{...weekdayTimes,4:{start:"18:30",end:"21:00"}}}),/不一致/);
+});
