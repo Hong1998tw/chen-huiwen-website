@@ -25,6 +25,8 @@ try{
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   assert.equal(await page.locator('h1').count(),1);
+  const portraitBox=await page.locator('.hero-portrait').boundingBox(),heroBox=await page.locator('.hero').boundingBox();
+  assert(portraitBox.width>=heroBox.width*(width>=768?.36:.95),'Approved portrait must fill its responsive column');
   assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
   assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
   assert.equal(await page.locator('main [data-home-legal-month]').getAttribute('data-home-legal-month'),schedule.month);
@@ -45,6 +47,7 @@ try{
   await page.locator('#global-search-dialog').waitFor({state:'visible'});await page.locator('.global-search-result').first().waitFor();
   assert((await page.locator('.global-search-result').allTextContents()).some(t=>t.includes('成立大會')));
   await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>!document.body.classList.contains('search-open')&&!document.getElementById('global-search-dialog')?.open);
   const lawyer=page.locator('main a[href="service.html#monthly-heading"]');await lawyer.focus();
   await Promise.all([page.waitForURL(url=>url.pathname.endsWith('/service.html')&&url.hash==='#monthly-heading'),page.keyboard.press('Enter')]);
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});

@@ -433,9 +433,10 @@ class DryRunAndPublishTests(DisposableRepo):
     def test_dry_run_builds_in_worktree_without_push_pr_or_artifact(self):
         src = self.source({'events': [new_event_row()]})
         # quality=False: the full quality gate runs this suite itself (no recursion); build_all + allowlist still run.
+        candidate = P.prepare_event(src.data['events'][0], P.main_text(self.repo, 'events'))
         result = P.dry_run(src, self.repo, 'events', src.data['events'][0], build=True, quality=False)
         self.assertEqual(result['outcome'], 'PREVIEWED')
-        self.assertTrue(set(result['files']) <= P.ALLOWED_PATHS['events'])
+        self.assertTrue(set(result['files']) <= P.allowed_for(candidate))
         self.assertIn('data/events.json', result['files'])
         write = src.writes[-1]
         self.assertEqual((write['state'], write['candidateDigest'], write['requestPreview']), ('可核准', result['digest'], False))

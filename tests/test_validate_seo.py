@@ -16,6 +16,8 @@ VALIDATOR = ROOT / "scripts" / "validate_seo.py"
 
 class SeoValidatorRegressionTests(unittest.TestCase):
     def make_site(self, temp_root: Path) -> None:
+        (temp_root / 'data').mkdir(exist_ok=True)
+        copy2(ROOT / 'data/events.json', temp_root / 'data/events.json')
         for path in ROOT.glob("*.html"):
             copy2(path, temp_root / path.name)
         for path in ROOT.glob("*/index.html"):

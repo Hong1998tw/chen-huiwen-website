@@ -210,3 +210,5 @@
 
 .home-redesign .hero-intro{color:var(--ink)}
 
+
+.home-redesign .hero-portrait{width:100%;max-width:none;margin:0;justify-self:stretch;align-self:center}.home-redesign .portrait .portrait-frame img{aspect-ratio:auto}
