@@ -5,7 +5,10 @@ import sys
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from verify_cloudflare_delivery import check_receipt
+from verify_cloudflare_delivery import check_receipt, verify
+from unittest.mock import MagicMock, patch
+from verify_cloudflare_assets import public_request, error_summary
+from urllib.error import HTTPError
 
 class StaticDeliveryTests(unittest.TestCase):
     def test_assets_only_configuration(self):
@@ -24,6 +27,25 @@ class StaticDeliveryTests(unittest.TestCase):
         for key,value in [('provider','github-pages'),('sourceCommit','c'*40),('publicArtifactDigest','d'*64),('schemaVersion',2)]:
             self.assertFalse(check_receipt({**good,key:value},sha,digest))
         self.assertFalse(check_receipt(None,sha,digest))
+    def test_asset_checks_use_one_explicit_automation_identity(self):
+        for path in ['/', '/index.html', '/mktexp26/', '/data/case-context.json']:
+            request = public_request('https://example.test' + path)
+            self.assertEqual(request.get_header('User-agent'), 'huiwen-public-asset-verifier')
+            self.assertEqual(request.get_header('Accept-encoding'), 'identity')
+        error = HTTPError('https://example.test/', 403, 'Forbidden', {'Content-Type':'text/html'}, None)
+        self.assertIn('HTTP 403', error_summary(error))
+    def test_success_receipt_clears_earlier_not_found_status(self):
+        sha='a'*40;digest='b'*64
+        good={'schemaVersion':1,'provider':'cloudflare-static-assets','sourceCommit':sha,'publicArtifactDigest':digest}
+        response=MagicMock()
+        response.__enter__.return_value=response
+        response.status=200
+        response.read.return_value=json.dumps(good).encode()
+        earlier=HTTPError('https://example.test/deployment.json',404,'Not Found',{},None)
+        with patch('verify_cloudflare_delivery.urlopen',side_effect=[earlier,response]):
+            result=verify(sha,digest,'https://example.test',attempts=2,delay=0)
+        self.assertEqual(result['status'],'PASS')
+        self.assertEqual(result['httpStatus'],200)
     def test_pages_is_recovery_only(self):
         text=(ROOT/'.github/workflows/pages.yml').read_text()
         self.assertIn('workflow_dispatch:',text)
