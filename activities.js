@@ -23,7 +23,12 @@
       status.textContent = '';
     };
     reset();
-    window.addEventListener('pageshow', reset);
+    window.addEventListener('pageshow', event => {
+      // Initial pageshow may arrive after a fast visitor has already chosen.
+      // Only history restoration should invalidate a choice made on this visit.
+      const historyNavigation = window.performance?.getEntriesByType?.('navigation')?.[0]?.type === 'back_forward';
+      if (event.persisted || historyNavigation) reset();
+    });
     select.addEventListener('change', () => {
       link.hidden = true;
       link.removeAttribute('href');
@@ -41,3 +46,4 @@
     });
   });
 })();
+
