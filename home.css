@@ -205,3 +205,8 @@
 .home-redesign .civic-feature--text-only,.home-redesign .stories--text-only{grid-template-columns:1fr}.home-redesign .civic-feature-copy>small{display:block;margin-top:14px}.home-redesign .civic-service-desk{border:0;border-radius:0;margin:0;max-width:none}.home-redesign .civic-service-desk .kicker{color:#d6e1d4}.home-redesign .civic-service-desk dl{display:grid}.home-redesign .civic-service-desk p{color:inherit}
 
 @media(max-width:620px){body.homepage-v2 .footer{padding-bottom:90px}.home-redesign .mobile-actions{margin:0;box-shadow:0 -1px 10px #173f3310}}
+
+.home-redesign .hero h1,.home-redesign .hero h1 span{color:var(--ink);background:transparent}
+
+.home-redesign .hero-intro{color:var(--ink)}
+
