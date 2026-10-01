@@ -21,6 +21,8 @@ def render_overview(record, root):
     if action:
         points.append(('慧文的行動', action))
     status = record.get('status', '')
+    if context:
+        status += '。' + context['governmentRole']['text']
     points.append(('目前階段', status + '。事情發生的時間、機關回應與適用限制，請一併閱讀最新紀錄及完整來源。'))
     heading = 'case-overview-summary-heading'
     body = f'<section class="case-overview-summary" id="case-overview-summary" aria-labelledby="{heading}"><h2 id="{heading}">先看懂這件事</h2><div class="case-overview-grid">'

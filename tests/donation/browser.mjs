@@ -60,7 +60,8 @@ try {
       const account = await page.locator('.donation-account-number').boundingBox();
       assert(account && account.y + account.height < 844);
       assert.equal(await page.locator('#navigation .nav-group').count(), 5);
-      assert.equal(await page.locator('#navigation a').first().getAttribute('href'), 'service.html');
+      assert.equal(await page.locator('#navigation a').first().getAttribute('href'), 'achievements.html');
+      assert.equal(await page.locator('#navigation a[href="service.html"]').count(), 1);
       assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'service.html#monthly-heading');
     });
 
