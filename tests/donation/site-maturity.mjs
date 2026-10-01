@@ -30,11 +30,13 @@ try{
     assert(title.y+title.height<844,`first record title ends at ${title.y+title.height}`);
     return{firstTitleTop:title.y,firstTitleBottom:title.y+title.height};
    });
-   if(path==='achievement-wende-school-center.html')await check(`${engine} single event only once with optional background`,async()=>{
-    assert.equal(await page.locator('.case-timeline li').count(),0);
-    assert.match(await page.locator('.case-latest').innerText(),/2027/);
+   if(path==='achievement-wende-school-center.html')await check(`${engine} Wende dated history and documented funding`,async()=>{
+    assert.equal(await page.locator('.case-timeline li').count(),6);
+    assert.match(await page.locator('.case-latest').innerText(),/2026-09-01/);
     const summary=page.locator('.case-background > summary');assert(await summary.isVisible());
-    await summary.click();assert.match(await page.locator('.case-background').innerText(),/文山段土地撥用/);await summary.click();
+    await summary.click();const background=await page.locator('.case-background').innerText();
+    assert.match(background,/60,357,000/);assert.match(background,/26,107,100/);
+    assert.match(background,/2027年12月31日/);assert.match(background,/2027至2029年/);await summary.click();
    });
    if(path==='election.html')await check(`${engine} complete election search beyond first eight`,async()=>{
     await page.locator('#campaign-search').fill('文德');
@@ -44,7 +46,12 @@ try{
    await page.screenshot({path:fileURLToPath(new URL(`${engine}-${width}-${(path||'home').replace('.html','')}.png`,out)),fullPage:false});
   }
   await page.goto(base+'achievement-dade-park-road-opening.html');
-  await check(`${engine} unique single-event measurement retained`,async()=>assert.match(await page.locator('main').innerText(),/127公尺/));
+  await check(`${engine} single event only once with optional background and measurement`,async()=>{
+   assert.equal(await page.locator('.case-timeline li').count(),0);
+   assert.match(await page.locator('.case-latest').innerText(),/127公尺/);
+   const summary=page.locator('.case-background > summary');assert(await summary.isVisible());
+   await summary.click();assert.match(await page.locator('.case-background').innerText(),/用地取得與工程經費/);await summary.click();
+  });
   await context.close();
  }
  // Explicit build chrome cannot mutate the excluded form's main bytes.
