@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 2,
+  "publicationStatus": "preview",
+  "events": [
+    {
+      "id": "campaign-headquarters-opening-2026-10-31",
+      "name": "陳慧文 × 賴瑞隆 聯合競選總部成立大會",
+      "start": "2026-10-31T15:50:00+08:00",
+      "end": null,
+      "location": "高雄市鳳山區錦田路231號",
+      "content": "2026年10月31日（星期六）下午3:50，陳慧文與賴瑞隆聯合競選總部成立大會。",
+      "registration": "活動詳情請洽07-821-2536。",
+      "status": "scheduled",
+      "verifiedAt": "2026-10-02",
+      "updatedAt": "2026-10-02",
+      "sourceType": "使用者提供的活動圖卡",
+      "sourceFiles": [
+        "assets/campaign-opening-portrait.png",
+        "assets/campaign-opening-landscape.jpg"
+      ],
+      "missingFields": [
+        "end"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "path": "assets/campaign-opening-portrait.png",
+      "width": 1088,
+      "height": 1536,
+      "alt": "陳慧文與賴瑞隆聯合競選總部成立大會直式圖卡，10月31日星期六下午3點50分，錦田路231號",
+      "credit": "使用者提供的競選總部成立大會原始圖卡"
+    },
+    {
+      "path": "assets/campaign-opening-landscape.jpg",
+      "width": 1087,
+      "height": 769,
+      "alt": "陳慧文與賴瑞隆聯合競選總部成立大會橫式圖卡，10月31日星期六下午3點50分",
+      "credit": "使用者提供的競選總部成立大會原始圖卡"
+    }
+  ]
+}
