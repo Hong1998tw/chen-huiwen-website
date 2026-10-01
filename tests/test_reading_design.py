@@ -27,8 +27,10 @@ class ReadingDesignTests(unittest.TestCase):
         self.assertEqual(len(soup.select('#civic-query')), 1)
         self.assertEqual(len(soup.select('.hero-portrait')), 1)
         feature_image = soup.select_one('.civic-feature-photo img')
-        self.assertEqual(feature_image.get('loading'), 'eager')
-        self.assertEqual(feature_image.get('fetchpriority'), 'high')
+        self.assertEqual(feature_image.get('loading'), 'lazy')
+        feature = soup.select_one('.civic-feature')
+        self.assertIn('civic-feature-copy', feature.find(recursive=False).get('class', []))
+        self.assertLess(str(feature).index('civic-feature-copy'), str(feature).index('civic-feature-photo'))
     def test_overview_does_not_invent_uncollected_attribution(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
         byid = {r['id']: r for r in records}
