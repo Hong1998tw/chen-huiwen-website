@@ -28,7 +28,7 @@ def validate_schedule(data):
             time.fromisoformat(slot[field])
         if slot['start']>=slot['end']:
             raise ValueError('Legal schedule end must follow start')
-        if 'lawyer' in slot and (not isinstance(slot['lawyer'],str) or not slot['lawyer'].strip() or len(slot['lawyer'])>40 or re.search(r'[<>\\x00-\\x1f]',slot['lawyer'])):
+        if 'lawyer' in slot and (not isinstance(slot['lawyer'],str) or not slot['lawyer'].strip() or len(slot['lawyer'])>40 or re.search(r'[<>\x00-\x1f]',slot['lawyer'])):
             raise ValueError('Lawyer name must be plain public text')
         dates.append(slot['date'])
     if len(dates)!=len(set(dates)) or dates!=sorted(dates):
@@ -41,7 +41,7 @@ def validate_schedule(data):
             if not isinstance(slot,dict) or set(slot)!={'start','end'}:
                 raise ValueError('Weekday time needs start and end')
             for key in ('start','end'):
-                if not re.fullmatch(r'\\d{2}:\\d{2}',str(slot[key])):
+                if not re.fullmatch(r'\d{2}:\d{2}',str(slot[key])):
                     raise ValueError('Weekday time must be HH:MM')
                 time.fromisoformat(slot[key])
             if slot['start']>=slot['end']:
