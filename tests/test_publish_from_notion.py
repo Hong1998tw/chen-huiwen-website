@@ -191,10 +191,15 @@ class GoldenFixtureTests(unittest.TestCase):
 
     def test_legal_schedule_round_trip_and_month_rules(self):
         self.assertFalse(P.prepare_legal(legal_row(), LEGAL_TEXT).changed)
+        # Preserve the September-to-October scenario independently of the live month.
+        baseline = json.loads(LEGAL_TEXT)
+        baseline.update(month='2026-09', observedAt='2026-09-22', validThrough='2026-09-30',
+                        nextReviewAt='2026-09-25', sessions=[{'date':'2026-09-22','start':'16:30','end':'18:00'}])
+        baseline.pop('history', None)
         row = legal_row(month='2026-10', observedAt='2026-09-26', nextReviewAt='2026-10-25', sourceTitle='10月圖卡')
         row['sessions'] = [{'date': '2026-10-02', 'start': '19:30', 'end': '21:00'},
                            {'date': '2026-10-01', 'start': '16:30', 'end': '18:00'}]
-        cand = P.prepare_legal(row, LEGAL_TEXT)
+        cand = P.prepare_legal(row, P.dump_legal(baseline))
         self.assertEqual(cand.errors, [])
         data = json.loads(cand.new_text)
         self.assertEqual((data['validThrough'], [s['date'] for s in data['sessions']]), ('2026-10-31', ['2026-10-01', '2026-10-02']))
