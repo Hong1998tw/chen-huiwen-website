@@ -1,0 +1,44 @@
+name: Cloudflare frontend preview verification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python scripts/build_cloudflare_public.py
+      - name: Wait for the exact reviewed revision at the verified preview host
+        run: python scripts/verify_cloudflare_delivery.py --base-url https://huiwen-website.lihong.workers.dev --report tests/donation/results/cloudflare-preview/receipt.json
+      - name: Verify all public asset bytes, preserved routes and private-path exclusion
+        run: python scripts/verify_cloudflare_assets.py --base-url https://huiwen-website.lihong.workers.dev --report tests/donation/results/cloudflare-preview/assets.json
+      - name: Verify all reviewed HTML pages
+        run: python scripts/verify_all_pages.py --base-url https://huiwen-website.lihong.workers.dev/ --report tests/donation/results/cloudflare-preview/all-pages.json
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - name: Run seven-width reading and interaction QA against preview
+        env:
+          BASE_URL: https://huiwen-website.lihong.workers.dev/
+        run: node tests/donation/reading-design.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cloudflare-frontend-preview
+          path: |
+            tests/donation/results/cloudflare-preview/
+            tests/donation/results/reading-design/
+          retention-days: 30

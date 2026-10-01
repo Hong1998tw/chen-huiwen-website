@@ -1,3 +1,11 @@
+# 現行前台部署契約｜2026-10-01
+
+本輪將發布目的地切為 Cloudflare Static Assets；GitHub `main` 仍是 source/version 正本。現行操作以 [Cloudflare public migration](CLOUDFLARE-PUBLIC-MIGRATION.md)、`data/deployment-target.json` 與 native release receipt 為準。原 required checks、安全防護、公開白名單與分層 verification 全部保留。
+
+`pages.yml` 改為 manual-only 回復流程；正常 publication 走 Cloudflare Builds → `cloudflare-public.yml` 相同 SHA 收據 → `production-verification.yml`。切換前須完成預覽驗收，切換後仍須正式讀回，不能僅憑 configuration 宣稱已部署。
+
+以下保留原 GitHub Pages 階段的流程與回滾歷史；與現行 hosting path 不同處，以本節及上述遷移契約為準。
+
 # 部署、發布與回滾
 
 ## Production

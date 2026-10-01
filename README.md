@@ -2,7 +2,7 @@
 
 網站：https://www.huiwen.tw/
 
-以 HTML、CSS、原生 JavaScript 製作的靜態網站，使用 GitHub Pages 發布。無需 API 金鑰、Notion 登入或伺服器即可瀏覽。
+以 HTML、CSS、原生 JavaScript 製作的靜態網站。GitHub 管理程式與發布版本；前台採 Cloudflare Static Assets 部署契約，GitHub Pages 保留手動回復用途。正式切換狀態以原生部署與驗證收據為準。無需 API 金鑰、Notion 登入或伺服器即可瀏覽。
 
 ## Canonical Source
 
@@ -27,7 +27,7 @@
 
 ## 維護與發布
 
-GitHub Pages 由 `main` 的 `Deploy public Pages artifact` workflow 發布經品質檢查與白名單產生的 `_site/`；不發布 repository root。首次切換的實際設定與結果以 release receipt 為準。一般更新應從最新 `main` 建立工作 branch；修改完成後先 build、測試與檢查 diff，再經 review 進入 `main`。重大版面、資料或流程變更優先使用 Pull Request，不以 Google Drive candidate 直接覆寫 production。
+正常發布由 Cloudflare Builds 監看 `main`，先跑品質檢查，再由 `scripts/build_cloudflare_public.py` 打包白名單 `_site/`；不發布 repository root。`cloudflare-public.yml` 只讀回正式站相同 commit／artifact 收據，再交完整 production verification。`Deploy public Pages artifact` 僅保留手動回復；詳見 [Cloudflare 遷移契約](docs/CLOUDFLARE-PUBLIC-MIGRATION.md)。一般更新應從最新 `main` 建立工作 branch；修改完成後先 build、測試與檢查 diff，再經 review 進入 `main`。重大版面、資料或流程變更優先使用 Pull Request，不以 Google Drive candidate 直接覆寫 production。
 
 可用 `python3 -m http.server 8000` 在本機預覽。各頁採相對連結，可在 GitHub Pages 專案子路徑運作。
 

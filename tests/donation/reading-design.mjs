@@ -7,9 +7,9 @@ import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=fileURLToPath(new URL('./results/reading-design/',import.meta.url));
 await mkdir(out,{recursive:true});
-const server=spawn('python3',['-m','http.server','8769','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
-const base='http://127.0.0.1:8769/';
-const report={checks:[],failures:[],pageErrors:[]};
+const base=process.env.BASE_URL || 'http://127.0.0.1:8769/';
+const server=process.env.BASE_URL ? null : spawn('python3',['-m','http.server','8769','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
+const report={base,checks:[],failures:[],pageErrors:[]};
 const browser=await chromium.launch();
 async function check(name,fn){try{await fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:String(e)});}}
 try{
@@ -79,6 +79,6 @@ try{
  await nojs.close();
  assert.deepEqual(report.pageErrors,[]);
 }finally{
- await writeFile(out+'/report.json',JSON.stringify(report,null,2));await browser.close();server.kill();
+ await writeFile(out+'/report.json',JSON.stringify(report,null,2));await browser.close();server?.kill();
 }
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
