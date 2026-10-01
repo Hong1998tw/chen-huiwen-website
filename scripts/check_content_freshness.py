@@ -99,11 +99,12 @@ def evaluate(root=ROOT, as_of=None, previous=None):
                     '本月資料仍在適用期間；請準備下月版本並核對本月異動。' + action, due)
         elif kind == 'events':
             for event in payload['events']:
-                end = datetime.fromisoformat(event['end'])
-                if end.tzinfo is None:
+                review_anchor = datetime.fromisoformat(event.get('end') or event['start'])
+                if review_anchor.tzinfo is None:
                     raise ValueError('Event review requires a timezone')
-                # An ended/cancelled public record can remain as history; it is not automatically stale.
-                if event.get('status', 'scheduled') == 'cancelled' or end.astimezone(TAIPEI).date() < today:
+                # Start-only records use their scheduled day solely for the review queue.
+                # This does not declare that the event has ended or create a duration.
+                if event.get('status', 'scheduled') == 'cancelled' or review_anchor.astimezone(TAIPEI).date() < today:
                     continue
                 due_value = event.get('reviewDueAt')
                 if not due_value:
