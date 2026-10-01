@@ -62,6 +62,9 @@ def render_comparisons(data):
 def render_platforms(data, achievements):
     lookup, records = platform_registry(data, achievements)
     body = '<section class="page-head"><div class="wrap"><p class="eyebrow">政見原文與公開紀錄</p><h1>歷屆政見與願景</h1><p>閱讀 2026 政見原文，對照相關紀錄；歷屆政見依年份保留。</p>'
+    current = next((item for item in data['elections'] if item['year'] == 2026), None)
+    if current:
+        body += '<nav class="platform-topic-nav" aria-label="2026 政見主題">' + ''.join(f'<a href="#platform-2026-theme-{index+1}">{e(section["heading"])}</a>' for index, section in enumerate(current['sections'])) + '</nav>'
     if data.get('crossTermComparisons'):
         body += '<a class="text-link" href="#platform-comparisons-heading">前後屆政見對照 ↓</a>'
     body += '</div></section><div class="wrap platforms-wrap"><div class="platform-timeline">'
@@ -78,6 +81,7 @@ def render_platforms(data, achievements):
             if gap.get('sourceUrl'):
                 body += f'<p><a class="text-link" href="{e(gap["sourceUrl"])}" target="_blank" rel="noopener noreferrer">中選會選舉紀錄 ↗</a></p>'
         if item:
+            after_themes = ''
             campaign = item.get('sourceType') == 'campaign_material'
             if campaign:
                 meta = [e(item[field]) for field in ('district', 'roleAtElection') if item.get(field)]
@@ -86,10 +90,10 @@ def render_platforms(data, achievements):
                 if meta:
                     body += f'<p>{" · ".join(meta)}</p>'
                 if year == 2026:
-                    body += '<aside class="platform-accountability"><h3>政策方向與推動進度</h3><p>以下為2026政見原文，相關專題可查看既有推動紀錄。各項政見的量化目標、完成期限與執行分工，原始圖卡尚未列明。</p></aside>'
+                    after_themes += '<aside class="platform-accountability"><h3>政策方向與推動進度</h3><p>以下為2026政見原文，相關專題可查看既有推動紀錄。各項政見的量化目標、完成期限與執行分工，原始圖卡尚未列明。</p></aside>'
                 image = item.get('image')
                 if image:
-                    body += ('<details class="platform-original"><summary>查看原始政見圖卡</summary><figure class="platform-poster">'
+                    after_themes += ('<details class="platform-original"><summary>查看原始政見圖卡</summary><figure class="platform-poster">'
                              f'<a href="{e(image["path"])}" target="_blank" rel="noopener noreferrer" aria-label="開啟{e(image.get("caption", "政見圖卡"))}原圖">'
                              f'<img src="{e(image["path"])}" alt="{e(image["alt"])}" width="{e(image["width"])}" height="{e(image["height"])}" loading="lazy" decoding="async"></a>'
                              f'<figcaption>{e(image.get("caption", "政見圖卡"))}（點圖可放大）</figcaption></figure></details>')
@@ -106,6 +110,7 @@ def render_platforms(data, achievements):
                             body += '<div class="platform-evidence">相關公開紀錄：' + '、'.join(f'<a href="achievement-{e(case_id)}.html">{e(records[case_id]["title"])} →</a>' for case_id in links) + '</div>'
                     body += '</li>'
                 body += '</ol></section>'
+            body += after_themes
             if campaign:
                 body += f'<p class="source-note">資料來源：{e(item["sourceTitle"])}<br>{e(item["sourceDateNote"])}</p>'
             else:

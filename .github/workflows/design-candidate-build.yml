@@ -1,0 +1,42 @@
+name: Generate reading design candidate
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  generate:
+    if: github.head_ref == 'design/public-reading-20261001'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python scripts/build_all.py
+      - name: Export public generated files for connector review
+        run: |
+          python - <<'PY'
+          import base64, json, pathlib, subprocess, zlib
+          paths = subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()
+          allowed = {'.html','.json','.xml','.js'}
+          files = {}
+          for name in paths:
+              path = pathlib.Path(name)
+              if path.suffix not in allowed or not path.is_file():
+                  raise SystemExit('Unexpected generated path: ' + name)
+              files[name] = path.read_text()
+          bundle = json.dumps(files, ensure_ascii=False).encode()
+          pathlib.Path('generated-candidate.json').write_bytes(bundle)
+          print('GENERATED_PATHS=' + json.dumps(paths))
+          print('GENERATED_BUNDLE=' + base64.b64encode(zlib.compress(bundle, 9)).decode())
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: generated-reading-candidate
+          retention-days: 3
+          path: generated-candidate.json

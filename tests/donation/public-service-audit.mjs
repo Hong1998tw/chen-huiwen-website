@@ -43,7 +43,7 @@ try{
   });
   await check(width+' grouped navigation keyboard',async()=>{
    assert.equal(await page.locator('.nav-group').count(),5);
-   if(width<781){await page.locator('.menu-toggle').click();await page.locator('#navigation .nav-group').first().locator('summary').click();assert(await page.locator('#navigation a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
+   if(width<781){await page.locator('.menu-toggle').click();await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="service.html"]')}).locator('summary').click();assert(await page.locator('#navigation a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
    else{const group=page.locator('.nav-group').first();await group.locator('summary').focus();await page.keyboard.press('Enter');assert(await group.locator('a').first().isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');assert.equal(await group.getAttribute('open'),null);}
   });
   await check(width+' service intent and accurate highlighting',async()=>{

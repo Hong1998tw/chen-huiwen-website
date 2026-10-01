@@ -1,0 +1,28 @@
+name: Reading design regression
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  reading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - run: node tests/donation/reading-design.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: reading-design-regression
+          retention-days: 14
+          path: tests/donation/results/reading-design/
