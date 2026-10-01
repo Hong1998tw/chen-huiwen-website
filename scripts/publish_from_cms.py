@@ -377,6 +377,22 @@ def publish_page(item, gh):
         return receipt_for_publish_error(receipt, error)
 
 
+def reconciliation_receipt(item, layers, revision):
+    state = ('verified' if all(layers.get(key) == 'PASS' for key in engine.LAYERS) else
+             'deployed' if layers['deployed'] == 'PASS' else
+             'merged' if layers['merged'] == 'PASS' else 'pr_created')
+    details = '；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k, v in layers.items())
+    # A historical deployment may predate the current provider. Lifecycle facts
+    # remain monotonic; fresh layer results remain visible and cannot imply verification.
+    stages = {'pr_created': 0, 'merged': 1, 'deployed': 2}
+    prior = item.get('status')
+    if prior in stages and state in stages and stages[prior] > stages[state]:
+        state = prior
+        details += '；保留已記錄的發布進度，最新驗證尚未完成。'
+    return {'id': item['id'], 'status': state, 'message': details,
+            'commit_sha': revision.get('deployedSha') or item.get('commit_sha')}
+
+
 def reconcile_page(item, gh):
     _, pr = gh.request('GET', f"/pulls/{int(item['pr_number'])}")
     if pr.get('state') == 'closed' and not pr.get('merged_at'):
@@ -387,9 +403,7 @@ def reconcile_page(item, gh):
         'home-content' if item['operation'] == 'publish' and payload.get('home') != payload.get('homeBase') and 'home' in payload else 'page-copy'
     layers, revision = engine.layered_status(gh, item['pr_number'], domain, item['path'], item['operation'],
         single_maintainer=True, auto_publish=True, publisher_login=os.environ.get('PUBLISHER_APP_LOGIN', ''), repo=ROOT)
-    state = 'verified' if all(v == 'PASS' for v in layers.values()) else 'deployed' if layers['deployed'] == 'PASS' else 'merged' if layers['merged'] == 'PASS' else 'pr_created'
-    details = '；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k, v in layers.items())
-    return {'id': item['id'], 'status': state, 'message': details, 'commit_sha': revision.get('deployedSha')}
+    return reconciliation_receipt(item, layers, revision)
 
 
 def publish(item, gh):
@@ -423,10 +437,7 @@ def reconcile(item, gh):
     layers, revision = engine.layered_status(gh, item['pr_number'], item['domain'],
         json.loads(item['payload']).get('month') if item['domain']=='legal-schedule' else item['record_key'],
         single_maintainer=True,auto_publish=True,publisher_login=os.environ.get('PUBLISHER_APP_LOGIN',''),repo=ROOT)
-    state = ('verified' if all(v=='PASS' for v in layers.values()) else 'deployed' if layers['deployed']=='PASS' else 'merged' if layers['merged']=='PASS' else 'pr_created')
-    # A CI failure can be re-run without closing its PR. Keep reconciling the same request.
-    details='；'.join(f'{engine.LAYER_ZH[k]}：{v}' for k,v in layers.items())
-    return {'id':item['id'],'status':state,'message':details,'commit_sha':revision.get('deployedSha')}
+    return reconciliation_receipt(item, layers, revision)
 
 
 def main():
