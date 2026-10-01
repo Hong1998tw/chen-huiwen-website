@@ -35,8 +35,10 @@ def render(root=ROOT):
     template = (root / 'templates/case-page.html').read_text()
     title = '服務資訊隨身單｜陳慧文服務處'
     description = '列印陳慧文服務處電話、地址、服務時間與已公布月份的公益律師時間表。資料由服務處資訊頁同步產生，出發前請來電確認。'
+    # Screen-only wrapping keeps enlarged text readable; the A4 print layout is unchanged.
+    head = '<style>@media screen{.service-handout .handout-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.handout-grid>section{min-width:0}.handout-grid dd,.handout-grid a,.handout-grid th,.handout-grid td{overflow-wrap:anywhere}.handout-grid table{table-layout:fixed}}@media screen and (max-width:700px){.service-handout .handout-grid{grid-template-columns:minmax(0,1fr)}}</style>'
     replacements = {'TITLE':title, 'DESCRIPTION':description, 'FILE':'service-print.html', 'BODY':body,
-                    'HEAD':'', 'OG_TYPE':'website', 'OG_IMAGE':'assets/site-share-20260909.png', 'OG_ALT':title,
+                    'HEAD':head, 'OG_TYPE':'website', 'OG_IMAGE':'assets/site-share-20260909.png', 'OG_ALT':title,
                     'STYLE_VERSION':hashlib.sha256((root/'styles.css').read_bytes()).hexdigest()[:12],
                     'DIGITAL_STYLE_VERSION':hashlib.sha256((root/'digital.css').read_bytes()).hexdigest()[:12],
                     'DIGITAL_SCRIPT_VERSION':hashlib.sha256((root/'digital.js').read_bytes()).hexdigest()[:12]}
