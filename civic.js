@@ -31,7 +31,7 @@
         past.forEach(row=>{row.hidden=!show;});caption.textContent=original+(show?'':' · 僅顯示今日起的日期');
       });schedule.querySelector('table').before(toggle);
     } else if (today.slice(0,7) > month) {
-      schedule.querySelector('.schedule-period-note').textContent='這是 '+month+' 的歷史時間表，已非當月資訊。新月份時段請查看服務處原圖或來電確認。';
+      schedule.querySelector('.schedule-period-note').textContent='這是 '+month+' 的歷史時間表，已非當月資訊。新月份時段請查看服務處最新公告或來電確認。';
     }
   }
   const advanced = document.querySelector('.advanced-filters');

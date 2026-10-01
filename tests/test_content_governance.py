@@ -111,6 +111,14 @@ class ContentReviewTests(unittest.TestCase):
         (self.root / 'data').mkdir()
         for name in ('content-governance.json', 'legal-schedule.json', 'events.json', 'platforms.json', 'site-profile.json', 'achievements.json'):
             shutil.copyfile(ROOT / 'data' / name, self.root / 'data' / name)
+        # Fixed September clock scenarios use a fixed sample, not the live monthly schedule.
+        # Otherwise every legitimate month rollover changes the test's preconditions.
+        schedule = json.loads((self.root / 'data/legal-schedule.json').read_text())
+        schedule.update(month='2026-09', observedAt='2026-09-22',
+                        validThrough='2026-09-30', nextReviewAt='2026-09-25',
+                        sessions=[{'date':'2026-09-22','start':'16:30','end':'18:00'}])
+        schedule.pop('history', None)
+        (self.root / 'data/legal-schedule.json').write_text(json.dumps(schedule))
 
     def tearDown(self):
         self.tmp.cleanup()
