@@ -29,7 +29,10 @@ class ServicePrintTests(unittest.TestCase):
             path.write_text(path.read_text().replace('錦田路231號', '測試路456號'))
             path = root/'data/legal-schedule.json'
             schedule = json.loads(path.read_text())
-            schedule['sessions'] = [{'date':'2026-10-01','start':'16:00','end':'17:00'}]
+            # Exercise the still-supported dated legacy format independently of the current complete plan.
+            schedule.pop('closedDates',None)
+            schedule.pop('weekdayTimes',None)
+            schedule['sessions'] = [{'date':'2026-10-01','start':'16:00','end':'17:00','lawyer':'林岡輝'}]
             schedule['month'] = '2026-10'
             path.write_text(json.dumps(schedule))
             page = BeautifulSoup(render(root), 'html.parser')
@@ -38,6 +41,7 @@ class ServicePrintTests(unittest.TestCase):
             self.assertNotIn('錦田路231號', main.get_text())
             self.assertEqual(len(main.select('tbody tr')), 1)
             self.assertIn('16:00–17:00', main.get_text())
+            self.assertIn('林岡輝',main.get_text())
             self.assertIn('2026-10', main.get_text())
             self.assertEqual(main.select_one('a.latest-url')['href'], 'https://www.huiwen.tw/service.html')
             self.assertTrue(main.select_one('.print-page').has_attr('hidden'))

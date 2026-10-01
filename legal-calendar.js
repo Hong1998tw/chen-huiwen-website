@@ -69,6 +69,19 @@
     const [year,month]=monthParts(data.month), sessions=slots(data), now=new Date();
     const calendar=host.querySelector('.legal-month-grid'), list=document.querySelector('.schedule-text table');
     const currentDay=taipeiDay(now), pastMonth=currentDay.slice(0,7)>data.month;
+    // This page owns its end-time state; leave the shared site runtime unchanged.
+    document.querySelector('.schedule-text .schedule-history-toggle')?.remove();
+    const tableRows=[...document.querySelectorAll('.schedule-text [data-session-date]')];
+    tableRows.forEach(row=>{row.hidden=false;});
+    const pastRows=tableRows.filter(row=>Date.parse(row.dataset.sessionDate+'T'+row.dataset.sessionEnd+':00+08:00')<now.getTime());
+    if(currentDay.slice(0,7)===data.month && pastRows.length){
+      const toggle=make('button','顯示本月全部日期','schedule-history-toggle');toggle.type='button';toggle.setAttribute('aria-expanded','false');
+      const caption=list.querySelector('caption'), base=caption.textContent.replace(/ · 僅顯示.*$/,'');
+      pastRows.forEach(row=>{row.hidden=true;});caption.textContent=base+' · 僅顯示尚未結束的場次';
+      toggle.addEventListener('click',()=>{const all=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',String(all));toggle.textContent=all?'只看尚未結束的場次':'顯示本月全部日期';pastRows.forEach(row=>{row.hidden=!all;});caption.textContent=base+(all?'':' · 僅顯示尚未結束的場次');});
+      list.before(toggle);
+    }
+
     const focus=host.querySelector('.legal-selected'), state=host.querySelector('[data-legal-selection-state]');
     function choose(slot,initial=false){
       const ended=endsAt(slot)<now.getTime();

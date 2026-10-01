@@ -4,12 +4,15 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, consoleScript, style, dateTimeScript] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript, legalCardScript, legalEditorScript, legalStyle] = await Promise.all([
   readFile(new URL("index.html", root)),
   readFile(new URL("app.js", root)),
   readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)),
   readFile(new URL("date-time.js", root)),
+  readFile(new URL("legal-calendar.js", root)),
+  readFile(new URL("legal-month-editor.js", root)),
+  readFile(new URL("legal-calendar.css", root)),
 ]);
 let published = {
   title: "A 專頁", summary: "公開紀錄", updated: "2026-09-27",
@@ -57,6 +60,9 @@ const send = (res, data, type = "application/json") => {
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://127.0.0.1").pathname;
   if (path === "/") return send(res, html, "text/html; charset=utf-8");
+  if (path === "/legal-calendar.js") return send(res, legalCardScript, "application/javascript");
+  if (path === "/legal-month-editor.js") return send(res, legalEditorScript, "application/javascript");
+  if (path === "/legal-calendar.css") return send(res, legalStyle, "text/css");
   if (path === "/app.js") return send(res, script, "application/javascript");
   if (path === "/console.js") return send(res, consoleScript, "application/javascript");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");

@@ -1,5 +1,6 @@
 """Monthly source and archived/public schedule separation, without private attachments."""
 import copy
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -46,7 +47,9 @@ class LegalScheduleHistoryTests(unittest.TestCase):
         record=copy.deepcopy(self.current)
         record['sourceTitle']='<script>unsafe</script>'
         page=BeautifulSoup(render_schedule(record),'html.parser')
-        self.assertFalse(page.select('script'))
+        self.assertFalse(page.select('script:not([type="application/json"])'))
+        data=json.loads(page.select_one('#legal-schedule-data').string)
+        self.assertEqual(data['sessions'],record['sessions'])
         for url in ['javascript:alert(1)','https://user:secret@example.com/card']:
             record['sourceUrl']=url
             with self.assertRaises(ValueError):
