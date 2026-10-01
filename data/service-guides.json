@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "title": "市民服務指南",
   "description": "路面損壞怎麼通報、公益律師如何預約、服務處怎麼聯絡：先整理需要的資料，再找到合適的窗口。",
-  "checkedAt": "2026-09-22",
+  "checkedAt": "2026-10-01",
   "guides": [
     {
       "id": "road-damage",
@@ -26,9 +26,18 @@
         "向接聽人員說明位置與狀況，依窗口指引提供資料，並保留受理編號。"
       ],
       "actions": [
-        {"label": "高雄市內撥打 1999", "url": "tel:1999"},
-        {"label": "外縣市撥打 07-335-2999", "url": "tel:+88673352999"},
-        {"label": "查詢市府受理案件", "url": "https://soweb.kcg.gov.tw/#/query"}
+        {
+          "label": "高雄市內撥打 1999",
+          "url": "tel:1999"
+        },
+        {
+          "label": "外縣市撥打 07-335-2999",
+          "url": "tel:+88673352999"
+        },
+        {
+          "label": "查詢市府受理案件",
+          "url": "https://soweb.kcg.gov.tw/#/query"
+        }
       ],
       "sources": [
         {
@@ -41,7 +50,7 @@
     {
       "id": "legal-consultation",
       "title": "預約公益律師諮詢",
-      "summary": "先看月表，再向服務處確認場次與名額；公益律師諮詢採預約安排。",
+      "summary": "先向服務處確認當次日期、時間與名額，再安排來訪；公益律師諮詢採預約制。",
       "preparation": [
         "先整理最想詢問的問題，以及與問題有關的日期或事情經過。",
         "諮詢時攜帶與案件有關的資料原件；不確定要帶什麼，可在預約時先詢問。",
@@ -56,17 +65,32 @@
         "note": "預約請電洽或親臨服務處登記；是否尚有名額與當次安排，請由服務處確認。"
       },
       "steps": [
-        "開啟律師時間表，先確認表上標示的適用月份。",
+        "查看月表標示的適用月份；如已過期，請先來電詢問新場次，不要沿用舊月表。",
         "來電或親臨服務處預約，確認日期、時間與需攜帶的資料後再前往。"
       ],
       "actions": [
-        {"label": "查看律師時間表", "url": "service.html#monthly-heading"},
-        {"label": "來電確認預約", "reference": "office-phone"},
-        {"label": "查看服務處地址與時間", "url": "#office-details"}
+        {
+          "label": "查看律師時間表",
+          "url": "service.html#monthly-heading"
+        },
+        {
+          "label": "來電確認預約",
+          "reference": "office-phone"
+        },
+        {
+          "label": "查看服務處地址與時間",
+          "url": "#office-details"
+        }
       ],
       "sources": [
-        {"title": "服務資訊｜公益律師諮詢與預約說明", "url": "https://www.huiwen.tw/service.html#legal", "checkedAt": "2026-09-22"},
-        {"reference": "legal-schedule"}
+        {
+          "title": "服務資訊｜公益律師諮詢與預約說明",
+          "url": "https://www.huiwen.tw/service.html#legal",
+          "checkedAt": "2026-09-22"
+        },
+        {
+          "reference": "legal-schedule"
+        }
       ]
     },
     {
@@ -91,11 +115,21 @@
         "簡述問題，並確認接下來需要準備的資料與聯絡方式。"
       ],
       "actions": [
-        {"label": "致電服務處", "reference": "office-phone"},
-        {"label": "開啟服務處地圖", "reference": "office-map"}
+        {
+          "label": "致電服務處",
+          "reference": "office-phone"
+        },
+        {
+          "label": "開啟服務處地圖",
+          "reference": "office-map"
+        }
       ],
       "sources": [
-        {"title": "服務資訊｜聯絡服務處與來訪時間", "url": "https://www.huiwen.tw/service.html#contact", "checkedAt": "2026-09-22"}
+        {
+          "title": "服務資訊｜聯絡服務處與來訪時間",
+          "url": "https://www.huiwen.tw/service.html#contact",
+          "checkedAt": "2026-09-22"
+        }
       ]
     }
   ]
