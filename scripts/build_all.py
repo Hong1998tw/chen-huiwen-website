@@ -6,6 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_STEPS = (
+    ('build_legal_shared.py',),
     ('build_public.py', '--projection-only'),
     ('build_cases.py',),
     ('build_platforms.py',),

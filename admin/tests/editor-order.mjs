@@ -289,33 +289,32 @@ try {
   await page.locator('#field-nextReviewAt').fill('');
   await page.locator('#field-sourceTitle').fill('');
   const sessions = page.locator('#field-sessions');
-  const firstSession = sessions.locator('.legal-session-row').first();
-  assert.equal(await firstSession.locator('input[type=date]').getAttribute('type'), 'date', 'each legal session has a native calendar picker');
-  assert.equal(await firstSession.locator('input[type=time]').count(), 2, 'each legal session has start and end time pickers');
-  await firstSession.locator('input[type=date]').fill('2026-10-01');
-  await firstSession.locator('.session-control').nth(1).locator('.compact-date-entry summary').click();
-  await firstSession.locator('.session-control').nth(1).locator('.compact-date-entry input').fill('1930');
-  await firstSession.locator('.session-control').nth(1).locator('.compact-date-entry input').blur();
-  await firstSession.locator('input[type=time]').nth(1).fill('21:00');
-  await sessions.getByRole('button', { name: /新增諮詢時段/ }).click();
-  assert.equal(await sessions.locator('.legal-session-row').count(), 2, 'legal sessions can be added as structured rows');
-  const secondSession = sessions.locator('.legal-session-row').nth(1);
-  await secondSession.locator('input[type=date]').fill('2026-09-30');
-  await secondSession.locator('input[type=time]').nth(0).fill('18:00');
-  await secondSession.locator('input[type=time]').nth(1).fill('20:00');
-  await sessions.getByRole('button', { name: /新增諮詢時段/ }).click();
-  assert.equal(await sessions.locator('.legal-session-row').count(), 3, 'legal sessions can be added as structured rows');
-  await sessions.locator('.legal-session-row').nth(2).getByRole('button', { name: /移除第 3 個/ }).click();
-  assert.equal(await sessions.locator('.legal-session-row').count(), 2, 'legal sessions can be removed as structured rows');
+  assert.equal(await sessions.locator('select[data-legal-date]').count(),23,'October has 23 Tuesday-to-Saturday dates');
+  await sessions.locator('[data-legal-date="2026-10-01"]').selectOption("林岡輝");
+  await sessions.locator('[data-legal-date="2026-10-03"]').selectOption("鄭明達");
+  assert.equal(await sessions.getByLabel("週四開始時間",{exact:true}).getAttribute("type"),"time");
+  await sessions.getByLabel("週四開始時間",{exact:true}).fill("19:30");
+  await sessions.getByLabel("週四結束時間",{exact:true}).fill("21:00");
+  await sessions.getByRole("button",{name:"待填日期全部設為無／停辦",exact:true}).click();
   await page.locator('#save').click();
   await page.getByText('草稿已儲存，官網尚未變更。', { exact: true }).waitFor();
-  assert.equal(savedDocument.payload.month, '2026-10');
-  assert.equal(savedDocument.payload.nextReviewAt, "");
-  assert.equal(savedDocument.payload.sourceTitle, null);
-  assert.deepEqual(savedDocument.payload.sessions, [
-    { date: '2026-09-30', start: '18:00', end: '20:00' },
-    { date: '2026-10-01', start: '19:30', end: '21:00' },
-  ], 'saved legal sessions are sorted by selected date and start time');
+  assert.equal(savedDocument.payload.month,'2026-10');
+  assert.deepEqual(savedDocument.payload.sessions,[
+    {date:'2026-10-01',start:'19:30',end:'21:00',lawyer:'林岡輝'},
+    {date:'2026-10-03',start:'10:00',end:'11:30',lawyer:'鄭明達'},
+  ],'published fields use the selected lawyers and weekday times');
+  assert.equal(savedDocument.payload.closedDates.length,21);
+  assert.deepEqual(savedDocument.payload.unconfirmedDates,[]);
+  await page.locator('#field-month').fill('2026-11');
+  await page.locator('#field-month').dispatchEvent('change');
+  assert.equal(await page.locator('[data-legal-date^="2026-10"]').count(),0,'changing month rebuilds dates');
+  assert.equal(await page.locator('[data-legal-date="2026-11-03"]').inputValue(),"",'future names are not inferred');
+  await page.locator('#save').click();
+  await page.getByText('草稿已儲存，官網尚未變更。', { exact: true }).waitFor();
+  assert.equal(savedDocument.payload.sessions.length,0);
+  assert(savedDocument.payload.unconfirmedDates.length>0,'incomplete monthly planning remains a private saved draft');
+  await page.locator('#preview').click();
+  assert.equal(await page.locator('#preview-dialog').evaluate(el=>el.open),false,'pending dates cannot advance to publication review');
   pages[1].pending_operation = "publish";
   pages[1].pending_status = "queued";
   pages[1].pending_since = "2026-09-27T00:00:00.000Z";
