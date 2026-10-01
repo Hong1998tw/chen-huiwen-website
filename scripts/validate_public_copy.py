@@ -49,20 +49,15 @@ index = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html5l
 election = BeautifulSoup((ROOT / "election.html").read_text(encoding="utf-8"), "html5lib")
 activities = BeautifulSoup((ROOT / "activities.html").read_text(encoding="utf-8"), "html5lib")
 
-hero_status = index.select_one(".hero-copy > .hero-election-status")
-if not hero_status:
-    failures.append("index.html: homepage election status must sit directly inside the hero copy")
-else:
-    status_text = hero_status.get_text(" ", strip=True)
-    if "距離投票日" not in status_text or "2026.11.28" not in status_text:
-        failures.append("index.html: hero election status must show the countdown and election date")
-    if "10/23" in status_text or "候選人姓名號次抽籤" in status_text:
-        failures.append("index.html: hero election status must not include the candidate-number draw")
-    heading = index.select_one(".hero-copy > h1")
-    if heading and heading.find_next_sibling() is not hero_status:
-        failures.append("index.html: hero election status must immediately follow the slogan")
-if index.select_one(".campaign-entry-compact"):
-    failures.append("index.html: legacy standalone election module must be removed")
+hero_actions = index.select_one(".hero-actions")
+if not hero_actions or not hero_actions.select_one('a[href="https://line.me/R/ti/p/@yve2766q"]'):
+    failures.append("index.html: approved LINE hero action is missing")
+if len(index.select('main a[href="service.html#monthly-heading"]')) != 1:
+    failures.append("index.html: homepage must offer one main lawyer schedule entry")
+if index.select_one('.hero-election-status, .campaign-entry-compact'):
+    failures.append("index.html: superseded hero election modules must not duplicate the new service-first layout")
+if not index.select_one('#navigation a[href="election.html"]'):
+    failures.append("index.html: preserve the full election center route")
 if len(election.select(".campaign-nav-card")) != 5:
     failures.append("election.html: full election center must expose five navigation cards")
 for selector in ("#campaign-platforms", "#campaign-tracking", "#campaign-events"):

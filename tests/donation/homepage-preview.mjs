@@ -24,14 +24,18 @@ try{
   assert.equal(await page.locator('.hero-actions .primary').innerText(),'LINE官方帳號');
   assert.equal(await page.getByText('八德',{exact:false}).count(),0);
   assert.equal(await page.locator('.story-list article').count(),4);
-  const eventSource=JSON.parse(await page.locator('#preview-event-source').textContent());
-  const savedSource=JSON.parse(await readFile(fixture+'events-preview.json','utf8'));
-  assert.deepEqual(eventSource,savedSource);
-  assert.equal(eventSource.events[0].start,'2026-10-31T15:50:00+08:00');
-  assert.equal(new Date(eventSource.events[0].start).getUTCDay(),6);
-  assert.equal(eventSource.events[0].end,null);
-  assert.equal(await page.locator('#opening time').getAttribute('datetime'),eventSource.events[0].start);
-  assert.equal(await page.locator('.event-location').innerText(),eventSource.events[0].location);
+  const reference=JSON.parse(await page.locator('#preview-event-source').textContent());
+  assert.deepEqual(reference,JSON.parse(await readFile(fixture+'event-reference.json','utf8')));
+  assert.equal(reference.canonicalSource,'data/events.json');
+  const eventSource=JSON.parse(await readFile(root+reference.canonicalSource,'utf8')).events.find(e=>e.id===reference.recordId);
+  assert(eventSource);
+  assert.equal(await page.locator('#opening a.source').getAttribute('href'),reference.publicUrl);
+  assert.equal(await page.locator('#nav a[href="https://www.huiwen.tw/activities.html"]').count(),1);
+  assert.equal(eventSource.start,'2026-10-31T15:50:00+08:00');
+  assert.equal(new Date(eventSource.start).getUTCDay(),6);
+  assert.equal(eventSource.end,null);
+  assert.equal(await page.locator('#opening time').getAttribute('datetime'),eventSource.start);
+  assert.equal(await page.locator('.event-location').innerText(),eventSource.location);
   assert.equal(await page.locator('.portrait img').getAttribute('src'),'assets/huiwen-mikan.webp');
   for(const href of await page.locator('a').evaluateAll(links=>links.map(a=>a.getAttribute('href')))){
    if(href.startsWith('#'))assert.equal(await page.locator(href).count(),1,'internal anchor '+href);
@@ -70,7 +74,7 @@ try{
  html=html.replace('</body>','<script type="application/json" id="font-license">'+JSON.stringify({license}).replaceAll('<','\\u003c')+'</script></body>');
  await writeFile(out+'homepage-preview.html',html);
  await copyFile(fixture+'assets/huiwen-mikan.webp',out+'source-portrait.webp');
- await copyFile(fixture+'events-preview.json',out+'events-preview.json');
+ await copyFile(fixture+'event-reference.json',out+'event-reference.json');
  await copyFile(fixture+'assets/fengshan-station.jpg',out+'source-station.jpg');
  const portable=await browser.newContext({viewport:{width:390,height:960}});const portablePage=await portable.newPage();await portablePage.setContent(html);await portablePage.evaluate(()=>document.fonts.ready);
  for(const [label,file] of [['下載直式圖卡','campaign-opening-portrait.png'],['下載橫式圖卡','campaign-opening-landscape.jpg']]){const pending=portablePage.waitForEvent('download');await portablePage.getByRole('link',{name:label,exact:true}).click();const d=await pending;const path=out+'portable-'+file;await d.saveAs(path);assert.deepEqual(await readFile(path),await readFile(fixture+'assets/'+file));}

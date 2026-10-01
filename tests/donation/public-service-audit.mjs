@@ -36,7 +36,7 @@ try{
   await page.locator('.hero-portrait img').evaluate(el=>el.decode());
   await page.screenshot({path:fileURLToPath(new URL('home-'+width+'.png',out))});
   await check(width+' direct homepage actions',async()=>{
-   for(const href of ['service.html','achievements.html']){
+   for(const href of ['https://line.me/R/ti/p/@yve2766q','#projects']){
     const a=page.locator('.hero-actions a[href="'+href+'"]');assert(await a.isVisible());
     const b=await a.boundingBox();assert(b.y+b.height<844);
    }

@@ -47,7 +47,7 @@ const retryablePublicationMessage = "網站剛有其他更新；本輪不建立�
 const labels = {
   name: "活動名稱",
   start: "開始時間（台灣時間）",
-  end: "結束時間（台灣時間）",
+  end: "結束時間（台灣時間，未公布可留空）",
   content: "活動說明（選填）",
   registration: "參與／報名方式（選填）",
   sourceUrl: "公開來源網址",
@@ -687,7 +687,7 @@ function renderHomeEditor() {
     const record = homeCases.get(order[index]);
     const row = el("div", undefined, "case-editor-row");
     row.dataset.homeIndex = String(index);
-    row.append(el("strong", index === 0 ? "主打專題（左側）" : `右側 0${index}`),
+    row.append(el("strong", index === 0 ? "主打專題" : `閱讀專題 0${index}`),
       el("p", record?.title || order[index]));
     const actions = el("div", undefined, "case-editor-actions");
     for (const [label, offset] of [["上移", -1], ["下移", 1]]) {
@@ -699,7 +699,7 @@ function renderHomeEditor() {
     }
     const position = el("label", "移至位置 ", "field");
     const select = document.createElement("select"); select.dataset.homeAction = "position";
-    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `右側 ${String(n).padStart(2, "0")}`, String(n))));
+    order.forEach((_, n) => select.add(new Option(n === 0 ? "主打專題" : `閱讀專題 ${String(n).padStart(2, "0")}`, String(n))));
     select.value = String(index);
     select.onchange = () => moveHomeStory(index, Number(select.value));
     position.append(select); actions.append(position); row.append(actions); target.append(row);
@@ -1466,7 +1466,7 @@ function render() {
 }
 function documentFieldRequired(key, domain, status) {
   if (domain === "events") {
-    if (["name", "start", "end", "sourceUrl", "verifiedAt", "status"].includes(key)) return true;
+    if (["name", "start", "sourceUrl", "verifiedAt", "status"].includes(key)) return true;
     return status !== "scheduled" && ["changeNote", "updatedAt"].includes(key);
   }
   return ["month", "observedAt", "sourceUrl", "sessions"].includes(key);
@@ -1493,7 +1493,7 @@ function read() {
     const value = values.get(key) ?? "";
     const kind = key === "month" ? "month" : ["start", "end"].includes(key) ? "dateTime" : /At$/.test(key) ? "day" : null;
     out[key] = ["start", "end"].includes(key)
-      ? value ? `${dateTime.dateTime(value)}:00+08:00` : ""
+      ? value ? `${dateTime.dateTime(value)}:00+08:00` : null
       : kind ? dateTime[kind](value) : value || null;
   }
   return out;

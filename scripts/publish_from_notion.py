@@ -53,13 +53,13 @@ DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedu
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'deployment-control': {deployment_target.REQUEST_FILE},
-    'events': {'data/events.json', 'activities.html', 'election.html', 'data/search-index.json'},
-    'legal-schedule': {'data/legal-schedule.json', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
+    'events': {'data/events.json', 'index.html', 'activities.html', 'election.html', 'data/search-index.json'},
+    'legal-schedule': {'data/legal-schedule.json', 'index.html', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
         row['path'] for row in page_catalog(ROOT)
         if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'}
     },
-    'achievement-content': {'data/achievements.json', 'data/achievements-public.json', 'data/achievement-map.json',
+    'achievement-content': {'data/achievements.json', 'index.html', 'data/achievements-public.json', 'data/achievement-map.json',
                             'data/search-index.json', 'sitemap.xml', 'achievements.html', 'assets/og/manifest.json'} | {
         row['path'] for row in page_catalog(ROOT) if row['path'].startswith('achievement-')
     } | {
@@ -239,10 +239,11 @@ def parse_datetime(text):
     return dt
 
 
-def clean_datetime(value, label, errors):
+def clean_datetime(value, label, errors, required=True):
     text = '' if value is None else str(value).strip()
     if not text:
-        errors.append(f'{label}：必填')
+        if required:
+            errors.append(f'{label}：必填')
         return None
     if len(text) <= 10:
         errors.append(f'{label}：需包含時刻（例如 19:30）')
@@ -301,7 +302,7 @@ def normalize_event(fields):
     managed = {
         'name': clean_text(fields.get('name'), '活動名稱', errors, max_len=120),
         'start': clean_datetime(fields.get('start'), '開始', errors),
-        'end': clean_datetime(fields.get('end'), '結束', errors),
+        'end': clean_datetime(fields.get('end'), '結束', errors, required=False),
         'content': clean_text(fields.get('content'), '活動說明', errors, multiline=True, max_len=4000),
         'registration': clean_text(fields.get('registration'), '報名方式', errors, max_len=300),
         'sourceUrl': clean_url(fields.get('sourceUrl'), '來源網址', errors),
@@ -341,7 +342,7 @@ def build_event_record(managed, site_id, main_record):
         if main_record is None:
             errors.append('狀態：改期只能用於網站上已發布的活動；新活動請選「排定」')
         elif (main_record.get('start'), main_record.get('end')) != (managed['start'], managed['end']):
-            record['previousSchedule'] = {'start': main_record['start'], 'end': main_record['end']}
+            record['previousSchedule'] = {'start': main_record['start'], 'end': main_record.get('end')}
         elif main_record.get('status') == 'rescheduled' and main_record.get('previousSchedule'):
             record['previousSchedule'] = copy.deepcopy(main_record['previousSchedule'])
         else:
@@ -354,10 +355,17 @@ def build_event_record(managed, site_id, main_record):
     return record, errors
 
 
+def event_time_label(record):
+    start = label_time(record['start'])
+    if not record.get('end'):
+        return start + ' 開始（結束時間尚未公布）'
+    end = parse_datetime(record['end']).astimezone(TAIPEI)
+    return f'{start}–{end:%Y/%m/%d %H:%M}'
+
+
 def event_preview(record, main_record, preserved):
     status = record['status']
-    end = parse_datetime(record['end']).astimezone(TAIPEI)
-    when = f"{label_time(record['start'])}–{end:%H:%M}（台灣時間）"
+    when = event_time_label(record) + '（台灣時間）'
     if main_record is None:
         lines = [f"【活動｜新增】{record['name']}", f'時間：{when}']
     else:
@@ -366,8 +374,7 @@ def event_preview(record, main_record, preserved):
                   'verifiedAt': '來源核對日', 'status': '狀態', 'changeNote': '異動說明', 'updatedAt': '來源更新日',
                   'reviewDueAt': '下次複查'}
         if (main_record.get('start'), main_record.get('end')) != (record['start'], record['end']):
-            old_end = parse_datetime(main_record['end']).astimezone(TAIPEI)
-            lines.append(f"時間：{label_time(main_record['start'])}–{old_end:%H:%M} → {when}")
+            lines.append(f"時間：{event_time_label(main_record)} → {when}")
         else:
             lines.append(f'時間：{when}（不變）')
         changed = [labels[k] for k in labels if main_record.get(k) != record.get(k)]

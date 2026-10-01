@@ -39,7 +39,7 @@ LEGACY_PAGES = (
     '398bd146805480f98aecedb69d2e1070/index.html', 'renwu-anju-social-housing/index.html',
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
-VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt'}
+VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
 
 

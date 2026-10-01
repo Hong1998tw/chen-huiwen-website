@@ -59,37 +59,104 @@
     const cases = new Map(records.map(record => [record.id, record]));
     const ids = [home.featured, ...home.reading];
     if (ids.length < 2 || ids.length > 13 || new Set(ids).size !== ids.length || ids.some(id => !cases.has(id))) return;
-    const story = (id, featured, index) => {
-      const record = cases.get(id), url = `achievement-${id}.html`;
-      const article = node("article", undefined, featured ? "civic-feature" : "civic-reading-row");
-      const copy = node("div", undefined, featured ? "civic-feature-copy" : undefined);
-      if (featured && record.images?.length) {
-        const filename = record.images[0], meta = record.imageMetadata?.[filename];
-        if (meta) {
-          const figure = node("figure", undefined, "civic-feature-photo");
-          const image = node("img"); image.src = `assets/${filename}`; image.alt = meta.alt || ""; image.loading = "lazy";
-          const [width, height] = record.imageDimensions?.[filename] || [];
-          if (width && height) { image.width = width; image.height = height; }
-          const caption = node("figcaption", `${meta.caption || ""} · `);
-          const credit = node("a", `${meta.credit || ""} ↗`);
-          credit.href = meta.sourceUrl || "#"; credit.target = "_blank"; credit.rel = "noopener noreferrer";
-          caption.append(credit); figure.append(image, caption); article.append(figure);
-        }
-      }
-      if (!featured) article.append(node("span", `0${index}`, "civic-number"));
-      copy.append(node("p", `${featured ? "地方專題" : record.categories?.[0] || "地方專題"} · ${record.status || ""}`, "civic-kicker"));
-      const heading = node("h3"), link = node("a", record.title || id); link.href = url; heading.append(link); copy.append(heading);
-      copy.append(node("p", home.summaries?.[id] || record.summary || ""));
-      if (featured) {
-        const read = node("a", "閱讀歷程與資料來源 ↗", "civic-read"); read.href = url; copy.append(read);
-      }
-      const small = node("small", "內容整理 "), time = node("time", record.updated || "");
-      time.dateTime = record.updated || ""; small.append(time); copy.append(small); article.append(copy);
-      return article;
+    const amountWan = value => (Number(value) / 10000).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    const fundingOf = record => {
+      const funding = record.funding;
+      if (!funding || funding.currency !== "TWD" ||
+          ![funding.total, funding.centralGrant].every(value => typeof value === "number" && Number.isFinite(value) && value >= 0) ||
+          funding.total < funding.centralGrant) return null;
+      return funding;
     };
-    const reading = node("div", undefined, "civic-reading");
-    home.reading.forEach((id, index) => reading.append(story(id, false, index + 1)));
-    grid.replaceChildren(story(home.featured, true, 0), reading);
+    const titleFor = record => record.id === "haibang-bridge" ? "海邦橋" : record.title || record.id;
+    const summaryFor = record => (home.summaries?.[record.id] || "").trim() || record.summary || "";
+    const externalLink = (value, label, className) => {
+      let url;
+      try { url = new URL(value); } catch { return node("span", label, className); }
+      if (!["https:", "http:"].includes(url.protocol)) return node("span", label, className);
+      const link = node("a", label, className);
+      link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+      return link;
+    };
+    const dated = record => {
+      const small = node("small", "內容整理 ", "meta"), time = node("time", record.updated || "");
+      time.dateTime = record.updated || ""; small.append(time); return small;
+    };
+    const photoFor = (record, className, station = false) => {
+      const filename = record?.images?.[0], meta = record?.imageMetadata?.[filename];
+      const dimensions = record?.imageDimensions?.[filename];
+      if (!filename || !meta || !Array.isArray(dimensions) || dimensions.length !== 2) return null;
+      const figure = node("figure", undefined, className);
+      const image = node("img"); image.src = `assets/${filename}`; image.alt = meta.alt || "";
+      image.width = dimensions[0]; image.height = dimensions[1]; image.loading = "lazy"; image.decoding = "async";
+      const caption = node("figcaption", `${station ? "鳳山車站 · " : ""}${meta.caption || ""} · `);
+      caption.append(externalLink(meta.sourceUrl, `${meta.credit || ""} ↗`));
+      figure.append(image, caption); return figure;
+    };
+    const fundingFor = record => {
+      const funding = fundingOf(record);
+      if (!funding) return null;
+      const aside = node("aside", undefined, "budget civic-feature-funding");
+      aside.setAttribute("aria-label", `${record.title || record.id}核定經費`);
+      aside.append(node("p", "核定計畫總經費", "kicker"));
+      const amount = node("p", amountWan(funding.total), "amount"); amount.append(node("small", "萬元")); aside.append(amount);
+      const list = node("dl");
+      for (const [label, value] of [
+        ["中央補助", `${amountWan(funding.centralGrant)}萬元`],
+        ["中央補助以外差額", `${amountWan(funding.total - funding.centralGrant)}萬元`],
+      ]) list.append(node("dt", label), node("dd", value));
+      const approved = funding.approvedOn || "", date = node("time", approved.replaceAll("-", "."));
+      date.dateTime = approved;
+      const dateValue = node("dd"); dateValue.append(date);
+      list.append(node("dt", "核定日期"), dateValue); aside.append(list);
+      const note = node("p", funding.approvalReference || "", "note");
+      note.append(node("br"), document.createTextNode("核定計畫金額，非決算或已撥款。")); aside.append(note);
+      if (funding.sourceUrl) aside.append(externalLink(funding.sourceUrl, `${funding.sourceTitle || "核對經費來源"} ↗`, "source civic-funding-source"));
+      return aside;
+    };
+    const featured = cases.get(home.featured), url = `achievement-${featured.id}.html`;
+    const feature = node("article", undefined, "feature civic-feature"); feature.dataset.recordId = featured.id;
+    const copy = node("div", undefined, "civic-feature-copy");
+    copy.append(node("p", `${featured.categories?.[0] || "地方專題"} · ${featured.status || ""}`, "stage civic-kicker"));
+    const heading = node("h3"), title = node("a", titleFor(featured)); title.href = url; heading.append(title);
+    copy.append(heading, node("p", summaryFor(featured)));
+    const funding = fundingOf(featured);
+    if (funding?.collaboration) copy.append(node("p", funding.collaboration, "civic-collaboration"));
+    const read = node("a", "閱讀歷程與資料來源 ↗", "source civic-read"); read.href = url + "#case-sources";
+    copy.append(read, dated(featured)); feature.append(copy);
+    const side = fundingFor(featured) || photoFor(featured, "civic-feature-photo");
+    if (side) feature.append(side); else feature.classList.add("civic-feature--text-only");
+    const stories = node("div", undefined, "stories"), reading = node("div", undefined, "story-list civic-reading");
+    // Keep this fixed context image explicitly identified as Fengshan Station,
+    // including when the editor changes which projects appear beside it.
+    const station = photoFor(cases.get("metro-green-line"), "station civic-reading-photo", true);
+    if (station) stories.append(station); else stories.classList.add("stories--text-only");
+    home.reading.forEach(id => {
+      const record = cases.get(id), article = node("article", undefined, "civic-reading-row"), row = node("div");
+      article.dataset.recordId = id;
+      row.append(node("p", `${record.categories?.[0] || "地方專題"} · ${record.status || ""}`, "meta civic-kicker"));
+      const heading = node("h3"), title = node("a", titleFor(record)); title.href = `achievement-${id}.html`; heading.append(title);
+      row.append(heading, node("p", summaryFor(record)), dated(record)); article.append(row); reading.append(article);
+    });
+    stories.append(reading); grid.replaceChildren(feature, stories);
+
+    // Optional companion to the civic-home-map generated region. Filters remain
+    // outside this container so their listeners and selected state survive.
+    const map = document.querySelector("[data-home-map-records]");
+    if (map) {
+      const filter = document.querySelector('.filters [data-filter][aria-pressed="true"]')?.dataset.filter || "all";
+      const rows = ids.map(id => {
+        const record = cases.get(id), categories = record.categories || [], funding = fundingOf(record);
+        const topic = categories.includes("教育與文化") ? "education" : categories.includes("交通與基建") ? "transport" : "other";
+        const article = node("article", undefined, "place");
+        article.dataset.topic = topic; article.dataset.recordId = id; article.hidden = filter !== "all" && filter !== topic;
+        const title = node("a", `${titleFor(record)} ↗`); title.href = `achievement-${id}.html`;
+        const status = funding ? `核定總經費${amountWan(funding.total)}萬元` : record.status || "";
+        article.append(title, node("p", [...(record.villages || []), status].join("　／　"))); return article;
+      });
+      const status = node("p", `本頁精選${rows.filter(row => !row.hidden).length}筆，不代表全部案件或完工數。`, "meta");
+      status.id = "filter-status"; status.setAttribute("aria-live", "polite");
+      map.replaceChildren(...rows, status);
+    }
   }
   function mediaPreview(item) {
     let url;

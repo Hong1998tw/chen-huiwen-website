@@ -23,29 +23,14 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
   await page.goto(base + 'index.html');
-  const heroStatus = page.locator('.hero-copy > .hero-election-status');
-  assert.equal(await heroStatus.count(), 1);
-  assert.match(await heroStatus.innerText(), /距離投票日/);
-  assert.match(await heroStatus.innerText(), /2026\.11\.28/);
-  assert.doesNotMatch(await page.locator('main').innerText(), /10\/23|候選人姓名號次抽籤/);
-  assert.equal(await page.locator('.campaign-entry-compact').count(), 0);
-  assert.equal(await heroStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
-  const countdownColor = await heroStatus.locator('strong').evaluate(el => getComputedStyle(el).color);
-  assert.equal(countdownColor, 'rgb(23, 63, 51)', 'approved reading design uses dark ink for the secondary countdown');
-  assert.equal(await heroStatus.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'secondary countdown remains on the light hero surface');
-  const account = await page.locator('.home-account').boundingBox();
-  const contact = await page.locator('.civic-service-desk').boundingBox();
-  assert(account && contact && contact.y < account.y, 'practical service information precedes donation');
-  assert.equal(await page.locator('.home-contact').count(), 0, 'homepage must not duplicate the service desk');
-  const homeFacebook = page.locator('.home-facebook');
-  await homeFacebook.scrollIntoViewIfNeeded();
-  await homeFacebook.locator('iframe').waitFor({ state: 'attached' });
-  assert.equal(await homeFacebook.locator('iframe').count(), 1, 'homepage Facebook should auto-load');
-  assert.match(await homeFacebook.locator('iframe').getAttribute('title'), /Facebook/, 'homepage Facebook iframe needs an accessible title');
-  assert.equal(await homeFacebook.locator('a[href="https://www.facebook.com/hwcfs/"]').count(), 1, 'homepage Facebook keeps a direct-link fallback');
-  assert(await homeFacebook.locator('[data-embed-load]').isVisible(), 'homepage Facebook keeps a reload fallback');
-  const homeFrameBox = await homeFacebook.locator('.facebook-frame').boundingBox();
-  assert(homeFrameBox && homeFrameBox.x >= 0 && homeFrameBox.x + homeFrameBox.width <= 390, 'homepage Facebook stays inside mobile viewport');
+  assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+  assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
+  assert.equal(await page.locator('.hero-election-status,.campaign-entry-compact').count(),0);
+  assert.equal(await page.locator('#navigation a[href="election.html"]').count(),1);
+  assert.equal(await page.locator('footer a[href="political-donation.html"]').count(),1);
+  assert.equal(await page.locator('footer a[href="https://www.facebook.com/hwcfs/"]').count(),1);
+  assert.equal(await page.locator('main iframe').count(),0,'homepage links to external updates without an automatic embed');
+  assert(await page.locator('.civic-service-desk').isVisible());
 
   await page.goto(base + 'about.html');
   const portrait = await page.locator('.about-portrait').boundingBox();
@@ -85,10 +70,8 @@ try {
     .map(rect => Math.round(rect.y)));
   assert(navYs.length === 5);
   assert(Math.max(...navYs) - Math.min(...navYs) <= 4, `desktop navigation wrapped: ${navYs.join(',')}`);
-  const desktopAccount = await page.locator('.home-account').boundingBox();
-  const desktopContact = await page.locator('.civic-service-desk').boundingBox();
-  assert(desktopAccount && desktopContact && desktopContact.y < desktopAccount.y);
-  assert.equal(await page.locator('.home-contact').count(), 0);
+  assert(await page.locator('.civic-service-desk').isVisible());
+  assert.equal(await page.locator('.home-contact').count(),0);
 
   await page.goto(base + 'activities.html');
   assert(await page.getByRole('heading', { name: '公開行程與活動', exact: true }).isVisible());

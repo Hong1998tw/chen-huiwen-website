@@ -37,6 +37,7 @@ export function validate(
   )
     throw new HttpError(400, "不支援的內容類型");
   const p = value as Record<string, unknown>;
+  if (domain === "events" && (p.end === undefined || p.end === "")) p.end = null;
   const keys = domain === "events" ? eventKeys : legalKeys;
   if (Object.keys(p).some((k) => !keys.includes(k)))
     throw new HttpError(400, "包含不允許修改的欄位");
@@ -54,7 +55,7 @@ export function validate(
       throw new HttpError(400, `${k} 含不允許的文字或長度`, `document.${k}`);
   }
   const requiredKeys = domain === "events"
-    ? ["name", "start", "end", "sourceUrl", "verifiedAt", "status"]
+    ? ["name", "start", "sourceUrl", "verifiedAt", "status"]
     : ["month", "observedAt", "sourceUrl", "sessions"];
   for (const k of requiredKeys.filter((key) => key !== "sessions"))
     if (typeof p[k] !== "string" || !(p[k] as string).trim())
@@ -88,11 +89,12 @@ export function validate(
     typeof s === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(s);
   if (domain === "events") {
     for (const k of ["start", "end"]) {
+      if (k === "end" && (p[k] === null || p[k] === undefined || p[k] === "")) continue;
       const match = String(p[k]).match(/^(20\d\d-\d\d-\d\d)T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\+08:00$/);
       if (!match || !day(match[1]))
         throw new HttpError(400, "活動時間請使用台灣時間", `document.${k}`);
     }
-    if (Date.parse(String(p.end)) <= Date.parse(String(p.start)))
+    if (p.end && Date.parse(String(p.end)) <= Date.parse(String(p.start)))
       throw new HttpError(400, "結束時間必須晚於開始", "document.end");
     if (!["scheduled", "rescheduled", "cancelled"].includes(String(p.status)))
       throw new HttpError(400, "活動狀態不正確", "document.status");

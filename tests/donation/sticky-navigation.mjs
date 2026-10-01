@@ -29,11 +29,13 @@ try {
     page.on('pageerror', e=>report.pageErrors.push(String(e)));
     await page.goto(base);
     await page.locator('.global-search-trigger').waitFor({state:'attached'});
-    await check(width + ' portrait is the first content and visible without scrolling', async()=>{
+    await check(width + ' approved portrait crop loads eagerly within the hero', async()=>{
       await page.locator('.hero-portrait img').evaluate(el=>el.decode());
-      assert.equal(await page.locator('main > section').first().getAttribute('class'), 'hero');
-      const box = await page.locator('.hero-portrait img').boundingBox();
-      assert(box.y >= 0 && box.y + box.height <= 844);
+      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
+      const box = await page.locator('.portrait-frame').boundingBox();
+      assert(box && box.width > 0 && box.height > 0);
+      assert(box.x >= 0 && box.x + box.width <= width);
+      assert(Math.abs(box.width / box.height - 1.04) < 0.02);
       assert.equal(await page.locator('h1').count(),1);
       assert.equal(await page.locator('.hero-portrait img').getAttribute('loading'),'eager');
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
