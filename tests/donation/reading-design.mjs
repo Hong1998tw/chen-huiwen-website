@@ -19,15 +19,16 @@ try{
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
   const page=await context.newPage();page.setDefaultTimeout(8000);
   page.on('pageerror',e=>report.pageErrors.push(String(e)));
-  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','election.html']){
+  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','election.html']){
    await page.goto(base+file);await page.waitForTimeout(120);
+   if(file==='achievement-wende-school-center.html')await page.locator('.case-background > summary').click();
    await check(width+' '+file+' reflow',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(await page.locator('h1').count(),1);});
    if([390,1180].includes(width))await check(width+' '+file+' automated accessibility',async()=>{const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();assert.deepEqual(a.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);});
-   await page.screenshot({path:out+'/'+file.replace('.html','')+'-'+width+'.png',fullPage:false});
+   await page.screenshot({path:out+'/'+file.replace('.html','')+'-'+width+'.png',fullPage:file==='achievement-wende-school-center.html'});
   }
   if(width===320){
-   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html']){
-    await page.goto(base+file);await page.addStyleTag({content:'html{font-size:200%!important}'});
+   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html']){
+    await page.goto(base+file);if(file==='achievement-wende-school-center.html')await page.locator('.case-background > summary').click();await page.addStyleTag({content:'html{font-size:200%!important}'});
     await check('200% text '+file,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
     await page.screenshot({path:out+'/'+file.replace('.html','')+'-text-200.png'});
    }
