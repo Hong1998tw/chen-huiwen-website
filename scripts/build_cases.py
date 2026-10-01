@@ -44,6 +44,17 @@ def page(file,title,description,body,head='',og_type='website'):
  for key,value in {'OG_TYPE':og_type,'DIGITAL_STYLE_VERSION':asset_version('digital.css'),'DIGITAL_SCRIPT_VERSION':asset_version('digital.js')}.items():s=s.replace('{{'+key+'}}',value)
  for k,v in {'TITLE':E(title),'DESCRIPTION':E(description),'FILE':E(file),'BODY':body,'HEAD':head,'STYLE_VERSION':asset_version('styles.css'),'OG_IMAGE':E('assets/og/'+Path(file).stem+'.png'),'OG_ALT':E(('慧做事・政績地圖' if file=='achievements.html' else title)+'｜陳慧文・高雄市議員')}.items():s=s.replace('{{'+k+'}}',v)
  (R/file).write_text(s)
+def funding_card(c):
+ funding=c.get('funding')
+ if not funding:return ''
+ amount=lambda value:format(value/10000,',.2f').rstrip('0').rstrip('.')+'萬元'
+ return ('<section class="case-funding" aria-label="經費與共同爭取">'
+  +'<p class="case-funding-total"><span>'+E(funding['basis'])+'</span> <strong>'+amount(funding['total'])+'</strong></p>'
+  +'<details><summary>經費與共同爭取</summary><p>中央補助 '+amount(funding['centralGrant'])+'</p>'
+  +'<p>'+E(funding['approvedOn'])+' 核定 · '+E(funding['approvalReference'])+'</p>'
+  +'<p>'+E(funding['collaboration'])+'</p><p class="case-funding-note">新臺幣核定計畫口徑，非決算或已撥款。</p>'
+  +ext(funding['sourceUrl'],funding['sourceTitle'])
+  +'<a href="'+href(c['id'])+'#case-sources">完整經費說明與來源 →</a></details></section>')
 def card(c):
  status='' if c['status']=='待核驗' else '<span class="case-status">'+E(c['status'])+'</span>'
  location='、'.join(c['villages']) or c['scope']
@@ -53,7 +64,7 @@ def card(c):
  summary=('<p class="case-summary">'+E(c['summary'])+'</p>') if c['summary'] else ''
  locate=f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else ''
  subtags=''
- return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'][:1])}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}<div class="case-card-footer"><span class="case-place">{place}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看完整內容 →</a>{locate}</div></div></article>'''
+ return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'][:1])}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}{funding_card(c)}<div class="case-card-footer"><span class="case-place">{place}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看完整內容 →</a>{locate}</div></div></article>'''
 expected_pages={href(c['id']) for c in public_items}
 for old in R.glob('achievement-*.html'):
  if old.name not in expected_pages: old.unlink()
@@ -119,6 +130,7 @@ cats=sorted({t for c in public_items for t in c['categories']});subcats=sorted({
 mapdata=[]
 for c in public_items:
  entry={k:c[k] for k in ['id','title','summary','categories','subcategories','villages','scope','status','coordinates','locationName','locationNote','history','updated']}
+ if c.get('funding'):entry['funding']=c['funding']
  entry['searchText']=search_text(c,village_by_key)
  entry['years']=sorted({h['date'][:4] for h in c['history'] if re.match(r'^(19|20)\d{2}(?:\D|$)',h['date'])})
  mapdata.append(entry)

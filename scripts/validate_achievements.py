@@ -183,6 +183,24 @@ def validate(achievements, villages, baseline=None):
             errors.append(label + ': sources need titled traceable URLs')
         elif any(s.get('sourceDate') and not valid_case_period(s['sourceDate']) for s in sources):
             errors.append(label + ': invalid source date')
+        funding = a.get('funding')
+        if funding is not None:
+            fields = {'basis', 'currency', 'total', 'centralGrant', 'approvedOn', 'approvalReference', 'collaboration', 'sourceTitle', 'sourceUrl'}
+            if not isinstance(funding, dict) or set(funding) != fields:
+                errors.append(label + ': funding needs the reviewed field contract')
+            else:
+                if funding['basis'] != '核定總經費' or funding['currency'] != 'TWD':
+                    errors.append(label + ': funding basis or currency is unsupported')
+                values = (funding['total'], funding['centralGrant'])
+                if any(type(x) is not int or x <= 0 for x in values) or (all(type(x) is int for x in values) and values[1] > values[0]):
+                    errors.append(label + ': funding amounts must be positive TWD integers with grant within total')
+                if not valid_date(funding['approvedOn']):
+                    errors.append(label + ': funding approval date is invalid')
+                for key in ('approvalReference', 'collaboration', 'sourceTitle'):
+                    if not isinstance(funding[key], str) or not funding[key].strip() or len(funding[key]) > 500:
+                        errors.append(label + ': funding needs ' + key)
+                if not traceable({'title': funding['sourceTitle'], 'url': funding['sourceUrl']}) or funding['sourceUrl'] not in [s.get('url') for s in sources if isinstance(s, dict)]:
+                    errors.append(label + ': funding source must match a public case source')
         history = a.get('history', [])
         if not isinstance(history, list) or any(not isinstance(row, dict) or not valid_case_period(row.get('date')) or
                 not isinstance(row.get('title'), str) or not row['title'].strip() or
@@ -223,7 +241,7 @@ def validate(achievements, villages, baseline=None):
                 errors.append(label + ': city policy must not use a village/point')
         elif a.get('scope') != '跨區服務' and not a.get('locationName'):
             errors.append(label + ': local work needs public locationName')
-        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget', 'imageMetadata', 'villageHeadPartners')}
+        public_fields = {k: a.get(k) for k in ('title', 'summary', 'paragraphs', 'history', 'locationName', 'locationNote', 'budget', 'funding', 'imageMetadata', 'villageHeadPartners')}
         if INTERNAL.search(json.dumps(public_fields, ensure_ascii=False)):
             errors.append(label + ': internal language in public fields')
         if re.search(r'\d+(?:之\d+)?號', a.get('locationName', '')):

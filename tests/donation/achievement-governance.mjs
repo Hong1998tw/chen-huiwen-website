@@ -76,6 +76,30 @@ try{
   const count=async n=>page.waitForFunction(n=>window.HuiwenCases?.getState().visible.length===n,n);
 
   await go('achievements.html');await waitCases();
+  await check(`${width}: reviewed Wende funding is readable in list and map without totals across cases`,async()=>{
+   await go('achievements.html?q='+encodeURIComponent('文德國小'));await waitCases();
+   const card=page.locator('[data-case="wende-school-center"]');
+   assert.match(await card.locator('.case-funding-total').textContent(),/核定總經費.*6,035\.7萬元/);
+   await card.locator('.case-funding summary').click();
+   assert.match(await card.locator('.case-funding details').textContent(),/中央補助 2,610\.71萬元/);
+   assert.match(await card.locator('.case-funding details').textContent(),/林岱樺/);
+   assert.equal(await page.locator('.case-funding').count(),1);
+   await page.locator('#achievement-map').scrollIntoViewIfNeeded();
+   await page.locator('.leaflet-marker-icon[title="文德國小活動中心"]').click();
+   const popup=page.locator('.map-popup');
+   assert.match(await popup.locator('.case-funding-total').textContent(),/核定總經費 6,035\.7萬元/);
+   await popup.locator('summary').click();
+   assert.match(await popup.textContent(),/中央補助 2,610\.71萬元/);
+   assert.match(await popup.textContent(),/2025年5月14日/);
+   assert.match(await popup.textContent(),/非決算或已撥款/);
+   assert.equal(await popup.locator('a[href*="#case-sources"]').count(),1);
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   const axe=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+   assert.deepEqual(axe.violations.map(v=>v.id),[]);
+   await page.screenshot({path:out+`map-funding-${width}.png`,fullPage:true});
+   await go('achievements.html');await waitCases();
+  });
+
   await check(`${width}: overview layout, pagination and map availability`,async()=>{
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
@@ -162,6 +186,7 @@ try{
  await check('No JavaScript keeps all public achievement cards and historical partner facts readable',async()=>{
   const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'achievements.html');
   assert.equal(await page.locator('#case-list .case-card:visible').count(),source.length);
+  assert.match(await page.locator('[data-case="wende-school-center"] .case-funding-total').textContent(),/6,035\.7萬元/);
   await page.goto(base+'achievement-mingfeng-12-gongyuan-road.html');const facts=await page.locator('.case-facts').textContent();assert.match(facts,/合作里長（案件當時）/);assert.match(facts,/侯俊傑/);assert(!facts.includes('現任里長'));await ctx.close();
  });
 }finally{
