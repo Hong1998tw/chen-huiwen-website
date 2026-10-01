@@ -29,7 +29,7 @@ try{
   assert((await card.innerText()).includes('07-821-2536'));
   assert.equal(await card.locator('a[href*="calendar.google.com"]').count(),0);
   assert.equal(await page.locator('#event-council-general-interpellation-2026-10-08 a[href*="calendar.google.com"]').count(),1);
-  await card.locator('img').last().scrollIntoViewIfNeeded();
+  for(const img of await card.locator('img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   assert(await card.locator('img').evaluateAll(images=>images.every(img=>img.complete && img.naturalWidth===Number(img.getAttribute('width')) && img.naturalHeight===Number(img.getAttribute('height')))));
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
@@ -51,8 +51,9 @@ try{
   const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});
   await context.route('**/*',route=>new URL(route.request().url()).origin===new URL(base).origin?route.continue():route.abort());
   const page=await context.newPage();await page.clock.setFixedTime(new Date(now));
+  const loaded=page.waitForResponse(r=>r.url().endsWith('/data/events.json'));
   await page.goto(base+'election.html');
-  await page.waitForResponse(r=>r.url().endsWith('/data/events.json'));
+  await loaded;
   await page.waitForTimeout(200);
   const cards=page.locator('.campaign-event').filter({hasText:opening.name});
   assert.equal(await cards.count(),now.startsWith('2026-10-31')?1:0);

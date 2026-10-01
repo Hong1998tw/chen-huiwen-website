@@ -37,6 +37,7 @@ export function validate(
   )
     throw new HttpError(400, "不支援的內容類型");
   const p = value as Record<string, unknown>;
+  if (domain === "events" && (p.end === undefined || p.end === "")) p.end = null;
   const keys = domain === "events" ? eventKeys : legalKeys;
   if (Object.keys(p).some((k) => !keys.includes(k)))
     throw new HttpError(400, "包含不允許修改的欄位");
@@ -87,7 +88,6 @@ export function validate(
   const time = (s: unknown) =>
     typeof s === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(s);
   if (domain === "events") {
-    if (p.end === undefined || p.end === "") p.end = null;
     for (const k of ["start", "end"]) {
       if (k === "end" && (p[k] === null || p[k] === undefined || p[k] === "")) continue;
       const match = String(p[k]).match(/^(20\d\d-\d\d-\d\d)T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\+08:00$/);
