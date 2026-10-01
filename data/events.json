@@ -14,6 +14,40 @@
       "previousSchedule": null,
       "changeNote": null,
       "reviewDueAt": "2026-10-01"
+    },
+    {
+      "id": "campaign-headquarters-opening-2026-10-31",
+      "name": "陳慧文 × 賴瑞隆 聯合競選總部成立大會",
+      "start": "2026-10-31T15:50:00+08:00",
+      "end": null,
+      "location": "高雄市鳳山區錦田路231號",
+      "content": "2026年10月31日（星期六）下午3:50，陳慧文與賴瑞隆聯合競選總部成立大會，在高雄市鳳山區錦田路231號舉行。",
+      "registration": "活動詳情請洽服務專線 07-821-2536。",
+      "status": "scheduled",
+      "verifiedAt": "2026-10-02",
+      "updatedAt": "2026-10-02",
+      "sourceUrl": "https://www.huiwen.tw/assets/events/campaign-opening-20261031-portrait.png",
+      "previousSchedule": null,
+      "changeNote": null,
+      "reviewDueAt": "2026-10-30",
+      "images": [
+        {
+          "src": "assets/events/campaign-opening-20261031-landscape.jpg",
+          "width": 1087,
+          "height": 769,
+          "alt": "陳慧文與賴瑞隆聯合競選總部成立大會橫式圖卡，10月31日星期六下午3點50分",
+          "caption": "成立大會橫式圖卡",
+          "credit": "陳慧文服務處提供"
+        },
+        {
+          "src": "assets/events/campaign-opening-20261031-portrait.png",
+          "width": 1088,
+          "height": 1536,
+          "alt": "陳慧文與賴瑞隆聯合競選總部成立大會直式圖卡，10月31日星期六下午3點50分，鳳山區錦田路231號",
+          "caption": "成立大會直式圖卡",
+          "credit": "陳慧文服務處提供"
+        }
+      ]
     }
   ],
   "schemaVersion": 2
