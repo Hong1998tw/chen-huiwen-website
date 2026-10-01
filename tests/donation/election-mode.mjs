@@ -31,7 +31,8 @@ try {
   assert.equal(await page.locator('.campaign-entry-compact').count(), 0);
   assert.equal(await heroStatus.evaluate(el => el.previousElementSibling?.tagName), 'H1');
   const countdownColor = await heroStatus.locator('strong').evaluate(el => getComputedStyle(el).color);
-  assert.equal(countdownColor, 'rgb(213, 249, 124)');
+  assert.equal(countdownColor, 'rgb(23, 63, 51)', 'approved reading design uses dark ink for the secondary countdown');
+  assert.equal(await heroStatus.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'secondary countdown remains on the light hero surface');
   const account = await page.locator('.home-account').boundingBox();
   const contact = await page.locator('.civic-service-desk').boundingBox();
   assert(account && contact && contact.y < account.y, 'practical service information precedes donation');

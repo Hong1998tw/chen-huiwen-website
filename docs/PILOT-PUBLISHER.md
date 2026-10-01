@@ -1,3 +1,11 @@
+# 2026-10 部署相容注意
+
+現行 standalone CMS 的正常內容發布仍沿 guarded PR、required checks、native auto-merge，再由 Cloudflare main trigger部署；收據改採 `cloudflare-public.yml` 的相同完整 SHA，保留 HTTP／snapshot／native 分層。詳細見 [Cloudflare migration](CLOUDFLARE-PUBLIC-MIGRATION.md)。
+
+本輪沒有為 standalone CMS 新增重新部署 route／queue，也沒有啟用舊 Notion executor。以下第6節保留的是 Pages 時期流程。若既有 legacy executor 在 Cloudflare provider 下被另外授權使用，相容 helper 會建立只改 `data/deployment-request.json` 的 metadata-only PR，仍走原 gate；不是內容 PR，公開內容來源不變，但新的 `deployment.json` 版本會更新。不得把舊 Pages 數字 runId 當作 Cloudflare 完成。
+
+以下原文保留作歷史設定與維護參考，不能據此自行啟用 executor 或改權限。
+
 # huiwen.tw Notion CMS 發布執行器
 
 本文件是 GitHub 端工程 runbook。GitHub `main` 是網站程式與發布正本；Notion 是各內容 domain 的 authoring surface。

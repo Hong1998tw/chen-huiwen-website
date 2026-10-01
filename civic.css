@@ -309,3 +309,94 @@ body .case-sources .source-links,body .case-sources .source-caption{font-size:1r
 body .case-sources .source-links li{padding-block:8px}
 body .case-sources .source-links a{color:var(--civic-ink);text-underline-offset:4px;overflow-wrap:anywhere}
 body .case-photos figcaption,body .record-boundary{font-size:.9rem;line-height:1.8;color:var(--civic-muted)}
+
+/* 2026-10 reading hierarchy: story, record, and service share one type system. */
+:root{--civic-ink:#173f33;--civic-text:1rem;--civic-small:.875rem;--civic-gap:24px}
+body .site-header{box-shadow:none}
+body .site-header nav .nav-group>summary{font-size:.9375rem}
+.civic-home .hero{padding-block:24px}
+.civic-home .hero-grid{grid-template-columns:200px minmax(0,1fr);gap:48px}
+.civic-home .hero-portrait{width:200px}
+.civic-home .hero-copy h1{font-size:clamp(2.5rem,4vw,3.6rem)}
+.civic-home .hero-election-status{background:transparent;color:var(--civic-ink);border:0;border-bottom:1px solid #9cac9e;border-radius:0;padding:8px 0;margin:10px 0 18px;font-size:.875rem}
+.civic-home .hero-election-status strong{color:var(--civic-ink);font-size:1rem}
+.civic-home .hero-election-status time{border-color:#9cac9e}
+.civic-home .hero-election-status:hover{background:var(--civic-tint);transform:none}
+.civic-home .hero-intro{margin-top:10px}
+.civic-stories{padding-block:36px}
+.civic-section-head{margin-bottom:24px}
+.civic-story-grid{gap:36px}
+.civic-feature-photo img{max-height:280px;object-fit:cover}
+.civic-feature-copy h3{font-size:clamp(1.4rem,2.4vw,1.8rem)}
+.civic-lead{padding-block:36px;border-top:1px solid var(--civic-line);gap:48px}
+.civic-lead h2{font-size:clamp(2rem,3vw,2.7rem);margin-bottom:16px}
+.civic-search small,.civic-date-note,.civic-feature-copy small,.civic-reading small,
+.civic-feature-photo figcaption,.civic-kicker,.civic-suggestions{font-size:var(--civic-small);letter-spacing:.02em}
+.civic-reading-row .civic-kicker{font-size:var(--civic-small)}
+body .map-controls{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(180px,1fr) auto;gap:12px;padding:16px}
+body .map-controls>div:first-child,body .map-controls>div:nth-child(2){grid-row:1;grid-column:auto}
+body .map-controls #reset-map-filters{grid-column:3;grid-row:1;align-self:end}
+body .map-controls .advanced-filters{grid-column:1/-1;grid-row:auto;margin:0}
+body .map-controls .advanced-filters>summary{min-height:44px;padding:8px 0;cursor:pointer}
+body .map-controls .case-live-summary{grid-column:1/-1;margin:0;font-size:.875rem}
+.active-case-filters{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+body .active-case-filters button{min-height:44px;padding:8px 12px;background:var(--civic-tint);color:var(--civic-ink);border:1px solid #799382;font-size:.875rem}
+.case-overview-summary{margin-top:24px;padding-block:24px;border-block:1px solid var(--civic-line)}
+.case-overview-summary>h2{font-family:var(--civic-serif);font-size:1.5rem;margin:0 0 20px}
+.case-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px}
+.case-overview-grid h3{font-size:1rem;margin:0 0 10px}
+.case-overview-grid p{line-height:1.85;font-size:1rem;color:var(--civic-muted);margin:0 0 12px}
+.case-overview-summary>.text-link{display:inline-flex;align-items:center;min-height:44px}
+body .explore-layout{gap:32px;padding-top:12px}
+body .explore-sidebar,body .explore-result-card,body .explore-related-item,body .digital-stat,
+body .council-record-card{border-radius:var(--civic-radius);box-shadow:none;border:1px solid var(--civic-line);background:transparent}
+body .explore-sidebar{background:var(--civic-tint)}
+body .explore-result-card{padding:24px;border-top:3px solid #75957d}
+body .explore-result-card h3{font-family:var(--civic-serif);line-height:1.5}
+body .explore-summary{display:flex;gap:8px 20px;flex-wrap:wrap;margin-block:12px 24px}
+body .explore-summary .digital-stat{display:flex;gap:8px;align-items:baseline;border:0;padding:0;font-size:.875rem}
+body .explore-summary .digital-stat strong{font-size:1rem}
+.explore-reading-intro{padding:20px 0;border-block:1px solid var(--civic-line);margin-bottom:20px}
+.explore-reading-intro h2{font-family:var(--civic-serif);font-size:1.5rem}
+.explore-reading-intro p{max-width:55em;line-height:1.85}
+.explore-reading-intro a,.explore-filter-link{display:inline-flex;align-items:center;min-height:44px;text-decoration:underline;text-underline-offset:4px}
+body .news-media-grid{grid-template-columns:minmax(0,1fr);gap:0}
+body .news-report-card{border:0;border-top:1px solid var(--civic-line);border-radius:0;box-shadow:none;background:transparent}
+body .news-report-card .card-body{padding:24px 0}
+body .news-report-card h2{max-width:38em;font-family:var(--civic-serif)}
+body .news-report-card .news-card-lead,body .news-card-details{max-width:68ch}
+body .news-report-card:first-child{border-top:3px solid var(--civic-ink)}
+body .news-report-card:first-child h2{font-size:clamp(1.4rem,2.4vw,1.85rem)}
+.platform-topic-nav{display:flex;flex-wrap:wrap;gap:8px 12px;margin-block:16px}
+.platform-topic-nav a{min-height:44px;display:flex;align-items:center;padding:8px 14px;border:1px solid #799382;background:var(--civic-tint);font-size:.95rem}
+body .platform-theme{scroll-margin-top:calc(var(--site-header-height,80px) + 24px)}
+body .platform-election>summary{padding-block:14px}
+body .platform-theme:first-of-type{margin-top:12px}
+body .footer-bottom{font-size:.875rem;line-height:1.8}
+@media(max-width:1100px) and (min-width:781px){body .site-header nav .nav-group>summary{font-size:.875rem;padding-inline:6px}}
+@media(max-width:780px){
+ .civic-home .hero-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:0 20px}
+ .civic-home .hero-portrait{width:100%}
+ .civic-home .hero-copy h1{font-size:clamp(2rem,7vw,3rem)}
+ .civic-home .hero-election-status{margin:8px 0;padding-block:6px}
+ .civic-stories{padding-block:28px}
+ .civic-story-grid,.civic-lead{gap:24px}
+ .civic-lead{grid-template-columns:1fr;padding-block:28px}
+ .civic-feature-photo img{max-height:none;object-fit:contain}
+ body .map-controls{grid-template-columns:minmax(0,1fr) auto;padding:12px;gap:8px}
+ body .map-controls>div:first-child{grid-column:1/-1;grid-row:1}
+ body .map-controls>div:nth-child(2){grid-column:1;grid-row:2}
+ body .map-controls #reset-map-filters{grid-column:2;grid-row:2}
+ .case-overview-grid{grid-template-columns:minmax(0,1fr);gap:16px}
+ .case-overview-summary{padding-block:20px}
+ body .explore-layout{gap:24px}
+ body .explore-result-card{padding:20px}
+ body .news-report-card .card-body{padding:20px 0}
+ .platform-topic-nav{gap:8px}
+ .platform-topic-nav a{flex:1 1 calc(50% - 8px);justify-content:center;padding-inline:8px}
+}
+@media(prefers-reduced-motion:reduce){.hero-election-status{transition:none}}
+
+/* Muted counts stay readable on the shared light-paper background. */
+body .explore-summary .digital-stat span{color:var(--civic-muted)}
+

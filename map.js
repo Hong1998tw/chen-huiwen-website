@@ -72,7 +72,38 @@
     button.addEventListener('click', () => { currentPage = page; selectedId = null; groupIds = []; renderCards(); syncURL(); announce(); document.getElementById('case-results').scrollIntoView({behavior:motion(),block:'start'}); });
     return button;
   }
+  function renderFilterChips() {
+    const host = document.querySelector('.active-case-filters');
+    if (!host) return;
+    host.replaceChildren();
+    for (const [key, control] of Object.entries(controls)) {
+      if (!control.value.trim() || control.value === 'all') continue;
+      const label = key === 'q' ? control.value.trim() : control.selectedOptions[0].textContent;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = label + ' ×';
+      chip.setAttribute('aria-label', '移除篩選：' + label);
+      chip.addEventListener('click', () => {
+        control.value = key === 'q' ? '' : 'all';
+        clearTimeout(searchTimer);
+        filter();
+        control.focus();
+      });
+      host.append(chip);
+    }
+    host.hidden = !host.childElementCount;
+    const related = document.querySelector('[data-explore-filter-link]');
+    if (related) {
+      const query = new URLSearchParams();
+      for (const key of ['q', 'village', 'category', 'status']) {
+        const value = controls[key].value.trim();
+        if (value && value !== 'all') query.set(key, value);
+      }
+      related.href = 'explore.html' + (query.size ? '?' + query : '');
+    }
+  }
   function renderCards() {
+    renderFilterChips();
     const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
     currentPage = Math.min(Math.max(1, currentPage), pages);
     const ids = new Set(visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(c => c.id));

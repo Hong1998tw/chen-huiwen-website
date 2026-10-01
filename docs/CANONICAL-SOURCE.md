@@ -6,9 +6,9 @@
 
 - Repository：`Hong1998tw/chen-huiwen-website`
 - Canonical branch：`main`
-- Production origin：GitHub Pages
+- Production target：Cloudflare Static Assets（實際切換狀態以 native release receipt 為準）；GitHub Pages 保留手動回復
 - Production canonical URL：`https://www.huiwen.tw/`
-- Cloudflare：DNS／Proxy／Redirect edge，不是網站 source。
+- Cloudflare：靜態前台 Runtime、DNS／Proxy／Redirect edge，不是可編輯網站 source。
 - `main` 中的 source、結構化資料、build script、template、assets、generated output 與 Git history，是網站程式碼的唯一權威來源。
 
 Production URL 代表「目前實際對外看到的狀態」，但不應反向覆蓋 GitHub source。若 Production 與 `main` 不一致，先查 GitHub Pages deployment、Cloudflare edge、cache、asset path 與對應 commit。
@@ -18,8 +18,8 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 | 系統 | 權威範圍 | 不應扮演的角色 |
 | --- | --- | --- |
 | GitHub `main` | source code、資料、build、template、assets、generated output、版本歷史 | 不保存私人案件或內部研究 |
-| GitHub Pages | production origin／deployment runtime | 不作為人工編輯來源 |
-| Cloudflare | DNS、Proxy、TLS、Redirect edge | 不成為網站 source code |
+| GitHub Pages | 保留的手動回復 runtime | 不作為人工編輯來源或 Cloudflare 成功收據 |
+| Cloudflare | 靜態前台 runtime、DNS、Proxy、TLS、Redirect edge | 不成為網站 source code |
 | Google Drive | candidate、release artifact、備份、維護文件 | 不建立第二套可編輯 source code |
 | Notion | 治理、規格、Decision Log、操作紀錄、來源說明、Editorial Policy | 不覆蓋 GitHub 最新 source |
 | ChatGPT Project | 工作調度與上下文 | 不作 Runtime State 的權威來源 |
@@ -76,3 +76,6 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 發布授權依 `docs/DEPLOYMENT.md` 的 operational contract 執行：**只要必要查核、測試與 CI 通過，且沒有具體疑慮，就預設直接完成 merge、GitHub Pages 與 Production Verification，不再逐次詢問是否部署。** 只有 Evidence／CI／安全邊界／diff／rollback／重大變更範圍等存在實質疑慮時，才停在 PR／candidate 等待人工確認。
 
 最後更新：2026-09-11（Asia/Taipei）。
+
+## 2026-10 Cloudflare 發布相容
+正常發布採 `branch → PR → 原 required checks → main → Cloudflare Builds → exact-SHA delivery receipt → production verification`。完整新契約見 [Cloudflare public migration](CLOUDFLARE-PUBLIC-MIGRATION.md)。前述 Pages 時期的操作描述保留為歷史，不能當作新前台已部署或已驗證的證明。

@@ -1,0 +1,38 @@
+name: Cloudflare public artifact QA
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  static-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python scripts/build_cloudflare_public.py
+      - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
+      - name: Verify exact assets, existing routes and private-path exclusion
+        run: |
+          npx --yes wrangler@4.143.1 dev --local --config wrangler.public.jsonc --port 8789 > /tmp/wrangler-public.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8789/deployment.json > /dev/null; then break; fi
+            sleep 1
+          done
+          python scripts/verify_cloudflare_assets.py --base-url http://127.0.0.1:8789 --report tests/donation/results/cloudflare-assets/report.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cloudflare-public-artifact-qa
+          path: |
+            tests/donation/results/cloudflare-assets/
+            /tmp/wrangler-public.log
+          retention-days: 14

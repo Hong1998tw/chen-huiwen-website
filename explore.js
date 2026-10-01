@@ -6,6 +6,7 @@
   const typeSelect = document.getElementById('explore-type');
   const valueSelect = document.getElementById('explore-value');
   const keywordInput = document.getElementById('explore-keyword');
+  const statusSelect = document.getElementById('explore-status');
   const title = document.getElementById('explore-title');
   const subtitle = document.getElementById('explore-subtitle');
   const summary = document.getElementById('explore-summary');
@@ -51,11 +52,12 @@
   }
 
   function populateControls() {
+    statusSelect.innerHTML = '<option value="all">全部進度</option>' + [...new Set(state.achievements.map(item => item.status))].sort().map(status => '<option>' + escapeHTML(status) + '</option>').join('');
     const topics = Object.keys(state.taxonomy.topics || {});
     const villages = [...new Set(state.achievements.flatMap(item => item.villages || []))].sort((a,b)=>a.localeCompare(b,'zh-Hant-TW'));
     typeSelect.innerHTML = '<option value="topic">主題探索</option><option value="village">里別探索</option>';
     const params = new URLSearchParams(location.search);
-    typeSelect.value = params.get('type') === 'village' ? 'village' : 'topic';
+    typeSelect.value = (params.get('type') === 'village' || params.get('village')?.startsWith('v:')) ? 'village' : 'topic';
     updateValueOptions(typeSelect.value, typeSelect.value === 'village' ? villages : topics);
   }
 
@@ -66,15 +68,17 @@
 
   function applyFromURL() {
     const params = new URLSearchParams(location.search);
-    const type = params.get('type') === 'village' ? 'village' : 'topic';
+    const type = (params.get('type') === 'village' || params.get('village')?.startsWith('v:')) ? 'village' : 'topic';
     if (typeSelect.value !== type) {
       typeSelect.value = type;
       const values = type === 'village' ? [...new Set(state.achievements.flatMap(item=>item.villages||[]))].sort((a,b)=>a.localeCompare(b,'zh-Hant-TW')) : Object.keys(state.taxonomy.topics || {});
       updateValueOptions(type,values);
     }
-    const value = params.get('value');
+    const value = params.get('village')?.startsWith('v:') ? params.get('village').slice(2) : params.get('category') || params.get('value');
     if (value && [...valueSelect.options].some(option=>option.value===value)) valueSelect.value=value;
     keywordInput.value=params.get('q')||'';
+    const requestedStatus = params.get('status');
+    statusSelect.value = [...statusSelect.options].some(option => option.value === requestedStatus) ? requestedStatus : 'all';
   }
 
   function matchesKeyword(item, query) {
@@ -98,7 +102,7 @@
     const query=normalize(keywordInput.value);
     const filtered=state.achievements.filter(item => {
       const scopeMatch = type==='village' ? (item.villages||[]).includes(value) : (item.categories||[]).includes(value);
-      return scopeMatch && matchesKeyword(item,query);
+      return scopeMatch && (statusSelect.value === 'all' || item.status === statusSelect.value) && matchesKeyword(item,query);
     });
     const mapped=filtered.filter(item=>Array.isArray(item.coordinates)&&item.coordinates.length===2).length;
     const statuses=[...new Set(filtered.map(item=>item.status).filter(Boolean))];
@@ -116,6 +120,14 @@
       article.innerHTML=`<p class="eyebrow">${escapeHTML([...(item.categories||[]),...(item.subcategories||[])].join('・'))}</p><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.summary||'查看完整說明與歷史紀錄。')}</p><p class="explore-relation-note">${escapeHTML(place)} · ${escapeHTML(item.status||'')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄 →</a>`;
       achievementBox.append(article);
     });
+    const matching = new URLSearchParams();
+    matching.set(type === 'village' ? 'village' : 'category', type === 'village' ? 'v:' + value : value);
+    if (keywordInput.value.trim()) matching.set('q', keywordInput.value.trim());
+    if (statusSelect.value !== 'all') matching.set('status', statusSelect.value);
+    document.getElementById('explore-list-link').href = 'achievements.html?' + matching;
+    document.getElementById('explore-reading-note').textContent = type === 'village'
+      ? '從 ' + value + ' 收錄的地方問題開始，閱讀各案行動、辦理階段與原始來源。地圖代表位置不等於施工範圍。'
+      : '從「' + value + '」相關的生活問題開始，閱讀各案行動、辦理階段與原始來源。收錄紀錄數不代表完工成果數。';
     empty.hidden=filtered.length>0;
     renderRelations(type,value,filtered);
     syncURL();
@@ -141,10 +153,12 @@
     relatedBox.append(list);
   }
 
-  function syncURL(){const params=new URLSearchParams();params.set('type',typeSelect.value);params.set('value',valueSelect.value);if(keywordInput.value.trim())params.set('q',keywordInput.value.trim());history.replaceState(null,'',`${location.pathname}?${params.toString()}`);}
+  function syncURL(){const params=new URLSearchParams();params.set('type',typeSelect.value);params.set('value',valueSelect.value);if(keywordInput.value.trim())params.set('q',keywordInput.value.trim());if(statusSelect.value!=='all')params.set('status',statusSelect.value);history.replaceState(null,'',`${location.pathname}?${params.toString()}`);}
 
   typeSelect.addEventListener('change',()=>{const values=typeSelect.value==='village'?[...new Set(state.achievements.flatMap(item=>item.villages||[]))].sort((a,b)=>a.localeCompare(b,'zh-Hant-TW')):Object.keys(state.taxonomy.topics||{});updateValueOptions(typeSelect.value,values);render();});
   valueSelect.addEventListener('change',render);
+  statusSelect.addEventListener('change',render);
+  window.addEventListener('popstate', () => { applyFromURL(); render(); });
   keywordInput.addEventListener('input',render);
   load().catch(()=>{root.innerHTML='<div class="wrap"><h2>探索資料暫時無法載入</h2><p>你仍可前往 <a href="achievements.html">政績地圖</a>、<a href="news.html">新聞</a>與<a href="vision.html">歷屆政見</a>閱讀公開內容。</p></div>';});
 })();
