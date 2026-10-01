@@ -196,6 +196,13 @@ def build(root=ROOT):
     head = head.replace('公開行程與活動', e(data['title']))
     head = head.replace(old_description, e(data['description']))
     head = head.replace('https://www.huiwen.tw/activities.html', BASE)
+    metadata = {'TITLE': title, 'DESCRIPTION': data['description'], 'CANONICAL': BASE,
+                'IMAGE': 'https://www.huiwen.tw/assets/site-share-20260909.png',
+                'IMAGE_WIDTH': 1200, 'IMAGE_HEIGHT': 630, 'IMAGE_ALT': '陳慧文・高雄市議員・鳳山區'}
+    for key, value in metadata.items():
+        head = head.replace('{{' + key + '}}', e(value))
+    head = head.replace('<link rel="stylesheet" href="activities.css">\n', '')
+    head = head.replace('<script src="activities.js" defer></script>\n', '')
     # JSON-LD must use JSON escaping, separately from HTML attribute escaping.
     graph = [
         {'@context': 'https://schema.org', '@type': 'CollectionPage', '@id': BASE + '#collection',
