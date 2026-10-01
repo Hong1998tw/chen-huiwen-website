@@ -129,8 +129,11 @@ try {
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
         assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
         assert.equal(await page.locator('#navigation .nav-group').count(),5,`${file}: grouped navigation`);
-        assert.equal((await page.locator('#navigation a').first().getAttribute('href')).replace(/^\//,''), 'service.html', `${file}: service first`);
-        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order`);
+        assert.equal((await page.locator('#navigation a').first().getAttribute('href')).replace(/^\//,''), 'achievements.html', `${file}: local issues first`);
+        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'explore.html', `${file}: related exploration second`);
+        const serviceGroup = page.locator('#navigation .nav-group').filter({has:page.locator('a[href$="service.html"]')});
+        assert.equal((await serviceGroup.locator('a').first().getAttribute('href')).replace(/^\//,''), 'service.html', `${file}: service contact first in service group`);
+        assert.equal((await serviceGroup.locator('a').nth(1).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order preserved in service group`);
         assert.equal(await page.locator('#navigation a[href$="gallery.html"]').count(), 0, `${file}: gallery nav`);
         assert.equal(await page.locator('#navigation a[href$="activities.html"]').textContent(), '公開行程與活動', `${file}: activities nav`);
         for (const href of ['tel:+88678212536','./','https://line.me/R/ti/p/@yve2766q','https://www.facebook.com/hwcfs/','https://www.instagram.com/huiwen.ifs/','https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ','https://www.threads.com/@huiwen.ifs?igshid=NTc4MTIwNjQ2YQ==']) {
