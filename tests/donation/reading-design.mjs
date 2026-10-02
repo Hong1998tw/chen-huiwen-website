@@ -1,10 +1,12 @@
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
+const publicStatuses=new Set(['持續追蹤','爭取規劃','已完成','政策實施']);
+const publicIds=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).filter(row=>publicStatuses.has(row.status)).map(row=>row.id).sort();
 const out=fileURLToPath(new URL('./results/reading-design/',import.meta.url));
 await mkdir(out,{recursive:true});
 const base=process.env.BASE_URL || 'http://127.0.0.1:8769/';
@@ -19,16 +21,16 @@ try{
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
   const page=await context.newPage();page.setDefaultTimeout(8000);
   page.on('pageerror',e=>report.pageErrors.push(String(e)));
-  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','election.html']){
+  for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html','election.html']){
    await page.goto(base+file);await page.waitForTimeout(120);
-   if(file==='achievement-wende-school-center.html')await page.locator('.case-background > summary').click();
+   if(['achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html'].includes(file))await page.locator('.case-background > summary').click();
    await check(width+' '+file+' reflow',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(await page.locator('h1').count(),1);});
    if([390,1180].includes(width))await check(width+' '+file+' automated accessibility',async()=>{const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();assert.deepEqual(a.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);});
    await page.screenshot({path:out+'/'+file.replace('.html','')+'-'+width+'.png',fullPage:file==='achievement-wende-school-center.html'});
   }
   if(width===320){
-   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html']){
-    await page.goto(base+file);if(file==='achievement-wende-school-center.html')await page.locator('.case-background > summary').click();await page.addStyleTag({content:'html{font-size:200%!important}'});
+   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html']){
+    await page.goto(base+file);if(['achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html'].includes(file))await page.locator('.case-background > summary').click();await page.addStyleTag({content:'html{font-size:200%!important}'});
     await check('200% text '+file,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
     await page.screenshot({path:out+'/'+file.replace('.html','')+'-text-200.png'});
    }
@@ -86,7 +88,7 @@ try{
  }
  const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:960}});
  const page=await nojs.newPage();
- await check('No-JS keeps the full record list and existing links',async()=>{await page.goto(base+'achievements.html');assert.equal(await page.locator('[data-case]').count(),57);assert(await page.locator('[data-case="boai-card-rehab-bus-points"] a').first().isVisible());});
+ await check('No-JS keeps the full record list and existing links',async()=>{await page.goto(base+'achievements.html');const ids=await page.locator('[data-case]').evaluateAll(nodes=>nodes.map(node=>node.dataset.case).sort());assert.deepEqual(ids,publicIds);assert(await page.locator('[data-case="boai-card-rehab-bus-points"] a').first().isVisible());});
  await nojs.close();
  assert.deepEqual(report.pageErrors,[]);
 }finally{
