@@ -1,12 +1,14 @@
 /* Homepage-only, silent contextual companion. No tracking, storage or settings. */
 (() => {
   'use strict';
+  const scriptURL=document.currentScript.src;
+  const initialize=()=>{
   const root=document.getElementById('small-q');
   if(!root||root.dataset.mounted)return;
   root.dataset.mounted='true';
   document.querySelector('.home-redesign .hero')?.after(root);
-  const base=new URL('assets/small-q/',document.currentScript.src);
-  const styleURL=new URL('small-q.css?v=2c1b99baab17',document.currentScript.src);
+  const base=new URL('assets/small-q/',scriptURL);
+  const styleURL=new URL('small-q.css?v=2c1b99baab17',scriptURL);
   const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
   const durations={wave:1800,nod:1500,happy:1700,guide:2400};
   root.innerHTML='<img class="small-q-figure" width="320" height="320" alt="陳慧文的小 Q AI 卡通形象" decoding="async"><button class="small-q-dismiss" type="button" aria-label="收起小 Q" title="收起小 Q">×</button>';
@@ -41,5 +43,8 @@
   document.querySelectorAll('.home-redesign .filters button[data-filter]').forEach(button=>button.addEventListener('click',()=>play('nod')));
   const show=()=>{if(closed||departing)return;image.onload=()=>{if(ready||closed||departing)return;ready=true;image.onload=null;root.hidden=false;sync();enter();};image.onerror=()=>{if(!ready)root.hidden=true;};image.src=idleURL;};
   const start=()=>{const load=()=>{const link=document.createElement('link');link.rel='stylesheet';link.href=styleURL.href;link.onload=show;link.onerror=()=>{root.hidden=true;};document.head.append(link);};if('requestIdleCallback' in window)window.requestIdleCallback(load,{timeout:1200});else window.setTimeout(load,100);};
-  sync();if(document.readyState==='complete')start();else window.addEventListener('load',start,{once:true});
+  sync();start();
+  };
+  const begin=()=>{if('requestIdleCallback' in window)window.requestIdleCallback(initialize,{timeout:1200});else window.setTimeout(initialize,100);};
+  if(document.readyState==='complete')begin();else window.addEventListener('load',begin,{once:true});
 })();
