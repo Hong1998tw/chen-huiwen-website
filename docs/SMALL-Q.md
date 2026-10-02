@@ -1,11 +1,26 @@
 # Homepage small Q companion
 
-This additive homepage-only component uses the five owner-approved AI-generated cartoon poses from the October 2, 2026 preview: idle, wave, nod, happy, guide. These are cartoon illustrations, not documentary photos or a complete hand-drawn animation. The original portrait, approved public copy and all other page layouts remain unchanged.
+The owner-approved five-pose AI cartoon is one consistent visual identity: idle, wave, nod, happy and guide. These are illustrations with finite CSS movement, not documentary photos or complete hand-drawn animation. Keep the same face, hair, light-blue shirt and proportions for future uses; do not regenerate a replacement without approval.
 
-`index.html` owns an empty, initially hidden aside outside generated main and shared chrome. `small-q.js` progressively enhances it after the primary window load. Its companion stylesheet loads after the primary page and before revealing the character, so it does not delay the primary render. It loads one 320px WebP pose at a time; the five image files total under 100 KiB. No third-party requests, sounds, tracking, storage, credentials or service submission are added.
+## Automatic homepage behavior
 
-Desktop figure: 128 CSS px. Narrow viewport: 96 CSS px, in normal page flow just after the hero so it never obscures service text or the fixed service bar. Controls offer five actions, pause and collapse; a collapsed companion can be restored. Reduced-motion produces static poses. Open navigation and native dialogs conceal the companion, background tabs pause motion, and print hides it. Without JavaScript or if the initial image fails, the companion stays hidden and site content remains available.
+The owner's October 2, 2026 direction removes visitor settings and action selection. The public component has no settings panel or action chooser. Only a small accessible dismiss button remains; dismissal lasts for the current page visit, without storage or a restore toolbar.
 
-The scripts and stylesheet are explicitly listed in the existing public artifact allowlist. Existing source generation and content-addressed script/style versions apply. CMS retains text/structured-content scope; it does not gain arbitrary script injection or a new authoring/publishing path.
+- First time the companion is visible: wave for 1.8 seconds, once, then static idle.
+- First eligible view of the existing projects section (30% intersection): guide for 2.4 seconds, once, then idle. The unchanged source pose is mirrored only in CSS to point inward from the desktop right corner.
+- Explicit click of an existing homepage topic filter: nod for 1.5 seconds, then idle.
+- First eligible view of the existing contact section (30% intersection): happy for 1.7 seconds, once, then idle. This is a friendly closing gesture, not a claim that a service request was submitted.
+- All gestures share a 12-second minimum interval. Suppressed gestures are not queued. Idle never loops. Every gesture is shorter than 5 seconds.
+- Reduced motion keeps static idle. Leaving the companion's viewport or hiding the browser tab returns to idle; hidden/background gestures do not run. Open navigation/native dialogs conceal the companion; print excludes it.
 
-Checks: `node --check small-q.js`, existing deterministic quality/build and full-site CI, plus `node tests/donation/small-q.mjs` for 320/390/768/1440 widths, all actions, repeat click, pause/collapse, keyboard Escape, mobile service-bar separation, reduced motion, no JavaScript and non-home exclusion. Review fresh screenshots and same-SHA deployment/production receipts before marking the release verified. Rollback removes this additive component via a revert PR through the existing release path; do not weaken CI or change hosting/access.
+## Placement and boundaries
+
+Desktop image is 128 CSS px in the right corner. Up to 780px wide, the 96px character sits in normal flow after the hero; it never overlays service copy or the mobile service bar. Contextual gestures are suppressed while that inline companion is offscreen. No audio, tracking, storage, third-party requests or data collection. Other routes remain unchanged.
+
+The same five transparent 320px WebP files total 89,946 bytes. Load only the selected pose; load the companion stylesheet after primary window load, before revealing the character. If initial style/image loading fails or JavaScript is disabled, the companion remains absent and the main site works.
+
+## Source and verification
+
+An initially hidden aside in index.html is outside generated regions and is relocated after the hero by progressive enhancement. The existing public artifact allowlist explicitly includes small-q.js and small-q.css. verify_production.py explicitly fetches and hash-verifies the deferred CSS before live-snapshot browser QA. CMS keeps its existing text/structured-content scope, without arbitrary script injection or a new publisher.
+
+Run node --check small-q.js, existing canonical quality/build and full-site CI, and tests/donation/small-q.mjs. Focused browser coverage includes four widths, finite automatic entry/guide/filter/closing behavior, no visitor settings, dismissal, reduced motion, image failure, no JavaScript and non-home exclusion. Complete same-SHA deployment and production verification before final release receipt. Rollback uses a revert PR through existing checks; preserve the canonical artwork archive separately from website runtime.
