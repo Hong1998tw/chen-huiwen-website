@@ -2,6 +2,23 @@
 
 此文件保存 `www.huiwen.tw` 的 Cloudflare edge 優化操作契約與驗證方法；**Cloudflare Dashboard／API current state 才是 Runtime authority**。Routine、低風險且完成必要 Gate 的 edge 改善依官網 current standing requirement「沒疑慮就預設直接部署」執行；重大 scope expansion、高風險 effect 或未解異常才停下確認。不得用舊 snapshot 覆蓋 native current state。
 
+## Current hosting — Cloudflare Static Assets
+
+2026-10-01 起，正式前台採 `data/deployment-target.json` 的 `cloudflare-static-assets`，流程見 [現行部署契約](DEPLOYMENT.md) 與 [遷移契約](CLOUDFLARE-PUBLIC-MIGRATION.md)。下方 Production A 與 `max-age=600` 是 GitHub Pages origin 階段的歷史紀錄。
+
+現役 Static Assets 預設回 `Cache-Control: public, max-age=0, must-revalidate`，`CF-Cache-Status` 描述其資產服務快取。帶 `production-verification` 的 URL 也可能回 `HIT`；不能只憑此標頭判定版本正確或 CDN bypass 失效。Cloudflare 官方說明：[預設標頭](https://developers.cloudflare.com/workers/static-assets/headers/)與[資產快取](https://developers.cloudflare.com/workers/static-assets/#caching-behavior)。
+
+現役唯讀檢查：
+
+```bash
+python3 scripts/build_cloudflare_public.py
+python3 scripts/check_cloudflare_edge.py --expect-static-assets --expected-sha "$(git rev-parse HEAD)"
+```
+
+此模式只允許 public HTML 的首次 `MISS`／`EXPIRED` 再讀同一 URL 一次，HTTP 異常或持續未進快取仍 fail；同時沿用 `verify_cloudflare_delivery.py` 綁定 provider、完整 SHA 與本地公開 artifact digest，收據 `FAIL`／`BLOCKED` 不得通過。它不取代完整資產、106頁 HTTP、snapshot 或 native browser 的 production gate。
+
+`--expect-html-cache` 保留為 legacy CDN 模式：同樣只重讀正常 refill 一次，production-verification URL 的 `HIT`／`REVALIDATED`／`UPDATING`／`STALE` 仍 fail，不能拿這個舊模式驗收現役 Static Assets。本修補不修改 Cache Rules、WAF、Access 或部署設定。
+
 ## 2026-09-29 pre-change baseline
 
 - `www.huiwen.tw`：Cloudflare proxy；origin 為 GitHub Pages。
@@ -54,7 +71,7 @@
 
 ## Verification
 
-執行 `python3 scripts/check_cloudflare_edge.py` 取得 read-only snapshot；加 `--expect-html-cache` 驗證 Production A。2026-09-29 deployment receipt：
+執行 `python3 scripts/check_cloudflare_edge.py` 取得 read-only snapshot；加 `--expect-html-cache` 驗證 legacy Production A，正常 cold/refill `MISS` 或 `EXPIRED` 只再讀同一 HTML 一次。現役 hosting 使用上方 Static Assets 模式。2026-09-29 deployment receipt：
 
 - public HTML 第一次 GET：`CF-Cache-Status: MISS`；後續 GET：`HIT`，`Age` 正常增加。
 - `?production-verification=edge-audit-live`：`CF-Cache-Status: DYNAMIC`，未命中 public HTML cache。
@@ -63,4 +80,4 @@
 - user-controlled native browser direct edge smoke：8/8 checks PASS、service worker activated、browser errors 0。
 - GitHub-hosted native edge smoke 同輪曾因 Cloudflare 對 runner 回 HTTP 403 而 `BLOCKED`；HTTP parity、全頁驗證、snapshot-backed live browser QA 均 success。此 runner-specific challenge 不作網站本身失敗證據，但 CI 仍照 current contract保留紅燈，不改寫成 PASS。
 
-Production 變更完成仍需依 `docs/DEPLOYMENT.md` 做 Pages 與 live verification；Cache Rule 成功不等於網站 release 成功。
+Production 變更完成仍需依 `docs/DEPLOYMENT.md` 做現行 provider 的 exact-SHA delivery 與 live verification；Cache Rule 成功不等於網站 release 成功。
