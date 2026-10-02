@@ -1,58 +1,50 @@
-/* Homepage-only illustrated companion. Local assets; no audio, storage or tracking. */
+/* Homepage-only, silent contextual companion. No tracking, storage or settings. */
 (() => {
   'use strict';
-  const root = document.getElementById('small-q');
-  if (!root || root.dataset.mounted) return;
-  root.dataset.mounted = 'true';
-  // Keep narrow-screen companion in the page flow, never over service copy.
+  const scriptURL=document.currentScript.src;
+  const initialize=()=>{
+  const root=document.getElementById('small-q');
+  if(!root||root.dataset.mounted)return;
+  root.dataset.mounted='true';
   document.querySelector('.home-redesign .hero')?.after(root);
-  const base = new URL('assets/small-q/', document.currentScript.src);
-  const styleURL = new URL('small-q.css?v=1f7654005789', document.currentScript.src);
-  const actions = {idle:'待機', wave:'揮手', nod:'點頭', happy:'開心', guide:'引導'};
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  root.innerHTML = '<button class="small-q-figure" type="button" aria-label="小 Q，點一下換個動作"><img width="320" height="320" alt="陳慧文小 Q 卡通形象" decoding="async"></button><div class="small-q-bar"><button class="small-q-toggle" type="button" aria-expanded="false" aria-controls="small-q-panel">小 Q 設定</button><button class="small-q-hide" type="button" aria-label="收起小 Q">收起</button></div><div id="small-q-panel" class="small-q-panel" hidden><p>小 Q · 無聲卡通角色</p><div class="small-q-actions" role="group" aria-label="小 Q 動作">' + Object.entries(actions).map(([key,label]) => '<button type="button" data-q-action="'+key+'" aria-pressed="'+(key==='idle')+'">'+label+'</button>').join('') + '</div><button class="small-q-pause" type="button" aria-pressed="false">暫停動態</button><small>AI 卡通形象，姿勢搭配輕動態。</small><span class="small-q-status" role="status" aria-live="polite"></span></div>';
-  const image = root.querySelector('img');
-  const figure = root.querySelector('.small-q-figure');
-  const toggle = root.querySelector('.small-q-toggle');
-  const hide = root.querySelector('.small-q-hide');
-  const panel = root.querySelector('.small-q-panel');
-  const pause = root.querySelector('.small-q-pause');
-  const status = root.querySelector('.small-q-status');
-  let action='idle', paused=false, collapsed=false, sequence=0;
-  function closePanel(focus=false) { panel.hidden=true; toggle.setAttribute('aria-expanded','false'); if(focus)toggle.focus({preventScroll:true}); }
-  function sync() {
-    root.dataset.paused=String(paused||reduced.matches||document.hidden||collapsed);
-    root.dataset.reduced=String(reduced.matches);
-    root.dataset.collapsed=String(collapsed);
-    figure.hidden=collapsed;
-    hide.hidden=collapsed;
-    toggle.textContent=collapsed?'顯示小 Q':'小 Q 設定';
-    pause.textContent=reduced.matches?'已減少動態':paused?'繼續動態':'暫停動態';
-    pause.disabled=reduced.matches;
-    pause.setAttribute('aria-pressed',String(paused||reduced.matches));
-  }
-  function showAction(key) {
-    if(!actions[key])return;
-    const ticket=++sequence;
-    const next=new Image();
-    next.onload=()=>{if(ticket!==sequence)return;action=key;image.src=next.src;image.alt='小 Q 卡通角色：'+actions[key];root.dataset.action='';void image.offsetWidth;root.dataset.action=key;root.querySelectorAll('[data-q-action]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.qAction===key)));status.textContent='已選擇'+actions[key];root.hidden=false;sync();};
-    next.onerror=()=>{if(ticket!==sequence)return;status.textContent='圖片暫時無法載入，請稍後再試。';};
+  const base=new URL('assets/small-q/',scriptURL);
+  const styleURL=new URL('small-q.css?v=2c1b99baab17',scriptURL);
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  const durations={wave:1800,nod:1500,happy:1700,guide:2400};
+  root.innerHTML='<img class="small-q-figure" width="320" height="320" alt="陳慧文的小 Q AI 卡通形象" decoding="async"><button class="small-q-dismiss" type="button" aria-label="收起小 Q" title="收起小 Q">×</button>';
+  const image=root.querySelector('img');
+  const dismiss=root.querySelector('button');
+  let ready=false,closed=false,departing=false,visible=!('IntersectionObserver' in window),sequence=0,timer=null,lastAction=-Infinity;
+  const played=new Set();
+  const idleURL=new URL('idle.webp',base).href;
+  function idle(){sequence++;if(timer!==null)window.clearTimeout(timer);timer=null;if(ready&&!closed&&!departing&&!document.hidden&&visible)image.src=idleURL;root.dataset.action='idle';}
+  function play(key,once=false){
+    if(!ready||closed||departing||!visible||document.hidden||reduced.matches||!durations[key]||(once&&played.has(key))||performance.now()-lastAction<12000)return false;
+    lastAction=performance.now();if(once)played.add(key);
+    const ticket=++sequence,next=new Image();
+    next.onload=()=>{if(ticket!==sequence||closed||departing||!visible||document.hidden||reduced.matches)return;image.src=next.src;root.dataset.action=key;timer=window.setTimeout(idle,durations[key]);};
+    next.onerror=()=>{if(ticket===sequence)idle();};
     next.src=new URL(key+'.webp',base).href;
+    return true;
   }
-  figure.addEventListener('click',()=>{const keys=Object.keys(actions);showAction(keys[(keys.indexOf(action)+1)%keys.length]);});
-  root.querySelectorAll('[data-q-action]').forEach(b=>b.addEventListener('click',()=>showAction(b.dataset.qAction)));
-  toggle.addEventListener('click',()=>{if(collapsed){collapsed=false;sync();return;}panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));});
-  hide.addEventListener('click',()=>{collapsed=true;closePanel();sync();toggle.focus({preventScroll:true});});
-  pause.addEventListener('click',()=>{if(!reduced.matches)paused=!paused;sync();});
-  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){event.preventDefault();closePanel(true);}});
-  document.addEventListener('click',event=>{if(!root.contains(event.target))closePanel();});
-  document.addEventListener('visibilitychange',sync);
+  function enter(){if(ready&&visible&&!departing){if(root.dataset.action==='idle')image.src=idleURL;play('wave',true);}}
+  dismiss.addEventListener('click',()=>{closed=true;idle();root.hidden=true;});
+  const sync=()=>{root.dataset.reduced=String(reduced.matches);if(reduced.matches||document.hidden)idle();else enter();};
   if(reduced.addEventListener)reduced.addEventListener('change',sync);else reduced.addListener(sync);
-  sync();
-  // Delay nonessential image work until the primary page has loaded.
-  const start=()=>{
-    const loadStyle=()=>{const link=document.createElement('link');link.rel='stylesheet';link.href=styleURL.href;link.onload=()=>showAction('idle');link.onerror=()=>{root.hidden=true;};document.head.append(link);};
-    if('requestIdleCallback' in window)window.requestIdleCallback(loadStyle,{timeout:1200});else window.setTimeout(loadStyle,100);
+  document.addEventListener('visibilitychange',sync);
+  window.addEventListener('pagehide',()=>{departing=true;idle();});
+  window.addEventListener('pageshow',()=>{departing=false;sync();});
+  if('IntersectionObserver' in window){
+    const visibility=new IntersectionObserver(entries=>{for(const entry of entries){visible=entry.isIntersecting;if(!visible)idle();else enter();}});
+    visibility.observe(root);
+    const context=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;if(entry.target.id==='projects')play('guide',true);if(entry.target.id==='contact')play('happy',true);}},{threshold:0.3});
+    for(const id of ['projects','contact']){const target=document.getElementById(id);if(target)context.observe(target);}
+  }
+  document.querySelectorAll('.home-redesign .filters button[data-filter]').forEach(button=>button.addEventListener('click',()=>play('nod')));
+  const show=()=>{if(closed||departing)return;image.onload=()=>{if(ready||closed||departing)return;ready=true;image.onload=null;root.hidden=false;sync();enter();};image.onerror=()=>{if(!ready)root.hidden=true;};image.src=idleURL;};
+  const start=()=>{const load=()=>{const link=document.createElement('link');link.rel='stylesheet';link.href=styleURL.href;link.onload=show;link.onerror=()=>{root.hidden=true;};document.head.append(link);};if('requestIdleCallback' in window)window.requestIdleCallback(load,{timeout:1200});else window.setTimeout(load,100);};
+  sync();start();
   };
-  if(document.readyState==='complete')start();else window.addEventListener('load',start,{once:true});
+  const begin=()=>{if('requestIdleCallback' in window)window.requestIdleCallback(initialize,{timeout:1200});else window.setTimeout(initialize,100);};
+  if(document.readyState==='complete')begin();else window.addEventListener('load',begin,{once:true});
 })();
