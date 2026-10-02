@@ -32,6 +32,7 @@ jobs:
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/sticky-navigation.mjs
+      - run: node tests/donation/small-q.mjs
       - run: node tests/donation/public-service-audit.mjs
       - run: node tests/donation/runtime-maturity.mjs
       - run: node tests/donation/site-maturity.mjs

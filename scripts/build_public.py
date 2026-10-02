@@ -29,7 +29,7 @@ ROOT_FILES = (
     '404.html', 'offline.html', 'styles.css', 'mobile.css', 'layout.css',
     'civic.css', 'digital.css', 'home.css', 'campaign.css', 'embeds.css',
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
-    'digital.js', 'home.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
+    'digital.js', 'home.js', 'small-q.css', 'small-q.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
     'activities.js', 'activities.css', 'legal-calendar.js', 'legal-calendar.css', 'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
 )
 LEGACY_PAGES = (
