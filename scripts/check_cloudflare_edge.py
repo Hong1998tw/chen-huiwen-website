@@ -57,8 +57,15 @@ def main() -> int:
     html = checks[1]
     bypass = checks[3]
     good = {"HIT", "REVALIDATED", "UPDATING", "STALE"}
+    # A freshly deployed or expired edge entry legitimately returns MISS/EXPIRED once
+    # while Cloudflare refills it. Retry the same URL once before declaring the cache broken.
+    if html.cf_cache_status in {"MISS", "EXPIRED"}:
+        first_status = html.cf_cache_status
+        html = fetch(urls[1])
+        checks[1] = html
+        print(f"HTML cache warm-up: {first_status} -> {html.cf_cache_status}")
     if html.cf_cache_status not in good:
-        print(f"Expected cached public HTML, got {html.cf_cache_status!r}")
+        print(f"Expected cached public HTML after warm-up, got {html.cf_cache_status!r}")
         return 2
     if bypass.cf_cache_status in good:
         print(f"Production-verification query must bypass public HTML cache, got {bypass.cf_cache_status!r}")

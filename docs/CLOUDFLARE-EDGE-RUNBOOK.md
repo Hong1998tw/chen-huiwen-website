@@ -54,7 +54,7 @@
 
 ## Verification
 
-執行 `python3 scripts/check_cloudflare_edge.py` 取得 read-only snapshot；加 `--expect-html-cache` 驗證 Production A。2026-09-29 deployment receipt：
+執行 `python3 scripts/check_cloudflare_edge.py` 取得 read-only snapshot；加 `--expect-html-cache` 驗證 Production A。checker 遇到正常的 cold/refill `MISS` 或 `EXPIRED` 會對同一 HTML 再讀一次，只有 warm-up 後仍未進 cache 才失敗。2026-09-29 deployment receipt：
 
 - public HTML 第一次 GET：`CF-Cache-Status: MISS`；後續 GET：`HIT`，`Age` 正常增加。
 - `?production-verification=edge-audit-live`：`CF-Cache-Status: DYNAMIC`，未命中 public HTML cache。
