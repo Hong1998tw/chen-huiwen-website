@@ -4,7 +4,7 @@ This additive homepage-only component uses the five owner-approved AI-generated 
 
 `index.html` owns an empty, initially hidden aside outside generated main and shared chrome. `small-q.js` progressively enhances it after the primary window load. It loads one 320px WebP pose at a time; the five image files total under 100 KiB. No third-party requests, sounds, tracking, storage, credentials or service submission are added.
 
-Desktop figure: 128 CSS px. Narrow viewport: 96 CSS px, above the existing mobile service bar. Controls offer five actions, pause and collapse; a collapsed companion can be restored. Reduced-motion produces static poses. Open navigation and native dialogs conceal the companion, background tabs pause motion, and print hides it. Without JavaScript or if the initial image fails, the companion stays hidden and site content remains available.
+Desktop figure: 128 CSS px. Narrow viewport: 96 CSS px, in normal page flow just after the hero so it never obscures service text or the fixed service bar. Controls offer five actions, pause and collapse; a collapsed companion can be restored. Reduced-motion produces static poses. Open navigation and native dialogs conceal the companion, background tabs pause motion, and print hides it. Without JavaScript or if the initial image fails, the companion stays hidden and site content remains available.
 
 The scripts and stylesheet are explicitly listed in the existing public artifact allowlist. Existing source generation and content-addressed script/style versions apply. CMS retains text/structured-content scope; it does not gain arbitrary script injection or a new authoring/publishing path.
 

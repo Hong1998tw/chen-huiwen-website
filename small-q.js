@@ -4,6 +4,8 @@
   const root = document.getElementById('small-q');
   if (!root || root.dataset.mounted) return;
   root.dataset.mounted = 'true';
+  // Keep narrow-screen companion in the page flow, never over service copy.
+  document.querySelector('.home-redesign .hero')?.after(root);
   const base = new URL('assets/small-q/', document.currentScript.src);
   const actions = {idle:'待機', wave:'揮手', nod:'點頭', happy:'開心', guide:'引導'};
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');

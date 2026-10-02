@@ -17,7 +17,7 @@ for(const width of [320,390,768,1440]){
  const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'no-preference'});
  const page=await context.newPage();page.on('pageerror',e=>report.pageErrors.push(String(e)));
  await page.goto(base);await page.locator('#small-q').waitFor({state:'visible'});
- await check(width+' fits viewport',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const b=await page.locator('#small-q').boundingBox();assert(b.x>=0&&b.x+b.width<=width&&b.y+b.height<=844);});
+ await check(width+' fits viewport',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const b=await page.locator('#small-q').boundingBox();assert(b.x>=0&&b.x+b.width<=width);if(width>780)assert(b.y+b.height<=844);});
  await check(width+' all five poses and repeated click',async()=>{
   await page.locator('.small-q-toggle').click();
   for(const key of ['idle','wave','nod','happy','guide','guide']){
@@ -33,7 +33,7 @@ for(const width of [320,390,768,1440]){
   await page.keyboard.press('Escape');assert(await page.locator('#small-q-panel').isHidden());assert(await page.locator('.small-q-toggle').evaluate(e=>e===document.activeElement));
  });
  await check(width+' collapse and restore',async()=>{await page.locator('.small-q-hide').click();assert(await page.locator('.small-q-figure').isHidden());await page.locator('.small-q-toggle').click();assert(await page.locator('.small-q-figure').isVisible());});
- if(width<=620)await check(width+' service bar stays clear',async()=>{const a=await page.locator('#small-q').boundingBox(),b=await page.locator('.mobile-actions').boundingBox();assert(a.y+a.height<b.y);});
+ if(width<=620)await check(width+' service bar stays clear',async()=>{const a=await page.locator('#small-q').boundingBox(),b=await page.locator('.home-redesign .services').boundingBox();assert(a.y+a.height<=b.y);assert.equal(await page.locator('#small-q').evaluate(e=>getComputedStyle(e).position),'relative');});
  if(width<=780)await check(width+' navigation hides companion',async()=>{await page.locator('.menu-toggle').click();assert(await page.locator('#small-q').isHidden());await page.keyboard.press('Escape');assert(await page.locator('#small-q').isVisible());});
  await page.screenshot({path:fileURLToPath(new URL(width+'-home.png',out))});
  await context.close();
