@@ -346,5 +346,11 @@
     "status": "政策實施",
     "place": "全市政策",
     "sha256": "82badf49c8964b80c63157b44bf15e9437d8ae27b87e23f1425c5ebab01d391f"
+  },
+  "achievement-fengshan-sports-park-parking-integration": {
+    "title": "鳳山體育園區場館周邊停車空間整合",
+    "status": "持續追蹤",
+    "place": "鳳山體育園區",
+    "sha256": "01e00635636a5e2464f30a50d31963d4069a54899ccf3f04004c6ea1edbf382a"
   }
 }
