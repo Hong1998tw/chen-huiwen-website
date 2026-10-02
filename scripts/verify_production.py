@@ -61,6 +61,7 @@ STATIC_FILES = (
     "offline.html",
     "assets/fengshan-villages.geojson",
     "assets/vendor/leaflet.css",
+    "small-q.css",  # Loaded after window load; still required by the live snapshot.
     "assets/vendor/leaflet.js",
 )
 MIN_TEXT_COVERAGE = 0.95
