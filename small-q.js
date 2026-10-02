@@ -7,6 +7,7 @@
   // Keep narrow-screen companion in the page flow, never over service copy.
   document.querySelector('.home-redesign .hero')?.after(root);
   const base = new URL('assets/small-q/', document.currentScript.src);
+  const styleURL = new URL('small-q.css?v=1f7654005789', document.currentScript.src);
   const actions = {idle:'待機', wave:'揮手', nod:'點頭', happy:'開心', guide:'引導'};
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   root.innerHTML = '<button class="small-q-figure" type="button" aria-label="小 Q，點一下換個動作"><img width="320" height="320" alt="陳慧文小 Q 卡通形象" decoding="async"></button><div class="small-q-bar"><button class="small-q-toggle" type="button" aria-expanded="false" aria-controls="small-q-panel">小 Q 設定</button><button class="small-q-hide" type="button" aria-label="收起小 Q">收起</button></div><div id="small-q-panel" class="small-q-panel" hidden><p>小 Q · 無聲卡通角色</p><div class="small-q-actions" role="group" aria-label="小 Q 動作">' + Object.entries(actions).map(([key,label]) => '<button type="button" data-q-action="'+key+'" aria-pressed="'+(key==='idle')+'">'+label+'</button>').join('') + '</div><button class="small-q-pause" type="button" aria-pressed="false">暫停動態</button><small>AI 卡通形象，姿勢搭配輕動態。</small><span class="small-q-status" role="status" aria-live="polite"></span></div>';
@@ -49,6 +50,9 @@
   if(reduced.addEventListener)reduced.addEventListener('change',sync);else reduced.addListener(sync);
   sync();
   // Delay nonessential image work until the primary page has loaded.
-  const start=()=>{if('requestIdleCallback' in window)window.requestIdleCallback(()=>showAction('idle'),{timeout:1200});else window.setTimeout(()=>showAction('idle'),100);};
+  const start=()=>{
+    const loadStyle=()=>{const link=document.createElement('link');link.rel='stylesheet';link.href=styleURL.href;link.onload=()=>showAction('idle');link.onerror=()=>{root.hidden=true;};document.head.append(link);};
+    if('requestIdleCallback' in window)window.requestIdleCallback(loadStyle,{timeout:1200});else window.setTimeout(loadStyle,100);
+  };
   if(document.readyState==='complete')start();else window.addEventListener('load',start,{once:true});
 })();
