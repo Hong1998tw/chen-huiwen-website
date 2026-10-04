@@ -45,6 +45,9 @@ PRIVATE_PROJECTION_KEYS = {
     "source_sheet", "source_row", "original_case_id",
 }
 PUBLIC_JSON_REQUIRED = {PROJECTION, "data/achievement-map.json", "data/search-index.json"}
+ARTIFACT_JSON_REQUIRED = PUBLIC_JSON_REQUIRED | {
+    "data/achievements.json", "data/election-2026.json", "data/platforms.json", "data/site-profile.json",
+}
 TEXT_ATTRIBUTES = ("alt", "aria-label", "content", "placeholder", "title", "data-label", "data-tooltip")
 
 
@@ -114,6 +117,40 @@ def check_html(path, markup):
         if match:
             findings.append(f"{path}:public-string[{index}]: internal phrase {match.group(0)}")
     return findings
+
+
+def validate_artifact_surface(root):
+    """Scan the finished artifact, including post-CMS HTML and every JSON file."""
+    root = Path(root)
+    failures = []
+    html_files = sorted(root.rglob("*.html"))
+    json_files = sorted(root.rglob("*.json"))
+    present = {path.relative_to(root).as_posix() for path in json_files}
+    for relative in sorted(ARTIFACT_JSON_REQUIRED - present):
+        failures.append(f"{relative}: required public JSON is missing")
+
+    for path in html_files:
+        failures.extend(check_html(path.relative_to(root).as_posix(), path.read_text(encoding="utf-8")))
+
+    from build_public import validate_public_projection
+
+    for path in json_files:
+        relative = path.relative_to(root).as_posix()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            failures.append(f"{relative}: invalid public JSON: {exc}")
+            continue
+        failures.extend(check_json(
+            relative, payload,
+            forbid_private_keys=relative in {PROJECTION, "data/achievements.json"},
+        ))
+        if relative in {"data/election-2026.json", "data/platforms.json", "data/site-profile.json"}:
+            try:
+                validate_public_projection(relative, payload)
+            except ValueError as exc:
+                failures.append(str(exc))
+    return failures
 
 
 def public_html_paths(root=ROOT):
