@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://www.huiwen.tw/schema/public-achievement.schema.json",
   "title": "Public achievement projection v1",
-  "description": "Only reviewed public records and explicit public fields; no editorialReview, verification, verifiedAt or villageMethod. The raw canonical source remains in Git.",
+  "description": "Only reviewed public records and explicit public fields; no notes, editorialReview, verification, verifiedAt or villageMethod. The raw canonical source remains in Git.",
   "type": "array",
   "items": {
     "type": "object",
@@ -72,12 +72,6 @@
             "history",
             "sources"
           ]
-        }
-      },
-      "notes": {
-        "type": "array",
-        "items": {
-          "type": "string"
         }
       },
       "images": {

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_public as public
 import verify_production as live
+import validate_public_copy as copyguard
 
 
 class PublicProjectionTests(unittest.TestCase):
@@ -22,7 +23,7 @@ class PublicProjectionTests(unittest.TestCase):
         self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw if public.is_public(r)})
         self.assertTrue(any(not public.is_public(r) for r in raw))
         for row in self.rows:
-            self.assertFalse({'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
+            self.assertFalse({'notes', 'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
         public.validate_schema(self.rows, self.schema)
 
     def test_unknown_nested_source_fields_never_reach_public_projection(self):
@@ -32,6 +33,44 @@ class PublicProjectionTests(unittest.TestCase):
         projected = public.project_value(row, self.schema['items'])
         self.assertNotIn('editorialReview', projected)
         self.assertNotIn('internalNote', projected['sources'][0])
+
+    def test_mixed_editorial_notes_stay_canonical_but_not_public(self):
+        raw = json.loads((ROOT / 'data/achievements.json').read_text())
+        source = next(row for row in raw if row['id'] == 'fengshan-station-overview')
+        projected = next(row for row in self.rows if row['id'] == 'fengshan-station-overview')
+        self.assertTrue(source.get('notes'))
+        self.assertNotIn('notes', projected)
+        self.assertNotIn('本次尚未取得足以獨立重複核定', json.dumps(projected, ensure_ascii=False))
+        self.assertEqual([], copyguard.check_json('data/achievements-public.json', self.rows, forbid_private_keys=True))
+
+    def test_copy_guard_covers_public_text_surfaces_without_blocking_real_progress(self):
+        leak = '本次尚未取得足以獨立重複核定該金額與期程的水利局原始文件'
+        html_surfaces = {
+            'body': f'<p>{leak}</p>',
+            'description': f'<meta name="description" content="{leak}">',
+            'open-graph': f'<meta property="og:description" content="{leak}">',
+            'twitter': f'<meta name="twitter:description" content="{leak}">',
+            'alt': f'<img alt="{leak}">',
+            'caption': f'<figure><figcaption>{leak}</figcaption></figure>',
+            'json-ld': '<script type="application/ld+json">' + json.dumps({'description': leak}, ensure_ascii=False) + '</script>',
+        }
+        for surface, markup in html_surfaces.items():
+            with self.subTest(surface=surface):
+                self.assertTrue(copyguard.check_html('fixture.html', markup))
+        self.assertTrue(copyguard.check_json('data/search-index.json', {'records': [{'text': leak}]}))
+        self.assertTrue(copyguard.check_json(
+            'data/achievements-public.json',
+            [{'id': 'fixture', 'notes': [leak]}],
+            forbid_private_keys=True,
+        ))
+
+        valid_progress = '道路工程仍在施工，尚未完工；實際進度以主管機關公告為準。'
+        self.assertEqual([], copyguard.check_json('data/search-index.json', {'summary': valid_progress}))
+        self.assertEqual([], copyguard.check_html('fixture.html', f'<p>{valid_progress}</p>'))
+
+        public_routes = {path.relative_to(ROOT).as_posix() for path in copyguard.public_html_paths(ROOT)}
+        self.assertIn('renwu-anju-social-housing/index.html', public_routes)
+        self.assertNotIn('admin/public/index.html', public_routes)
 
     def test_public_schema_rejects_review_fields_and_pending_status(self):
         for change in ({'editorialReview': {}}, {'status': '待核驗'}):
@@ -97,6 +136,9 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertNotIn('README.md', paths)
             self.assertNotIn('cms-page-editor.js', paths)
             self.assertEqual((destination / 'data/achievements.json').read_bytes(), (destination / public.PROJECTION).read_bytes())
+            published_rows = json.loads((destination / 'data/achievements.json').read_text())
+            self.assertTrue(all('notes' not in row for row in published_rows))
+            self.assertEqual([], copyguard.check_json('published data/achievements.json', published_rows, forbid_private_keys=True))
             self.assertNotEqual((destination / 'data/achievements.json').read_bytes(), (ROOT / 'data/achievements.json').read_bytes())
             self.assertGreaterEqual(result['editorManifests'], 96)
             self.assertEqual(result['editorManifests'], len(list((destination / 'cms-editor-manifests').rglob('*.json'))))
