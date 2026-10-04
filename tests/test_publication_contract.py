@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -54,6 +55,9 @@ class PublicProjectionTests(unittest.TestCase):
             'alt': f'<img alt="{leak}">',
             'caption': f'<figure><figcaption>{leak}</figcaption></figure>',
             'json-ld': '<script type="application/ld+json">' + json.dumps({'description': leak}, ensure_ascii=False) + '</script>',
+            'split-inline-chinese': '<p>內部<strong>查核</strong></p>',
+            'split-inline-english': '<p>Evidence <strong>QA</strong></p>',
+            'split-inline-whitespace': '<p>Evidence <strong>\n QA</strong></p>',
         }
         for surface, markup in html_surfaces.items():
             with self.subTest(surface=surface):
@@ -68,6 +72,13 @@ class PublicProjectionTests(unittest.TestCase):
         valid_progress = '道路工程仍在施工，尚未完工；實際進度以主管機關公告為準。'
         self.assertEqual([], copyguard.check_json('data/search-index.json', {'summary': valid_progress}))
         self.assertEqual([], copyguard.check_html('fixture.html', f'<p>{valid_progress}</p>'))
+        self.assertEqual([], copyguard.check_html(
+            'fixture.html',
+            '<p>道路工程仍在<strong>施工</strong>，尚未完工；實際進度以主管機關公告為準。</p>',
+        ))
+        self.assertEqual([], copyguard.check_html(
+            'fixture.html', '<p>內部</p><p>查核</p><p>Evidence</p><p>QA</p>',
+        ))
 
         public_routes = {path.relative_to(ROOT).as_posix() for path in copyguard.public_html_paths(ROOT)}
         self.assertIn('renwu-anju-social-housing/index.html', public_routes)
@@ -105,6 +116,24 @@ class PublicProjectionTests(unittest.TestCase):
         self.assertIn('2026-09-22', profile['publicNote'])
         self.assertNotIn('reviewAfter', profile['identity'])
         self.assertNotIn('editorialRule', profile)
+
+    def test_public_data_guard_scans_projections_not_internal_source_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            for relative in public.PUBLIC_DATA:
+                shutil.copyfile(ROOT / relative, root / relative)
+
+            election_path = root / 'data/election-2026.json'
+            election = json.loads(election_path.read_text())
+            election.setdefault('notes', []).append('內部查核：待核驗')
+            election_path.write_text(json.dumps(election, ensure_ascii=False))
+            self.assertEqual([], copyguard.validate_public_data(root))
+
+            election['election'] += '待核驗'
+            election_path.write_text(json.dumps(election, ensure_ascii=False))
+            failures = copyguard.validate_public_data(root)
+            self.assertTrue(any('data/election-2026.json' in item and '待核驗' in item for item in failures), failures)
 
     def test_valid_cms_selector_edit_is_checked_after_rendering(self):
         source = (ROOT / 'index.html').read_text(encoding='utf-8')

@@ -5,8 +5,11 @@ import json
 import re
 import sys
 
-from bs4 import BeautifulSoup
-from build_public import PROJECTION, PUBLIC_DATA, public_paths
+from bs4 import BeautifulSoup, Comment, NavigableString
+from build_public import (
+    PROJECTION, PUBLIC_DATA, PUBLIC_DATA_PROJECTIONS, project_public_data,
+    public_paths,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 BANNED = [
@@ -39,6 +42,7 @@ BANNED = [
     r"不把跨機關、跨層級工程改寫成單一人物獨力完成",
 ]
 PATTERN = re.compile("|".join(BANNED))
+COMPACT_PATTERN = re.compile("|".join(phrase.replace(" ", "") for phrase in BANNED))
 PRIVATE_PROJECTION_KEYS = {
     "notes", "notes_private", "editorialReview", "verification", "verifiedAt",
     "villageMethod", "candidate_id", "candidate_status", "source_file",
@@ -49,6 +53,13 @@ ARTIFACT_JSON_REQUIRED = PUBLIC_JSON_REQUIRED | {
     "data/achievements.json", "data/election-2026.json", "data/platforms.json", "data/site-profile.json",
 }
 TEXT_ATTRIBUTES = ("alt", "aria-label", "content", "placeholder", "title", "data-label", "data-tooltip")
+BLOCK_TEXT_TAGS = {
+    "address", "article", "aside", "blockquote", "body", "caption", "dd", "details",
+    "dialog", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
+    "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html",
+    "legend", "li", "main", "menu", "nav", "ol", "p", "pre", "section", "table",
+    "tbody", "td", "tfoot", "th", "thead", "title", "tr", "ul",
+}
 
 
 def iter_strings(value, location="$"):
@@ -61,6 +72,39 @@ def iter_strings(value, location="$"):
     elif isinstance(value, list):
         for index, child in enumerate(value):
             yield from iter_strings(child, f"{location}[{index}]")
+
+
+def inline_text_groups(root):
+    """Join text across inline tags, while keeping block copy boundaries intact."""
+    groups = []
+
+    def flush(parts):
+        text = re.sub(r"\s+", " ", "".join(parts)).strip()
+        if text:
+            groups.append(text)
+        parts.clear()
+
+    def walk_inline(node, parts):
+        for child in node.children:
+            if isinstance(child, Comment):
+                continue
+            if isinstance(child, NavigableString):
+                parts.append(str(child))
+            elif child.name == "br":
+                parts.append(" ")
+            elif child.name in BLOCK_TEXT_TAGS:
+                flush(parts)
+                walk_block(child)
+            else:
+                walk_inline(child, parts)
+
+    def walk_block(node):
+        parts = []
+        walk_inline(node, parts)
+        flush(parts)
+
+    walk_block(root)
+    return groups
 
 
 def check_json(path, value, forbid_private_keys=False):
@@ -106,14 +150,14 @@ def html_public_strings(markup):
                 strings.extend(item for item in value if isinstance(item, str))
     for node in soup(["script", "style"]):
         node.decompose()
-    strings.extend(soup.stripped_strings)
+    strings.extend(inline_text_groups(soup))
     return strings
 
 
 def check_html(path, markup):
     findings = []
     for index, text in enumerate(html_public_strings(markup)):
-        match = PATTERN.search(text)
+        match = PATTERN.search(text) or COMPACT_PATTERN.search(re.sub(r"\s+", "", text))
         if match:
             findings.append(f"{path}:public-string[{index}]: internal phrase {match.group(0)}")
     return findings
@@ -153,6 +197,35 @@ def validate_artifact_surface(root):
     return failures
 
 
+def validate_public_data(root=ROOT):
+    """Scan deployed data, using publication projections for canonical review sources."""
+    failures = []
+    try:
+        projections = project_public_data(root)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        failures.append(f"public JSON projection failed: {exc}")
+        projections = {}
+
+    for relative in PUBLIC_DATA:
+        if relative in PUBLIC_DATA_PROJECTIONS:
+            if relative not in projections:
+                continue
+            payload = projections[relative]
+        else:
+            path = root / relative
+            if not path.is_file():
+                if relative in PUBLIC_JSON_REQUIRED:
+                    failures.append(f"{relative}: required public JSON is missing")
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc:
+                failures.append(f"{relative}: invalid public JSON: {exc}")
+                continue
+        failures.extend(check_json(relative, payload, forbid_private_keys=relative == PROJECTION))
+    return failures
+
+
 def public_html_paths(root=ROOT):
     """Use the deployment allowlist, including reviewed directory-style routes."""
     return [root / relative for relative in public_paths(root) if relative.endswith(".html")]
@@ -163,19 +236,7 @@ def validate(root=ROOT):
     html_files = public_html_paths(root)
     for path in html_files:
         failures.extend(check_html(path.relative_to(root).as_posix(), path.read_text(encoding="utf-8")))
-
-    for relative in PUBLIC_DATA:
-        path = root / relative
-        if not path.is_file():
-            if relative in PUBLIC_JSON_REQUIRED:
-                failures.append(f"{relative}: required public JSON is missing")
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            failures.append(f"{relative}: invalid public JSON: {exc}")
-            continue
-        failures.extend(check_json(relative, payload, forbid_private_keys=relative == PROJECTION))
+    failures.extend(validate_public_data(root))
 
     index = BeautifulSoup((root / "index.html").read_text(encoding="utf-8"), "html5lib")
     election = BeautifulSoup((root / "election.html").read_text(encoding="utf-8"), "html5lib")
