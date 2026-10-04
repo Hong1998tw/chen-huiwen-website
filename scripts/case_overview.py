@@ -17,16 +17,16 @@ def render_overview(record, root):
         # Copy a whole existing paragraph. Never infer a councillor's role from
         # a project status, a government announcement, or an unattributed event.
         action = next((p for p in record.get('paragraphs', []) if '陳慧文' in p), '')
-    points = [('這件事與生活', issue)]
+    points = [('議題重點', issue)]
     if action:
         points.append(('慧文的行動', action))
     status = record.get('status', '')
     if context:
         status += '。' + context['governmentRole']['text'].rstrip('。')
-    points.append(('目前階段', status + '。事情發生的時間、機關回應與適用限制，請一併閱讀最新紀錄及完整來源。'))
+    points.append(('紀錄所載階段', status + '。請一併查看事件日期、機關回應與適用限制。'))
     heading = 'case-overview-summary-heading'
     body = f'<section class="case-overview-summary" id="case-overview-summary" aria-labelledby="{heading}"><h2 id="{heading}">先看懂這件事</h2><div class="case-overview-grid">'
     for title, text in points:
         body += f'<div><h3>{e(title)}</h3><p>{e(text)}</p></div>'
-    body += '</div><a class="text-link" href="#case-sources">核對完整資料來源 ↓</a></section>'
+    body += '</div><a class="text-link" href="#case-sources">查看資料來源 ↓</a></section>'
     return body

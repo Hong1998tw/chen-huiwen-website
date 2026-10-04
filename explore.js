@@ -107,7 +107,7 @@
     const mapped=filtered.filter(item=>Array.isArray(item.coordinates)&&item.coordinates.length===2).length;
     const statuses=[...new Set(filtered.map(item=>item.status).filter(Boolean))];
     title.textContent=type==='village'?`探索 ${value}`:`${value}｜主題探索`;
-    subtitle.textContent=type==='village'?`查看 ${value} 收錄的建設與服務，並延伸到共同主題內容。`:`把 ${value} 的政績、新聞與歷屆政見放在同一個探索視角。`;
+    subtitle.textContent=type==='village'?`查看 ${value} 收錄的建設與服務，並延伸到共同主題內容。`:`查看${value}相關的政績、新聞與歷屆政見。`;
     document.title=`${title.textContent}｜陳慧文・高雄市議員`;
     summary.innerHTML=`
       <div class="digital-stat"><strong>${filtered.length}</strong><span>政績／服務紀錄</span></div>

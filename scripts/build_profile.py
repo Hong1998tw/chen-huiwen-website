@@ -16,7 +16,7 @@ def render_status(profile):
     e = lambda value: escape(str(value), quote=True)
     return (f'<p class="about-profile-note">身分資料截至 '
             f'<time datetime="{e(identity["recordAsOf"])}">{e(identity["recordAsOf"])}</time>，'
-            f'記錄身分為{e(identity["confirmedRole"])}。後續任期與任職狀態請核對'
+            f'當時職務為{e(identity["confirmedRole"])}。後續任期與任職狀態請核對'
             f'<a href="{e(identity["sourceUrl"])}" target="_blank" rel="noopener noreferrer">高雄市議會官方介紹 ↗</a>。</p>')
 
 

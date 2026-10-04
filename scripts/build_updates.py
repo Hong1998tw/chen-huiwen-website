@@ -126,7 +126,7 @@ def render_rss(data):
         # RSS publication means the website addition, never the historical event.
         ET.SubElement(entry, 'pubDate').text = format_datetime(website_time(item['websiteUpdatedAt']))
         links = ''.join(f'<li><a href="{e(public_url(source["url"]))}">{e(source["title"])}</a></li>' for source in item['sources'])
-        ET.SubElement(entry, 'description').text = (f'<p>網站補充日期：{e(item["websiteUpdatedAt"])}</p><p>事件日期：{e(event_label(item))}</p><p>{e(item["summary"])}</p><p>訂閱日期是網站補充時間，不代表工程或政策有新的進展。</p><ul>{links}</ul>')
+        ET.SubElement(entry, 'description').text = (f'<p>網站補充日期：{e(item["websiteUpdatedAt"])}</p><p>事件日期：{e(event_label(item))}</p><p>{e(item["summary"])}</p><p>RSS 顯示的日期採網站補充時間，不代表工程或政策有新的進展。</p><ul>{links}</ul>')
         ET.SubElement(entry, 'category').text = KINDS[item['kind']]
     ET.indent(rss, space='  ')
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(rss, encoding='unicode') + '\n'

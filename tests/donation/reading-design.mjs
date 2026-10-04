@@ -38,7 +38,7 @@ try{
   if(width===390){
    await check('Verified public contact and dated booking guidance',async()=>{
     await page.goto(base+'service.html#contact');assert.match(await page.locator('#contact').innerText(),/07-815-1104/);
-    assert.match(await page.locator('.schedule-guidance').innerText(),/不能當成其他月份/);
+    assert.match(await page.locator('.schedule-guidance').innerText(),/時間表只列該月已公布的時段，不適用於其他月份/);
     await page.goto(base+'service-print.html');assert.match(await page.locator('main').innerText(),/勿依過期月表直接前往/);
    });
    await check('Correct public facility address stays separate from service scope',async()=>{

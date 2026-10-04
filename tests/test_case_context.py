@@ -95,8 +95,8 @@ class CaseContextTests(unittest.TestCase):
             self.assertFalse(soup.select('.case-latest a[href*="Frame_Councilor.aspx"]'))
             for link in soup.select('.case-sources a[href*="Frame_Councilor.aspx"]'):
                 self.assertIn('議員查詢入口', link.get_text())
-                self.assertIn('開啟議會查詢首頁', link.parent.select_one('.source-lookup-note').get_text())
-                self.assertIn('依上列日期與標題查找原件', link.parent.select_one('.source-lookup-note').get_text())
+                self.assertIn('開啟議會查詢入口', link.parent.select_one('.source-lookup-note').get_text())
+                self.assertIn('依日期、案號或標題查找', link.parent.select_one('.source-lookup-note').get_text())
 
     def test_home_selection_does_not_delete_unselected_case_context(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')

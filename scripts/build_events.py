@@ -15,7 +15,7 @@ EVENT_ID = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 EVENT_PATH = re.compile(r'event-[a-z0-9]+(?:-[a-z0-9]+)*\.html')
 BRAND_IMAGE = {'src': 'assets/site-share-20260909.png', 'width': 1200, 'height': 630,
                'alt': '陳慧文官網品牌分享圖，非本活動照片'}
-CALENDAR_COPY_NOTICE = '儲存的是當下副本，不會自動更新；出發前請回本站確認。'
+CALENDAR_COPY_NOTICE = '加入日曆後，儲存的行程副本不會自動更新；出發前請回本站確認。'
 STATUS_LABELS = {'scheduled': '已公布行程', 'rescheduled': '時間已更改', 'cancelled': '活動已取消'}
 def parse_time(value):
     dt = datetime.fromisoformat(value)
@@ -187,7 +187,7 @@ def render_calendar(event):
         f'<details class="event-reminder" data-event-reminder="{e(json.dumps(data, ensure_ascii=False))}">'
         '<summary class="button button-outline">加入 Google 日曆（開始提醒）</summary>'
         '<div class="event-reminder-body">'
-        '<p>活動結束時間尚未公布。請選擇自己的提醒長度，這不是活動時長。</p>'
+        '<p>活動結束時間尚未公布。請自行選擇日曆提醒的長度；這個長度不代表活動時長。</p>'
         f'<label for="{e(field_id)}">個人提醒長度</label>'
         f'<select id="{e(field_id)}" class="event-reminder-duration" aria-describedby="{e(field_id)}-notice">'
         '<option value="">請選擇提醒長度</option><option value="15">15 分鐘</option>'
@@ -230,7 +230,7 @@ def render_notice(event):
 
 def render_events(events):
     validate_events(events)
-    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>公開行程與活動</h1><p>沿著時間，看看接下來的公開行程。活動詳情、日曆與交通資訊，都在這裡。</p></div></section><section class="wrap event-announcements" aria-label="活動時間軸">'
+    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>公開行程與活動</h1><p>查看接下來的公開行程、活動詳情、日曆與交通資訊。</p></div></section><section class="wrap event-announcements" aria-label="活動時間軸">'
     if not events:
         return body + '<div class="event-empty"><p>新的公開行程與活動將於本頁發布。</p></div></section>'
     body += '<ol class="event-timeline">'

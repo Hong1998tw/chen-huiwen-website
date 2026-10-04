@@ -6,7 +6,7 @@
       "recordId": "metro-green-line",
       "question": "青線是否已確定會進鳳山火車站？",
       "impact": {
-        "text": "這個議題關心火車站、捷運與周邊步行路線如何銜接，讓轉乘不只停留在地圖上的路線連接。",
+        "text": "這個議題關心火車站、捷運與周邊步行路線如何銜接，改善實際轉乘動線。",
         "sources": ["https://www.youngnews3631.com/news_detail.php?NewsID=15527"]
       },
       "councillorAction": {
@@ -15,7 +15,7 @@
         "sources": ["https://www.youngnews3631.com/news_detail.php?NewsID=15527"]
       },
       "governmentRole": {
-        "text": "市府負責說明路網規劃與評估進度。2026 年 5 月 14 日的市府回應，將串聯鳳山火車站等建議列入可行性評估；這是當時的規劃階段。",
+        "text": "市府負責說明路網規劃與評估進度。2026 年 5 月 14 日的市府回應，將串聯鳳山火車站等建議列入可行性評估，當時仍屬規劃階段。",
         "sources": ["https://www.kcg.gov.tw/CityNews_Detail1.aspx?n=3A379BB94CA5F12D&ss=21C32F3DE36C859F"]
       },
       "notEstablished": ["本頁所列的2026年5月資料僅到可行性評估階段，未載核定、動工或通車時程。"],
@@ -25,7 +25,7 @@
       "recordId": "after-school-care",
       "question": "照顧服務能不能接上整個假期？",
       "impact": {
-        "text": "照顧名額、開課週數與每日結束時間能否配合家庭需要，是 2023 年議會紀錄提出的問題。服務有開班，仍須看假期中有沒有空窗。",
+        "text": "照顧名額、開課週數與每日結束時間能否配合家庭需要，是 2023 年議會紀錄提出的問題。即使有開班，假期中仍可能有照顧空窗。",
         "sources": ["https://cissearch.kcc.gov.tw/System/Proposal/Detail.aspx?s=166759F65D9721EB&ct=0A42381EC11CB8EE"]
       },
       "councillorAction": {
@@ -44,7 +44,7 @@
       "recordId": "bade-detention",
       "question": "能發揮防汛功能，是否就代表公園已完工？",
       "impact": {
-        "text": "水利局說明，工程要在洪峰期間分擔建國路雨水下水道水量，以降低沿線積淹水與下游排水負荷。防汛能力與公園整體完工，需要分開判讀。",
+        "text": "水利局說明，工程要在洪峰期間分擔建國路雨水下水道水量，以降低沿線積淹水與下游排水負荷。具備防汛能力，不代表公園整體已完工。",
         "sources": ["https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=8c321691-3b0a-4870-9a46-cc877d2e9739"]
       },
       "councillorAction": {
@@ -57,7 +57,7 @@
         "sources": ["https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=8c321691-3b0a-4870-9a46-cc877d2e9739"]
       },
       "notEstablished": ["截至2026年7月，工程已具階段性防汛功能；整體完工時間仍須以水利局公告為準。變更設計的履約期限不能視為全案完工日期。"],
-      "nextEvidence": ["水利局正式完工、驗收或開放公告，確認整體工程完成到哪一步。", "變更後契約與經費說明，分清工程總經費、原採購決標與變更設計決標的口徑。"]
+      "nextEvidence": ["水利局正式完工、驗收或開放公告，確認整體工程完成到哪一步。", "變更後契約與經費說明，確認工程總經費、原採購決標及變更設計決標各包含哪些費用。"]
     }
   ]
 }
