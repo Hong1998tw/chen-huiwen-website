@@ -20,13 +20,34 @@ class PublicProjectionTests(unittest.TestCase):
         self.rows = public.public_records(ROOT)
         self.schema = json.loads((ROOT / 'schema/public-achievement.schema.json').read_text())
 
-    def test_only_reviewed_records_and_public_fields(self):
+    def test_public_source_contains_only_release_rows_and_fields(self):
         raw = json.loads((ROOT / 'data/achievements.json').read_text())
-        self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw if public.is_public(r)})
-        self.assertTrue(any(not public.is_public(r) for r in raw))
+        self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw})
+        self.assertTrue(all(public.is_public(r) for r in raw))
+        self.assertEqual(108, len(raw))
         for row in self.rows:
             self.assertFalse({'notes', 'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
+            self.assertFalse(any('checkedAt' in source for source in row.get('sources', [])))
+            self.assertFalse(any('publicAccessConfirmed' in media for media in row.get('media', [])))
         public.validate_schema(self.rows, self.schema)
+        self.assertEqual(raw, self.rows)
+
+    def test_public_source_rejects_review_metadata_and_unapproved_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            (root / 'schema').mkdir()
+            (root / 'schema/public-achievement.schema.json').write_text(json.dumps(self.schema))
+            rows = json.loads((ROOT / 'data/achievements.json').read_text())
+            rows[0]['editorialReview'] = {'privateNote': 'synthetic fixture'}
+            (root / 'data/achievements.json').write_text(json.dumps(rows))
+            with self.assertRaises(ValueError):
+                public.public_records(root)
+            rows[0].pop('editorialReview')
+            rows[0]['status'] = '待核驗'
+            (root / 'data/achievements.json').write_text(json.dumps(rows))
+            with self.assertRaises(ValueError):
+                public.public_records(root)
 
     def test_unknown_nested_source_fields_never_reach_public_projection(self):
         row = copy.deepcopy(self.rows[0])
@@ -36,13 +57,11 @@ class PublicProjectionTests(unittest.TestCase):
         self.assertNotIn('editorialReview', projected)
         self.assertNotIn('internalNote', projected['sources'][0])
 
-    def test_mixed_editorial_notes_stay_canonical_but_not_public(self):
+    def test_release_source_and_projection_contain_no_review_content(self):
         raw = json.loads((ROOT / 'data/achievements.json').read_text())
-        source = next(row for row in raw if row['id'] == 'fengshan-station-overview')
-        projected = next(row for row in self.rows if row['id'] == 'fengshan-station-overview')
-        self.assertTrue(source.get('notes'))
-        self.assertNotIn('notes', projected)
-        self.assertNotIn('本次尚未取得足以獨立重複核定', json.dumps(projected, ensure_ascii=False))
+        self.assertNotIn('待核驗', json.dumps(raw, ensure_ascii=False))
+        self.assertNotIn('內部查核', json.dumps(raw, ensure_ascii=False))
+        self.assertNotIn('editorialReview', json.dumps(raw, ensure_ascii=False))
         self.assertEqual([], copyguard.check_json('data/achievements-public.json', self.rows, forbid_private_keys=True))
 
     def test_copy_guard_covers_public_text_surfaces_without_blocking_real_progress(self):
@@ -68,6 +87,13 @@ class PublicProjectionTests(unittest.TestCase):
             [{'id': 'fixture', 'notes': [leak]}],
             forbid_private_keys=True,
         ))
+        for field, value in (('checkedAt', '2026-10-01'), ('publicAccessConfirmed', True)):
+            with self.subTest(private_field=field):
+                self.assertTrue(copyguard.check_json(
+                    'data/achievements-public.json',
+                    [{'id': 'fixture', 'media': [{field: value}]}],
+                    forbid_private_keys=True,
+                ))
 
         valid_progress = '道路工程仍在施工，尚未完工；實際進度以主管機關公告為準。'
         self.assertEqual([], copyguard.check_json('data/search-index.json', {'summary': valid_progress}))
@@ -193,7 +219,7 @@ class PublicProjectionTests(unittest.TestCase):
             rows = json.loads((ROOT / 'data/achievements.json').read_text())
             changed = next(row for row in rows if public.is_public(row))
             removed_id = changed['id']
-            changed['status'] = '待核驗'
+            rows.remove(changed)
             (root / 'data/achievements.json').write_text(json.dumps(rows))
             mapped = json.loads((ROOT / 'data/achievement-map.json').read_text())
             (root / 'data/achievement-map.json').write_text(json.dumps(mapped))

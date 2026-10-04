@@ -46,7 +46,8 @@ COMPACT_PATTERN = re.compile("|".join(phrase.replace(" ", "") for phrase in BANN
 PRIVATE_PROJECTION_KEYS = {
     "notes", "notes_private", "editorialReview", "verification", "verifiedAt",
     "villageMethod", "candidate_id", "candidate_status", "source_file",
-    "source_sheet", "source_row", "original_case_id",
+    "source_sheet", "source_row", "original_case_id", "checkedAt",
+    "publicAccessConfirmed",
 }
 PUBLIC_JSON_REQUIRED = {PROJECTION, "data/achievement-map.json", "data/search-index.json"}
 ARTIFACT_JSON_REQUIRED = PUBLIC_JSON_REQUIRED | {

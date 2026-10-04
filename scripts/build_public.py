@@ -250,7 +250,16 @@ def project_value(value, schema):
 def public_records(root=ROOT):
     schema = json.loads((root / 'schema/public-achievement.schema.json').read_text())
     raw = json.loads((root / 'data/achievements.json').read_text())
-    records = [project_value(row, schema['items']) for row in raw if is_public(row)]
+    if not isinstance(raw, list):
+        raise ValueError('Achievement source must be an array')
+    records = []
+    for index, row in enumerate(raw):
+        if not is_public(row):
+            raise ValueError(f'Achievement source row {index + 1} is not publication-ready')
+        # The repository source is now the reviewed release set. Validate it
+        # before projection so editorial metadata cannot be silently discarded.
+        validate_schema(row, schema['items'], f'achievement source row {index + 1}')
+        records.append(project_value(row, schema['items']))
     validate_schema(records, schema)
     if len({row['id'] for row in records}) != len(records):
         raise ValueError('Duplicate public record IDs')
@@ -434,7 +443,8 @@ def build(root=ROOT, destination=None):
             shutil.copyfile(root / rel, target)
         write_public_data_projections(staging, root)
         # Preserve the historical public endpoint for older clients, with the exact
-        # same safe projection. Raw canonical data remains in Git, never in _site.
+        # same safe projection. The repository source is release-only; never
+        # copy it to the public site except through the validated projection.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
         editor_manifests = build_page_editor_artifacts(staging, root)
         validate_artifact_links(staging, root)

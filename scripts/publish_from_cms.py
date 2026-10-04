@@ -191,7 +191,14 @@ def case_candidate(item, root, path, draft):
         raise engine.PublishError('VALIDATION', ['此頁有舊式文字覆寫；請先由網站工程維護對齊後再發布'])
     revised = copy.deepcopy(cases)
     target = next(c for c in revised if c['id'] == case_id)
-    target.update(edits)
+    # Consent is required from the editor for each submitted media item, but
+    # the confirmation itself is workflow metadata and is not public source.
+    public_edits = copy.deepcopy(edits)
+    public_edits['media'] = [
+        {key: value for key, value in item.items() if key != 'publicAccessConfirmed'}
+        for item in edits['media']
+    ]
+    target.update(public_edits)
     if has_order and edits['sectionOrder'] == DEFAULT_SECTION_ORDER and 'sectionOrder' not in match:
         target.pop('sectionOrder', None)
     if not edits['media'] and 'media' not in match:
@@ -477,4 +484,3 @@ if __name__ == '__main__':
         # Do not echo remote bodies, private drafts, credentials, or stack traces.
         print('CMS runner interrupted. Any leased request remains persisted and can resume after its lease expires.',file=sys.stderr)
         raise SystemExit(1)
-

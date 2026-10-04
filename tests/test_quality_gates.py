@@ -49,6 +49,9 @@ class QualityMutationTests(unittest.TestCase):
     def test_invalid_schema(self):
         p=self.root/'data/achievements.json';rows=json.loads(p.read_text());rows[0]['coordinates']=[200,300];p.write_text(json.dumps(rows))
         self.reject('validate_achievements.py','coordinate')
+    def test_review_metadata_is_rejected_from_public_source(self):
+        p=self.root/'data/achievements.json';rows=json.loads(p.read_text());rows[0]['editorialReview']={'note':'fixture'};p.write_text(json.dumps(rows))
+        self.reject('validate_achievements.py','review-only field')
     def test_stable_id_disappears(self):
         p=self.root/'data/achievements.json';rows=json.loads(p.read_text());rows.pop(0);p.write_text(json.dumps(rows))
         self.reject('validate_achievements.py','ID','--baseline-ref','HEAD')
@@ -64,9 +67,7 @@ class QualityMutationTests(unittest.TestCase):
         for name in ('achievements.html','achievement-'+rows[0]['id']+'.html','data/search-index.json'):
             self.assertIn('Fixture synchronized title',(self.root/name).read_text())
     def test_home_rejects_unpublished_record(self):
-        rows=json.loads((self.root/'data/achievements.json').read_text())
-        unpublished=next(r['id'] for r in rows if r['status']=='待核驗')
-        config=self.root/'data/civic-home.json'; data=json.loads(config.read_text());data['featured']=unpublished;config.write_text(json.dumps(data))
+        config=self.root/'data/civic-home.json'; data=json.loads(config.read_text());data['featured']='fixture-unpublished-record';config.write_text(json.dumps(data))
         self.reject('build_civic.py','unique public records')
     def test_home_derives_escaped_content_from_canonical_record(self):
         config=json.loads((self.root/'data/civic-home.json').read_text())
