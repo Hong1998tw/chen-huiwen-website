@@ -3,7 +3,7 @@
   <channel>
     <title>陳慧文官網｜網站內容更新</title>
     <link>https://www.huiwen.tw/updates.html</link>
-    <description>網站補充日期記錄本頁新增的內容；事件日期指原紀錄發生的日期，兩者分開呈現。訂閱日期是網站補充時間，不代表工程或政策有新的進展。</description>
+    <description>「網站補充日期」是內容新增到網站的日期；「事件日期」是原紀錄中的事件發生日期。RSS 顯示的日期採網站補充時間，不代表工程或政策有新的進展。</description>
     <language>zh-TW</language>
     <atom:link href="https://www.huiwen.tw/updates.xml" rel="self" type="application/rss+xml" />
     <lastBuildDate>Tue, 22 Sep 2026 17:21:35 +0800</lastBuildDate>
@@ -12,7 +12,7 @@
       <link>https://www.huiwen.tw/updates.html#update-service-guides-20260922</link>
       <guid isPermaLink="true">https://www.huiwen.tw/updates.html#update-service-guides-20260922</guid>
       <pubDate>Tue, 22 Sep 2026 17:21:35 +0800</pubDate>
-      <description>&lt;p&gt;網站補充日期：2026-09-22T17:21:35+08:00&lt;/p&gt;&lt;p&gt;事件日期：不適用（本次為網站內容補充）&lt;/p&gt;&lt;p&gt;補充聯絡服務處前的閱讀指南，並提供當月公益律師時間表與聯絡資訊的列印頁。諮詢名額與異動仍請來電確認。&lt;/p&gt;&lt;p&gt;訂閱日期是網站補充時間，不代表工程或政策有新的進展。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service-guides.html"&gt;閱讀服務指南&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service-print.html"&gt;當月律師時間表與聯絡隨身單&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service.html#monthly-heading"&gt;核對服務處資訊與當月律師時間表&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;</description>
+      <description>&lt;p&gt;網站補充日期：2026-09-22T17:21:35+08:00&lt;/p&gt;&lt;p&gt;事件日期：不適用（本次為網站內容補充）&lt;/p&gt;&lt;p&gt;補充聯絡服務處前的閱讀指南，並提供當月公益律師時間表與聯絡資訊的列印頁。諮詢名額與異動仍請來電確認。&lt;/p&gt;&lt;p&gt;RSS 顯示的日期採網站補充時間，不代表工程或政策有新的進展。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service-guides.html"&gt;閱讀服務指南&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service-print.html"&gt;當月律師時間表與聯絡隨身單&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/service.html#monthly-heading"&gt;核對服務處資訊與當月律師時間表&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;</description>
       <category>服務指南</category>
     </item>
     <item>
@@ -20,7 +20,7 @@
       <link>https://www.huiwen.tw/updates.html#update-reading-guides-20260922</link>
       <guid isPermaLink="true">https://www.huiwen.tw/updates.html#update-reading-guides-20260922</guid>
       <pubDate>Tue, 22 Sep 2026 17:21:35 +0800</pubDate>
-      <description>&lt;p&gt;網站補充日期：2026-09-22T17:21:35+08:00&lt;/p&gt;&lt;p&gt;事件日期：不適用（本次為網站內容補充）&lt;/p&gt;&lt;p&gt;為三篇既有專題補充閱讀重點，協助理解公共紀錄中的需求、進度與限制。原事件日期與資料來源照原紀錄呈現，這次補充不表示工程有新的進展。&lt;/p&gt;&lt;p&gt;訂閱日期是網站補充時間，不代表工程或政策有新的進展。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-metro-green-line.html#case-context"&gt;捷運青線專題導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-after-school-care.html#case-context"&gt;身障學生課後照顧導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-bade-detention.html#case-context"&gt;八德滯洪池導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;</description>
+      <description>&lt;p&gt;網站補充日期：2026-09-22T17:21:35+08:00&lt;/p&gt;&lt;p&gt;事件日期：不適用（本次為網站內容補充）&lt;/p&gt;&lt;p&gt;為三篇既有專題補充閱讀重點，協助理解公共紀錄中的需求、進度與限制。原事件日期與資料來源照原紀錄呈現，這次補充不表示工程有新的進展。&lt;/p&gt;&lt;p&gt;RSS 顯示的日期採網站補充時間，不代表工程或政策有新的進展。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-metro-green-line.html#case-context"&gt;捷運青線專題導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-after-school-care.html#case-context"&gt;身障學生課後照顧導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;li&gt;&lt;a href="https://www.huiwen.tw/achievement-bade-detention.html#case-context"&gt;八德滯洪池導讀與原紀錄&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;</description>
       <category>議題導讀</category>
     </item>
   </channel>

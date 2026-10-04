@@ -47,7 +47,7 @@ class PublicContactCompletenessTests(unittest.TestCase):
         service=BeautifulSoup((ROOT/'service.html').read_text(),'html.parser')
         schedule=service.select_one('.schedule-text')
         self.assertIn('先來電確認',schedule.get_text())
-        self.assertIn('不能當成其他月份',schedule.get_text())
+        self.assertIn('不適用於其他月份',schedule.get_text())
         self.assertNotIn('先選日期',schedule.get_text())
         self.assertNotIn('列印當月時間表',service.get_text())
         self.assertNotIn('當月公益律師時間表',(ROOT/'service-print.html').read_text())

@@ -85,7 +85,7 @@
     const focus=host.querySelector('.legal-selected'), state=host.querySelector('[data-legal-selection-state]');
     function choose(slot,initial=false){
       const ended=endsAt(slot)<now.getTime();
-      state.textContent=ended?'此場次已結束':initial?'下一場已公布諮詢':'已選場次';
+      state.textContent=ended?'此場次已結束':initial?'下一場諮詢':'已選場次';
       focus.querySelector('[data-legal-date]').textContent=month+'/'+Number(slot.date.slice(-2))+'（週'+week[weekday(slot.date)]+'）';
       focus.querySelector('[data-legal-time]').textContent=slot.start+'–'+slot.end;
       focus.querySelector('[data-legal-lawyer]').textContent=slot.lawyer?slot.lawyer+' 律師':'律師與名額請來電確認';

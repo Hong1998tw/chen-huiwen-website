@@ -48,7 +48,7 @@ def render_comparisons(data):
     if not comparisons:
         return ''
     registry = data['itemsById']
-    body = '<section class="platform-comparisons" aria-labelledby="platform-comparisons-heading"><h2 id="platform-comparisons-heading">前後屆政見，放在一起讀</h2><p>依相近主題並列2022與2026政見原文，方便了解各年度的政策方向；實際推動進度請見相關專題。</p>'
+    body = '<section class="platform-comparisons" aria-labelledby="platform-comparisons-heading"><h2 id="platform-comparisons-heading">前後屆政見，放在一起讀</h2><p>依相近主題對照2022與2026政見原文；各項實際推動進度請見相關專題。</p>'
     for comparison in comparisons:
         body += f'<details class="platform-comparison" id="comparison-{e(comparison["id"])}"><summary>{e(comparison["title"])}</summary>'
         for key in ('fromItemId', 'toItemId'):
@@ -90,7 +90,7 @@ def render_platforms(data, achievements):
                 if meta:
                     body += f'<p>{" · ".join(meta)}</p>'
                 if year == 2026:
-                    after_themes += '<aside class="platform-accountability"><h3>政策方向與推動進度</h3><p>以下為2026政見原文，相關專題可查看既有推動紀錄。各項政見的量化目標、完成期限與執行分工，原始圖卡尚未列明。</p></aside>'
+                    after_themes += '<aside class="platform-accountability"><h3>政策方向與推動進度</h3><p>以上為2026政見原文，相關專題提供既有推動紀錄。原始圖卡尚未列明各項政見的量化目標、完成期限與執行分工。</p></aside>'
                 image = item.get('image')
                 if image:
                     after_themes += ('<details class="platform-original"><summary>查看原始政見圖卡</summary><figure class="platform-poster">'

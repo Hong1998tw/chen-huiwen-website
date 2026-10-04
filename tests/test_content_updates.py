@@ -36,7 +36,7 @@ class ContentUpdatesTests(unittest.TestCase):
             entry = next(node for node in rss.findall('./channel/item') if node.findtext('guid').endswith(item['id']))
             self.assertEqual(parsedate_to_datetime(entry.findtext('pubDate')), updates.website_time(item['websiteUpdatedAt']))
             self.assertIn('事件日期：' + updates.event_label(item), entry.findtext('description'))
-            self.assertIn('訂閱日期是網站補充時間', entry.findtext('description'))
+            self.assertIn('RSS 顯示的日期採網站補充時間', entry.findtext('description'))
 
     def test_feed_links_are_absolute_and_guid_stays_stable(self):
         first = ET.fromstring(updates.render_rss(self.data))

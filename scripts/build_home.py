@@ -20,7 +20,7 @@ def e(value):
 
 def render_services(office, schedule):
     month = int(schedule['month'].split('-')[1])
-    return f'''<section class="wrap services" aria-label="民眾常用服務"><a href="service.html#monthly-heading" data-home-legal-month="{e(schedule['month'])}"><span>公益法律諮詢</span><strong>{month}月律師時間表 ↗</strong><small>查看日期、輪值律師，下載分享圖卡</small></a><a href="service-guides.html"><span>反映生活問題</span><strong>洽詢前，準備什麼 ↗</strong><small>先看服務指南，再聯絡服務處</small></a><a href="{e(office['phoneUrl'])}"><span>聯絡服務處</span><strong>{e(office['phone'])} ↗</strong><small>{e(office['address'])}</small></a></section>'''
+    return f'''<section class="wrap services" aria-label="民眾常用服務"><a href="service.html#monthly-heading" data-home-legal-month="{e(schedule['month'])}"><span>公益法律諮詢</span><strong>{month}月律師時間表 ↗</strong><small>查看日期、輪值律師，下載分享圖卡</small></a><a href="service-guides.html"><span>反映生活問題</span><strong>洽詢前，準備什麼 ↗</strong><small>查看洽詢前可準備的資料</small></a><a href="{e(office['phoneUrl'])}"><span>聯絡服務處</span><strong>{e(office['phone'])} ↗</strong><small>{e(office['address'])}</small></a></section>'''
 
 
 def render_event(events):
