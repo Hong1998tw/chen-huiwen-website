@@ -33,7 +33,7 @@ def render_events(data):
         status=event.get('status','scheduled');label={'scheduled':'已公告行程','cancelled':'已取消','rescheduled':'已改期'}[status]
         previous=f'<p>原時間：{e(event["previousSchedule"]["start"])}；請以新時間為準。</p>' if status=='rescheduled' else ''
         calendar=f'<a class="text-link" href="{e(calendar_url(event))}" target="_blank" rel="noopener noreferrer">加入 Google Calendar ↗</a>' if status!='cancelled' and event.get('end') else ''
-        note='<p class="campaign-note">儲存的是當下副本，不會自動更新；出發前請回本站確認。</p>' if calendar else ''
+        note='<p class="campaign-note">加入日曆後，儲存的行程副本不會自動更新；出發前請回本站確認。</p>' if calendar else ''
         calendar += f'<a class="text-link" href="{e(event_path(event))}">行程詳情與圖卡 →</a>'
         cards.append(f'<article class="campaign-data-card campaign-searchable campaign-event" data-search="{e(event["name"]+" "+event["content"])}"><p class="campaign-kicker">{label}</p><h3>{e(event["name"])}</h3><time datetime="{e(event["start"])}">{e(event["start"][:16].replace("T"," "))}（台灣時間）</time>{previous}{"<p>"+e(event["changeNote"])+"</p>" if event.get("changeNote") else ""}<p>{e(event["content"])}</p><p class="campaign-note">資料更新：{e(event.get("updatedAt",event.get("verifiedAt","尚未標示")))}</p><div class="campaign-actions"><a class="text-link" href="{e(event["sourceUrl"])}" target="_blank" rel="noopener noreferrer">官方資訊 ↗</a>{calendar}</div>{note}</article>')
     return ''.join(cards) or '<p class="campaign-empty">目前沒有收錄公開行程。</p>'

@@ -38,7 +38,7 @@
       const start = new Date(event.start);
       const end = new Date(start.getTime() + minutes * 60000);
       const url = new URL('https://calendar.google.com/calendar/r/eventedit');
-      const details = event.content + '\n\n活動結束時間尚未公布。這是您選擇的 ' + minutes + ' 分鐘個人開始提醒，不是活動時長。\n儲存的是當下副本，不會自動更新；出發前請回本站確認。\n' + event.url;
+      const details = event.content + '\n\n活動結束時間尚未公布。這是您選擇的 ' + minutes + ' 分鐘個人開始提醒，不是活動時長。\n加入日曆後，儲存的行程副本不會自動更新；出發前請回本站確認。\n' + event.url;
       url.search = new URLSearchParams({action: 'TEMPLATE', text: event.name + '（開始提醒）', dates: stamp(start) + '/' + stamp(end), stz: 'Asia/Taipei', etz: 'Asia/Taipei', details, location: event.location}).toString();
       link.href = url.href;
       link.hidden = false;
