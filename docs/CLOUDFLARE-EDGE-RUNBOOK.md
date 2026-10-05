@@ -19,6 +19,31 @@ python3 scripts/check_cloudflare_edge.py --expect-static-assets --expected-sha "
 
 `--expect-html-cache` 保留為 legacy CDN 模式：同樣只重讀正常 refill 一次，production-verification URL 的 `HIT`／`REVALIDATED`／`UPDATING`／`STALE` 仍 fail，不能拿這個舊模式驗收現役 Static Assets。本修補不修改 Cache Rules、WAF、Access 或部署設定。
 
+## 前台最小安全標頭（`_headers`）
+
+Static Assets 的 `_headers` 由 `scripts/build_cloudflare_public.py` 的 `SECURITY_HEADERS` 單一來源產生，`/*` 一條規則涵蓋 `/`、舊目錄 rewrite、HTML、JS、CSS、JSON、圖片與 404 頁；`/deployment.json` 另保留 `Cache-Control: no-store`。
+
+| 標頭 | 值 | 理由 |
+| --- | --- | --- |
+| `X-Content-Type-Options` | `nosniff` | 禁止 MIME sniffing，網站所有資源 `Content-Type` 皆正確。 |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | 跨站只送 origin，同站維持完整 referrer；與現有分析、外部連結相容。 |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` | 只關閉網站與嵌入內容都不使用的功能；Facebook 嵌入的 `allow="encrypted-media; picture-in-picture; web-share"` 不受影響。 |
+| `X-Frame-Options` / `Content-Security-Policy` | `DENY` / `frame-ancestors 'none'` | 後台預覽經同源 `/api/page-preview` 代理取回 HTML 再由後台自己的網域提供（`admin/public/app.js` 設定 `frame.src`），前台沒有任何第一方嵌入需求。`tests/test_public_security_headers.py` 會在後台改回直接嵌入 `www.huiwen.tw` 時失敗，須同步重新評估此標頭。 |
+
+刻意**不**加入：
+
+- 完整 CSP：需先決定 Cloudflare 注入的 JSD 腳本、編輯器 loader（hash 隨內容變動）、已過期的 fbcdn 圖片與 `sw.js` 內聯樣式的處理，另案評估。
+- COEP／CORP：`Cross-Origin-Resource-Policy` 會擋住後台縮圖載入 `https://www.huiwen.tw/assets/...`；COEP 會擋 Facebook／OSM 嵌入。
+- HSTS：屬 Cloudflare zone 設定（SSL/TLS → Edge Certificates），才能同時涵蓋 apex 301。先小 `max-age`、不含 `includeSubDomains`／`preload`，由網站擁有者決定，不在 artifact 內設定。
+
+部署後唯讀驗收（不修改任何設定）：
+
+```bash
+python3 scripts/verify_security_headers.py --base-url https://www.huiwen.tw
+```
+
+腳本逐一檢查 `/`、`/index.html`、`/about.html`、`/site.js`、`/styles.css`、`/data/search-index.json`、圖片、`/mktexp26/`、`/deployment.json` 與 404 探針，列出 URL、時間、狀態碼、是否重新導向與實際標頭；任一缺漏或異常 exit 1。本機可用 `wrangler dev --local` 對建好的 `_site` 預跑。回復：revert 該提交後依現行部署流程重新部署，或使用 Cloudflare Workers 的前一個 deployment。
+
 ## 2026-09-29 pre-change baseline
 
 - `www.huiwen.tw`：Cloudflare proxy；origin 為 GitHub Pages。
