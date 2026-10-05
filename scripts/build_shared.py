@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Render shared chrome inside explicit regions; preserve every page's main bytes."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 import hashlib
 import html

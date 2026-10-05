@@ -3,6 +3,8 @@
 Requires Pillow and Noto Sans CJK TC; pass --font for a local licensed font.
 PNG output is committed, so normal site builds do not need rendering dependencies.
 """
+from python_guard import require_supported_python
+require_supported_python()
 import argparse, json, hashlib, os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
