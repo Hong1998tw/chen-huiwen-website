@@ -116,7 +116,10 @@ try{
  }
  await check('map data failure preserves static public records',async()=>{
   const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
-  await page.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。').waitFor();assert.equal(await page.locator('#case-list [data-case]:visible').count(),publicRecordCount);assert(await page.locator('#case-search').isDisabled());assert(await page.locator('#case-list a').first().isVisible());await ctx.close();
+  await page.getByRole('button',{name:'地圖與列表',exact:true}).click();await page.getByText('地圖資料暫時無法載入；列表篩選仍可使用。').waitFor();
+  assert.equal(await page.locator('#case-list [data-case]').count(),publicRecordCount);assert.equal(await page.locator('#case-list [data-case]:visible').count(),10);
+  assert(await page.locator('#case-search').isEnabled());assert(await page.locator('#status-filter').isEnabled());assert(await page.locator('#case-list a').first().isVisible());
+  await page.locator('#case-search').fill('文德');await page.waitForFunction(()=>window.HuiwenCases?.getState().visible.length>0);await ctx.close();
  });
  if(!process.env.BASE_URL)await check('excluded petition main unchanged',async()=>{
   const old=execFileSync('git',['show','8319451a6e104dbebe5ca2a4b359185247abd90a:petition.html'],{cwd:root,encoding:'utf8'});

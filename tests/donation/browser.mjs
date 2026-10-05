@@ -50,6 +50,7 @@ try {
   const page = await context.newPage();
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
   const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
+  const mapRecords = JSON.parse(await readFile(new URL('../../data/achievement-map.json', import.meta.url)));
 
   for (const width of [1440, 1100, 1024, 780, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 960 });
@@ -314,30 +315,93 @@ try {
     const p = await pending.newPage();
     let release;
     const held = new Promise(resolve => { release = resolve; });
-    await p.route('**/data/achievement-map.json*', async route => { await held; await route.continue(); });
+    let startRequest;
+    const requestStarted = new Promise(resolve => { startRequest = resolve; });
+    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
     try {
       await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
       assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
-      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), true);
+      assert.equal(await p.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('achievement-map.json'))), false);
+      await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
+      await requestStarted;
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10, 'list remains interactive while map data is pending');
       release();
-      await p.waitForFunction(() => Boolean(window.HuiwenCases));
+      await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
       assert.equal(await p.evaluate(() => window.HuiwenCases.getState().visible.length), items.length);
     } finally { release(); await pending.close(); }
   });
 
-  await check('record-data failure restores every server-rendered case', async () => {
+  await check('record-data failure preserves the server-rendered list and basic filters', async () => {
     const fallback = await browser.newContext({viewport:{width:390,height:844}});
     await fallback.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
     const p = await fallback.newPage();
     await p.route('**/data/achievement-map.json*', route => route.abort());
     try {
       await p.goto(base + 'achievements.html');
-      await p.getByText('篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。', {exact:true}).waitFor();
-      assert.equal(await p.locator('#case-list [data-case]:visible').count(), items.length);
-      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), false);
+      await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
+      await p.getByText('地圖資料暫時無法載入；列表篩選仍可使用。', {exact:true}).waitFor();
+      assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
+      assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), true);
+      assert.equal(await p.locator('#case-search').isEnabled(), true);
+      await p.locator('#case-search').fill('文德');
+      await p.waitForFunction(() => window.HuiwenCases.getState().visible.length > 0);
+      await p.unroute('**/data/achievement-map.json*');
+      await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
+      await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
+      await p.locator('.leaflet-control-attribution').waitFor();
+      assert.doesNotMatch(await p.locator('#map-message').textContent(),/地圖資料暫時無法載入/);
     } finally { await fallback.close(); }
+  });
+
+  await check('delayed first keyword loads the full index and retains the latest query', async () => {
+    const pending = await browser.newContext({viewport:{width:390,height:844}});
+    await pending.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await pending.newPage();
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    let startRequest;
+    const requestStarted = new Promise(resolve => { startRequest = resolve; });
+    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
+    try {
+      await p.goto(base + 'achievements.html?q=' + encodeURIComponent('票卡 車牌'), {waitUntil:'domcontentloaded'});
+      await requestStarted;
+      assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), true);
+      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText'))), false);
+      release();
+      await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
+      const tokens = ['票卡','車牌'];
+      const expected = mapRecords.filter(record => tokens.every(token => record.searchText.normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').includes(token))).map(record => record.id);
+      assert.deepEqual(await p.evaluate(() => window.HuiwenCases.getState().visible.map(record => record.id)), expected);
+    } finally { release(); await pending.close(); }
+  });
+
+  await check('rapid query clearing and village changes survive a delayed data response', async () => {
+    const pending = await browser.newContext({viewport:{width:390,height:844}});
+    await pending.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    const p = await pending.newPage();
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    let startRequest;
+    const requestStarted = new Promise(resolve => { startRequest = resolve; });
+    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
+    try {
+      await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
+      await p.locator('#case-search').fill('票卡 車牌');
+      await requestStarted;
+      await p.locator('#case-search').fill('文德國小');
+      await p.locator('#case-search').fill('');
+      await p.locator('#village-filter').selectOption('v:曹公里');
+      release();
+      await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')) && window.HuiwenCases.getState().filters.village === 'v:曹公里');
+      const expected = mapRecords.filter(record => record.villages.includes('曹公里')).map(record => record.id);
+      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().filters.q), '');
+      assert.deepEqual(await p.evaluate(() => window.HuiwenCases.getState().visible.map(record => record.id)), expected);
+      assert.deepEqual(expected.slice(0,3), ['xiehe-lane3-community-road-repair','metro-green-line','station-parking']);
+    } finally { release(); await pending.close(); }
   });
 
   for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
