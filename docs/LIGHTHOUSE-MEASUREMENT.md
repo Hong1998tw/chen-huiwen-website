@@ -77,8 +77,15 @@ CI 以 `npm ci` 安裝鎖定的 `playwright 1.55.1`，其 Chromium 為 `140.0.73
 
 - 每次量測前，`readiness-performance.mjs` 對 `ROOT_DIR` 逐檔計算路徑、大小與 SHA-256（規則與伺服器相同：略過 dotfile、`_headers`、`_redirects`、`node_modules`、證據輸出目錄；指向 root 外的 symlink 不算），寫入 `content-manifest.json`；`summary.json` 的 `content` 記錄 `digest`、`fileCount`、量測後重算的 `digestAfterRun` 與 `unchangedDuringRun`。量測期間內容有變動 → 該次 run 失敗。
 - 伺服器對每個實際送出的檔案記錄 identity 位元組的 SHA-256（`server-log.json`、各 run 的 `pageRequests[].serverIdentitySha256`）。
-- `lighthouse-compare.mjs` 只在下列全部成立時才輸出 `comparable: true`：兩邊都有 `content` 與 `content-manifest.json`、manifest 能重算出自己記錄的 digest、兩邊 `unchangedDuringRun === true`、**兩邊 digest 相同**、雙方伺服器實送位元組與 manifest 及彼此一致、瀏覽器／Lighthouse／門檻相同、壓縮模式不同。任何一項缺證據或不符都會 exit 1，並列出內容不同的路徑。**root 路徑字串相同或不同都不再是證據。**
-- 負向測試（`tests/donation/lighthouse-compare-check.mjs`，CI 在 gate 前執行，9 項）：同一個 root 路徑、不同位元組 → 不可比較並點名 `styles.css`；不同目錄、相同內容 → 可比較；新增／缺少檔案；缺 manifest、缺 `content`、外部 `BASE_URL`；量測期間內容變動；手改 digest 或 manifest；伺服器實送位元組與 manifest 不符；瀏覽器／Lighthouse／門檻／壓縮模式不符；CLI 結束碼。
+- `lighthouse-compare.mjs` 只在下列全部成立時才輸出 `comparable: true`：
+  1. 兩邊都有 `content` 與 `content-manifest.json`，且 manifest 能重算出自己記錄的 digest；
+  2. 兩邊都證明量測期間樹未變：`digestAfterRun` 存在、**等於**量測前的 `digest`，且 `unchangedDuringRun === true`（缺少、為 null、或與 `digest` 矛盾——包括 `unchangedDuringRun: true` 但 `digestAfterRun` 不同——都算證據不足）；
+  3. **每一次量測**都有伺服器端證據：`pageRequests` 存在且非空；每一列都有 64 位十六進位的 `serverIdentitySha256`（缺少、null、空字串或格式錯誤皆不接受）；列出的路徑（忽略 query string）必須存在於 manifest（未知路徑 = 證據不足），且位元組與 manifest 相同；受測頁面本身必須有一列已驗證的請求；
+  4. 兩邊 digest 相同，且兩邊都送出的路徑位元組一致；
+  5. 瀏覽器／Lighthouse／門檻相同、壓縮模式不同。
+  任何一項缺證據或不符都會 exit 1 並寫出 `comparable: false` 與原因（問題清單最多列 10 項再加總數）。**缺證據永遠不會被解讀為「沒有問題」。** root 路徑字串相同或不同都不再是證據。
+- **這些證據證明什麼、不證明什麼：** 證明「Chrome 在這次量測中請求的每個檔案，伺服器實送的位元組與量測前掃描的 manifest 一致」，以及「樹在量測前後相同」。不證明 Chrome 沒請求的檔案（例如其他頁面）是否相同——那部分由整棵樹的 digest 涵蓋；也不證明正式站實際送出的位元組（那是正式驗收的範圍）。CI 內的未壓縮對照與比較步驟目前是 `continue-on-error`（資訊性），所以 `comparable: false` 會出現在 Job Summary 與 artifact，但不會單獨讓 `lighthouse` job 變紅；是否改為強制，是待決定的事項。
+- 負向測試（`tests/donation/lighthouse-compare-check.mjs`，CI 在 gate 前執行，13 項）：同一個 root 路徑、不同位元組 → 不可比較並點名 `styles.css`；不同目錄、相同內容 → 可比較；新增／缺少檔案；缺 manifest、缺 `content`、外部 `BASE_URL`；量測期間內容變動；手改 digest 或 manifest；伺服器實送位元組與 manifest 不符；**缺 `serverIdentitySha256`（缺少／null／空字串／格式錯誤）、未知 served path（含 query string）、`digestAfterRun` 缺少／null／與 `unchangedDuringRun=true` 矛盾、`pageRequests` 缺少／空陣列／非陣列／整批缺少、受測頁面本身沒有已驗證的列、列沒有 path、`results` 為空——每一種都在 A、B 兩側各測一次，且有「資料完整則可比較」的對照（含 query string 的路徑）與 CLI exit 1／0**；瀏覽器／Lighthouse／門檻／壓縮模式不符；CLI 結束碼。七條新規則各自做過變異測試（關掉該規則，測試失敗）。
 
 **本機實測**（2026-10-05，沙箱 Chromium 141.0.7390.37、Lighthouse 13.4.1、每頁 3 次、最終 `_site`，內容 digest `c5d4bee6b0de…584df4`、520 個檔案、量測前後相同）：
 

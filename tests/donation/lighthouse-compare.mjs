@@ -4,9 +4,14 @@
  * The comparison is only meaningful when both runs measured byte-identical site content with the
  * same Chromium and Lighthouse. It fails (exit 1, `comparable: false`) when:
  *  - either side lacks content evidence (summary `content` or content-manifest.json), the manifest
- *    does not match its recorded digest, or the tree changed while that run was measured;
+ *    does not match its recorded digest, or the tree was not proven unchanged during that run
+ *    (`digestAfterRun` missing, or different from `digest`, or `unchangedDuringRun` not true);
+ *  - any measured run lacks server-side proof: `pageRequests` missing or empty, a request row without
+ *    a valid `serverIdentitySha256`, a served path that is not in the manifest, served bytes that differ
+ *    from the manifest, or no verified row for the measured page itself. Missing evidence is never read
+ *    as "nothing wrong": it makes the comparison insufficient;
  *  - the two content digests differ (the differing paths are listed), or a path both runs served
- *    has different bytes in the two server logs, or served bytes differ from the manifest;
+ *    has different bytes in the two runs;
  *  - browser, Lighthouse or thresholds differ, or both runs used the same compression mode.
  * A same-path-different-content pair therefore never produces a "comparable" result. Raw reports are
  * listed with the SHA-256 of the report files; the content digest is the hash of the measured site files.
@@ -44,29 +49,61 @@ export function contentEvidenceProblems(side, name) {
   if (!manifestDigestMatchesFiles(manifest)) problems.push(`${name}: content-manifest.json does not match its own digest (edited or corrupt)`);
   if (content.digest && manifest.digest !== content.digest) problems.push(`${name}: summary digest ${content.digest} differs from content-manifest.json digest ${manifest.digest}`);
  }
+ if (typeof content.digestAfterRun !== 'string' || !content.digestAfterRun) problems.push(`${name}: digestAfterRun is missing, so the tree was not re-hashed after the run`);
+ else if (content.digest && content.digestAfterRun !== content.digest) problems.push(`${name}: digestAfterRun ${content.digestAfterRun} differs from the digest taken before the run${content.unchangedDuringRun === true ? ' (contradicts unchangedDuringRun=true)' : ''}`);
  if (content.unchangedDuringRun !== true) problems.push(`${name}: the measured tree was not proven unchanged during the run (unchangedDuringRun=${content.unchangedDuringRun}, digestAfterRun=${content.digestAfterRun})`);
  return problems;
 }
 
+const SHA256 = /^[0-9a-f]{64}$/;
+const manifestPath = path => (path === '/' ? 'index.html' : path.replace(/^\//, '').replace(/\/$/, '/index.html'));
+const MAX_LISTED = 10;
+
+/** Server-side proof per measured run: every request row must be backed by the SHA-256 of the bytes the server
+ * actually sent, and that file must exist in the manifest with the same bytes. Returns problems (empty = proven). */
+export function servedEvidenceProblems(side, name) {
+ const results = side.summary.results;
+ if (!Array.isArray(results) || !results.length) return [`${name}: summary.json has no results`];
+ const index = new Map((side.manifest?.files || []).map(file => [file.path, file.sha256]));
+ const found = new Set();
+ for (const result of results) {
+  const label = `${result.page} run ${result.run}`;
+  if (!Array.isArray(result.pageRequests)) { found.add(`${label}: pageRequests is missing`); continue; }
+  if (!result.pageRequests.length) { found.add(`${label}: pageRequests is empty`); continue; }
+  let ownDocument = false;
+  for (const row of result.pageRequests) {
+   const path = typeof row?.path === 'string' ? row.path.split('?')[0] : null;
+   if (!path) { found.add(`${label}: a request row has no path`); continue; }
+   if (!SHA256.test(row.serverIdentitySha256 ?? '')) { found.add(`${label}: ${path} has no server-side SHA-256 (serverIdentitySha256 missing or malformed)`); continue; }
+   const expected = index.get(manifestPath(path));
+   if (!expected) found.add(`${label}: ${path} was served but is not in content-manifest.json (unknown served path)`);
+   else if (expected !== row.serverIdentitySha256) found.add(`${path} was served with bytes that differ from content-manifest.json`);
+   if (path === '/' + result.page) ownDocument = true;
+  }
+  if (!ownDocument) found.add(`${label}: the measured page itself has no verified request row`);
+ }
+ const list = [...found];
+ return [...list.slice(0, MAX_LISTED), ...(list.length > MAX_LISTED ? [`… and ${list.length - MAX_LISTED} more request-evidence problem(s)`] : [])].map(item => `${name}: ${item}`);
+}
+
 const servedHashes = side => {
  const served = new Map();
- for (const result of side.summary.results) for (const row of result.pageRequests || []) {
-  if (!row.serverIdentitySha256) continue;
+ for (const result of Array.isArray(side.summary.results) ? side.summary.results : []) for (const row of Array.isArray(result.pageRequests) ? result.pageRequests : []) {
+  if (typeof row?.path !== 'string' || !SHA256.test(row.serverIdentitySha256 ?? '')) continue;
   const path = row.path.split('?')[0];
   if (!served.has(path)) served.set(path, new Set());
   served.get(path).add(row.serverIdentitySha256);
  }
  return served;
 };
-const manifestHash = (manifest, path) => manifest?.files.find(file => file.path === (path === '/' ? 'index.html' : path.replace(/^\//, '').replace(/\/$/, '/index.html')))?.sha256;
 
 export function compareRuns(A, B) {
  const problems = [];
  const same = (name, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) problems.push(`${name} differs: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`); };
  same('browserVersion', A.summary.conditions?.browserVersion, B.summary.conditions?.browserVersion);
- same('lighthouseVersion', A.summary.results[0]?.lighthouseVersion, B.summary.results[0]?.lighthouseVersion);
+ same('lighthouseVersion', A.summary.results?.[0]?.lighthouseVersion, B.summary.results?.[0]?.lighthouseVersion);
  same('thresholds', A.summary.conditions?.thresholds, B.summary.conditions?.thresholds);
- problems.push(...contentEvidenceProblems(A, 'A'), ...contentEvidenceProblems(B, 'B'));
+ problems.push(...contentEvidenceProblems(A, 'A'), ...contentEvidenceProblems(B, 'B'), ...servedEvidenceProblems(A, 'A'), ...servedEvidenceProblems(B, 'B'));
  let contentDiff = null;
  if (A.manifest && B.manifest) {
   if (A.manifest.digest !== B.manifest.digest) {
@@ -77,25 +114,20 @@ export function compareRuns(A, B) {
     + (contentDiff.onlyA.length ? `; only in A: ${list(contentDiff.onlyA)}` : '')
     + (contentDiff.onlyB.length ? `; only in B: ${list(contentDiff.onlyB)}` : ''));
   }
-  // What the servers actually handed out must match the manifests, and each other.
+  // Paths both runs served must carry the same bytes (per-run proof against each manifest is in servedEvidenceProblems).
   const servedA = servedHashes(A), servedB = servedHashes(B);
-  for (const [name, side, served] of [['A', A, servedA], ['B', B, servedB]]) {
-   for (const [path, hashes] of served) {
-    const expected = manifestHash(side.manifest, path);
-    if (expected && [...hashes].some(hash => hash !== expected)) problems.push(`${name}: ${path} was served with bytes that differ from content-manifest.json`);
-   }
-  }
   for (const [path, hashes] of servedA) {
    const other = servedB.get(path);
    if (other && ([...hashes].length !== 1 || [...other].length !== 1 || [...hashes][0] !== [...other][0])) problems.push(`${path} was served with different bytes in A and B`);
   }
  }
  if (A.summary.conditions?.compression === B.summary.conditions?.compression) problems.push('both runs used the same compression mode; nothing to compare');
- const pages = [...new Set(A.summary.results.map(result => result.page))].filter(page => B.summary.results.some(result => result.page === page));
+ const resultsOf = side => (Array.isArray(side.summary.results) ? side.summary.results : []);
+ const pages = [...new Set(resultsOf(A).map(result => result.page))].filter(page => resultsOf(B).some(result => result.page === page));
  if (!pages.length) problems.push('the two runs have no page in common');
  const rows = pages.map(page => {
   const stat = side => {
-   const runs = side.summary.results.filter(result => result.page === page);
+   const runs = resultsOf(side).filter(result => result.page === page);
    const encodings = [...new Set(runs.flatMap(run => run.pageRequests || []).filter(row => /^text\/(html|css|javascript)$/.test((row.mimeType || '').split(';')[0])).map(row => row.contentEncoding || 'identity'))].sort();
    return {
     runs: runs.length,
@@ -116,7 +148,7 @@ export function compareRuns(A, B) {
   return { page, A: a, B: b, delta: { performance: b.performanceMedian - a.performanceMedian, fcpMs: b.fcpMs - a.fcpMs, lcpMs: b.lcpMs - a.lcpMs, transferBytes: b.transferBytes - a.transferBytes } };
  });
  const conditions = side => ({ label: side.label, compression: side.summary.conditions?.compression, brotliQuality: side.summary.conditions?.brotliQuality, gzipLevel: side.summary.conditions?.gzipLevel,
-  vary: side.summary.conditions?.vary, browserVersion: side.summary.conditions?.browserVersion, lighthouseVersion: side.summary.results[0]?.lighthouseVersion, node: side.summary.node, ci: side.summary.conditions?.ci, runsPerPage: side.summary.conditions?.runs,
+  vary: side.summary.conditions?.vary, browserVersion: side.summary.conditions?.browserVersion, lighthouseVersion: side.summary.results?.[0]?.lighthouseVersion, node: side.summary.node, ci: side.summary.conditions?.ci, runsPerPage: side.summary.conditions?.runs,
   root: side.summary.content?.root ?? side.summary.root, contentDigest: side.summary.content?.digest ?? null, contentFiles: side.summary.content?.fileCount ?? null });
  return { comparable: problems.length === 0, problems, A: conditions(A), B: conditions(B), content: { sameDigest: Boolean(A.manifest && B.manifest && A.manifest.digest === B.manifest.digest), differing: contentDiff }, pages: rows, rawReports: { A: A.raw, B: B.raw } };
 }
