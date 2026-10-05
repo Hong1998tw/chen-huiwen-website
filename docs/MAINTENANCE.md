@@ -4,7 +4,7 @@
 
 ## 安裝與單一入口
 
-沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；安裝 `beautifulsoup4==4.13.5 html5lib==1.1`。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
+沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；安裝 `beautifulsoup4==4.13.5 html5lib==1.1`。所有會寫入產物的腳本都先呼叫 `scripts/python_guard.py`：低於 3.12 會在寫入任何檔案前以 exit 2 停止並說明版本需求（新增會寫檔的腳本須同樣呼叫，`tests/test_python_guard.py` 會檢查）。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
 
 ```sh
 python3 scripts/build_all.py
@@ -38,7 +38,7 @@ python3 scripts/audit_external_links.py /path/outside/repository/external-links.
 - 發布前／週期：外部 URL、時間敏感資訊、來源、Lighthouse、dependencies、素材授權；紀錄觀測時間。403／429／TLS／網路錯誤為 BLOCKED；404／410 為 FAIL；2xx 只表示可達，不代表內容正確。外部查核 sequential、每次間隔 >=0.25s、最多兩次，不繞過限制。
 - 人工：歸因、事實衝突、著作權、法律、品牌與真實輔助工具；責任人未明時標未指派。自動 a11y 不是 WCAG 認證。
 
-負向 fixtures 在 temporary repository／獨立瀏覽器頁面運行，不改 live content；不得放真實秘密或私人資料。`tests/test_quality_gates.py` 覆蓋 broken link、metadata、schema、stable ID、private URL、stale output、來源更新傳播及錯誤活動日期。`tests/donation/lifecycle.mjs` 覆蓋 a11y／overflow 負向樣本、減少動態、連續選單取消、搜尋 fallback、台／臺、零結果、觀察器不啟動、圖片失敗與無 JS 五種寬度。
+負向 fixtures 在 temporary repository／獨立瀏覽器頁面送行，不改 live content；不得放真實秘密或私人資料。`tests/test_quality_gates.py` 覆蓋 broken link、metadata、schema、stable ID、private URL、stale output、來源更新傳播及錯誤活動日期。`tests/donation/lifecycle.mjs` 覆蓋 a11y／overflow 負向樣本、減少動態、連續選單取消、搜尋 fallback、台／臺、零結果、觀察器不啟動、圖片失敗與無 JS 五種寬度。
 
 ## 維護責任與節奏（人員未指定；執行狀態依 run 核對）
 
@@ -84,7 +84,7 @@ python3 -m unittest discover -s tests -p test_content_governance.py
 
 ## 視覺、互動與驗證規格
 
-沿用墨綠／萊姆綠、既有 `styles.css`／`layout.css`／`mobile.css`／`digital.css` tokens 與 components，不另建 palette。標題、內文、來源、階段需保持可讀；無圖、長標題、多來源不隱藏資訊。按鈕須有 focus 與 pressed 回饋；尊重 `prefers-reduced-motion`，observer 失效不能藏重要文字。現有 timeline 只做 transform，不設 opacity=0。
+沿用墨綠／萊姆綠、既有 `styles.css`／`layout.css`／`mobile.css`／`digital.css` tokens 與 components，不另建 palette。標題、內文、來源、階段需保持可讀。無圖、長標題、多來源不隱藏資訊。按鈕須有 focus 與 pressed 回饋；尊重 `prefers-reduced-motion`，observer 失效不能藏重要文字。現有 timeline 只做 transform，不設 opacity=0。
 
 比較固定 browser version、字型、資料、390／1440 viewport、動畫條件；測 320／390／768／1280／1440，並區分 zoom/reflow、實機鍵盤、AT、WebKit automation 與實機 Safari。流程順序：首頁→搜尋→新聞來源→地點政績→服務→歷史政見→活動→404 回首頁。第三方失敗使用既有直接連結，不以 iframe 成功作本站唯一可用條件。不要為 polish 改寫公共事實。
 
@@ -104,9 +104,9 @@ Rollback：先記錄 verified baseline；在隔離位置 `git archive <baseline>
 ## 2026-09-22 公開成品與共用元件
 
 - `build_all.py` 明列生成順序，`quality.py` 重建兩次檢查 drift／determinism。搜尋生成器只讀公開 HTML；`_site/` 不進索引、SEO 或 Git。
-- `build_public.py --projection-only` 生成54筆已公開案件的嚴格欄位投影。`--check` 驗 public projection 與 map 一致；完整執行產 `_site/`，舊 `data/achievements.json` URL 僅供應相同 sanitized projection。
+- `build_public.py --projection-only` 生成 54 筆已公開案件的嚴格欄位投影。`--check` 驗 public projection 與 map 一致；完整執行產 `_site/`，舊 `data/achievements.json` URL 僅供應相同 sanitized projection。
 - `_site/` 禁含 docs、scripts、tests、schema、content-governance、原始待核紀錄。這縮小網站 bytes 邊界，不代表公開 GitHub 歷史被刪除。
 - 共用 header/footer 由明確 marker 替換，所有 CSS/JS 版本在最後集中雜湊；人物與聯絡事實仍保留原始依據。`data/page-metadata.json` 只記內容實際更新日，禁止用 build 當日洗 lastmod。
 - 內容原文不因減少重複而遺失：單事件頁可見歷程一次，完整背景可展開；所有 history.text 與 paragraphs 仍可在 HTML 核對。
-- Production 三層證據分開：HTTP exact critical fields＋asset parity、normalized verified snapshot browser、direct native edge browser。最後一層 BLOCKED 不得標 PASS。
-- 選舉45筆搜尋、無JS靜態內容、逾時fallback、日期跨期、SW離線/升級：`runtime-maturity.mjs`；首筆可讀/原始事件127公尺不遺失/陳情main不變：`site-maturity.mjs`。
+- Production 三層證據分開：HTTP exact critical fields＋ asset parity、normalized verified snapshot browser、direct native edge browser。最後一層 BLOCKED 不得標 PASS。
+- 選舞45筆搜尋、無JS靜態內容、逾時fallback、日期跨期、SW離線/升級：`runtime-maturity.mjs`；首筆可讀/原始事件127公尺不遺失/陳情main不變：`site-maturity.mjs`。
