@@ -21,6 +21,37 @@ export const sha256 = async (value: string) =>
   ]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+// A remote key set caches its keys per instance, so it must outlive a single request: building
+// one inside each request meant an empty cache and one outbound JWKS fetch per request, including
+// for forged tokens. Key sets are shared per JWKS URL (one per issuer) for the life of the isolate.
+// The URLs come from configuration constants, never from request data, so the map stays tiny.
+//
+// - cacheMaxAge: a signing key removed from the JWKS is still accepted for at most this long, so it
+//   is also the worst-case delay before a rotated-out or revoked key stops working. It does not
+//   affect session revocation: Access invalidates sessions itself and every JWT keeps its own `exp`.
+// - cooldownDuration: an unknown `kid` triggers a refetch at most this often per key set, which
+//   bounds unauthenticated token floods to six fetches per minute per isolate and bounds the window
+//   in which a newly published key is rejected.
+// A failed fetch is not cached (the next request retries) and there is no stale-if-error: once the
+// cache expires during a JWKS outage, verification fails closed with 401.
+export const JWKS_CACHE_MAX_AGE_MS = 5 * 60_000;
+export const JWKS_COOLDOWN_MS = 10_000;
+const remoteKeySets = new Map<string, JWTVerifyGetKey>();
+export function remoteKeys(url: URL): JWTVerifyGetKey {
+  let keys = remoteKeySets.get(url.href);
+  if (!keys) {
+    keys = createRemoteJWKSet(url, {
+      cacheMaxAge: JWKS_CACHE_MAX_AGE_MS,
+      cooldownDuration: JWKS_COOLDOWN_MS,
+    });
+    remoteKeySets.set(url.href, keys);
+  }
+  return keys;
+}
+/** Test hook: forget every shared key set so a test starts from a cold cache. */
+export function clearRemoteKeys() {
+  remoteKeySets.clear();
+}
 export function enforceOwner(
   payload: JWTPayload,
   hash: string,
@@ -42,8 +73,7 @@ export async function owner(request: Request, env: Env, key?: JWTVerifyGetKey) {
   try {
     ({ payload } = await jwtVerify(
       token,
-      key ||
-        createRemoteJWKSet(new URL("/cdn-cgi/access/certs", env.ACCESS_ISSUER)),
+      key || remoteKeys(new URL("/cdn-cgi/access/certs", env.ACCESS_ISSUER)),
       {
         issuer: env.ACCESS_ISSUER,
         audience: env.ACCESS_AUD,
@@ -110,7 +140,7 @@ export async function runner(
     ({ payload } = await jwtVerify(
       token,
       key ||
-        createRemoteJWKSet(
+        remoteKeys(
           new URL(
             "https://token.actions.githubusercontent.com/.well-known/jwks",
           ),

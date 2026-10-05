@@ -22,11 +22,20 @@ const jwk = {
   alg: "RS256",
   use: "sig",
 };
+let jwksFetches = 0; // the Worker must cache the Access JWKS across requests, not refetch it per request
 const keys = createServer((q, r) => {
+  jwksFetches++;
   r.setHeader("Content-Type", "application/json");
   r.end(JSON.stringify({ keys: [jwk] }));
 });
 await new Promise((resolve) => keys.listen(issuerPort, "127.0.0.1", resolve));
+const realFetch = globalThis.fetch;
+let accessRequests = 0; // requests that carry the Access JWT, i.e. that make the Worker verify a token
+globalThis.fetch = (input, init) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (url.startsWith(origin) && init?.headers && new Headers(init.headers).has("Cf-Access-Jwt-Assertion")) accessRequests++;
+  return realFetch(input, init);
+};
 const token = await new SignJWT({ type: "app", email })
   .setProtectedHeader({ alg: "RS256", kid: "fixture" })
   .setIssuer(issuer)
@@ -315,6 +324,9 @@ try {
   assert.equal(html.status, 200);
   assert.equal(html.headers.get("Cache-Control"), "no-store");
   assert.match(await html.text(), /內容管理/);
+  console.log(`JWKS fetches: ${jwksFetches} for ${accessRequests} requests with an Access JWT`);
+  assert.ok(accessRequests >= 30, `expected many verified requests, saw ${accessRequests}`);
+  assert.ok(jwksFetches >= 1 && jwksFetches <= 2, `Access JWKS fetched ${jwksFetches} times for ${accessRequests} requests; it must be cached`);
   if (process.env.CMS_BROWSER === '1') {
     const {chromium} = await import(process.env.CMS_PLAYWRIGHT_PATH || '../../tests/donation/node_modules/playwright/index.mjs');
     console.log('CMS_BROWSER: launching Chromium');
