@@ -1,4 +1,6 @@
 """Generate public discovery views from existing reviewed records; no remote input."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import json, html, re, math

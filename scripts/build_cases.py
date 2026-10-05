@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build the public map and standalone case pages from reviewed public JSON only."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET

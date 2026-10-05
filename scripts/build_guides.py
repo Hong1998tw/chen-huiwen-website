@@ -4,6 +4,8 @@
 The shared page skeleton is reused without modifying its template. build_shared.py
 owns final navigation, footer and asset hashes. This builder never reads the clock.
 """
+from python_guard import require_supported_python
+require_supported_python()
 from datetime import date
 from html import escape
 import json

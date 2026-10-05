@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build public schedules and activities without credentials or personal-data collection."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo

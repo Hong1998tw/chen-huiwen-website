@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Use editorial content dates, never build time, as sitemap lastmod."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 import json
 import xml.etree.ElementTree as ET

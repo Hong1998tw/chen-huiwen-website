@@ -1,5 +1,7 @@
 """One safe block model for owner-created news, service, council and policy pages."""
 from __future__ import annotations
+from python_guard import require_supported_python
+require_supported_python()
 
 from datetime import date, datetime
 from html import escape
@@ -125,7 +127,9 @@ def render_block(block):
     if typ == 'heading': return '<h2>' + e('title') + '</h2>'
     if typ == 'paragraph': return '<p>' + e('text').replace('\n','<br>') + '</p>'
     if typ == 'timeline': return f'<article class="content-card"><div class="card-body"><time datetime="{e("date")}">{e("date")}</time><h2>{e("title")}</h2><p>{e("text")}</p></div></article>'
-    if typ == 'source': return f'<p class="source-note">{f"<time datetime=\"{e("date")}\">{e("date")}</time> · " if block["date"] else ""}<a href="{e("url")}" target="_blank" rel="noopener noreferrer">{e("title")} ↗</a></p>'
+    if typ == 'source':
+        stamp = f'<time datetime="{e("date")}">{e("date")}</time> · ' if block['date'] else ''
+        return f'<p class="source-note">{stamp}<a href="{e("url")}" target="_blank" rel="noopener noreferrer">{e("title")} ↗</a></p>'
     if typ in {'photo','video'}:
         return render_media({'kind':typ,'url':block['url'],'alt':block['alt'],'caption':block['text'] or block['title'],'credit':block['credit']})
     address = e('address')

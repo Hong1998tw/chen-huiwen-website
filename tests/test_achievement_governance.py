@@ -132,7 +132,7 @@ class MetadataTests(unittest.TestCase):
             root=Path(d)
             for name in ['scripts','templates','data','assets']:
                 (root/name).mkdir()
-            for name in ['build_cases.py','achievement_metadata.py','validate_achievements.py','case_context.py','case_overview.py','case_media.py']:
+            for name in ['build_cases.py','python_guard.py','achievement_metadata.py','validate_achievements.py','case_context.py','case_overview.py','case_media.py']:
                 shutil.copy(ROOT/'scripts'/name,root/'scripts'/name)
             shutil.copy(ROOT/'templates/case-page.html',root/'templates/case-page.html')
             for name in ['styles.css','map.css','map.js','digital.css','digital.js']:

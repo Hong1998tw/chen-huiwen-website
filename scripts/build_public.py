@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build the explicit public projection and Pages artifact; never publish the repo root."""
 from __future__ import annotations
+from python_guard import require_supported_python
+require_supported_python()
 
 import argparse
 import hashlib

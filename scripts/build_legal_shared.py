@@ -1,4 +1,6 @@
 """Copy the reviewed public card renderer and assets into the authenticated CMS bundle."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 import shutil
 ROOT=Path(__file__).resolve().parents[1]

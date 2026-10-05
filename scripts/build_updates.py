@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build public website additions and RSS; never infer a new real-world event."""
 from __future__ import annotations
+from python_guard import require_supported_python
+require_supported_python()
 
 from datetime import date, datetime
 from email.utils import format_datetime

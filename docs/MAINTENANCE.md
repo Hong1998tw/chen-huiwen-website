@@ -4,7 +4,7 @@
 
 ## 安裝與單一入口
 
-沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；安裝 `beautifulsoup4==4.13.5 html5lib==1.1`。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
+沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；安裝 `beautifulsoup4==4.13.5 html5lib==1.1`。所有會寫入產物的腳本都先呼叫 `scripts/python_guard.py`：低於 3.12 會在寫入任何檔案前以 exit 2 停止並說明版本需求（新增會寫檔的腳本須同樣呼叫，`tests/test_python_guard.py` 會檢查）。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
 
 ```sh
 python3 scripts/build_all.py

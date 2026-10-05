@@ -7,6 +7,8 @@ does not touch Cloudflare, DNS, GitHub Pages settings, Search Console, Drive or
 Notion.
 """
 from __future__ import annotations
+from python_guard import require_supported_python
+require_supported_python()
 
 import argparse
 from pathlib import Path

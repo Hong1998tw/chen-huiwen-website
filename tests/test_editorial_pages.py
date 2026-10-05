@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from editorial_pages import validate_page, render_page
+from editorial_pages import validate_page, render_page, render_block
 from page_seo import apply as apply_seo
 from publication_path_guard import evaluate
 
@@ -64,6 +64,15 @@ class EditorialPages(unittest.TestCase):
         self.assertTrue(evaluate(branch,'huiwen-publisher[bot]','Bot','',files)[0])
         self.assertFalse(evaluate(branch,'huiwen-publisher[bot]','Bot','',files+['admin/src/index.ts'])[0])
         self.assertFalse(evaluate(branch,'huiwen-publisher[bot]','Bot','',files+['news.html'])[0])
+
+    def test_source_block_renders_optional_date_without_version_dependent_syntax(self):
+        # The previous one-line f-string reused its own quote type and contained a backslash
+        # inside the expression, which only Python 3.12+ can parse.
+        block={'type':'source','date':'2026-09-30','url':'https://example.org/a?x=1&y=2','title':'議會 <質詢> "紀錄"'}
+        link='<a href="https://example.org/a?x=1&amp;y=2" target="_blank" rel="noopener noreferrer">議會 &lt;質詢&gt; &quot;紀錄&quot; ↗</a></p>'
+        self.assertEqual(render_block(block),'<p class="source-note"><time datetime="2026-09-30">2026-09-30</time> · '+link)
+        self.assertEqual(render_block({**block,'date':''}),'<p class="source-note">'+link)
+        self.assertIn('<time datetime="2026-10-01">',render_block({**block,'date':'2026-10-01'}))
 
 
 if __name__ == '__main__': unittest.main()
