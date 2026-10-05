@@ -1,4 +1,6 @@
 """Render the current service schedule while retaining validated source history."""
+from python_guard import require_supported_python
+require_supported_python()
 import json, re
 from pathlib import Path
 from datetime import date, time
