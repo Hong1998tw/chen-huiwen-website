@@ -65,8 +65,35 @@ jobs:
           node-version: '24'
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - name: Verify the Lighthouse static server (Content-Encoding, 404, path handling)
+        run: node tests/donation/static-server-check.mjs
       - name: Enforce mobile Lighthouse acceptance medians
+        # Pages are served with production-like brotli/gzip (tests/donation/static-server.mjs);
+        # conditions and how to compare with older scores: docs/LIGHTHOUSE-MEASUREMENT.md.
+        # The pin below is the Chromium build of the locked playwright 1.55.1; bump it
+        # deliberately together with the lockfile and keep old and new scores separate.
+        env:
+          EXPECT_BROWSER_VERSION: '140.0.7339.186'
         run: npm run test:lighthouse --prefix tests/donation
+      - name: Reference run without compression (informational, same build and browser)
+        if: always()
+        continue-on-error: true
+        env:
+          EXPECT_BROWSER_VERSION: '140.0.7339.186'
+          COMPRESSION: none
+          ENFORCE_THRESHOLDS: '0'
+          LABEL: uncompressed-reference
+          PAGES: index.html,achievements.html
+          RUNS: '3'
+        run: npm run test:lighthouse --prefix tests/donation
+      - name: Compare compressed gate run with the uncompressed reference
+        if: always()
+        continue-on-error: true
+        run: |
+          node tests/donation/lighthouse-compare.mjs \
+            tests/donation/results/readiness/uncompressed-reference-lighthouse \
+            tests/donation/results/readiness/candidate-lighthouse \
+            tests/donation/results/readiness | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
