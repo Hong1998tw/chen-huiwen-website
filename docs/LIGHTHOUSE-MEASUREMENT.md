@@ -71,7 +71,7 @@ CI 以 `npm ci` 安裝鎖定的 `playwright 1.55.1`，其 Chromium 為 `140.0.73
 
 ## 6. 同一份建置的壓縮／未壓縮對照與內容證據
 
-每個 PR 的 `lighthouse` job 會在 gate 之後（`if: always()`、`continue-on-error: true`、`ENFORCE_THRESHOLDS=0`）再跑一次 `COMPRESSION=none`（`index.html`、`achievements.html`，各 3 次），並產生 `comparison-*.json／.md`（也寫入 Job Summary）。同一 runner、同一份最終 `_site`、同一 Chromium，唯一差異是壓縮。全部原始 Lighthouse JSON（`<page>-<run>.json`）、`summary.json`、`content-manifest.json`、`server-log.json` 與比較檔都在 artifact `production-readiness-lighthouse`（保留 14 天）。
+每個 PR 的 `lighthouse` job 會在壓縮 gate 之後（`if: always()`，即使 gate 失敗也會產生證據）再跑一次 `COMPRESSION=none`（`index.html`、`achievements.html`，各 3 次，`ENFORCE_THRESHOLDS=0`），並以 `lighthouse-compare.mjs --expect-pages=index.html,achievements.html` 比較（也寫入 Job Summary）。**未壓縮分數只記錄、不判定；效能門檻只由壓縮 gate 執行。但參照 run 必須完整產生證據、比較器必須通過，否則 CI 失敗**（兩個步驟都沒有 `continue-on-error`；比較步驟以 `shell: bash` 加 `set -o pipefail` 執行，因為管到 `tee` 時，沒有 `pipefail` 會讓比較器的 exit 1 被吞掉）。同一 runner、同一份最終 `_site`、同一 Chromium，唯一差異是壓縮。全部原始 Lighthouse JSON（`<page>-<run>.json`）、`summary.json`、`content-manifest.json`、`server-log.json` 與比較檔都在 artifact `production-readiness-lighthouse`（保留 14 天）。
 
 **內容證據怎麼運作**
 
@@ -82,10 +82,11 @@ CI 以 `npm ci` 安裝鎖定的 `playwright 1.55.1`，其 Chromium 為 `140.0.73
   2. 兩邊都證明量測期間樹未變：`digestAfterRun` 存在、**等於**量測前的 `digest`，且 `unchangedDuringRun === true`（缺少、為 null、或與 `digest` 矛盾——包括 `unchangedDuringRun: true` 但 `digestAfterRun` 不同——都算證據不足）；
   3. **每一次量測**都有伺服器端證據：`pageRequests` 存在且非空；每一列都有 64 位十六進位的 `serverIdentitySha256`（缺少、null、空字串或格式錯誤皆不接受）；列出的路徑（忽略 query string）必須存在於 manifest（未知路徑 = 證據不足），且位元組與 manifest 相同；受測頁面本身必須有一列已驗證的請求；
   4. 兩邊 digest 相同，且兩邊都送出的路徑位元組一致；
-  5. 瀏覽器／Lighthouse／門檻相同、壓縮模式不同。
+  5. 瀏覽器／Lighthouse／門檻相同、壓縮模式不同；
+  6. **兩邊都是完成的完整 run**：`summary.json` 有最終 `acceptance` 區塊（沒有＝run 中途中斷）、記錄了 `conditions.runs`、每一頁恰好有 `1..runs` 的逐次結果（缺次、多次、重複編號皆不接受）、`acceptance` 列出的頁面都有量測結果，且 `--expect-pages` 指名的頁面兩邊都存在。分數高低**不**影響可比較性（參照 run 低於門檻仍可比較）。
   任何一項缺證據或不符都會 exit 1 並寫出 `comparable: false` 與原因（問題清單最多列 10 項再加總數）。**缺證據永遠不會被解讀為「沒有問題」。** root 路徑字串相同或不同都不再是證據。
-- **這些證據證明什麼、不證明什麼：** 證明「Chrome 在這次量測中請求的每個檔案，伺服器實送的位元組與量測前掃描的 manifest 一致」，以及「樹在量測前後相同」。不證明 Chrome 沒請求的檔案（例如其他頁面）是否相同——那部分由整棵樹的 digest 涵蓋；也不證明正式站實際送出的位元組（那是正式驗收的範圍）。CI 內的未壓縮對照與比較步驟目前是 `continue-on-error`（資訊性），所以 `comparable: false` 會出現在 Job Summary 與 artifact，但不會單獨讓 `lighthouse` job 變紅；是否改為強制，是待決定的事項。
-- 負向測試（`tests/donation/lighthouse-compare-check.mjs`，CI 在 gate 前執行，13 項）：同一個 root 路徑、不同位元組 → 不可比較並點名 `styles.css`；不同目錄、相同內容 → 可比較；新增／缺少檔案；缺 manifest、缺 `content`、外部 `BASE_URL`；量測期間內容變動；手改 digest 或 manifest；伺服器實送位元組與 manifest 不符；**缺 `serverIdentitySha256`（缺少／null／空字串／格式錯誤）、未知 served path（含 query string）、`digestAfterRun` 缺少／null／與 `unchangedDuringRun=true` 矛盾、`pageRequests` 缺少／空陣列／非陣列／整批缺少、受測頁面本身沒有已驗證的列、列沒有 path、`results` 為空——每一種都在 A、B 兩側各測一次，且有「資料完整則可比較」的對照（含 query string 的路徑）與 CLI exit 1／0**；瀏覽器／Lighthouse／門檻／壓縮模式不符；CLI 結束碼。七條新規則各自做過變異測試（關掉該規則，測試失敗）。
+- **這些證據證明什麼、不證明什麼：** 證明「Chrome 在這次量測中請求的每個檔案，伺服器實送的位元組與量測前掃描的 manifest 一致」，以及「樹在量測前後相同」。不證明 Chrome 沒請求的檔案（例如其他頁面）是否相同——那部分由整棵樹的 digest 涵蓋；也不證明正式站實際送出的位元組（那是正式驗收的範圍）。CI 內的參照 run 與比較步驟現在會讓 `lighthouse` job 失敗（見本節上方）；但比較器信任 `summary.json` 與 `content-manifest.json` 的相互一致，不防範有意偽造兩者，只防漏記與不一致。
+- 負向測試（`tests/donation/lighthouse-compare-check.mjs`，CI 在 gate 前執行，16 項）：同一個 root 路徑、不同位元組 → 不可比較並點名 `styles.css`；不同目錄、相同內容 → 可比較；新增／缺少檔案；缺 manifest、缺 `content`、外部 `BASE_URL`；量測期間內容變動；手改 digest 或 manifest；伺服器實送位元組與 manifest 不符；**缺 `serverIdentitySha256`（缺少／null／空字串／格式錯誤）、未知 served path（含 query string）、`digestAfterRun` 缺少／null／與 `unchangedDuringRun=true` 矛盾、`pageRequests` 缺少／空陣列／非陣列／整批缺少、受測頁面本身沒有已驗證的列、列沒有 path、`results` 為空——每一種都在 A、B 兩側各測一次，且有「資料完整則可比較」的對照（含 query string 的路徑）與 CLI exit 1／0**；瀏覽器／Lighthouse／門檻／壓縮模式不符；CLI 結束碼。七條新規則各自做過變異測試（關掉該規則，測試失敗）。
 
 **本機實測**（2026-10-05，沙箱 Chromium 141.0.7390.37、Lighthouse 13.4.1、每頁 3 次、最終 `_site`，內容 digest `c5d4bee6b0de…584df4`、520 個檔案、量測前後相同）：
 

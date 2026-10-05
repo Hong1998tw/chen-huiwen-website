@@ -26,16 +26,16 @@ const tree = async (name, files) => {
 const base = { 'index.html': '<h1>home</h1>', 'styles.css': 'body{margin:0}', 'data/search-index.json': '[1,2,3]' };
 
 /** Writes a result folder like readiness-performance.mjs would. */
-const makeRun = async (name, root, { compression, browser = '140.0.7339.186', unchanged = true, withManifest = true, withContent = true, tamper, servedOverride, withQuery = false } = {}) => {
+const makeRun = async (name, root, { compression, browser = '140.0.7339.186', unchanged = true, withManifest = true, withContent = true, tamper, servedOverride, withQuery = false, performance } = {}) => {
  const manifest = await buildContentManifest(root);
  const dir = join(work, name, 'candidate-lighthouse');
  await mkdir(dir, { recursive: true });
  const served = (path, file) => ({ path, serverIdentitySha256: servedOverride?.[path] ?? manifest.files.find(f => f.path === file).sha256, contentEncoding: compression === 'none' ? null : 'br', mimeType: 'text/html', vary: null });
- const results = [1, 2, 3].map(run => ({ page: 'index.html', run, lighthouseVersion: '13.4.1', browserVersion: browser, scores: { performance: compression === 'none' ? 90 : 98 },
+ const results = [1, 2, 3].map(run => ({ page: 'index.html', run, lighthouseVersion: '13.4.1', browserVersion: browser, scores: { performance: performance ?? (compression === 'none' ? 90 : 98) },
   metrics: { 'first-contentful-paint': 1000, 'largest-contentful-paint': 2000, 'speed-index': 1500, 'total-blocking-time': 0 }, network: { transferSize: 1000, resourceSize: 2000, serverBodyBytes: 900 },
   pageRequests: [served('/index.html', 'index.html'), served(withQuery ? '/styles.css?v=abc123' : '/styles.css', 'styles.css')] }));
  const summary = { label: name, node: 'v22', root, conditions: { compression, browserVersion: browser, thresholds: { performance: 90 }, runs: 3, ci: true },
-  results, ...(withContent ? { content: { root, digest: manifest.digest, fileCount: manifest.fileCount, manifestFile: 'content-manifest.json', digestAfterRun: manifest.digest, unchangedDuringRun: unchanged } } : {}) };
+  results, acceptance: [{ page: 'index.html', medians: { performance: performance ?? 90 }, passed: (performance ?? 90) >= 90 }], ...(withContent ? { content: { root, digest: manifest.digest, fileCount: manifest.fileCount, manifestFile: 'content-manifest.json', digestAfterRun: manifest.digest, unchangedDuringRun: unchanged } } : {}) };
  if (tamper) tamper(summary, manifest);
  await writeFile(join(dir, 'summary.json'), JSON.stringify(summary));
  if (withManifest) await writeFile(join(dir, 'content-manifest.json'), JSON.stringify(manifest));
@@ -165,6 +165,53 @@ try {
   }
   const ok = spawnSync('node', [script, runNone, await makeRun('cli-clean', rootSame, { compression: 'auto' }), out], { encoding: 'utf8' });
   assert.equal(ok.status, 0, ok.stderr);
+ });
+
+ // ---- Complete evidence for the reference run: an unfinished or partial run is never "comparable". ----
+ const incomplete = [
+  ['no final acceptance block (the run crashed or was cut off)', summary => { delete summary.acceptance; }, /no final acceptance block, so the run did not finish/],
+  ['an empty acceptance block', summary => { summary.acceptance = []; }, /no final acceptance block/],
+  ['a page measured fewer times than conditions.runs', summary => { summary.results = summary.results.slice(0, 2); }, /index\.html has runs \[1,2\], expected \[1,2,3\]/],
+  ['a page measured more times than conditions.runs', summary => { summary.results.push({ ...summary.results[0], run: 4 }); }, /index\.html has runs \[1,2,3,4\], expected \[1,2,3\]/],
+  ['duplicate run numbers', summary => { summary.results[2].run = 2; }, /index\.html has runs \[1,2,2\], expected \[1,2,3\]/],
+  ['conditions.runs is not recorded', summary => { delete summary.conditions.runs; }, /does not record conditions\.runs/],
+  ['acceptance lists a page with no measured run', summary => { summary.acceptance.push({ page: 'ghost.html', medians: {}, passed: true }); }, /acceptance lists ghost\.html but it has no measured run/]
+ ];
+ await check('an unfinished or partial run is insufficient on either side; scores alone never decide comparability', async () => {
+  for (const [label, tamperSummary, expected] of incomplete) {
+   for (const side of ['A', 'B']) {
+    const comparison = await withHole(side, tamperSummary);
+    assert.equal(comparison.comparable, false, `${label} (${side}): ${JSON.stringify(comparison.problems)}`);
+    assert.ok(comparison.problems.some(problem => problem.startsWith(`${side}: `) && expected.test(problem)), `${label} (${side}): expected ${expected}, got ${JSON.stringify(comparison.problems)}`);
+   }
+  }
+  // Reference scores are recorded only: a run below every threshold is still comparable when its evidence is complete.
+  const low = await compare(await makeRun('low-ref', rootA, { compression: 'none', performance: 62 }), await makeRun('low-gate', rootSame, { compression: 'auto' }));
+  assert.deepEqual(low.problems, []); assert.equal(low.comparable, true);
+  assert.deepEqual(low.pages[0].A.performance, [62, 62, 62]);
+ });
+ await check('--expect-pages: expected pages must be present with complete runs on both sides', async () => {
+  const [a, b] = [await loadRun(runNone), await loadRun(await makeRun('expect-auto', rootSame, { compression: 'auto' }))];
+  assert.equal(compareRuns(a, b, { expectPages: ['index.html'] }).comparable, true);
+  const missing = compareRuns(a, b, { expectPages: ['index.html', 'achievements.html'] });
+  assert.equal(missing.comparable, false);
+  assert.ok(missing.problems.some(problem => /^A: expected page achievements\.html was not measured/.test(problem)) && missing.problems.some(problem => /^B: expected page achievements\.html was not measured/.test(problem)), JSON.stringify(missing.problems));
+ });
+ await check('CLI: --expect-pages is honoured, unfinished runs exit 1, unknown options exit 2', async () => {
+  const script = join(here, 'lighthouse-compare.mjs');
+  const out = join(work, 'cli-expect');
+  const good = await makeRun('cli-expect-good', rootSame, { compression: 'auto' });
+  assert.equal(spawnSync('node', [script, runNone, good, out, '--expect-pages=index.html'], { encoding: 'utf8' }).status, 0);
+  const noPage = spawnSync('node', [script, runNone, good, out, '--expect-pages=index.html,achievements.html'], { encoding: 'utf8' });
+  assert.equal(noPage.status, 1); assert.match(noPage.stdout, /expected page achievements\.html was not measured/);
+  const crashed = await makeRun('cli-crashed', rootSame, { compression: 'auto', tamper: summary => { delete summary.acceptance; summary.results = summary.results.slice(0, 1); } });
+  const unfinished = spawnSync('node', [script, runNone, crashed, out], { encoding: 'utf8' });
+  assert.equal(unfinished.status, 1); assert.match(unfinished.stdout, /不可比較／證據不足/); assert.match(unfinished.stdout, /did not finish/);
+  const typo = spawnSync('node', [script, runNone, good, out, '--expect-page=index.html'], { encoding: 'utf8' });
+  assert.equal(typo.status, 2); assert.match(typo.stderr, /Unknown option/);
+  // A shell pipeline that follows the workflow step: with pipefail, the comparer's exit code survives `tee`.
+  const piped = spawnSync('bash', ['-eo', 'pipefail', '-c', `node "${script}" "${runNone}" "${crashed}" "${out}" | tee /dev/null`], { encoding: 'utf8' });
+  assert.equal(piped.status, 1);
  });
  await check('browser, Lighthouse, threshold and compression mismatches still fail', async () => {
   const browser = await compare(runNone, await makeRun('auto-browser', rootA, { compression: 'auto', browser: '141.0.0.0' }));

@@ -87,9 +87,10 @@ jobs:
           EXPECT_BROWSER_VERSION: '140.0.7339.186'
           ROOT_DIR: ${{ runner.temp }}/public-site
         run: npm run test:lighthouse --prefix tests/donation
-      - name: Reference run without compression (informational, same build and browser)
+      - name: Reference run without compression (scores are recorded only; the run must still finish with complete evidence)
+        # ENFORCE_THRESHOLDS=0: the uncompressed performance score is not judged here (the compressed gate above
+        # enforces the thresholds). A crash, a changed measured tree or a Lighthouse runtime error still fails this step.
         if: always()
-        continue-on-error: true
         env:
           EXPECT_BROWSER_VERSION: '140.0.7339.186'
           ROOT_DIR: ${{ runner.temp }}/public-site
@@ -99,14 +100,18 @@ jobs:
           PAGES: index.html,achievements.html
           RUNS: '3'
         run: npm run test:lighthouse --prefix tests/donation
-      - name: Compare compressed gate run with the uncompressed reference
+      - name: Compare the compressed gate run with the uncompressed reference (fails on missing, partial or mismatching evidence)
+        # The comparer exits 1 when evidence is missing or inconsistent. `set -o pipefail` keeps that exit code through
+        # `tee`; without it the pipeline would report tee's success.
         if: always()
-        continue-on-error: true
+        shell: bash
         run: |
+          set -o pipefail
           node tests/donation/lighthouse-compare.mjs \
             tests/donation/results/readiness/uncompressed-reference-lighthouse \
             tests/donation/results/readiness/candidate-lighthouse \
-            tests/donation/results/readiness | tee -a "$GITHUB_STEP_SUMMARY"
+            tests/donation/results/readiness \
+            --expect-pages=index.html,achievements.html | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

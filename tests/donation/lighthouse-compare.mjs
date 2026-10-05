@@ -1,11 +1,13 @@
 /** Side-by-side comparison of two readiness-performance.mjs result folders.
- * Usage: node lighthouse-compare.mjs <dir-A> <dir-B> [out-dir]
+ * Usage: node lighthouse-compare.mjs <dir-A> <dir-B> [out-dir] [--expect-pages=a.html,b.html]
  * Each dir is a `<label>-lighthouse` folder (summary.json, content-manifest.json, raw per-run LHR JSON).
  * The comparison is only meaningful when both runs measured byte-identical site content with the
  * same Chromium and Lighthouse. It fails (exit 1, `comparable: false`) when:
  *  - either side lacks content evidence (summary `content` or content-manifest.json), the manifest
  *    does not match its recorded digest, or the tree was not proven unchanged during that run
  *    (`digestAfterRun` missing, or different from `digest`, or `unchangedDuringRun` not true);
+ *  - a run is incomplete: no final `acceptance` block (the run did not finish), a page with fewer or
+ *    more runs than `conditions.runs`, or a page named by --expect-pages that is missing;
  *  - any measured run lacks server-side proof: `pageRequests` missing or empty, a request row without
  *    a valid `serverIdentitySha256`, a served path that is not in the manifest, served bytes that differ
  *    from the manifest, or no verified row for the measured page itself. Missing evidence is never read
@@ -55,6 +57,27 @@ export function contentEvidenceProblems(side, name) {
  return problems;
 }
 
+/** A finished run: final acceptance block, and every page measured exactly `conditions.runs` times (runs 1..N).
+ * `expectPages` names pages that must be present on this side. Scores are not judged here: a reference run's
+ * performance is recorded only; thresholds are enforced by the gate run itself. */
+export function completenessProblems(side, name, expectPages = []) {
+ const { summary } = side;
+ const results = Array.isArray(summary.results) ? summary.results : [];
+ const problems = [];
+ if (!Array.isArray(summary.acceptance) || !summary.acceptance.length) problems.push(`${name}: summary.json has no final acceptance block, so the run did not finish`);
+ const expectedRuns = summary.conditions?.runs;
+ if (!Number.isInteger(expectedRuns) || expectedRuns < 1) problems.push(`${name}: summary.json does not record conditions.runs`);
+ const byPage = new Map();
+ for (const result of results) byPage.set(result.page, [...(byPage.get(result.page) || []), result.run]);
+ for (const page of expectPages) if (!byPage.has(page)) problems.push(`${name}: expected page ${page} was not measured`);
+ if (Number.isInteger(expectedRuns)) for (const [page, runs] of byPage) {
+  const wanted = Array.from({ length: expectedRuns }, (_, index) => index + 1).join(',');
+  if ([...runs].sort((a, b) => a - b).join(',') !== wanted) problems.push(`${name}: ${page} has runs [${runs.join(',')}], expected [${wanted}]`);
+ }
+ if (Array.isArray(summary.acceptance)) for (const row of summary.acceptance) if (!byPage.has(row.page)) problems.push(`${name}: acceptance lists ${row.page} but it has no measured run`);
+ return problems;
+}
+
 const SHA256 = /^[0-9a-f]{64}$/;
 const manifestPath = path => (path === '/' ? 'index.html' : path.replace(/^\//, '').replace(/\/$/, '/index.html'));
 const MAX_LISTED = 10;
@@ -97,13 +120,13 @@ const servedHashes = side => {
  return served;
 };
 
-export function compareRuns(A, B) {
+export function compareRuns(A, B, { expectPages = [] } = {}) {
  const problems = [];
  const same = (name, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) problems.push(`${name} differs: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`); };
  same('browserVersion', A.summary.conditions?.browserVersion, B.summary.conditions?.browserVersion);
  same('lighthouseVersion', A.summary.results?.[0]?.lighthouseVersion, B.summary.results?.[0]?.lighthouseVersion);
  same('thresholds', A.summary.conditions?.thresholds, B.summary.conditions?.thresholds);
- problems.push(...contentEvidenceProblems(A, 'A'), ...contentEvidenceProblems(B, 'B'), ...servedEvidenceProblems(A, 'A'), ...servedEvidenceProblems(B, 'B'));
+ problems.push(...contentEvidenceProblems(A, 'A'), ...contentEvidenceProblems(B, 'B'), ...servedEvidenceProblems(A, 'A'), ...servedEvidenceProblems(B, 'B'), ...completenessProblems(A, 'A', expectPages), ...completenessProblems(B, 'B', expectPages));
  let contentDiff = null;
  if (A.manifest && B.manifest) {
   if (A.manifest.digest !== B.manifest.digest) {
@@ -166,11 +189,16 @@ export function renderMarkdown(comparison, A, B) {
 }
 
 async function main() {
- const [dirA, dirB, outArg] = process.argv.slice(2).map(arg => resolve(arg));
- if (!dirA || !dirB) { console.error('Usage: node lighthouse-compare.mjs <dir-A> <dir-B> [out-dir]'); process.exit(2); }
+ const flags = process.argv.slice(2).filter(arg => arg.startsWith('--'));
+ const [dirA, dirB, outArg] = process.argv.slice(2).filter(arg => !arg.startsWith('--')).map(arg => resolve(arg));
+ if (!dirA || !dirB) { console.error('Usage: node lighthouse-compare.mjs <dir-A> <dir-B> [out-dir] [--expect-pages=a.html,b.html]'); process.exit(2); }
+ const expectFlag = flags.find(flag => flag.startsWith('--expect-pages='));
+ const unknown = flags.filter(flag => flag !== expectFlag);
+ if (unknown.length) { console.error(`Unknown option(s): ${unknown.join(' ')}`); process.exit(2); }
+ const expectPages = expectFlag ? expectFlag.slice('--expect-pages='.length).split(',').filter(Boolean) : [];
  const out = outArg || resolve(dirB, '..');
  const [A, B] = [await loadRun(dirA), await loadRun(dirB)];
- const comparison = compareRuns(A, B);
+ const comparison = compareRuns(A, B, { expectPages });
  const md = renderMarkdown(comparison, A, B);
  await mkdir(out, { recursive: true });
  const stem = `comparison-${basename(dirA).replace(/-lighthouse$/, '')}-vs-${basename(dirB).replace(/-lighthouse$/, '')}`;
