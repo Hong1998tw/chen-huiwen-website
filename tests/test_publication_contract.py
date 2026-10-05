@@ -334,6 +334,14 @@ class CriticalDeploymentTests(unittest.TestCase):
         remote = f'<div class="footer-grid"><a href="/cdn-cgi/l/email-protection#{payload}"><span data-cfemail="{payload}">[email protected]</span></a></div>'
         self.assertEqual(live.critical_differences(local, remote), [])
 
+    def test_live_json_parity_uses_the_published_allowlist_projections(self):
+        projections = public.project_public_data(ROOT)
+        for path, value in projections.items():
+            with self.subTest(path=path):
+                expected = public.encoded(value)
+                self.assertNotEqual(expected, (ROOT / path).read_bytes())
+                self.assertEqual(live.canonical_bytes(path), expected)
+
     def test_representative_detail_pages_and_public_alias(self):
         self.assertGreaterEqual(sum(p.startswith('achievement-') for p in live.CORE_PAGES), 3)
         self.assertEqual(live.canonical_bytes('data/achievements.json'), (ROOT / public.PROJECTION).read_bytes())
