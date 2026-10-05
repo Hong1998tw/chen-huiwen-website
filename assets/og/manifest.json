@@ -352,5 +352,305 @@
     "status": "持續追蹤",
     "place": "鳳山體育園區",
     "sha256": "01e00635636a5e2464f30a50d31963d4069a54899ccf3f04004c6ea1edbf382a"
+  },
+  "achievement-weiwuying-three-buildings-renovation": {
+    "title": "衛武營三連棟修繕與藝文空間活化",
+    "status": "持續追蹤",
+    "place": "衛武營都會公園三連棟",
+    "sha256": "32e38a1349a7bddecf58cc7cea70abc041f7113be9fc9462818be8444319afdc"
+  },
+  "achievement-nanjing-road-median-safety": {
+    "title": "南京路分隔島、車道動線與積水改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區／南京路",
+    "sha256": "7a57d9b5c44193f489efa0689540f6284ddc6f3315680f9b34d9fdaedaab00da"
+  },
+  "achievement-hakka-culture-language-friendly": {
+    "title": "推動鳳山客家文化活動與客語友善環境",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "a92bb7246ae5ea1faa10aaa9d72902b65f1ecac4dffbe989f8d7d27eedb22732"
+  },
+  "achievement-long-term-care-tech-assistive-telehealth": {
+    "title": "倡議長照科技輔具與遠距照護",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "a7bb398b1dd3f8ce9167cf79af2637181a69cf6f910d34c28f47079171010453"
+  },
+  "achievement-school-lunch-food-safety": {
+    "title": "校園午餐與食品安全稽查監督",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "ca629b56101b2b9ed727381f18d28d110cd8b84d1cd3d25082502ca1641e08c9"
+  },
+  "achievement-accessible-parking-disability-management": {
+    "title": "身心障礙停車優惠與專用車格管理監督",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "1b1887f6b3313385066f14641d684de8024def52e690ad5b284ebaf42f4199ef"
+  },
+  "achievement-fengshan-village-clerk-staffing-vehicles": {
+    "title": "追蹤鳳山里幹事人力與公務機車配置",
+    "status": "持續追蹤",
+    "place": "鳳山區／區政人力",
+    "sha256": "a06d20cb6d7f5242c1d9756d676e5dbd00ae371db16d68d5d7fb8d8c618927e9"
+  },
+  "achievement-public-health-nurse-grade-pay": {
+    "title": "追蹤衛生所護理人員任用與職等改善",
+    "status": "政策實施",
+    "place": "全市政策",
+    "sha256": "3ac615970aa5eecfee702360d1c131cb5b5f1138ecdbc468886631718f29869c"
+  },
+  "achievement-hongmaogang-relocation-school-district": {
+    "title": "紅毛港遷村後學區與中安分校調整倡議",
+    "status": "持續追蹤",
+    "place": "跨區服務",
+    "sha256": "8409a631888884c250068454297c24dd794de74cd695a2842e712e1323f79978"
+  },
+  "achievement-wujia-velodrome-reuse-parking": {
+    "title": "五甲自由車場改闢與周邊停車需求追蹤",
+    "status": "已完成",
+    "place": "鳳山區／五甲自由車場",
+    "sha256": "58da8586d53440ab5cb12c610188802de73220b4d49ada2a9284c6c3fbeadc24"
+  },
+  "achievement-single-women-assisted-reproduction-support": {
+    "title": "倡議單身女性人工生殖諮詢與支持服務",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "41d8ff643890d0022939338645dc069e706fe1b31568ec08454ebb684556a41b"
+  },
+  "achievement-rail-workshop-reuse": {
+    "title": "台鐵高雄機廠都市計畫變更",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "02366c656e6625412092739a9334f93ad943150d039f3db70b3a178f02915f0e"
+  },
+  "achievement-huangpu-visitor-center": {
+    "title": "黃埔新村原資材場遊客中心規劃",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "3b38b8ae6aba71563fccda7b619fbfdd9143aa693a4b290a7232b61f023001b0"
+  },
+  "achievement-huangpu-youth": {
+    "title": "黃埔新村等文資場域青創補助倡議",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "3d53b675024e258dd2ba8100610f89ae8432bfb71feff1072e5b7e0b44e0ce7b"
+  },
+  "achievement-livestock-transition": {
+    "title": "畜產轉型與食農教育",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "719438756cf03acd98ad6bbba04eb11240d58214e9df6fb0875bb30f534c3f29"
+  },
+  "achievement-sports-center": {
+    "title": "鳳山運動園區體適能中心啟用與收費監督",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "fbb486b0ec569684a96582b2f78d8d887f01c2b706e28c0fae860efa2bf30013"
+  },
+  "achievement-transit-app": {
+    "title": "交通觀光APP整合",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "64913f44aa0aa687c8c7b4854b6cfdf2331c79040f0605e508b145f85d9a3da9"
+  },
+  "achievement-parks-renewal": {
+    "title": "八仙公園改造與後續設施改善",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "23bb5d396a9f4548edf7a5548b9ff532d059aedae33bb30696cd94eb0b9c56b6"
+  },
+  "achievement-partnership-registration": {
+    "title": "同性伴侶註記支持與性別友善服務監督",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "973c4af21261ab4fdc6d870d86a0aa3e7c7f99c2a0f53f94ba5a3f3816794ce9"
+  },
+  "achievement-compound-disaster-resilience-household-preparedness": {
+    "title": "倡議複合災害演練與家庭防災整備",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "d43dfa1653ffb54d796d6f94cae1410bd4f447de84b91c796a57789e1816c3a4"
+  },
+  "achievement-civil-defense-modernization-training": {
+    "title": "倡議民防訓練現代化與青年參與",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "b02393ca744a0c617874f703c183b00defd3bf6294fc7fd6ed8867d5f817abd2"
+  },
+  "achievement-matrix-case-115": {
+    "title": "追蹤南成里國慶九街道路改善",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "486b9bb97cf51ec981377d9d11943dd96c8a8884a21d0a751dfe427dbe14b5d6"
+  },
+  "achievement-caogong-canal-water-environment": {
+    "title": "追蹤曹公圳水質、步道與水岸環境維護",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "a6e25562f65acb764f9731f28bf30301224cf728e38cc5a678d313e7aeed5b26"
+  },
+  "achievement-low-income-denture-subsidy-rules": {
+    "title": "追蹤長者假牙補助資格與資源需求",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "b9d2959c24cf867c51a715aee39a8dcbcd762866660d8895cec25fa9d69f9cd9"
+  },
+  "achievement-taxi-lpg-subsidy-policy": {
+    "title": "追蹤計程車油氣雙燃料改裝補助",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "d8cf291d87d318c37458dc1adbbd31a134d3b7bde2d92ce09934810b4f53f42d"
+  },
+  "achievement-kaohsiung-big-data-center-establishment": {
+    "title": "倡議成立高雄市政府大數據中心",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "10d000e8ccf200a1bb1a0f87c905948a205282c39513d99c037e1b3b93bfabd4"
+  },
+  "achievement-information-technology-bureau-advocacy": {
+    "title": "倡議資訊專責組織與市府數位人才培育",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "058df622ff5b7004b1c72dce7520426e9418d5e7f907f595b2d870c5958fba67"
+  },
+  "achievement-generative-ai-campus-guidelines": {
+    "title": "推動校園AI應用與配套規劃",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "43f3ad4d18d97fcbbcd5a4cd25d44f94808c8d411da1b7bb68274f098bc873a0"
+  },
+  "achievement-mengo-transit-pass-existing-card-integration": {
+    "title": "推動MenGo既有一卡通與行動支付整合",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "c780db5686372145b6d256594485d93b0cc7030ccb8ec2131c7a3530b26446cf"
+  },
+  "achievement-guopi-village-community-center-planning": {
+    "title": "爭取過埤里多功能活動空間",
+    "status": "爭取規劃",
+    "place": "鳳山區",
+    "sha256": "2bbd422f0144de218a346566150b69dc2ddac394900dad03f81ab28e7bdf8f88"
+  },
+  "achievement-concert-economy-hotel-price-gouging-control": {
+    "title": "關注大型演唱會期間房價與住宿消費權益",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "b7ee6f2fea74f6f6c537de18fa58e686d27d1681ee2ef22dd753125cb9d85182"
+  },
+  "achievement-residential-setback-parking-fine-clarification": {
+    "title": "要求釐清住宅退縮空間停車的查證程序",
+    "status": "爭取規劃",
+    "place": "全市政策",
+    "sha256": "3ffc4615869949368a2b867fea73fd4e85012880ad422f8011c6a515a6e23fb2"
+  },
+  "achievement-matrix-case-76": {
+    "title": "文衡路278巷路面重鋪",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "47cbaedea9917cdd78deba4f700f34950318048e3550d9807829d33cf4465b5e"
+  },
+  "achievement-matrix-case-1": {
+    "title": "推動交通違規照片線上查詢",
+    "status": "政策實施",
+    "place": "全市政策",
+    "sha256": "8a96a5100ea8f8c574e42828b72fe2392f7a8aede364620f6e78d037e3df2639"
+  },
+  "achievement-matrix-case-22": {
+    "title": "牛寮公園遊具、交通與使用安全改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "70fdc9f34e9b4ef963dd5b01520c8ae558d9d94bf0e6c1d0f83555cb05130775"
+  },
+  "achievement-matrix-case-53": {
+    "title": "田衙路保生路至真君路段路面改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "7c18c811c8e6f90312fb2128d77ec6a8d7f700d9e50bd73442affc88a66ba0d5"
+  },
+  "achievement-matrix-case-54": {
+    "title": "真君路保生路至田衙路段路面改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "a6a4afe6694426df3b050c6bf70a615a2ab74fc73accd7ef74b0578ca9a40d8f"
+  },
+  "achievement-fengshan-early-intervention-resources": {
+    "title": "支持擴充早療評估量能與家庭療育補助",
+    "status": "政策實施",
+    "place": "全市政策",
+    "sha256": "71d46a9a3c3837ca55e1303042d7057045c747caff2960171502c249dac443e9"
+  },
+  "achievement-senior-long-term-care-daycenter": {
+    "title": "倡議運用閒置及社區空間增加日照服務",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "0c8b0a497e0234414aa7bde85183d1a9a633cf83b608f5ff24ab64dffb03ecc4"
+  },
+  "achievement-motorcycle-inspection-station-density": {
+    "title": "爭取鳳山新興社區就近取得機車定檢服務",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "cda6966f0199a1f1c5eaae3c0df8ea9b9f4e58531d18d3ffb576e87cc5e34984"
+  },
+  "achievement-fengshan-stream-sedi-cleaning": {
+    "title": "追蹤鳳山溪水質與水岸設施維護",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "0303003f13b30dc98300ea01ee77da8345795c090df9fe99f557ceee36e262fa"
+  },
+  "achievement-cram-school-regulatory-loophole-prevention": {
+    "title": "倡議幼兒園設立的親屬查核機制",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "e73029253073b430ab97b8edb6919fa6073f7f31c5491f55ce7b9e99e96bf577"
+  },
+  "achievement-fengshan-public-childcare-centers": {
+    "title": "支持盤點空間與增設公共托育機構",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "ac543e1dabedc1c269ec184a66db748e3cfa6af2e287e749abc559cc713375eb"
+  },
+  "achievement-elementary-teacher-quota-regularization": {
+    "title": "關注國小正式教師缺額與教師返鄉介聘",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "434b09a98ecb1db8325b35133b13ec342ecb4100f780a1a48e7dcc087d8460f5"
+  },
+  "achievement-zhongshan-park-lighting-renewal": {
+    "title": "鳳山中山公園寵物活動區照明改善",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "3d6fd7a7926e9fab80ff1c1140ee580df265da98bb0b05156c15ecc9c40a400e"
+  },
+  "achievement-wusong-park-landscape-renewal": {
+    "title": "追蹤武松公園設施更新與活動空間規劃",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "eeb0ba52f6eb715d68678cd258990082496864dbbd774bdfacd782d77348102f"
+  },
+  "achievement-matrix-case-5": {
+    "title": "鳳山行政中心前光復路二段側溝改善",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "9ce6fdcce3b65dcbbf870817d1902e42fc699b8839086c1018c9f32dfa43fce0"
+  },
+  "achievement-matrix-case-33": {
+    "title": "五甲二路603巷道路重鋪",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "c362cd3ded1c5676c14153599c6206eae13924fa0456386acb6d34fd98933f43"
+  },
+  "achievement-wujia-2nd-road-resurfacing": {
+    "title": "五甲二路路面刨鋪提案與分段改善追蹤",
+    "status": "持續追蹤",
+    "place": "鳳山區",
+    "sha256": "ffdb7885ab41837296bc32d357db004cb1eab5196557abee2152281d155609cd"
+  },
+  "achievement-xiehe-lane3-community-road-repair": {
+    "title": "曹公里暖心路平：協調民間力量改善私人巷道",
+    "status": "已完成",
+    "place": "曹公里",
+    "sha256": "1bc62ee6c6fba502dc0aa196cd9da5037941bdce8491ad698fc20dfebc582e75"
   }
 }

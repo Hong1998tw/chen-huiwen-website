@@ -41,6 +41,157 @@ LEGACY_PAGES = (
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
 VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
+PUBLIC_DATA_PROJECTIONS = {
+    'data/election-2026.json', 'data/platforms.json', 'data/site-profile.json',
+}
+
+
+def election_public_note(value):
+    missing = []
+    if not value.get('numberDrawTime'):
+        missing.append('時間')
+    if not value.get('numberDrawPlace'):
+        missing.append('地點')
+    note = ''
+    if missing:
+        note = (
+            '本頁目前未列出鳳山區市議員候選人姓名號次抽籤的' + '與'.join(missing)
+            + '，請留意高雄市選舉委員會後續公告。'
+        )
+    poll_note = '投票時間如有異動，請以高雄市選舉委員會最新公告為準。'
+    return (note + poll_note).strip()
+
+
+def project_election(value):
+    """Expose election dates, source links and reader-relevant unknowns only."""
+    fields = (
+        'election', 'area', 'voteDate', 'pollsOpen', 'pollsClose',
+        'numberDrawDate', 'numberDrawTime', 'numberDrawPlace',
+        'candidateListAnnouncementDate', 'councilPlatformPeriodStart',
+        'councilPlatformPeriodEnd',
+    )
+    result = {field: value[field] for field in fields if field in value}
+    result['sources'] = [
+        {field: source[field] for field in ('title', 'url') if field in source}
+        for source in value.get('sources', [])
+    ]
+    result['publicNote'] = election_public_note(value)
+    return result
+
+
+def project_platforms(value):
+    """Retain public platform text and citations; drop editorial ID/review registries."""
+    row_fields = (
+        'year', 'election', 'term', 'district', 'roleAtElection',
+        'candidateNumber', 'electionDate', 'sourceDate', 'sourceDateNote',
+        'sourceUrl', 'sourceTitle', 'pdfPage', 'image', 'sections',
+    )
+    elections = []
+    for row in value.get('elections', []):
+        projected = {field: row[field] for field in row_fields if field in row}
+        if 'image' in projected:
+            image = projected['image']
+            projected['image'] = {
+                field: image[field]
+                for field in ('path', 'alt', 'width', 'height', 'caption')
+                if field in image
+            }
+        projected['sections'] = [
+            {field: section[field] for field in ('heading', 'items') if field in section}
+            for section in row.get('sections', [])
+        ]
+        elections.append(projected)
+    coverage_notes = []
+    for row in value.get('gaps', []):
+        note = {'title': row['label'], 'text': row['status']}
+        if row.get('sourceUrl'):
+            note['sourceUrl'] = row['sourceUrl']
+        coverage_notes.append(note)
+    return {
+        'updated': value.get('updated'),
+        'publicNote': (
+            '2005 至 2022 年政見依中央選舉委員會選舉公報轉錄；2026 年政見依政見圖卡整理。'
+            '這裡呈現各屆提出的主張，不代表已完成的政績。'
+        ),
+        'elections': elections,
+        'coverageNotes': coverage_notes,
+    }
+
+
+def project_site_profile(value):
+    """Keep the recorded public identity, cutoff date and authoritative source."""
+    person = value['person']
+    identity = value['identity']
+    return {
+        'person': {field: person[field] for field in ('name', 'displayRole', 'district') if field in person},
+        'identity': {
+            field: identity[field]
+            for field in ('recordAsOf', 'confirmedRole', 'sourceUrl')
+            if field in identity
+        },
+        'publicNote': (
+            f"身分資料截至 {identity['recordAsOf']}；後續任期與任職狀態請以高雄市議會官方介紹為準。"
+        ),
+    }
+
+
+def validate_public_projection(relative, value):
+    """Fail closed if a runtime projection grows beyond its published allowlist."""
+    def require_keys(node, allowed, label, required=()):
+        if not isinstance(node, dict) or node.keys() - set(allowed) or set(required) - node.keys():
+            raise ValueError(f'{relative}: invalid public projection fields at {label}')
+
+    if relative == 'data/election-2026.json':
+        fields = {
+            'election', 'area', 'voteDate', 'pollsOpen', 'pollsClose', 'numberDrawDate',
+            'numberDrawTime', 'numberDrawPlace', 'candidateListAnnouncementDate',
+            'councilPlatformPeriodStart', 'councilPlatformPeriodEnd', 'sources', 'publicNote',
+        }
+        require_keys(value, fields, '$', fields)
+        if not isinstance(value['sources'], list):
+            raise ValueError(f'{relative}: sources must be an array')
+        for index, source in enumerate(value['sources']):
+            require_keys(source, {'title', 'url'}, f'$.sources[{index}]', {'title', 'url'})
+    elif relative == 'data/platforms.json':
+        require_keys(value, {'updated', 'publicNote', 'elections', 'coverageNotes'}, '$',
+                     {'updated', 'publicNote', 'elections', 'coverageNotes'})
+        row_fields = {
+            'year', 'election', 'term', 'district', 'roleAtElection', 'candidateNumber',
+            'electionDate', 'sourceDate', 'sourceDateNote', 'sourceUrl', 'sourceTitle',
+            'pdfPage', 'image', 'sections',
+        }
+        for index, row in enumerate(value['elections']):
+            require_keys(row, row_fields, f'$.elections[{index}]', {'year', 'election', 'sections'})
+            for section_index, section in enumerate(row['sections']):
+                require_keys(section, {'heading', 'items'}, f'$.elections[{index}].sections[{section_index}]', {'heading', 'items'})
+            if 'image' in row:
+                require_keys(row['image'], {'path', 'alt', 'width', 'height', 'caption'}, f'$.elections[{index}].image')
+        for index, note in enumerate(value['coverageNotes']):
+            require_keys(note, {'title', 'text', 'sourceUrl'}, f'$.coverageNotes[{index}]', {'title', 'text'})
+    elif relative == 'data/site-profile.json':
+        require_keys(value, {'person', 'identity', 'publicNote'}, '$', {'person', 'identity', 'publicNote'})
+        require_keys(value['person'], {'name', 'displayRole', 'district'}, '$.person', {'name', 'displayRole', 'district'})
+        require_keys(value['identity'], {'recordAsOf', 'confirmedRole', 'sourceUrl'}, '$.identity',
+                     {'recordAsOf', 'confirmedRole', 'sourceUrl'})
+    else:
+        raise ValueError(f'{relative}: no public projection contract')
+
+
+def project_public_data(root=ROOT):
+    """Return the three explicit runtime projections from their canonical sources."""
+    values = {
+        'data/election-2026.json': project_election(json.loads((root / 'data/election-2026.json').read_text(encoding='utf-8'))),
+        'data/platforms.json': project_platforms(json.loads((root / 'data/platforms.json').read_text(encoding='utf-8'))),
+        'data/site-profile.json': project_site_profile(json.loads((root / 'data/site-profile.json').read_text(encoding='utf-8'))),
+    }
+    for relative, value in values.items():
+        validate_public_projection(relative, value)
+    return values
+
+
+def write_public_data_projections(staging, root=ROOT):
+    for relative, value in project_public_data(root).items():
+        (staging / relative).write_bytes(encoded(value))
 
 
 def encoded(value):
@@ -99,7 +250,16 @@ def project_value(value, schema):
 def public_records(root=ROOT):
     schema = json.loads((root / 'schema/public-achievement.schema.json').read_text())
     raw = json.loads((root / 'data/achievements.json').read_text())
-    records = [project_value(row, schema['items']) for row in raw if is_public(row)]
+    if not isinstance(raw, list):
+        raise ValueError('Achievement source must be an array')
+    records = []
+    for index, row in enumerate(raw):
+        if not is_public(row):
+            raise ValueError(f'Achievement source row {index + 1} is not publication-ready')
+        # The repository source is now the reviewed release set. Validate it
+        # before projection so editorial metadata cannot be silently discarded.
+        validate_schema(row, schema['items'], f'achievement source row {index + 1}')
+        records.append(project_value(row, schema['items']))
     validate_schema(records, schema)
     if len({row['id'] for row in records}) != len(records):
         raise ValueError('Duplicate public record IDs')
@@ -281,13 +441,20 @@ def build(root=ROOT, destination=None):
             target = staging / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(root / rel, target)
+        write_public_data_projections(staging, root)
         # Preserve the historical public endpoint for older clients, with the exact
-        # same safe projection. Raw canonical data remains in Git, never in _site.
+        # same safe projection. The repository source is release-only; never
+        # copy it to the public site except through the validated projection.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
         editor_manifests = build_page_editor_artifacts(staging, root)
         validate_artifact_links(staging, root)
         manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
         (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
+        # This gate deliberately runs after the CMS has rendered saved edits.
+        from validate_public_copy import validate_artifact_surface
+        failures = validate_artifact_surface(staging)
+        if failures:
+            raise ValueError('Final public artifact copy guard failed:\n' + '\n'.join('- ' + item for item in failures))
         if destination.exists():
             shutil.rmtree(destination)
         staging.replace(destination)

@@ -7,35 +7,18 @@
   const PAGE_SIZE = 10;
   const list = document.getElementById('case-list');
   const cards = [...list.querySelectorAll('[data-case]')];
-  // Match the initial interactive page before the first layout instead of
-  // laying out all records and then hiding most of them after the fetch.
-  // No-JS keeps the complete server-rendered list; a failed fetch restores it.
+  // Keep the full server-rendered list for no-JS readers. The compact card
+  // metadata is enough to start filtering without downloading map/search data.
   cards.forEach((card, index) => { card.hidden = index >= PAGE_SIZE; });
-  const interactive = [...document.querySelectorAll('.map-controls input,.map-controls select,.map-controls button,[data-locate]')];
-  interactive.forEach(control=>{control.disabled=true;});
-  let data;
-  try {
-    const response=await fetch(config.url,{signal:AbortSignal.timeout(8000)});
-    if(!response.ok)throw Error('records unavailable');
-    data=await response.json();
-    if(!Array.isArray(data)||!data.length)throw Error('invalid records');
-  } catch {
-    cards.forEach(card => { card.hidden = false; });
-    const notice=document.querySelector('.case-live-summary');
-    notice.textContent='篩選資料暫時無法載入；完整紀錄仍可在下方閱讀，請重新整理後再試。';
-    root.textContent='互動地圖暫時無法載入。';
-    document.getElementById('map-message').textContent='地圖資料暫時無法載入，請直接閱讀專題列表。';
-    return;
-  }
-  interactive.forEach(control=>{control.disabled=false;});
   const controls = Object.fromEntries(['q','village','category','subcategory','status','year'].map((key, i) => [key, document.getElementById(['case-search','village-filter','category-filter','subcategory-filter','status-filter','year-filter'][i])]));
   const count = document.getElementById('case-count');
   const empty = document.getElementById('case-empty');
   const message = document.getElementById('map-message');
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
-  const textById = new Map(data.map(c => [c.id, normalize(c.searchText)]));
+  const data = cards.map(card => JSON.parse(card.dataset.meta));
+  const textById = new Map(cards.map(card => [card.dataset.case, normalize(card.innerText)]));
   const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
-  let map, markers, boundaries, mapPromise, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
+  let map, markers, boundaries, mapPromise, dataPromise, fullDataLoaded = false, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
   const boundaryLayers = new Map();
   list.dataset.pageSize = String(PAGE_SIZE);
   const pagination = document.createElement('nav');
@@ -47,11 +30,33 @@
   const params = () => Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value]));
   function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage }; }
   function announce() { document.dispatchEvent(new CustomEvent('huiwen:cases-change', { detail: getState() })); }
+  async function ensureData() {
+    if (fullDataLoaded) return true;
+    if (dataPromise) return dataPromise;
+    dataPromise = (async () => {
+      try {
+        const response = await fetch(config.url, {signal:AbortSignal.timeout(8000)});
+        if (!response.ok) throw Error('records unavailable');
+        const rows = await response.json();
+        const ids = new Set(cards.map(card => card.dataset.case));
+        if (!Array.isArray(rows) || rows.length !== cards.length || rows.some(row => !ids.has(row.id))) throw Error('invalid records');
+        data.splice(0, data.length, ...rows);
+        for (const row of rows) textById.set(row.id, normalize(row.searchText));
+        fullDataLoaded = true;
+        message.textContent = '點選里界可篩選；數字標記代表附近專題數，放大可分開查看。';
+        return true;
+      } catch {
+        message.textContent = '地圖資料暫時無法載入；列表篩選仍可使用。';
+        return false;
+      }
+    })().finally(() => { dataPromise = null; });
+    return dataPromise;
+  }
   function fits(c) {
     const f = params();
     const tokens = normalize(f.q).split(/\s+/).filter(Boolean);
     const villageOK = f.village === 'all' || (f.village === 'unassigned' ? !c.villages.length && !['全市政策','跨區服務'].includes(c.scope) : f.village.startsWith('v:') ? c.villages.includes(f.village.slice(2)) : c.scope === f.village.slice(2));
-    return tokens.every(token => textById.get(c.id).includes(token)) && villageOK &&
+    return tokens.every(token => (textById.get(c.id) || '').includes(token)) && villageOK &&
       (f.category === 'all' || c.categories.includes(f.category)) &&
       (f.subcategory === 'all' || c.subcategories.includes(f.subcategory)) &&
       (f.status === 'all' || c.status === f.status) &&
@@ -203,9 +208,17 @@
     if (requested) selectCase(requested.id);
     fit();
   }
-  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();announce();}});
-  controls.q.addEventListener('input', event => { clearTimeout(searchTimer); if (!event.isComposing) searchTimer = setTimeout(() => filter(), 100); });
-  controls.q.addEventListener('compositionend', () => { clearTimeout(searchTimer); filter(); });
+  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);if(key==='q'&&String(value).trim())ensureData().finally(()=>filter());else filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();announce();}});
+  controls.q.addEventListener('input', event => {
+    clearTimeout(searchTimer);
+    if (!event.isComposing) searchTimer = setTimeout(() => {
+      if (controls.q.value.trim()) ensureData().finally(() => filter()); else filter();
+    }, 100);
+  });
+  controls.q.addEventListener('compositionend', () => {
+    clearTimeout(searchTimer);
+    if (controls.q.value.trim()) ensureData().finally(() => filter()); else filter();
+  });
   for (const [key, el] of Object.entries(controls)) if (key !== 'q') el.addEventListener('change', () => {clearTimeout(searchTimer);filter();});
   document.getElementById('reset-map-filters').addEventListener('click',reset);
   document.querySelector('[data-clear-filters]').addEventListener('click',reset);
@@ -235,10 +248,15 @@
     });
   }
   readURL();
+  if (controls.q.value.trim()) ensureData().then(() => filter(false,false));
   function ensureMap() {
     if (map) return Promise.resolve(map);
     if (mapPromise) return mapPromise;
     mapPromise=(async()=>{
+      if (!await ensureData()) return null;
+      filter(false,false);
+      const requestedCase = new URLSearchParams(location.search).get('case');
+      if (requestedCase) selectCase(requestedCase);
       try{await loadLeaflet();}catch{message.textContent='互動地圖暫時無法載入，篩選與完整紀錄仍可使用。';return null;}
       root.replaceChildren();
       map=L.map(root,{scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false}).setView([22.615,120.351],13);
@@ -260,26 +278,17 @@
     })().finally(()=>{if(!map)mapPromise=null;});
     return mapPromise;
   }
+  document.querySelector('[data-view="both"]')?.addEventListener('click', () => { ensureMap(); });
   if('IntersectionObserver' in window){
-    let mapArmed = window.scrollY > 0;
     const mapObserver=new IntersectionObserver(entries=>{
-      if(mapArmed && entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}
+      if(entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}
     },{rootMargin:'0px 0px'});
     mapObserver.observe(root);
-    const armMap=()=>{
-      mapArmed=true;
+    window.addEventListener('scroll',()=>{
       const rect=root.getBoundingClientRect();
-      if(rect.top < innerHeight && rect.bottom > 0){mapObserver.disconnect();ensureMap();}
-    };
-    window.addEventListener('scroll',armMap,{once:true,passive:true});
-    root.addEventListener('pointerenter',armMap,{once:true,passive:true});
-    root.addEventListener('pointerdown',armMap,{once:true,passive:true});
-    window.addEventListener('keydown',armMap,{once:true});
+      if(rect.height && rect.top < innerHeight && rect.bottom > 0){mapObserver.disconnect();ensureMap();}
+    },{once:true,passive:true});
   }else{
-    const armMap=()=>ensureMap();
-    window.addEventListener('scroll',armMap,{once:true,passive:true});
-    root.addEventListener('pointerenter',armMap,{once:true,passive:true});
-    root.addEventListener('pointerdown',armMap,{once:true,passive:true});
-    window.addEventListener('keydown',armMap,{once:true});
+    window.addEventListener('scroll',()=>{if(root.getBoundingClientRect().height)ensureMap();},{once:true,passive:true});
   }
 })();

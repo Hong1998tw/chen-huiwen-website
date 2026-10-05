@@ -58,13 +58,17 @@ def funding_card(c):
 def card(c):
  status='' if c['status']=='待核驗' else '<span class="case-status">'+E(c['status'])+'</span>'
  location='、'.join(c['villages']) or c['scope']
+ years=sorted({h['date'][:4] for h in c['history'] if re.match(r'^(19|20)\d{2}(?:\D|$)',h['date'])})
+ filter_data={k:c[k] for k in ('id','title','categories','subcategories','villages','scope','status','coordinates')}
+ filter_data['years']=years
+ filter_attr=E(json.dumps(filter_data,ensure_ascii=False,separators=(',',':')))
  partners=partner_text(c)
  place=E(location)+(f'<span class="case-current-head">合作里長：{E(partners)}</span>' if partners else '')
  if c.get('locationName'): place+=f'<span class="case-address">{E(c["locationName"])}</span>'
  summary=('<p class="case-summary">'+E(c['summary'])+'</p>') if c['summary'] else ''
  locate=f'<button type="button" data-locate="{E(c["id"])}">地圖定位</button>' if c['coordinates'] else ''
  subtags=''
- return f'''<article class="case-card" data-case="{E(c['id'])}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'][:1])}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}{funding_card(c)}<div class="case-card-footer"><span class="case-place">{place}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看專題 →</a>{locate}</div></div></article>'''
+ return f'''<article class="case-card" data-case="{E(c['id'])}" data-meta="{filter_attr}"><div class="case-card-header"><div class="case-tag-group"><div class="case-tags">{''.join(f'<span class="case-tag-main">{E(t)}</span>' for t in c['categories'][:1])}</div>{subtags}</div>{status}</div><h3><a href="{href(c['id'])}">{E(c['title'])}</a></h3>{summary}{funding_card(c)}<div class="case-card-footer"><span class="case-place">{place}</span><div class="case-actions"><a class="case-primary-link" href="{href(c['id'])}">查看專題 →</a>{locate}</div></div></article>'''
 expected_pages={href(c['id']) for c in public_items}
 for old in R.glob('achievement-*.html'):
  if old.name not in expected_pages: old.unlink()

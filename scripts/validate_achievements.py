@@ -22,6 +22,11 @@ MOBILE = re.compile(r'(?<!\d)(?:09\d{2}[ -]?\d{3}[ -]?\d{3}|\+886[ -]?9\d{2}[ -]
 IDENTITY = re.compile(r'(?<![A-Za-z0-9])[A-Z][12]\d{8}(?![A-Za-z0-9])')
 SECRET = re.compile(r'gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:token|password|secret|api[_-]?key)\s*[=:]\s*["\x27]?[A-Za-z0-9_/-]{12,}', re.I)
 PRIVATE_KEYS = {'candidate_id', 'source_file', 'source_sheet', 'source_row', 'notes_private', 'original_case_id', 'phone', 'mobile', 'id_number', 'credential', 'password', 'token'}
+PUBLIC_SOURCE_PRIVATE_KEYS = {
+    'notes', 'editorialReview', 'verification', 'verifiedAt', 'villageMethod',
+}
+PUBLIC_SOURCE_PRIVATE_CITATION_KEYS = {'checkedAt'}
+PUBLIC_SOURCE_PRIVATE_MEDIA_KEYS = {'publicAccessConfirmed'}
 INTERNAL = re.compile(r'待核驗|內部查核|私人備註|notes_private|candidate_status|verification_status|attribution_status')
 
 
@@ -118,7 +123,7 @@ def validate_partners(case, label, errors):
             errors.append(p_label + ': invalid source date')
 
 
-def validate(achievements, villages, baseline=None):
+def validate(achievements, villages, baseline=None, public_source_only=False):
     errors, warnings = [], []
     if not isinstance(achievements, list) or not isinstance(villages, list):
         return ['source must be a list'], []
@@ -154,6 +159,21 @@ def validate(achievements, villages, baseline=None):
             seen.add(aid)
         if a.get('status') not in STATUSES:
             errors.append(label + ': invalid status')
+        if public_source_only:
+            if not is_public(a):
+                errors.append(label + ': source contains a non-public record')
+            if PUBLIC_SOURCE_PRIVATE_KEYS.intersection(a):
+                errors.append(label + ': source contains a review-only field')
+            source_rows = a.get('sources')
+            if isinstance(source_rows, list) and any(
+                    isinstance(source, dict) and PUBLIC_SOURCE_PRIVATE_CITATION_KEYS.intersection(source)
+                    for source in source_rows):
+                errors.append(label + ': source citation contains a review-only field')
+            media_rows = a.get('media')
+            if isinstance(media_rows, list) and any(
+                    isinstance(media, dict) and PUBLIC_SOURCE_PRIVATE_MEDIA_KEYS.intersection(media)
+                    for media in media_rows):
+                errors.append(label + ': source media contains a review-only field')
         if not isinstance(a.get('villages'), list) or len(a['villages']) != len(set(a['villages'])):
             errors.append(label + ': villages must be a unique list')
         else:
@@ -217,13 +237,11 @@ def validate(achievements, villages, baseline=None):
         else:
             for index, item in enumerate(media):
                 prefix = f'{label}: media {index + 1}'
-                if not isinstance(item, dict) or set(item) != {'kind', 'url', 'alt', 'caption', 'credit', 'publicAccessConfirmed'}:
+                if not isinstance(item, dict) or set(item) != {'kind', 'url', 'alt', 'caption', 'credit'}:
                     errors.append(prefix + ': invalid fields')
                     continue
                 if item['kind'] not in {'photo', 'video'} or not isinstance(item['url'], str) or not classify(item['url'], item['kind']):
                     errors.append(prefix + ': unsupported public media URL')
-                if item['publicAccessConfirmed'] is not True:
-                    errors.append(prefix + ': owner must confirm public viewing access')
                 for key in ('alt', 'caption', 'credit'):
                     if not isinstance(item[key], str) or not item[key].strip() or len(item[key]) > 500 or privacy_issues(item[key]):
                         errors.append(prefix + ': invalid ' + key)
@@ -246,10 +264,8 @@ def validate(achievements, villages, baseline=None):
             errors.append(label + ': internal language in public fields')
         if re.search(r'\d+(?:之\d+)?號', a.get('locationName', '')):
             warnings.append(label + ': numbered location needs public-engineering evidence review')
-        if a.get('verification', {}).get('attribution') in {'待第一手證據', 'unclear'}:
-            warnings.append(label + ': legacy attribution evidence still needs review; no stronger credit may be added')
     if baseline is not None:
-        previous = {a['id'] for a in baseline}
+        previous = {a['id'] for a in baseline if is_public(a)}
         if previous - seen:
             errors.append('baseline stable IDs removed/renamed; explicit migration required')
     return errors, warnings
@@ -263,7 +279,8 @@ def main():
     args = parser.parse_args()
     try:
         baseline = json.loads(subprocess.check_output(['git', 'show', args.baseline_ref + ':data/achievements.json'], cwd=ROOT, text=True)) if args.baseline_ref else None
-        errors, warnings = validate(json.loads(args.public.read_text()), json.loads(args.villages.read_text()), baseline)
+        errors, warnings = validate(json.loads(args.public.read_text()), json.loads(args.villages.read_text()), baseline,
+                                    public_source_only=True)
     except (ValueError, TypeError, KeyError, AttributeError, OSError, subprocess.CalledProcessError):
         parser.exit(2, 'Achievement validation failed: invalid source structure.\n')
     print(json.dumps({'status': 'Failed' if errors else 'Passed', 'errors': errors, 'warnings': warnings}, ensure_ascii=False, indent=2))

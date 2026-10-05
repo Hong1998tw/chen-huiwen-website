@@ -92,11 +92,13 @@ try {
     assert((await select.locator('option').allTextContents()).includes('寵物'));
     await page.locator('.advanced-filters > summary').click();
     await select.selectOption({ label: '寵物' });
-    await page.waitForFunction(() => document.querySelector('#case-count')?.textContent.includes('共 1 個專題'));
+    const expectedPetCases = items.filter(item => item.subcategories.includes('寵物'));
+    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 個專題`), expectedPetCases.length);
     const visible = page.locator('#case-list .case-card:not([hidden])');
-    assert.equal(await visible.count(), 1);
-    assert.match(await visible.first().textContent(), /毛動力嘟嘟車消費爭議協助/);
-    assert((await visible.first().boundingBox()).height < 360);
+    assert.equal(await visible.count(), expectedPetCases.length);
+    const dudu = visible.filter({ hasText: '毛動力嘟嘟車消費爭議協助' });
+    assert.equal(await dudu.count(), 1);
+    assert((await dudu.boundingBox()).height < 360);
     await page.locator('#reset-map-filters').click();
   });
 

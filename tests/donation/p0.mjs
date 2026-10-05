@@ -70,7 +70,14 @@ try{
  });
  await check('Shared query reload, deep case links and invalid query resilience',async()=>{
   await go('achievements.html?category='+encodeURIComponent('交通與基建')+'&year=2026');await page.locator('.map-insight-panel').waitFor();const before=await page.locator('#case-count').textContent();await page.reload();await page.getByRole('button',{name:'地圖與列表',exact:true}).click();await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('#case-count').textContent(),before);
-  await go('achievements.html?case=haibang-bridge');await page.locator('.map-insight-panel').waitFor();assert.match(await page.locator('.map-insight-panel h2').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);
+  await go('achievements.html?case=haibang-bridge&status='+encodeURIComponent('已完成'));await page.locator('.map-insight-panel').waitFor();
+  await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='haibang-bridge');
+  assert.match(await page.locator('.map-insight-panel h2').textContent(),/海邦橋/);assert.equal(await page.locator('.case-card.is-selected').isVisible(),true);assert.equal(await page.locator('#status-filter').inputValue(),'已完成');
+  await go('achievements.html?village='+encodeURIComponent('v:曹公里'));await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:曹公里');
+  assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.filter(c=>c.villages.includes('曹公里')).slice(0,3).map(c=>c.id)),['xiehe-lane3-community-road-repair','metro-green-line','station-parking']);
+  await page.goBack();await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='haibang-bridge'&&window.HuiwenCases.getState().filters.status==='已完成');
+  await page.locator('#reset-map-filters').click();assert.equal(await page.evaluate(()=>window.HuiwenCases.getState().selectedId),null);assert.equal(new URL(page.url()).searchParams.has('case'),false);
+  await page.goForward();await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:曹公里');assert.equal(await page.evaluate(()=>window.HuiwenCases.getState().selectedId),null);
   await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{

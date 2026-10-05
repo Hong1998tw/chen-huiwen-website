@@ -223,6 +223,7 @@ class StandaloneCMS(unittest.TestCase):
         self.assertEqual(revised['history'][0]['date'],'2026-09-24')
         self.assertEqual(revised['sources'][0]['sourceDate'],'2026-09-24')
         self.assertEqual(revised['media'][0]['kind'],'photo')
+        self.assertNotIn('publicAccessConfirmed', revised['media'][0])
         stale=json.loads(json.dumps(baseline)); stale['updated']='2025-01-01'
         item['payload']=json.dumps({'fields':{},'case':fields,'caseBase':stale})
         with self.assertRaises(engine.PublishError) as error:

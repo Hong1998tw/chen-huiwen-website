@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_public as public
 import verify_production as live
+import validate_public_copy as copyguard
+from page_copy import render_with_manifest
 
 
 class PublicProjectionTests(unittest.TestCase):
@@ -17,13 +20,34 @@ class PublicProjectionTests(unittest.TestCase):
         self.rows = public.public_records(ROOT)
         self.schema = json.loads((ROOT / 'schema/public-achievement.schema.json').read_text())
 
-    def test_only_reviewed_records_and_public_fields(self):
+    def test_public_source_contains_only_release_rows_and_fields(self):
         raw = json.loads((ROOT / 'data/achievements.json').read_text())
-        self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw if public.is_public(r)})
-        self.assertTrue(any(not public.is_public(r) for r in raw))
+        self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw})
+        self.assertTrue(all(public.is_public(r) for r in raw))
+        self.assertEqual(108, len(raw))
         for row in self.rows:
-            self.assertFalse({'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
+            self.assertFalse({'notes', 'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
+            self.assertFalse(any('checkedAt' in source for source in row.get('sources', [])))
+            self.assertFalse(any('publicAccessConfirmed' in media for media in row.get('media', [])))
         public.validate_schema(self.rows, self.schema)
+        self.assertEqual(raw, self.rows)
+
+    def test_public_source_rejects_review_metadata_and_unapproved_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            (root / 'schema').mkdir()
+            (root / 'schema/public-achievement.schema.json').write_text(json.dumps(self.schema))
+            rows = json.loads((ROOT / 'data/achievements.json').read_text())
+            rows[0]['editorialReview'] = {'privateNote': 'synthetic fixture'}
+            (root / 'data/achievements.json').write_text(json.dumps(rows))
+            with self.assertRaises(ValueError):
+                public.public_records(root)
+            rows[0].pop('editorialReview')
+            rows[0]['status'] = '待核驗'
+            (root / 'data/achievements.json').write_text(json.dumps(rows))
+            with self.assertRaises(ValueError):
+                public.public_records(root)
 
     def test_unknown_nested_source_fields_never_reach_public_projection(self):
         row = copy.deepcopy(self.rows[0])
@@ -32,6 +56,139 @@ class PublicProjectionTests(unittest.TestCase):
         projected = public.project_value(row, self.schema['items'])
         self.assertNotIn('editorialReview', projected)
         self.assertNotIn('internalNote', projected['sources'][0])
+
+    def test_release_source_and_projection_contain_no_review_content(self):
+        raw = json.loads((ROOT / 'data/achievements.json').read_text())
+        self.assertNotIn('待核驗', json.dumps(raw, ensure_ascii=False))
+        self.assertNotIn('內部查核', json.dumps(raw, ensure_ascii=False))
+        self.assertNotIn('editorialReview', json.dumps(raw, ensure_ascii=False))
+        self.assertEqual([], copyguard.check_json('data/achievements-public.json', self.rows, forbid_private_keys=True))
+
+    def test_copy_guard_covers_public_text_surfaces_without_blocking_real_progress(self):
+        leak = '本次尚未取得足以獨立重複核定該金額與期程的水利局原始文件'
+        html_surfaces = {
+            'body': f'<p>{leak}</p>',
+            'description': f'<meta name="description" content="{leak}">',
+            'open-graph': f'<meta property="og:description" content="{leak}">',
+            'twitter': f'<meta name="twitter:description" content="{leak}">',
+            'alt': f'<img alt="{leak}">',
+            'caption': f'<figure><figcaption>{leak}</figcaption></figure>',
+            'json-ld': '<script type="application/ld+json">' + json.dumps({'description': leak}, ensure_ascii=False) + '</script>',
+            'split-inline-chinese': '<p>內部<strong>查核</strong></p>',
+            'split-inline-english': '<p>Evidence <strong>QA</strong></p>',
+            'split-inline-whitespace': '<p>Evidence <strong>\n QA</strong></p>',
+        }
+        for surface, markup in html_surfaces.items():
+            with self.subTest(surface=surface):
+                self.assertTrue(copyguard.check_html('fixture.html', markup))
+        self.assertTrue(copyguard.check_json('data/search-index.json', {'records': [{'text': leak}]}))
+        self.assertTrue(copyguard.check_json(
+            'data/achievements-public.json',
+            [{'id': 'fixture', 'notes': [leak]}],
+            forbid_private_keys=True,
+        ))
+        for field, value in (('checkedAt', '2026-10-01'), ('publicAccessConfirmed', True)):
+            with self.subTest(private_field=field):
+                self.assertTrue(copyguard.check_json(
+                    'data/achievements-public.json',
+                    [{'id': 'fixture', 'media': [{field: value}]}],
+                    forbid_private_keys=True,
+                ))
+
+        valid_progress = '道路工程仍在施工，尚未完工；實際進度以主管機關公告為準。'
+        self.assertEqual([], copyguard.check_json('data/search-index.json', {'summary': valid_progress}))
+        self.assertEqual([], copyguard.check_html('fixture.html', f'<p>{valid_progress}</p>'))
+        self.assertEqual([], copyguard.check_html(
+            'fixture.html',
+            '<p>道路工程仍在<strong>施工</strong>，尚未完工；實際進度以主管機關公告為準。</p>',
+        ))
+        self.assertEqual([], copyguard.check_html(
+            'fixture.html', '<p>內部</p><p>查核</p><p>Evidence</p><p>QA</p>',
+        ))
+
+        public_routes = {path.relative_to(ROOT).as_posix() for path in copyguard.public_html_paths(ROOT)}
+        self.assertIn('renwu-anju-social-housing/index.html', public_routes)
+        self.assertNotIn('admin/public/index.html', public_routes)
+
+    def test_public_json_allowlists_keep_reader_facts_and_drop_editorial_metadata(self):
+        projected = public.project_public_data(ROOT)
+
+        election = projected['data/election-2026.json']
+        self.assertIsNone(election['numberDrawTime'])
+        self.assertIsNone(election['numberDrawPlace'])
+        self.assertIn('本頁目前未列出鳳山區市議員候選人姓名號次抽籤的時間與地點', election['publicNote'])
+        self.assertEqual(election['voteDate'], '2026-11-28')
+        self.assertTrue(all(set(source) == {'title', 'url'} for source in election['sources']))
+        self.assertNotIn('verifiedAt', election)
+        self.assertNotIn('notes', election)
+
+        platforms = projected['data/platforms.json']
+        self.assertEqual(set(platforms), {'updated', 'publicNote', 'elections', 'coverageNotes'})
+        self.assertIn('不代表已完成的政績', platforms['publicNote'])
+        old = next(row for row in platforms['elections'] if row['year'] == 2005)
+        current = next(row for row in platforms['elections'] if row['year'] == 2026)
+        self.assertEqual(old['sourceDateNote'], '公報未另載編印日期；上列日期為投票日。')
+        self.assertEqual(old['electionDate'], '2005-12-03')
+        self.assertEqual(current['image']['path'], 'assets/platform-2026-huiwen.webp')
+        self.assertNotIn('itemIdContract', json.dumps(platforms, ensure_ascii=False))
+        for forbidden in ('editorialNote', 'itemsById', 'itemIdContract', 'crossTermComparisons', 'verifiedAt', 'status'):
+            self.assertNotIn(forbidden, platforms)
+
+        profile = projected['data/site-profile.json']
+        self.assertEqual(profile['person'], {'name': '陳慧文', 'displayRole': '高雄市議員', 'district': '鳳山區'})
+        self.assertEqual(profile['identity']['recordAsOf'], '2026-09-22')
+        self.assertEqual(profile['identity']['confirmedRole'], '第4屆高雄市議員')
+        self.assertIn('sourceUrl', profile['identity'])
+        self.assertIn('2026-09-22', profile['publicNote'])
+        self.assertNotIn('reviewAfter', profile['identity'])
+        self.assertNotIn('editorialRule', profile)
+
+    def test_public_data_guard_scans_projections_not_internal_source_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'data').mkdir()
+            for relative in public.PUBLIC_DATA:
+                shutil.copyfile(ROOT / relative, root / relative)
+
+            election_path = root / 'data/election-2026.json'
+            election = json.loads(election_path.read_text())
+            election.setdefault('notes', []).append('內部查核：待核驗')
+            election_path.write_text(json.dumps(election, ensure_ascii=False))
+            self.assertEqual([], copyguard.validate_public_data(root))
+
+            election['election'] += '待核驗'
+            election_path.write_text(json.dumps(election, ensure_ascii=False))
+            failures = copyguard.validate_public_data(root)
+            self.assertTrue(any('data/election-2026.json' in item and '待核驗' in item for item in failures), failures)
+
+    def test_valid_cms_selector_edit_is_checked_after_rendering(self):
+        source = (ROOT / 'index.html').read_text(encoding='utf-8')
+        _, count, fields = render_with_manifest(source, 'index.html')
+        self.assertGreater(count, 0)
+        field = next(item for item in fields if item['id'].startswith('main>'))
+        rendered, edited_count, _ = render_with_manifest(
+            source,
+            'index.html',
+            {field['id']: {'sourceHash': field['sourceHash'], 'value': '待核驗'}},
+        )
+        self.assertEqual(edited_count, count)
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory)
+            (artifact / 'index.html').write_text(rendered, encoding='utf-8')
+            data_dir = artifact / 'data'
+            data_dir.mkdir()
+            projections = public.project_public_data(ROOT)
+            for relative, payload in projections.items():
+                (artifact / relative).parent.mkdir(parents=True, exist_ok=True)
+                (artifact / relative).write_bytes(public.encoded(payload))
+            for relative in copyguard.ARTIFACT_JSON_REQUIRED - set(projections):
+                (artifact / relative).parent.mkdir(parents=True, exist_ok=True)
+                source_relative = public.PROJECTION if relative == 'data/achievements.json' else relative
+                (artifact / relative).write_bytes((ROOT / source_relative).read_bytes())
+
+            failures = copyguard.validate_artifact_surface(artifact)
+        self.assertTrue(any('index.html:public-string' in item and '待核驗' in item for item in failures), failures)
 
     def test_public_schema_rejects_review_fields_and_pending_status(self):
         for change in ({'editorialReview': {}}, {'status': '待核驗'}):
@@ -62,7 +219,7 @@ class PublicProjectionTests(unittest.TestCase):
             rows = json.loads((ROOT / 'data/achievements.json').read_text())
             changed = next(row for row in rows if public.is_public(row))
             removed_id = changed['id']
-            changed['status'] = '待核驗'
+            rows.remove(changed)
             (root / 'data/achievements.json').write_text(json.dumps(rows))
             mapped = json.loads((ROOT / 'data/achievement-map.json').read_text())
             (root / 'data/achievement-map.json').write_text(json.dumps(mapped))
@@ -97,6 +254,9 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertNotIn('README.md', paths)
             self.assertNotIn('cms-page-editor.js', paths)
             self.assertEqual((destination / 'data/achievements.json').read_bytes(), (destination / public.PROJECTION).read_bytes())
+            published_rows = json.loads((destination / 'data/achievements.json').read_text())
+            self.assertTrue(all('notes' not in row for row in published_rows))
+            self.assertEqual([], copyguard.check_json('published data/achievements.json', published_rows, forbid_private_keys=True))
             self.assertNotEqual((destination / 'data/achievements.json').read_bytes(), (ROOT / 'data/achievements.json').read_bytes())
             self.assertGreaterEqual(result['editorManifests'], 96)
             self.assertEqual(result['editorManifests'], len(list((destination / 'cms-editor-manifests').rglob('*.json'))))
@@ -116,6 +276,16 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertIn('petition.html', paths)
             self.assertFalse(list((destination / 'cms-editor-manifests').glob('petition.html.*.json')))
             public.validate_artifact_links(destination)
+            self.assertEqual([], copyguard.validate_artifact_surface(destination))
+            election = json.loads((destination / 'data/election-2026.json').read_text())
+            self.assertNotIn('verifiedAt', election)
+            self.assertIsNone(election['numberDrawTime'])
+            platforms = json.loads((destination / 'data/platforms.json').read_text())
+            self.assertNotIn('itemsById', platforms)
+            self.assertEqual(set(platforms), {'updated', 'publicNote', 'elections', 'coverageNotes'})
+            profile = json.loads((destination / 'data/site-profile.json').read_text())
+            self.assertNotIn('editorialRule', profile)
+            self.assertEqual(profile['identity']['recordAsOf'], '2026-09-22')
 
 
 class CriticalDeploymentTests(unittest.TestCase):
