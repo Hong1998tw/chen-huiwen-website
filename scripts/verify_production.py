@@ -256,8 +256,16 @@ def critical_differences(local_html, remote_html):
 
 
 def canonical_bytes(local_path):
-    # The legacy public JSON URL serves sanitized data after the artifact cutover.
-    # Never compare it to, or snapshot it from, raw canonical editorial source.
+    # Public JSON is generated from canonical source through the same explicit
+    # allowlist used by the artifact builder. Compare the edge response with
+    # that projection, never with raw editorial metadata.
+    from build_public import PUBLIC_DATA_PROJECTIONS, encoded, project_public_data
+
+    if local_path in PUBLIC_DATA_PROJECTIONS:
+        return encoded(project_public_data(ROOT)[local_path])
+
+    # The legacy public JSON URL serves sanitized achievement data after the
+    # artifact cutover. Never compare it to, or snapshot it from, raw source.
     path = ROOT / ('data/achievements-public.json' if local_path == 'data/achievements.json' else local_path)
     return path.read_bytes()
 
