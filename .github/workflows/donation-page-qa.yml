@@ -63,10 +63,21 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - name: Build the final public artifact (the same build Cloudflare publishes)
+        # Lighthouse measures this _site (JSON projections, CMS text and rewritten HTML references
+        # applied), not the repository root. It is built once and both runs below read the same tree;
+        # content digests in summary.json / content-manifest.json prove that.
+        run: python scripts/build_cloudflare_public.py --output "$RUNNER_TEMP/public-site"
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
-      - name: Verify the Lighthouse static server (Content-Encoding, 404, path handling)
+      - name: Verify the Lighthouse static server (Content-Encoding, 404, root boundary, path handling)
         run: node tests/donation/static-server-check.mjs
+      - name: Verify the Lighthouse comparison refuses runs without identical-content evidence
+        run: node tests/donation/lighthouse-compare-check.mjs
       - name: Enforce mobile Lighthouse acceptance medians
         # Pages are served with production-like brotli/gzip (tests/donation/static-server.mjs);
         # conditions and how to compare with older scores: docs/LIGHTHOUSE-MEASUREMENT.md.
@@ -74,12 +85,14 @@ jobs:
         # deliberately together with the lockfile and keep old and new scores separate.
         env:
           EXPECT_BROWSER_VERSION: '140.0.7339.186'
+          ROOT_DIR: ${{ runner.temp }}/public-site
         run: npm run test:lighthouse --prefix tests/donation
       - name: Reference run without compression (informational, same build and browser)
         if: always()
         continue-on-error: true
         env:
           EXPECT_BROWSER_VERSION: '140.0.7339.186'
+          ROOT_DIR: ${{ runner.temp }}/public-site
           COMPRESSION: none
           ENFORCE_THRESHOLDS: '0'
           LABEL: uncompressed-reference

@@ -10,12 +10,21 @@
  * informational uncompressed reference run; the acceptance gate always enforces).
  * EXPECT_BROWSER_VERSION fails the run before measuring if Chromium differs from the
  * pinned build, so scores from different browsers are never mixed silently.
+ *
+ * Measured content: ROOT_DIR is hashed file by file (content-manifest.mjs) before the first
+ * and after the last Lighthouse run. summary.json `content` carries the digest, file count and
+ * `unchangedDuringRun`; content-manifest.json carries the per-file list. The run fails if the tree
+ * changed while it was measured. lighthouse-compare.mjs uses these to prove two runs measured
+ * identical content. The CI gate points ROOT_DIR at the final `_site` built by
+ * scripts/build_cloudflare_public.py; the repository root is only a local fallback and is not the
+ * deployed artifact (docs/LIGHTHOUSE-MEASUREMENT.md §2a).
  */
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { buildContentManifest } from './content-manifest.mjs';
 import { fileURLToPath } from 'node:url';
 import { BROTLI_QUALITY, CACHE_CONTROL, COMPRESSION_MODES, GZIP_LEVEL, startStaticServer } from './static-server.mjs';
 const root=resolve(process.env.ROOT_DIR || fileURLToPath(new URL('../../',import.meta.url)));
@@ -27,6 +36,12 @@ const port=Number(process.env.PORT || 8820);
 const compression=process.env.COMPRESSION || 'auto';
 if(!process.env.BASE_URL&&!COMPRESSION_MODES.includes(compression))throw Error(`COMPRESSION must be one of ${COMPRESSION_MODES.join(', ')}`);
 await mkdir(out,{recursive:true});
+const manifestOptions={skipPaths:[out,resolve(root,'tests/donation/results')]};
+const external=Boolean(process.env.BASE_URL);
+// BASE_URL measures a remote origin whose bytes this script cannot see: no digest, so no comparison can claim identical content.
+const contentBefore=external?null:await buildContentManifest(root,manifestOptions);
+if(contentBefore)await writeFile(resolve(out,'content-manifest.json'),JSON.stringify(contentBefore,null,1));
+const content=external?{external:true,digest:null,unchangedDuringRun:null}:{root,digest:contentBefore.digest,fileCount:contentBefore.fileCount,totalBytes:contentBefore.totalBytes,manifestFile:'content-manifest.json',skippedPaths:contentBefore.skipPaths,digestAfterRun:null,unchangedDuringRun:null};
 const server=process.env.BASE_URL?null:await startStaticServer({root,compression,port});
 const base=process.env.BASE_URL || server.url;
 const results=[];
@@ -48,7 +63,7 @@ const conditions={
  enforceThresholds:process.env.ENFORCE_THRESHOLDS!=='0',
  thresholds
 };
-const summarize=(extra={})=>({label,node:process.version,root,conditions,method:'Default mobile Lighthouse; all network requests allowed; cold Chrome per run; lab data, not field CWV. Pages are served over HTTP by static-server.mjs with production-like Content-Encoding (see conditions); production edge, TLS/HTTP2 and the registered SW are not exercised (site disables SW on localhost).',...extra,results});
+const summarize=(extra={})=>({label,node:process.version,root,content,conditions,method:'Default mobile Lighthouse; all network requests allowed; cold Chrome per run; lab data, not field CWV. Pages are served over HTTP by static-server.mjs with production-like Content-Encoding (see conditions); production edge, TLS/HTTP2 and the registered SW are not exercised (site disables SW on localhost).',...extra,results});
 const median=values=>{const a=[...values].sort((x,y)=>x-y);return a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;};
 try{
  if(!process.env.BASE_URL){let ready=false;for(let i=0;i<50;i++){try{if((await fetch(base)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}if(!ready)throw Error('Local server failed');serverLog.length=0;server.log.length=0;}
@@ -71,7 +86,7 @@ try{
    // Chrome-observed requests joined to what the server actually sent for the same path.
    const sent=new Map(requests.filter(row=>row.status===200).map(row=>[row.path,row]));
    const pageRequests=items.map(item=>{const url=new URL(item.url);const row=sent.get(url.pathname+url.search);return {path:url.pathname+url.search,statusCode:item.statusCode,mimeType:item.mimeType,resourceType:item.resourceType,
-    chromeTransferSize:item.transferSize,chromeResourceSize:item.resourceSize,contentEncoding:row?row.contentEncoding:null,vary:row?row.vary:null,serverIdentityBytes:row?.identityBytes??null,serverBodyBytes:row?.transferBytes??null};});
+    chromeTransferSize:item.transferSize,chromeResourceSize:item.resourceSize,contentEncoding:row?row.contentEncoding:null,vary:row?row.vary:null,serverIdentityBytes:row?.identityBytes??null,serverIdentitySha256:row?.identitySha256??null,serverBodyBytes:row?.transferBytes??null};});
    const network={requests:items.length,transferSize:items.reduce((sum,item)=>sum+(item.transferSize||0),0),resourceSize:items.reduce((sum,item)=>sum+(item.resourceSize||0),0),
     encodedBodies:Object.fromEntries(['br','gzip','identity'].map(name=>[name,pageRequests.filter(row=>row.serverBodyBytes!==null&&(row.contentEncoding||'identity')===name).length])),
     serverBodyBytes:pageRequests.reduce((sum,row)=>sum+(row.serverBodyBytes||0),0),serverIdentityBytes:pageRequests.reduce((sum,row)=>sum+(row.serverIdentityBytes||0),0),
@@ -84,6 +99,10 @@ try{
   }finally{await chrome.kill();}
  }
 }finally{await server?.close();}
+if(contentBefore){const contentAfter=await buildContentManifest(root,manifestOptions);
+content.digestAfterRun=contentAfter.digest;
+content.unchangedDuringRun=contentAfter.digest===contentBefore.digest;
+if(!content.unchangedDuringRun)console.error(`Measured content changed during the run: ${contentBefore.digest} -> ${contentAfter.digest}`);}
 const acceptance=[];
 for(const page of pages){
  const pageRuns=results.filter(result=>result.page===page);
@@ -94,4 +113,4 @@ for(const page of pages){
 }
 await writeFile(resolve(out,'summary.json'),JSON.stringify(summarize({thresholds,acceptance}),null,2));
 console.log(JSON.stringify({conditions,acceptance,thresholds},null,2));
-if(results.some(r=>r.runtimeError)||(conditions.enforceThresholds&&acceptance.some(row=>!row.passed)))process.exitCode=1;
+if((!external&&!content.unchangedDuringRun)||results.some(r=>r.runtimeError)||(conditions.enforceThresholds&&acceptance.some(row=>!row.passed)))process.exitCode=1;
