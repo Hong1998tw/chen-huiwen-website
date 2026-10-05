@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Single deterministic quality entry point. Never contacts production or private registries."""
+from python_guard import require_supported_python
+require_supported_python()
 import argparse, hashlib, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]

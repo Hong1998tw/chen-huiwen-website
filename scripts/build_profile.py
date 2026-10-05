@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Project the recorded identity cutoff into About; calendar dates never infer office."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 from datetime import date
 from html import escape

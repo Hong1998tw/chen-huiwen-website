@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Explicit deterministic build graph. Source -> public data -> pages -> chrome -> index."""
+from python_guard import require_supported_python
+require_supported_python()
 from pathlib import Path
 import subprocess
 import sys

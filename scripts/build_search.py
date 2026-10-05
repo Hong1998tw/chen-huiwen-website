@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build a compact search index from public HTML; never index internal data or docs."""
+from python_guard import require_supported_python
+require_supported_python()
 import json
 from pathlib import Path
 from bs4 import BeautifulSoup
