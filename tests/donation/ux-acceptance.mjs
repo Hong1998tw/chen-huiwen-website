@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { startStaticServer } from './static-server.mjs';
@@ -13,10 +13,25 @@ const base = server.url;
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, serviceWorkers: 'block' });
 await context.route('**/*', route => new URL(route.request().url()).origin === new URL(base).origin ? route.continue() : route.abort());
+let blockSearchIndex = false;
+await context.route('**/data/search-index.json*', route => blockSearchIndex ? route.abort() : route.continue());
 const page = await context.newPage();
 const jsErrors = [];
 page.on('pageerror', error => jsErrors.push(String(error)));
 const report = { base, checks: [], failures: [], viewports: [], zoomSourceViewports: { 'proposal 200% source viewport': { width: 590, height: 378 }, 'proposal 300% source viewport': { width: 393, height: 252 } }, browserZoomApplied: false, realDeviceTested: false, wcagCertification: false };
+
+const dateCases = [
+  { id:'fengshan-station-overview', date:'2026-05-13' },
+  { id:'fengshan-second-market', date:'2025-01-22' },
+  { id:'weiwuying-three-buildings-renovation', date:'2026-05-13' },
+  { id:'nanjing-road-median-safety', date:'2025-03-28' },
+  { id:'hakka-culture-language-friendly', date:'2026-09-10' },
+];
+const fundingBaseline = {
+  commit:'6e561ce3df2cd1f45cd2a87903cd833b865dcdfe',
+  '390x844':{card:539.578125,funding:182.796875},
+  '1440x960':{card:496.078125,funding:182.796875},
+};
 
 async function check(name, fn) {
   try { const detail = await fn(); report.checks.push({ name, status: 'passed', ...(detail || {}) }); }
@@ -92,6 +107,77 @@ try {
     assert.equal(await input.inputValue(), '');
   });
 
+  await check('search for 文德 keeps the Wenlong summary clean and labels the village match separately', async () => {
+    const dialog=page.locator('#global-search-dialog');
+    const input=dialog.getByRole('searchbox',{name:'搜尋陳慧文官網'});
+    await input.fill('文德');
+    const result=dialog.locator('.global-search-result').filter({hasText:'文龍路16巷路面改善整體規劃'}).first();
+    await result.waitFor({state:'visible'});
+    const snippet=(await result.locator('.global-search-result-copy > small').first().innerText()).trim();
+    assert.match(snippet,/^2026年7月15日/);
+    assert.doesNotMatch(snippet,/主題與分類|地區：|紀錄階段：|最新紀錄：/);
+    assert.equal(await result.locator('.global-search-reason').innerText(),'地區命中：文德里');
+  });
+
+  await page.setViewportSize({width:393,height:252});
+  await page.goto(base+'index.html');
+  await check('short-viewport empty search actions scroll into view, remain keyboard reachable, clear and return focus on Escape',async()=>{
+    await page.keyboard.press(process.platform==='darwin'?'Meta+k':'Control+k');
+    const dialog=page.locator('#global-search-dialog');
+    const input=dialog.getByRole('searchbox',{name:'搜尋陳慧文官網'});
+    await input.fill('ux-short-viewport-no-match');
+    await dialog.locator('[data-search-empty]').waitFor({state:'visible'});
+    await page.screenshot({path:join(results,'search-empty-393x252.png'),fullPage:false});
+    await input.focus();
+    const keyboardTargets=new Set();
+    for(let i=0;i<7;i++){
+      await page.keyboard.press('Tab');
+      const active=await page.evaluate(()=>{
+        const el=document.activeElement;
+        if(el.matches('.global-search-close'))return 'close';
+        if(el.matches('[data-search-clear]'))return 'clear';
+        if(el.matches('[data-search-empty] a[href*="explore.html"]'))return 'explore';
+        if(el.matches('[data-search-empty] a[href*="service.html#contact"]'))return 'contact';
+        if(el.matches('.global-search-footer a'))return 'advanced';
+        return '';
+      });
+      if(active)keyboardTargets.add(active);
+      const geometry=await page.evaluate(()=>{const e=document.activeElement,d=document.querySelector('#global-search-dialog'),r=e.getBoundingClientRect(),m=d.getBoundingClientRect();return{top:r.top,bottom:r.bottom,left:r.left,right:r.right,dialogTop:m.top,dialogBottom:m.bottom,focused:e.matches(':focus')};});
+      if(geometry.focused)assert(geometry.top>=geometry.dialogTop-1&&geometry.bottom<=geometry.dialogBottom+1,JSON.stringify(geometry));
+    }
+    assert.deepEqual([...keyboardTargets].sort(),['advanced','clear','close','contact','explore']);
+    await dialog.locator('[data-search-clear]').click();
+    assert.equal(await input.inputValue(),'');
+    await page.keyboard.press('Escape');
+    assert.equal(await dialog.isVisible(),false);
+    await page.waitForFunction(()=>!document.body.classList.contains('search-open'));
+    assert.equal(await page.evaluate(()=>document.activeElement?.matches('.global-search-trigger,.menu-toggle')),true);
+  });
+
+  await page.goto(base+'index.html');
+  await check('short-viewport failed search index exposes reachable retry and recovers after the index returns',async()=>{
+    blockSearchIndex=true;
+    await page.keyboard.press(process.platform==='darwin'?'Meta+k':'Control+k');
+    const dialog=page.locator('#global-search-dialog');
+    const input=dialog.getByRole('searchbox',{name:'搜尋陳慧文官網'});
+    await input.fill('文德');
+    await page.waitForFunction(()=>document.querySelector('.global-search-status')?.textContent.includes('暫時無法載入'));
+    await dialog.locator('[data-search-retry]').waitFor({state:'visible'});
+    await dialog.locator('[data-search-empty]').waitFor({state:'visible'});
+    const retry=dialog.locator('[data-search-retry]');
+    await retry.focus();
+    const retryBounds=await retry.evaluate(el=>{const r=el.getBoundingClientRect(),d=document.querySelector('#global-search-dialog').getBoundingClientRect();return{top:r.top,bottom:r.bottom,dialogTop:d.top,dialogBottom:d.bottom,focused:el===document.activeElement};});
+    assert(retryBounds.focused&&retryBounds.top>=retryBounds.dialogTop-1&&retryBounds.bottom<=retryBounds.dialogBottom+1,JSON.stringify(retryBounds));
+    blockSearchIndex=false;
+    await retry.click();
+    await page.waitForFunction(()=>document.querySelector('[data-search-retry]')?.hidden===true);
+    assert((await dialog.locator('.global-search-result').count())>0);
+    await page.keyboard.press('Escape');
+    assert.equal(await dialog.isVisible(),false);
+    await page.waitForFunction(()=>!document.body.classList.contains('search-open'));
+    assert.equal(await page.evaluate(()=>document.activeElement?.matches('.global-search-trigger,.menu-toggle')),true);
+  });
+
   for (const width of [320,427,640,1180,1440]) {
     const height = width === 1180 ? 757 : 900;
     await page.setViewportSize({ width, height });
@@ -105,6 +191,33 @@ try {
       assert(boxes.every(box=>box.bottom<=height));
     });
   }
+
+  await check('five out-of-order history records keep the canonical latest date in Explore, search index and detail page',async()=>{
+    const publicRecords=JSON.parse(await readFile(join(root,'data/achievements-public.json'),'utf8'));
+    const searchIndex=JSON.parse(await readFile(join(root,'data/search-index.json'),'utf8'));
+    const publicById=new Map(publicRecords.map(record=>[record.id,record]));
+    const searchByURL=new Map(searchIndex.items.map(item=>[item.url,item]));
+    const checked=[];
+    for(const {id,date} of dateCases){
+      const record=publicById.get(id);
+      const indexed=searchByURL.get(`achievement-${id}.html`);
+      assert(record&&indexed,`missing record ${id}`);
+      assert.equal(record.lastRecordDate,date,`${id} public projection date`);
+      assert.equal(indexed.lastRecordDate,date,`${id} search-index date`);
+      await page.goto(base+`explore.html?type=topic&value=${encodeURIComponent(record.categories[0])}&q=${encodeURIComponent(record.title)}`);
+      const card=page.locator('#explore-achievements .explore-result-card').filter({hasText:record.title}).first();
+      await card.waitFor({state:'visible'});
+      assert((await card.locator('.explore-relation-note').innerText()).includes(`最後紀錄：${date}`),`${id} Explore date`);
+      await page.goto(base+`achievement-${id}.html`);
+      const meta=await page.locator('.case-overview-meta').innerText();
+      const latest=await page.locator('.case-latest .civic-kicker').innerText();
+      assert(meta.includes(`最新紀錄：${date}`),`${id} overview date`);
+      assert(latest.includes(date),`${id} latest section date`);
+      checked.push({id,date,exploreDate:date,searchIndexDate:indexed.lastRecordDate,detailDate:date});
+    }
+    report.latestDateConsistency=checked;
+    return {cases:checked};
+  });
 
   for(const viewport of [{width:590,height:378,label:'200% source viewport'},{width:393,height:252,label:'300% short viewport'}]){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
@@ -175,6 +288,20 @@ try {
     await page.waitForFunction(() => new URL(location.href).searchParams.get('page') !== '2');
     assert.equal(await page.locator('#explore-achievements .explore-result-card').count(), 10);
   });
+  await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
+  await page.locator('#explore-achievements .explore-result-card').first().waitFor();
+  await check('exploration pagination works from the keyboard and restores focus to the current page',async()=>{
+    const next=page.getByRole('button',{name:'下一頁'});
+    await next.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>new URL(location.href).searchParams.get('page')==='2');
+    const active=await page.evaluate(()=>({text:document.activeElement?.textContent,ariaLabel:document.activeElement?.getAttribute('aria-label'),current:document.activeElement?.getAttribute('aria-current')}));
+    assert.equal(active.current,'page',JSON.stringify(active));
+    assert.equal(active.text,'2',JSON.stringify(active));
+    assert.equal(active.ariaLabel,'第 2 頁，共 7 頁',JSON.stringify(active));
+    assert(await page.locator('#explore-pagination [aria-current="page"]').isVisible());
+  });
+
   await check('exploration zero state offers clear-filter, complete-list and service paths', async () => {
     await page.locator('#explore-keyword').fill('no-match-ux-159');
     await page.locator('#explore-empty').waitFor({ state: 'visible' });
@@ -226,15 +353,53 @@ try {
     assert.equal(await page.locator('.case-timeline > li').count(), 6);
   });
 
+  for(const item of [{id:'wende-school-center',date:'2026-09-01'},{id:'hakka-culture-language-friendly',date:'2026-09-10'}]){
+    for(const viewport of [{width:1180,height:757},{width:390,height:844}]){
+      await page.setViewportSize(viewport);
+      await page.goto(base+`achievement-${item.id}.html`);
+      await check(`case, stage and exact latest date remain readable in the first screen for ${item.id} at ${viewport.width}×${viewport.height}`,async()=>{
+        const content=await page.evaluate(()=>{
+          const rect=el=>{const r=el.getBoundingClientRect();return{top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height}};
+          const h1=document.querySelector('.case-head h1'),meta=document.querySelector('.case-overview-meta');
+          return{title:h1.textContent.trim(),heading:rect(h1),meta:rect(meta),metaText:meta.innerText,metaItems:[...meta.children].map(el=>({text:el.textContent.trim(),...rect(el)})),taxonomy:rect(document.querySelector('.case-latest-wrap .case-taxonomy')),scrollY:scrollY};
+        });
+        assert(content.heading.top>=0&&content.heading.bottom<=viewport.height,JSON.stringify(content.heading));
+        assert(content.meta.top>=0&&content.meta.bottom<=viewport.height,JSON.stringify(content.meta));
+        assert(content.metaText.includes('持續追蹤')&&content.metaText.includes(item.date),content.metaText);
+        assert(content.metaItems.every(entry=>entry.height>0&&entry.top>=0&&entry.bottom<=viewport.height),JSON.stringify(content.metaItems));
+        assert(content.taxonomy.top>=content.meta.bottom,'full classification must follow the first-screen overview metadata');
+        await page.screenshot({path:join(results,`case-overview-${item.id}-${viewport.width}x${viewport.height}.png`),fullPage:false});
+        return{viewport,title:content.title,heading:content.heading,meta:content.meta,metaItems:content.metaItems,taxonomy:content.taxonomy};
+      });
+    }
+  }
+
   await page.goto(base + 'achievements.html');
-  await check('funding details in the public record card stay collapsed until requested', async () => {
-    const funding = page.locator('#case-list .case-card[data-case="wende-school-center"] .case-funding details');
-    assert.equal(await funding.count(), 1);
-    assert.equal(await funding.getAttribute('open'), null);
-    await funding.locator('summary').click();
-    assert.equal(await funding.getAttribute('open'), '');
-    assert.match(await funding.innerText(),/2,610\.71萬元/);
-    assert.match(await funding.innerText(),/林岱樺/);
+  await check('compact funding card keeps the total visible, shortens the same card and retains expandable sources', async () => {
+    const comparisons=[];
+    for(const viewport of [{width:390,height:844,key:'390x844'},{width:1440,height:960,key:'1440x960'}]){
+      await page.setViewportSize({width:viewport.width,height:viewport.height});
+      await page.goto(base+'achievements.html');
+      const card=page.locator('#case-list .case-card[data-case="wende-school-center"]');
+      const details=card.locator('.case-funding details');
+      assert.equal(await details.count(),1);
+      assert.equal(await details.getAttribute('open'),null);
+      const before=fundingBaseline[viewport.key];
+      const after=await card.evaluate(el=>({card:el.getBoundingClientRect().height,funding:el.querySelector('.case-funding').getBoundingClientRect().height,summary:el.querySelector('.case-funding summary').getBoundingClientRect().height,total:el.querySelector('.case-funding-total').innerText.trim()}));
+      assert.match(after.total,/核定總經費.*6,035\.7萬元/);
+      assert(after.summary>=44,`funding summary target is shorter than 44px: ${after.summary}`);
+      assert(after.funding<before.funding*.75,`funding panel did not compact enough: ${JSON.stringify({before,after})}`);
+      assert(after.card<before.card-40,`case card did not shorten at this viewport: ${JSON.stringify({before,after})}`);
+      await card.scrollIntoViewIfNeeded();
+      await page.screenshot({path:join(results,`funding-compact-${viewport.key}.png`),fullPage:false});
+      await details.locator('summary').click();
+      assert.equal(await details.getAttribute('open'),'');
+      assert.match(await details.innerText(),/2,610\.71萬元/);
+      assert.match(await details.innerText(),/林岱樺/);
+      comparisons.push({viewport:{width:viewport.width,height:viewport.height},before,after,reduction:{card:before.card-after.card,funding:before.funding-after.funding}});
+    }
+    report.fundingHeightComparison={baselineCommit:fundingBaseline.commit,comparisons};
+    return{baselineCommit:fundingBaseline.commit,comparisons};
   });
 
   for(const [id,title] of [['wende-school-center','文德國小活動中心'],['wenlong-lane16','文龍路16巷'],['bade-detention','八德滯洪池']]){
@@ -247,6 +412,32 @@ try {
       if(id==='wende-school-center')await page.screenshot({path:join(results,'achievement-map-direct-case.png'),fullPage:false});
     });
   }
+
+  await page.goto(base+'achievements.html');
+  await page.getByRole('button',{name:'地圖與列表'}).click();
+  await page.locator('#map-fit').click();
+  await page.waitForFunction(()=>!!window.HuiwenCases?.getState().mapView);
+  await page.waitForFunction(()=>document.querySelectorAll('#achievement-map .leaflet-interactive').length>0);
+  await page.locator('#map-fit').click();
+  await check('map cancel selection closes selected popup, clears selected styling and restores the filtered overview extent',async()=>{
+    const baseline=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
+    await page.locator('[data-locate="wende-school-center"]').click();
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='wende-school-center'&&document.querySelector('.map-popup-selected'));
+    const selected=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
+    assert(selected.zoom>baseline.zoom,JSON.stringify({baseline,selected}));
+    assert(await page.locator('.map-popup-selected').isVisible());
+    await page.locator('.insight-clear').click();
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId===null&&!document.querySelector('#achievement-map .leaflet-popup'));
+    const restored=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
+    assert.equal(restored.zoom,baseline.zoom,JSON.stringify({baseline,selected,restored}));
+    const boundsDelta=restored.bounds.split(',').map((value,index)=>Math.abs(Number(value)-Number(baseline.bounds.split(',')[index])));
+    assert(boundsDelta.every(delta=>delta<=0.00025),JSON.stringify({baseline,restored,boundsDelta}));
+    assert.equal(await page.locator('.map-popup-selected').count(),0);
+    assert.equal((await page.locator('#case-list .case-card[data-case="wende-school-center"]').getAttribute('class')).includes('is-selected'),false);
+    assert.equal(new URL(page.url()).searchParams.has('case'),false);
+    assert.equal(await page.locator('#map-fit').evaluate(el=>document.activeElement===el),true);
+    return{baseline,selected,restored,boundsDelta};
+  });
 
   await page.goto(base + 'council-records.html');
   await check('seven completed council sessions each point to a distinct official query and transcript start page', async () => {

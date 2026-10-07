@@ -183,7 +183,7 @@
       const category=(item.categories||[])[0]||'公開紀錄';
       const subcategory=(item.subcategories||[]).slice(0,2).join('・');
       const place=(item.villages||[]).join('、')||item.scope||'地區未載';
-      const latest=(item.history||[]).filter(entry=>entry.date).at(-1)?.date||'未載明';
+      const latest=item.lastRecordDate||'未載明';
       article.append(node('p',subcategory?`${category}・${subcategory}`:category,'eyebrow'));
       article.append(node('h3',item.title));
       article.append(node('p',item.summary||'查看完整說明與歷史紀錄。'));
@@ -232,6 +232,7 @@
         currentPage=page;
         render();syncURL('push');
         document.getElementById('explore-achievement-heading').scrollIntoView({behavior:motion(),block:'start'});
+        pagination.querySelector('[aria-current="page"]')?.focus({preventScroll:true});
       });
       pagination.append(button);
     };

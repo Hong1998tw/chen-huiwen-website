@@ -95,8 +95,9 @@ body.search-open{overflow:hidden}
 .global-search-empty button,.global-search-empty a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:9px 12px;border:1px solid #bacdc1;background:#fff;color:#075548;font:inherit;font-size:.86rem;font-weight:700;text-align:center}
 @media(max-width:560px){.global-search-empty{grid-template-columns:1fr}.global-search-empty p{grid-column:1}.global-search-empty button,.global-search-empty a{width:100%}}
 @media(max-height:360px){
- .global-search-dialog{max-height:calc(100dvh - 12px);overflow:hidden}
- .global-search-shell{min-height:0;max-height:calc(100dvh - 12px)}
+ .global-search-dialog{max-height:calc(100dvh - 12px);overflow-y:auto}
+ .global-search-shell{min-height:0;max-height:none;overflow:visible}
+ .global-search-results{flex:0 1 auto;max-height:32dvh;min-height:0}
  .global-search-input-row{padding:.5rem .75rem}
  .global-search-status{padding:.35rem .75rem .15rem}
  .global-search-footer{padding:.45rem .75rem}

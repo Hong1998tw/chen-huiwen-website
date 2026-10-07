@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
-from achievement_metadata import is_public
+from achievement_metadata import is_public, latest_history_event
 from page_copy import render_with_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +43,7 @@ LEGACY_PAGES = (
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
 VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
 BUILD_ONLY_FILES = {'assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2'}
-MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
+MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding', 'lastRecordDate'}
 PUBLIC_DATA_PROJECTIONS = {
     'data/election-2026.json', 'data/platforms.json', 'data/site-profile.json',
 }
@@ -262,7 +262,10 @@ def public_records(root=ROOT):
         # The repository source is now the reviewed release set. Validate it
         # before projection so editorial metadata cannot be silently discarded.
         validate_schema(row, schema['items'], f'achievement source row {index + 1}')
-        records.append(project_value(row, schema['items']))
+        projected = project_value(row, schema['items'])
+        latest = latest_history_event(projected.get('history', []))
+        projected['lastRecordDate'] = latest.get('date', '') if latest else ''
+        records.append(projected)
     validate_schema(records, schema)
     if len({row['id'] for row in records}) != len(records):
         raise ValueError('Duplicate public record IDs')
@@ -277,6 +280,8 @@ def validate_map(root, records):
     for row in rows:
         if row.get('funding') != by_id[row['id']].get('funding'):
             raise ValueError('Map funding differs from reviewed public source')
+        if row.get('lastRecordDate') != by_id[row['id']].get('lastRecordDate'):
+            raise ValueError('Map latest-record date differs from the public history ordering')
         if row.keys() - MAP_FIELDS or not is_public(row):
             raise ValueError('Map contains a non-public field or record')
         for event in row.get('history', []):

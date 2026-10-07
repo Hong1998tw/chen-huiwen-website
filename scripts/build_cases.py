@@ -51,8 +51,7 @@ def funding_card(c):
  if not funding:return ''
  amount=lambda value:format(value/10000,',.2f').rstrip('0').rstrip('.')+'萬元'
  return ('<section class="case-funding" aria-label="經費與共同爭取">'
-  +'<p class="case-funding-total"><span>'+E(funding['basis'])+'</span> <strong>'+amount(funding['total'])+'</strong></p>'
-  +'<details><summary>經費與共同爭取</summary><p>中央補助 '+amount(funding['centralGrant'])+'</p>'
+  +'<details><summary class="case-funding-total"><span>'+E(funding['basis'])+'</span> <strong>'+amount(funding['total'])+'</strong></summary><p>中央補助 '+amount(funding['centralGrant'])+'</p>'
   +'<p>'+E(funding['approvedOn'])+' 核定 · '+E(funding['approvalReference'])+'</p>'
   +'<p>'+E(funding['collaboration'])+'</p><p class="case-funding-note">新臺幣核定計畫口徑，非決算或已撥款。</p>'
   +ext(funding['sourceUrl'],funding['sourceTitle'])
@@ -117,7 +116,7 @@ for c in public_items:
                 'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
  reading_links=[('case-context','議題導讀',bool(context))]+[section_links[key] for key in section_order]
  reading_nav = '<nav class="wrap civic-article-nav" aria-label="專題閱讀導覽">'+''.join(f'<a href="#{anchor}">{label} ↓</a>' for anchor,label,present in reading_links if present)+f'<span>內容整理 <time datetime="{E(c["updated"])}">{E(c["updated"])}</time></span></nav>'
- body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1>{taxonomy}</div></section><div class="wrap case-latest-wrap">{overview}{current}</div>{reading_nav}<div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
+ body=f'''<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="achievements.html">建設與進度</a><span>/</span><span>{E(c['title'])}</span></div><section class="page-head case-head" data-topic="{E(c['categories'][0])}"><div class="wrap"><p class="eyebrow">建設與進度</p><h1>{E(c['title'])}</h1></div></section><div class="wrap case-latest-wrap">{overview}{taxonomy}{current}</div>{reading_nav}<div class="wrap {layout_class}">{article}<aside class="case-aside">{info}<a class="button button-green" href="achievements.html?case={E(c['id'])}">{'在地圖查看' if c['coordinates'] else '回到建設列表'} →</a><a class="text-link" href="petition.html">有相關問題想反映 →</a></aside></div>{related}'''
  if context:
   latest_day=latest['date'] if latest else '未載明'
   source_labels=''.join('<li>'+E(source.get('sourceDate',''))+' '+E(source['title'])+'</li>' for source in c['sources'])
@@ -137,6 +136,8 @@ cats=sorted({t for c in public_items for t in c['categories']});subcats=sorted({
 mapdata=[]
 for c in public_items:
  entry={k:c[k] for k in ['id','title','summary','categories','subcategories','villages','scope','status','coordinates','locationName','locationNote','history','updated']}
+ latest=latest_history_event(c.get('history',[]))
+ entry['lastRecordDate']=latest.get('date','') if latest else ''
  if c.get('funding'):entry['funding']=c['funding']
  entry['searchText']=search_text(c,village_by_key)
  entry['years']=sorted({h['date'][:4] for h in c['history'] if re.match(r'^(19|20)\d{2}(?:\D|$)',h['date'])})

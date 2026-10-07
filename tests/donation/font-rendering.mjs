@@ -31,7 +31,7 @@ await mkdir(out,{recursive:true});
 const server=await startStaticServer({root,compression:'auto',port:0});
 const base=server.url;
 const browser=await chromium.launch({headless:true});
-const report={base,root,viewports,routes:[],dynamic:{},errors:[]};
+const report={base,root,viewports,routes:[],dynamic:{},errors:[],measurementConditions:{routeChecks:'Fresh Playwright contexts per route; each viewport waits for networkidle and document.fonts.ready before checking glyphs.',cache:'Same-origin context.route() is used for deterministic content and disables Chromium HTTP cache; those samples represent loaded fonts, not first paint or a warm-cache result.',device:'Viewport emulation only; no iOS or physical device is asserted.'}};
 
 async function openIsolated(page,url){
  await page.goto(url,{waitUntil:'networkidle'});
@@ -142,6 +142,7 @@ try{
   for(const viewport of viewports){
    await page.setViewportSize(viewport);
    await openIsolated(page,new URL(route,base).href);
+   if(!report.environment){report.environment={hostPlatform:process.platform,chromium:browser.version(),headless:true,...await page.evaluate(()=>({navigatorPlatform:navigator.platform,userAgent:navigator.userAgent,devicePixelRatio}))};}
    assert.equal(await page.locator('html').getAttribute('data-huiwen-font-page'),slug);
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),route+' overflows at '+viewport.width+'px');
    const coreFamily='Huiwen Sans TC '+slug+' Core';
@@ -241,6 +242,42 @@ try{
   report.routes.push(routeReport);
   await context.close();
  }
+
+ // A separate cache-preserving probe records first paint before fonts.ready.
+ // It uses a fresh context and no Playwright request routing; the optional local
+ // throttle only slows transport and does not disable the browser cache.
+ const coldContext=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce',serviceWorkers:'block'});
+ const coldPage=await coldContext.newPage();coldPage.setDefaultTimeout(20000);
+ await coldPage.addInitScript(()=>{window.__layoutShift=0;new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.__layoutShift+=entry.value}).observe({type:'layout-shift',buffered:true});});
+ const coldSession=await cdpSession(coldPage);
+ await coldSession.send('Network.enable');
+ await coldSession.send('Network.emulateNetworkConditions',{offline:false,latency:120,downloadThroughput:350*1024,uploadThroughput:128*1024,connectionType:'cellular3g'});
+ const networkResponses=[];
+ coldSession.on('Network.responseReceived',event=>{if(event.response.url.includes('huiwen-explore-core-'))networkResponses.push({url:new URL(event.response.url).pathname,status:event.response.status,fromDiskCache:event.response.fromDiskCache||false,fromServiceWorker:event.response.fromServiceWorker||false,encodedDataLength:event.response.encodedDataLength});});
+ const coldURL=new URL('explore.html?type=topic&value='+encodeURIComponent('交通與基建'),base).href;
+ await coldPage.goto(coldURL,{waitUntil:'domcontentloaded'});
+ await coldPage.waitForFunction(()=>performance.getEntriesByName('first-contentful-paint').length>0,null,{timeout:15000});
+ const firstPaint=await coldPage.evaluate(()=>({fcp:performance.getEntriesByName('first-contentful-paint')[0]?.startTime||null,fontStatus:document.fonts.status,faces:[...document.fonts].filter(face=>face.family.includes('explore Core')).map(face=>({family:face.family,status:face.status,display:face.display})),resources:performance.getEntriesByType('resource').filter(entry=>entry.name.includes('huiwen-explore-core-')).map(entry=>({name:new URL(entry.name).pathname,transferSize:entry.transferSize,decodedBodySize:entry.decodedBodySize,duration:entry.duration,startTime:entry.startTime}))}));
+ const firstPaintFonts=await platformFonts(coldSession,'#explore-title');
+ await coldPage.screenshot({path:resolve(out,'explore-cold-first-paint.png')});
+ await coldPage.evaluate(()=>document.fonts.ready);
+ const loadedFonts=await platformFonts(coldSession,'#explore-title');
+ assertCustomHan(loadedFonts,'cold-load Explore title after document.fonts.ready');
+ const loaded=await coldPage.evaluate(()=>({fontStatus:document.fonts.status,faces:[...document.fonts].filter(face=>face.family.includes('explore Core')).map(face=>({family:face.family,status:face.status,display:face.display})),resources:performance.getEntriesByType('resource').filter(entry=>entry.name.includes('huiwen-explore-core-')).map(entry=>({name:new URL(entry.name).pathname,transferSize:entry.transferSize,decodedBodySize:entry.decodedBodySize,duration:entry.duration,startTime:entry.startTime})),cls:window.__layoutShift}));
+ assert(loaded.resources.some(entry=>entry.decodedBodySize>0),'cold-load route Core font did not complete a measurable transfer');
+ assert(loaded.cls<0.1,'cold font swap caused CLS '+loaded.cls);
+ await coldPage.screenshot({path:resolve(out,'explore-cold-font-loaded.png')});
+ const coldNetwork=[...networkResponses];
+ networkResponses.length=0;
+ await coldPage.reload({waitUntil:'domcontentloaded'});
+ await coldPage.waitForFunction(()=>performance.getEntriesByName('first-contentful-paint').length>0,null,{timeout:15000});
+ const warmFirstPaint=await platformFonts(coldSession,'#explore-title');
+ await coldPage.evaluate(()=>document.fonts.ready);
+ const warmLoadedFonts=await platformFonts(coldSession,'#explore-title');
+ assertCustomHan(warmLoadedFonts,'same-context Explore reload after document.fonts.ready');
+ const warm=await coldPage.evaluate(()=>({fcp:performance.getEntriesByName('first-contentful-paint')[0]?.startTime||null,fontStatus:document.fonts.status,resources:performance.getEntriesByType('resource').filter(entry=>entry.name.includes('huiwen-explore-core-')).map(entry=>({name:new URL(entry.name).pathname,transferSize:entry.transferSize,decodedBodySize:entry.decodedBodySize,duration:entry.duration,startTime:entry.startTime})),cls:window.__layoutShift}));
+ report.coldCacheProbe={route:coldURL,conditions:{context:'fresh browser context on initial navigation; no route interception; separate same-context reload; resource throttling configured through CDP',throttle:{latencyMs:120,downloadBytesPerSecond:350*1024,uploadBytesPerSecond:128*1024},firstPaintCapture:'Immediately after first-contentful-paint, before document.fonts.ready',loadedCapture:'After document.fonts.ready; checks the actual platform font for the Explore heading',serverCachePolicy:'public, max-age=0, must-revalidate; the reload is reported as observed and is not presumed to be a cache hit'},firstPaint:{...firstPaint,platformFonts:firstPaintFonts},loaded:{...loaded,platformFonts:loadedFonts,networkResponses:coldNetwork},warmReload:{...warm,firstPaintFonts:warmFirstPaint,loadedFonts:warmLoadedFonts,networkResponses:[...networkResponses]},platform:{hostPlatform:process.platform,chromium:browser.version(),...await coldPage.evaluate(()=>({navigatorPlatform:navigator.platform,userAgent:navigator.userAgent}))}};
+ await coldSession.detach();await coldContext.close();
 
  const dynamicContext=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});
  await dynamicContext.route('**/*',request=>new URL(request.request().url()).origin===new URL(base).origin?request.continue():request.abort());

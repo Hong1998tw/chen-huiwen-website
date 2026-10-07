@@ -113,9 +113,10 @@
     const intents=(item.intents||[]).map(normalize);
     if(intents.includes(query))return `服務項目：${query}`;
     const tokens=query.split(' ').filter(Boolean);
+    const region=normalize(item.primaryRegion);
+    if(region&&tokens.every(token=>region.includes(token)))return `地區命中：${item.primaryRegion}`;
     const fields=[
       ['標題',normalize(item.title)],
-      ['地區',normalize(item.primaryRegion)],
       ['主題',normalize((item.categories||[]).join(' '))],
       ['摘要',normalize(item.summary||item.description)],
       ['紀錄內容',normalize(item.keywords)]
@@ -162,7 +163,7 @@
       const mapped=visible.filter(c=>c.coordinates).length;
       const item=visible.find(c=>c.id===selectedId);
       if(item){
-        const latest=item.history?.at(-1);
+        const latest=item.lastRecordDate?item.history?.find(event=>event.date===item.lastRecordDate):null;
         const card=document.querySelector(`.case-card[data-case="${CSS.escape(item.id)}"]`);
         const summary=item.summary||card?.querySelector('.case-summary')?.textContent||'';
         insight.innerHTML=`<div class="insight-top"><p class="eyebrow">SELECTED PLACE</p><button type="button" class="insight-clear" aria-label="取消地圖選取">取消選取 ×</button></div><h2>${escapeHTML(item.title)}</h2><p>${escapeHTML(summary)}</p><div class="insight-breakdown"><span>${escapeHTML(item.status)}</span><span>${escapeHTML(item.villages.join('、')||item.scope)}</span></div>${latest?`<p class="insight-history">最後一筆歷程 · ${escapeHTML(latest.date)}<br>${escapeHTML(latest.title)}</p>`:''}<p class="insight-location">${escapeHTML(item.locationNote||'點位為代表位置，不是工程範圍。')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄與來源 →</a>${groupIds.length>1?'<div class="insight-group"><h3>附近的其他專題</h3></div>':''}`;
@@ -207,8 +208,7 @@
       box.replaceChildren();
       all.slice(0,limit).forEach((item,i)=>{
         const link=document.createElement('a');link.href=new URL(item.url,assetBase).href;link.id=`global-result-${i}`;link.className='global-search-result';link.setAttribute('role','option');
-        let snippet=item.summary||item.description||'';
-        if(query&&item.type!=='服務'&&!normalize(snippet).includes(query.split(' ')[0])){const body=String(item.keywords||'');const offset=normalize(body).indexOf(query.split(' ')[0]);if(offset>=0)snippet=(offset>22?'…':'')+body.slice(Math.max(0,offset-22),offset+95);}
+        const snippet=item.summary||item.description||'';
         const metadata=item.type==='服務'
           ?`服務地區：${item.primaryRegion||'未標示'} · 紀錄日期與辦理階段：不適用`
           :`地區：${item.primaryRegion||'未標示'} · 最後紀錄：${item.lastRecordDate||'未載明'} · 階段：${item.recordStage||'未標示'}`;
@@ -234,7 +234,7 @@
       more.addEventListener('click',()=>{limit+=12;render();});retry.addEventListener('click',()=>{indexPromise=null;status.textContent='重新載入中…';render();});
       clearSearch.addEventListener('click',()=>{input.value='';limit=12;render();input.focus();});
       dialog.querySelector('.global-search-close').addEventListener('click',close);
-      dialog.addEventListener('close',()=>{document.body.classList.remove('search-open');const target=returnFocus?.isConnected&&returnFocus.getClientRects().length?returnFocus:document.querySelector('.menu-toggle');target?.focus();});
+      dialog.addEventListener('close',()=>{document.body.classList.remove('search-open');const canFocus=el=>el?.isConnected&&el!==document.body&&el!==document.documentElement&&el.getClientRects().length>0;const target=canFocus(returnFocus)?returnFocus:[trigger,document.querySelector('.menu-toggle')].find(canFocus);target?.focus();});
       dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close();}});
       dialog.addEventListener('keydown',e=>{
         if(e.isComposing)return;

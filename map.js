@@ -28,7 +28,7 @@
   list.after(pagination);
   const live=document.querySelector('.case-live-summary');
   const params = () => Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value]));
-  function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage }; }
+  function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage, mapView:map?{zoom:map.getZoom(),bounds:map.getBounds().toBBoxString()}:null }; }
   function announce() { document.dispatchEvent(new CustomEvent('huiwen:cases-change', { detail: getState() })); }
   async function ensureData() {
     if (fullDataLoaded) return true;
@@ -218,7 +218,7 @@
     if (requested) selectCase(requested.id);
     fit();
   }
-  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);if(key==='q'&&String(value).trim())ensureData().finally(()=>filter());else filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();announce();}});
+  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);if(key==='q'&&String(value).trim())ensureData().finally(()=>filter());else filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();if(map){map.closePopup();draw();fit();}announce();}});
   controls.q.addEventListener('input', event => {
     clearTimeout(searchTimer);
     if (!event.isComposing) searchTimer = setTimeout(() => {

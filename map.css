@@ -119,11 +119,11 @@
  .map-controls .case-live-summary{font-size:11px;line-height:1.25;padding-top:0}
 }
 
-/* Reviewed case funding remains readable outside the clamped summary. */
-.case-funding{margin:16px 0 0;padding:14px;background:#f0f6ee;border:1px solid #d2dfcd;border-radius:12px;color:#173f33;font-size:13px;line-height:1.7}
+/* Keep the confirmed total visible while the source and breakdown stay one tap away. */
+.case-funding{margin:10px 0 0;padding:7px 12px;background:#f0f6ee;border:1px solid #d2dfcd;border-radius:12px;color:#173f33;font-size:13px;line-height:1.55}
 .case-funding-total{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-weight:700;color:#173f33}
-.case-funding-total strong{font-size:20px;font-variant-numeric:tabular-nums}
-.case-funding details{margin-top:8px}.case-funding summary,.map-popup-case summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;font-weight:700}
+.case-funding-total strong{font-size:18px;font-variant-numeric:tabular-nums}
+.case-funding details{margin:0}.case-funding details>summary.case-funding-total{display:list-item;min-height:44px;padding:4px 0;line-height:1.4}.case-funding summary,.map-popup-case summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;font-weight:700}
 .case-funding summary:focus-visible,.map-popup-case summary:focus-visible{outline:3px solid #173f33;outline-offset:2px}
 .case-funding details p,.map-popup-case details p{margin:8px 0}.case-funding details a{display:block;margin-top:10px;text-decoration:underline;text-underline-offset:3px}
 .case-funding-note{font-size:12px}.map-popup-case{overflow-wrap:anywhere}.map-popup-case+.map-popup-case{border-top:1px solid #d2dfcd;margin-top:12px}.map-popup-case .case-funding-total{font-size:15px;line-height:1.6}.map-popup-case details{font-size:13px;line-height:1.6}
