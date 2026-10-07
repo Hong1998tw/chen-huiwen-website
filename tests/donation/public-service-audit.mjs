@@ -136,7 +136,7 @@ try{
   assert.equal(await page.locator('.prepare-list li').count(),3);
   const form=page.locator('.petition-panel a[href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d"]');
   assert.equal(await form.count(),1);assert.equal(await form.getAttribute('target'),'_blank');assert.equal(await form.getAttribute('rel'),'noopener noreferrer');
-  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);
+  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);
   await page.close();
  });
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'service.html');

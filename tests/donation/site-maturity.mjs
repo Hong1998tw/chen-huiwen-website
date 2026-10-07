@@ -56,7 +56,7 @@ try{
  }
  await check('Petition preserves its original content and target while adding only the approved disclosure',async()=>{
   const baseline=execFileSync('git',['show','49660bf529c3d41008217125464594571b83d202:petition.html'],{cwd:root,encoding:'utf8'});
-  const current=(await fetch(base+'petition.html')).text();
+  const current=await (await fetch(base+'petition.html')).text();
   const getMain=source=>{
    const start=source.indexOf('<main');
    const end=source.indexOf('</main>',start);
@@ -78,6 +78,5 @@ try{
   assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 ↗</a>'));
  });
 
- });
 }finally{await browser.close();server?.kill('SIGTERM');}
 const report={engine,status:failures.length?'FAIL':'PASS',results,failures};await writeFile(new URL(engine+'-report.json',out),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(failures.length)process.exitCode=1;
