@@ -57,6 +57,20 @@ class FontSubsetContractTests(unittest.TestCase):
                 self.assertTrue(core_path.is_file())
                 self.assertIn(f'font-family:"Huiwen Sans TC {slug} Core"', css)
                 self.assertIn(f'font-family:"{family}"', css)
+                core_face = re.search(
+                    rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} Core";'
+                    rf'[^}}]*font-display:([^;}}]+)',
+                    css,
+                )
+                full_face = re.search(
+                    rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} Full";'
+                    rf'[^}}]*font-display:([^;}}]+)',
+                    css,
+                )
+                self.assertIsNotNone(core_face)
+                self.assertEqual(core_face.group(1), "swap")
+                self.assertIsNotNone(full_face)
+                self.assertEqual(full_face.group(1), "optional")
                 full_stack = (
                     f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
                     f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'

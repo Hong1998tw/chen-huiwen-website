@@ -357,7 +357,11 @@ def build_css(root: Path, routes: dict, jp_filename: str | None, jp_fallback: li
             )
         )
     for slug, values in routes.items():
-        lines.append(face(f"Huiwen Sans TC {slug} Core", values["core_file"]))
+        # Core faces are preloaded for the first render. Keep their glyphs in
+        # the active font stack when a cold request outlasts the short block
+        # period; `optional` can otherwise leave the whole route in a system
+        # CJK fallback for that page view even after the subset arrives.
+        lines.append(face(f"Huiwen Sans TC {slug} Core", values["core_file"], display="swap"))
         lines.append(face(f"Huiwen Sans TC {slug} Full", values["full_file"]))
         lines.append(
             f':root[data-huiwen-font-page="{slug}"]'
