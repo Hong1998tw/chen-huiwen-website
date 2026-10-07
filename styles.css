@@ -33,6 +33,10 @@
 @font-face{font-family:"Huiwen Sans TC election Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-election-full-a98fb3a4797e.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="election"]{--huiwen-font-family:"Huiwen Sans TC election Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="election"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC election Full","Huiwen Sans JP Support",sans-serif}
+@font-face{font-family:"Huiwen Sans TC explore Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-explore-core-35a0f5e27103.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+@font-face{font-family:"Huiwen Sans TC explore Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-explore-full-f34e2bfe3216.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+:root[data-huiwen-font-page="explore"]{--huiwen-font-family:"Huiwen Sans TC explore Core","Huiwen Sans JP Support",sans-serif}
+:root[data-huiwen-font-page="explore"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC explore Full","Huiwen Sans JP Support",sans-serif}
 .global-search-dialog,.map-insight-panel,.map-popup,.map-popup-case,.leaflet-popup-content{font-family:var(--huiwen-global-font-family)}
 /* HUIWEN_FONT_SUBSETS:end */
 :root{--green:#075548;--green-dark:#043e35;--green-soft:#edf4f1;--yellow:#f3d36a;--ink:#1b302b;--muted:#586a64;--line:#d8e2dc;--white:#fff;--max:1200px;--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif;--huiwen-global-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif;font-family:var(--huiwen-font-family);color:var(--ink);background:var(--white);font-synthesis:none}

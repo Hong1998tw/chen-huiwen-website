@@ -151,6 +151,7 @@
     platforms.forEach(item=>{const a=document.createElement('a');a.className='explore-related-item';a.href=item.url;a.innerHTML=`<span class="global-search-type">政見</span><strong>${escapeHTML(item.title)}</strong><small>歷屆政見原文</small>`;list.append(a);});
     if(!news.length&&!platforms.length){const p=document.createElement('p');p.textContent='目前沒有其他相關新聞或政見內容。';list.append(p);}
     relatedBox.append(list);
+    relatedBox.hidden=false;
   }
 
   function syncURL(){const params=new URLSearchParams();params.set('type',typeSelect.value);params.set('value',valueSelect.value);if(keywordInput.value.trim())params.set('q',keywordInput.value.trim());if(statusSelect.value!=='all')params.set('status',statusSelect.value);history.replaceState(null,'',`${location.pathname}?${params.toString()}`);}

@@ -8,6 +8,7 @@ require_supported_python()
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+import json
 import re
 import sys
 import unicodedata
@@ -60,6 +61,16 @@ ROUTES = {
     "election.html": (
         "election",
         ("main > .campaign-hero", "main > .campaign-countdown-wrap"),
+    ),
+    "explore.html": (
+        "explore",
+        (
+            "main > .page-head",
+            "main > .explore-layout > .explore-sidebar",
+            "main .explore-reading-intro",
+            "main #explore-empty",
+            "main .explore-related",
+        ),
     ),
 }
 TEXT_SUFFIXES = {
@@ -180,6 +191,8 @@ def page_text(root: Path, route: str, selectors: tuple[str, ...] | None = None) 
         raise ValueError(f"FONT_ROUTE_MISSING: {route}")
     source = path.read_text(encoding="utf-8")
     if selectors is None:
+        if route == "explore.html":
+            return source + "\n" + explore_dynamic_text(root, core=False)
         return source
     soup = BeautifulSoup(source, "html.parser")
     pieces = []
@@ -202,6 +215,60 @@ def page_text(root: Path, route: str, selectors: tuple[str, ...] | None = None) 
             raise ValueError(f"FONT_CORE_SELECTOR_MISSING: {route}: {selector}")
         pieces.extend(str(match) for match in matches)
     pieces.append(DYNAMIC_CORE_TEXT)
+    if route == "explore.html":
+        pieces.append(explore_dynamic_text(root, core=selectors is not None))
+    return "\n".join(pieces)
+
+
+def explore_dynamic_text(root: Path, *, core: bool) -> str:
+    """Include Explore's JavaScript-rendered labels and data in its font faces."""
+    records_path = root / "data/achievements-public.json"
+    records = json.loads(records_path.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError("FONT_EXPLORE_DATA_NOT_LIST")
+
+    # These are the default topic and first-render strings produced by explore.js.
+    pieces = [
+        "交通與基建｜主題探索",
+        "查看交通與基建相關的政績、新聞與歷屆政見。",
+        "政績／服務紀錄 有地圖代表點位 進度類型",
+        "從「交通與基建」相關的生活問題開始，閱讀各案行動、辦理階段與原始來源。收錄紀錄數不代表完工成果數。",
+        "CONNECTED CONTENT 政績 × 新聞 × 政見 依共同主題整理相關政績、新聞與歷屆政見，方便延伸閱讀。",
+        "交通與基建 教育與文化 環境與綠地 社福與衛環 經濟與產業",
+        "主題探索 里別探索 選擇里別 選擇主題 全部進度",
+        "再搜尋 道路、學校、長照 建設與服務紀錄 新聞 政見 歷屆政見原文",
+    ]
+
+    def card_text(item: dict) -> str:
+        fields = [
+            *(item.get("categories") or []),
+            *(item.get("subcategories") or []),
+            item.get("title", ""),
+            item.get("summary", ""),
+            "、".join(item.get("villages") or []) or item.get("scope", "") or "鳳山區",
+            item.get("status", ""),
+            "閱讀完整紀錄 →",
+        ]
+        return " ".join(str(value) for value in fields if value)
+
+    if core:
+        # The core face covers the initial default view, every native-select
+        # option, and all result-card strings that are present on first render.
+        for record in records:
+            if record.get("status") != "待核驗" and "交通與基建" in (record.get("categories") or []):
+                pieces.append(card_text(record))
+        pieces.extend(str(record.get("status", "")) for record in records)
+        pieces.extend(village for record in records for village in (record.get("villages") or []))
+        return "\n".join(pieces)
+
+    # The full face must cover every result that filters/searches can render,
+    # including the titles and summaries sourced from records rather than HTML.
+    pieces.extend(card_text(record) for record in records if record.get("status") != "待核驗")
+    for relative in ("data/platforms.json", "news.html", "explore.js"):
+        path = root / relative
+        if not path.is_file():
+            raise ValueError(f"FONT_EXPLORE_SOURCE_MISSING: {relative}")
+        pieces.append(path.read_text(encoding="utf-8"))
     return "\n".join(pieces)
 
 

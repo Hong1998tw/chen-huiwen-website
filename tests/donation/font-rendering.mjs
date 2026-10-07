@@ -17,7 +17,8 @@ const routes=[
  ['news.html','news','main h1'],
  ['news-20260915-special-education-nurse.html','news-detail','main h1'],
  ['political-donation.html','political-donation','main h1'],
- ['election.html','election','main h1']
+ ['election.html','election','main h1'],
+ ['explore.html','explore','#explore-title']
 ];
 const viewports=[
  {width:320,height:568},
@@ -118,6 +119,10 @@ try{
    const fullComputed=await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--huiwen-font-family'));
    assert(fullComputed.includes(fullFamily),route+' did not switch to its full face after interaction');
    assertCustomHan(await platformFonts(session,h1Selector),route+' full '+h1Selector);
+   if(route==='explore.html'){
+    assert(await page.locator('.explore-result-card h3').count()>0,'explore did not render its default topic results');
+    assertCustomHan(await platformFonts(session,'.explore-result-card h3'),route+' dynamic result card');
+   }
    if(viewport.width===320){
     await page.locator('.menu-toggle').click();
     await page.waitForFunction(()=>document.querySelector('.menu-toggle')?.getAttribute('aria-expanded')==='true');
@@ -127,6 +132,12 @@ try{
    assert(fontsAfter.some(entry=>entry.url.includes('huiwen-'+slug+'-full-')),route+' full face request missing');
    const afterCls=await page.evaluate(()=>window.__layoutShift);
    assert(afterCls-coreCls<=0.02,route+' font upgrade shifted layout by '+(afterCls-coreCls));
+   if(route==='explore.html'){
+    await page.locator('#explore-type').selectOption('village');
+    await page.locator('#explore-value').selectOption({index:1});
+    await page.locator('.explore-result-card h3').first().waitFor();
+    assertCustomHan(await platformFonts(session,'.explore-result-card h3'),route+' village-filtered dynamic result card');
+   }
    routeReport.viewports.push({
     ...viewport,visibleHanNodes:visibleHanCount,coreFamily,fullFamily,
     initialFontPaths:beforeFonts.map(entry=>new URL(entry.url).pathname),
