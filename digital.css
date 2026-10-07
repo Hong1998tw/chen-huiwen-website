@@ -87,6 +87,22 @@ body.search-open{overflow:hidden}
 .case-timeline .timeline-reveal.is-visible::before{box-shadow:0 0 0 5px #e9f1dc}
 @media(max-width:1100px){.map-controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:780px){.map-controls{grid-template-columns:repeat(2,minmax(0,1fr));padding:17px}.map-controls>div:first-child{grid-column:1/-1}.digital-stat span{font-size:11px}.global-search-dialog{max-height:85dvh}.global-search-shell{max-height:85dvh}.global-search-result{gap:.4rem;padding:.7rem .4rem}.global-search-type{font-size:10px}.global-search-result-copy strong{font-size:14px;white-space:normal}.global-search-result-copy small{font-size:11px}.global-search-status{font-size:12px}.global-search-footer{font-size:11px}.map-insight-panel p{font-size:13px}.map-insight-panel h3{font-size:18px}}
+.global-search-result-copy small.global-search-meta,.global-search-result-copy small.global-search-reason{display:block;-webkit-line-clamp:1;font-size:.76rem;line-height:1.5}
+.global-search-result-copy small.global-search-reason{color:#315d48;font-weight:700}
+.global-search-empty{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:.75rem 1rem;border-top:1px solid #e7ece9}
+.global-search-empty[hidden]{display:none}
+.global-search-empty p{grid-column:1/-1;margin:0;color:#52645b;font-size:.88rem}
+.global-search-empty button,.global-search-empty a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:9px 12px;border:1px solid #bacdc1;background:#fff;color:#075548;font:inherit;font-size:.86rem;font-weight:700;text-align:center}
+@media(max-width:560px){.global-search-empty{grid-template-columns:1fr}.global-search-empty p{grid-column:1}.global-search-empty button,.global-search-empty a{width:100%}}
+@media(max-height:360px){
+ .global-search-dialog{max-height:calc(100dvh - 12px);overflow:hidden}
+ .global-search-shell{min-height:0;max-height:calc(100dvh - 12px)}
+ .global-search-input-row{padding:.5rem .75rem}
+ .global-search-status{padding:.35rem .75rem .15rem}
+ .global-search-footer{padding:.45rem .75rem}
+ .global-search-empty{padding:.5rem .75rem;gap:6px}
+ .search-extra{padding-inline:.75rem}
+}
 @media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation:none!important}}
 @media print{.timeline-reveal{transform:none;transition:none}.global-search-trigger,.share-current-page,.insight-clear{display:none!important}}
 .map-quick-links{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}

@@ -181,7 +181,9 @@ try {
       assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
       assert(frame.x >= 0 && frame.x + frame.width <= width);
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
+      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');
+      assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
@@ -418,14 +420,19 @@ try {
 
 
   for (const viewport of [{width:1180,height:757},{width:390,height:844}]) {
-    await check(`case latest record before utilities ${viewport.width}px`, async () => {
+    await check(`case overview and latest record precede utilities ${viewport.width}px`, async () => {
       await page.setViewportSize(viewport);
       await page.goto(base + 'achievement-metro-green-line.html');
+      const overview = await page.locator('.case-overview-summary').boundingBox();
       const latest = await page.locator('.case-latest').boundingBox();
       const navigation = await page.locator('.civic-article-nav').boundingBox();
-      const lead = await page.locator('.case-latest > p:not([class])').boundingBox();
-      assert(latest && navigation && latest.y < navigation.y);
-      assert(lead && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
+      assert(overview && latest && navigation && overview.y < latest.y && latest.y < navigation.y);
+      const meta = await page.locator('.case-overview-meta').innerText();
+      for (const detail of ['地區：曹公里','紀錄階段：持續追蹤','最新紀錄：2026-05-14']) assert(meta.includes(detail), detail);
+      const leadLocator = page.locator('.case-latest > p:not([class])');
+      await leadLocator.scrollIntoViewIfNeeded();
+      const lead = await leadLocator.boundingBox();
+      assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
       assert.match(await page.locator('.case-latest .record-boundary').innerText(), /以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
       await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
       const sources = page.locator('#case-sources');

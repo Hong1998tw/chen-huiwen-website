@@ -130,16 +130,15 @@ class FontSubsetContractTests(unittest.TestCase):
 
     def test_homepage_places_award_then_headquarters_then_local_story(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        main = soup.find("main")
-        sections = {
-            section.get("id"): index
-            for index, section in enumerate(main.find_all("section", recursive=False))
-        }
-        self.assertLess(sections["news"], sections["opening"])
-        self.assertLess(sections["opening"], sections["projects"])
-        self.assertIn("獲選", soup.select_one("#news").get_text(" ", strip=True))
+        recent = soup.select_one("#recent .home-recent-list")
+        self.assertEqual(
+            [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
+            ["award", "headquarters", "local"],
+        )
+        self.assertIn("獲選", recent.select_one("[data-home-recent-item='award']").get_text(" ", strip=True))
         self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))
-        self.assertIn("一件地方事", soup.select_one("#projects").get_text(" ", strip=True))
+        self.assertEqual(recent.select_one("[data-home-local-record]")["data-home-local-record"], "wende-school-center")
+        self.assertIn("閱讀這件地方事", recent.get_text(" ", strip=True))
 
 
 if __name__ == "__main__":

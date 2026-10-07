@@ -18,8 +18,29 @@ Acquire::http::Timeout "20";
 Acquire::https::Timeout "20";
 APT_CONFIG
 
+apt_lock_held() {
+  local lock
+  for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock; do
+    if sudo fuser -s "$lock" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+wait_for_apt_idle() {
+  local deadline=$((SECONDS + 90))
+  while apt_lock_held; do
+    if (( SECONDS >= deadline )); then
+      echo "Another apt/dpkg process still holds its package-manager lock after 90 seconds." >&2
+      return 1
+    fi
+    sleep 3
+  done
+}
+
 for attempt in 1 2; do
-  if timeout --kill-after=15s 180s npx --prefix tests/donation playwright install --with-deps chromium; then
+  if wait_for_apt_idle && timeout --kill-after=15s 180s npx --prefix tests/donation playwright install --with-deps chromium; then
     exit 0
   else
     status=$?

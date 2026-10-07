@@ -43,6 +43,7 @@ jobs:
           path: /tmp/home-generated/
           retention-days: 14
       - run: python -m unittest discover -s tests -p test_home_projection.py
+      - run: python -m unittest discover -s tests -p test_font_subset_contract.py
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/homepage-production.mjs

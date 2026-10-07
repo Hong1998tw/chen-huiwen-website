@@ -62,6 +62,8 @@
 .location-unmapped{color:#52615b;font-size:11px}
 .case-marker{display:grid;place-items:center}.case-marker span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#1e503c;color:white;box-shadow:0 2px 8px #24483455;font-size:13px;font-weight:800}
 .map-popup strong{font-size:14px}.map-popup a{display:block;margin:12px 0;font-size:13px}
+.map-popup-case.is-selected{padding:8px 10px;border-inline-start:3px solid #315d48;background:#edf6df}
+.map-popup-selected{margin:0 0 4px;color:#315d48;font-size:.76rem;font-weight:700}
 .leaflet-container{font-family:inherit}.leaflet-popup-content{max-height:280px;overflow:auto}.leaflet-control-attribution{font-size:10px!important}.leaflet-container a{color:#254c3e}
 [data-case][hidden]{display:none}
 #case-empty{background:#fff;border-radius:20px;padding:30px}#case-empty p{margin:16px 0}

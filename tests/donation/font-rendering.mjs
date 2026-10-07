@@ -260,12 +260,8 @@ try{
  assert(searchFontPaths.some(entry=>entry.url.includes('huiwen-site-sans-tc-20261007.woff2')),'dynamic search did not load the full site face');
  report.dynamic.search={result:await dynamicPage.locator('.global-search-result').first().innerText(),family:await dynamicPage.locator('.global-search-dialog').evaluate(el=>getComputedStyle(el).fontFamily),fontPaths:searchFontPaths.map(entry=>new URL(entry.url).pathname)};
 
- await dynamicPage.goto(new URL('achievements.html',base).href,{waitUntil:'networkidle'});
+ await dynamicPage.goto(new URL('achievements.html?case=wende-school-center',base).href,{waitUntil:'networkidle'});
  await dynamicPage.evaluate(()=>document.fonts.ready);
- await dynamicPage.locator('[data-view="both"]').click();
- await dynamicPage.locator('.leaflet-marker-icon').first().waitFor();
- await dynamicPage.locator('.leaflet-marker-icon').first().scrollIntoViewIfNeeded();
- await dynamicPage.locator('.leaflet-marker-icon').first().click({force:true});
  await dynamicPage.locator('.map-popup').first().waitFor({state:'visible'});
  await dynamicPage.evaluate(()=>document.fonts.ready);
  const mapSession=await cdpSession(dynamicPage);

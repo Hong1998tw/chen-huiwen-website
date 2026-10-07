@@ -1,8 +1,8 @@
 /* HUIWEN_FONT_SUBSETS:start */
 @font-face{font-family:"Huiwen Sans TC";src:url("/assets/fonts/huiwen-site-sans/huiwen-site-sans-tc-20261007.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
 @font-face{font-family:"Huiwen Sans JP Support";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-cjk-support-6bf9d1f237b5.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap;unicode-range:U+52FE,U+5E55,U+5F53,U+6E7E,U+7D9A,U+7DEF}
-@font-face{font-family:"Huiwen Sans TC index Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-b48f98ceb877.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
-@font-face{font-family:"Huiwen Sans TC index Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-full-da9e5dea9211.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+@font-face{font-family:"Huiwen Sans TC index Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-47824af19577.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
+@font-face{font-family:"Huiwen Sans TC index Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-full-ae48947743ba.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="index"]{--huiwen-font-family:"Huiwen Sans TC index Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="index"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC index Core","Huiwen Sans TC index Full","Huiwen Sans JP Support",sans-serif}
 @font-face{font-family:"Huiwen Sans TC about Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-about-core-2bd75af2a0a4.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
@@ -82,6 +82,7 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 .case-subtags{display:flex;gap:7px;flex-wrap:wrap;margin:-7px 0 16px}
 .case-subtags .case-tag-sub{font-size:11px;padding:4px 10px;border:1px solid #d5dfd8;border-radius:24px;background:#fff;color:#53675e}
 .case-tags .case-tag-main{font-weight:650}
+.case-taxonomy{margin-top:16px}.case-taxonomy-label{margin:0;color:#52675f;font-size:.78rem;font-weight:700}.case-taxonomy .case-tags{margin:6px 0 0}.case-taxonomy .case-subtags{margin:6px 0 0}
 .related-cases .case-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .related-cases .case-tag-group{min-width:0}
 .related-cases .case-subtags{margin:6px 0 0}

@@ -32,7 +32,7 @@ UPGRADE_END = "<!-- HUIWEN_FONT_UPGRADE:end -->"
 ROUTES = {
     "index.html": (
         "index",
-        ("main > .hero", "main > .services", "main > .mobile-actions"),
+        ("main > .hero", "main > .home-task-paths", "main > .mobile-actions"),
     ),
     "about.html": (
         "about",
@@ -261,7 +261,7 @@ def explore_dynamic_text(root: Path, *, core: bool) -> str:
         if not explore_path.is_file():
             raise ValueError("FONT_EXPLORE_SOURCE_MISSING: explore.js")
         explore_source = explore_path.read_text(encoding="utf-8")
-        taxonomy = re.search(r"taxonomy:\{topics:\{(.*?)\}\}\};", explore_source, re.S)
+        taxonomy = re.search(r"taxonomy:\s*\{\s*topics:\s*\{(.*?)\}\s*\}\s*\};", explore_source, re.S)
         if not taxonomy:
             raise ValueError("FONT_EXPLORE_TAXONOMY_NOT_FOUND")
         topics = re.findall(r"'([^']+)':\s*\[", taxonomy.group(1))
