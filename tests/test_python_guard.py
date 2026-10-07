@@ -21,7 +21,7 @@ DIRECT = {
     'build_all', 'quality', 'build_legal_shared', 'build_public', 'build_cases', 'build_platforms',
     'build_events', 'build_service', 'build_guides', 'build_updates', 'build_profile', 'build_shared',
     'build_sitemap', 'build_search', 'build_share_cards', 'optimize_images', 'prepare_domain_candidate',
-    'build_civic', 'editorial_pages',
+    'build_civic', 'editorial_pages', 'build_font_subsets',
 }
 # Report writers: they only write to a caller-chosen report/snapshot/output path and never
 # regenerate site files, so an old interpreter cannot leave a half-built artifact behind.

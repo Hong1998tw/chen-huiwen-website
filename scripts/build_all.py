@@ -22,10 +22,12 @@ BUILD_STEPS = (
     ('build_home.py',),
     ('build_civic.py',),
     ('editorial_pages.py',),
-    ('build_shared.py',),
     ('build_page_content.py',),
     ('build_sitemap.py',),
     ('build_search.py',),
+    ('build_shared.py',),
+    ('build_font_subsets.py',),
+    ('build_shared.py',),
 )
 
 
