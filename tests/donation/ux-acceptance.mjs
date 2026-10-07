@@ -290,16 +290,32 @@ try {
   });
   await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
   await page.locator('#explore-achievements .explore-result-card').first().waitFor();
-  await check('exploration pagination works from the keyboard and restores focus to the current page',async()=>{
+  await check('exploration pagination moves keyboard focus to the visible results heading',async()=>{
     const next=page.getByRole('button',{name:'下一頁'});
     await next.focus();
     await page.keyboard.press('Enter');
     await page.waitForFunction(()=>new URL(location.href).searchParams.get('page')==='2');
-    const active=await page.evaluate(()=>({text:document.activeElement?.textContent,ariaLabel:document.activeElement?.getAttribute('aria-label'),current:document.activeElement?.getAttribute('aria-current')}));
-    assert.equal(active.current,'page',JSON.stringify(active));
-    assert.equal(active.text,'2',JSON.stringify(active));
-    assert.equal(active.ariaLabel,'第 2 頁，共 7 頁',JSON.stringify(active));
-    assert(await page.locator('#explore-pagination [aria-current="page"]').isVisible());
+    await page.waitForFunction(()=>{
+      const heading=document.getElementById('explore-achievement-heading');
+      if(document.activeElement!==heading)return false;
+      const rect=heading.getBoundingClientRect();
+      return rect.top>=0&&rect.bottom<=innerHeight;
+    },null,{timeout:5000});
+    assert.equal(await page.locator('#explore-achievements .explore-result-card').count(),10);
+    const heading=page.locator('#explore-achievement-heading');
+    assert.equal(await heading.evaluate(el=>document.activeElement===el),true);
+    const headingBox=await heading.boundingBox();
+    const viewportHeight=await page.evaluate(()=>innerHeight);
+    assert(headingBox.y>=0&&headingBox.y+headingBox.height<=viewportHeight,JSON.stringify({headingBox,viewportHeight}));
+    await page.keyboard.press('Tab');
+    const nextFocus=await page.evaluate(()=>{
+      const first=document.querySelector('#explore-achievements .explore-result-card a');
+      const rect=first?.getBoundingClientRect();
+      return{isFirstResult:document.activeElement===first,top:rect?.top,bottom:rect?.bottom,height:innerHeight};
+    });
+    assert.equal(nextFocus.isFirstResult,true,JSON.stringify(nextFocus));
+    assert(nextFocus.top>=0&&nextFocus.bottom<=nextFocus.height,JSON.stringify(nextFocus));
+    return{headingBox,viewportHeight,nextFocus};
   });
 
   await check('exploration zero state offers clear-filter, complete-list and service paths', async () => {

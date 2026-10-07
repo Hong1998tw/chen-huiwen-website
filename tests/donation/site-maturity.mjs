@@ -54,11 +54,15 @@ try{
   });
   await context.close();
  }
- // Explicit build chrome cannot mutate the excluded form's main bytes.
- await check('Excluded petition main remains byte identical to reviewed baseline',async()=>{
-  const baseline=execFileSync('git',['show','49660bf529c3d41008217125464594571b83d202:petition.html'],{cwd:root,encoding:'utf8'});
+ // Verify the approved external-form handoff and contact alternative.
+ await check('Petition discloses the external form and preserves the telephone route',async()=>{
   const current=await (await fetch(base+'petition.html')).text();
-  assert.equal(current.match(/<main\b[\s\S]*?<\/main>/)[0],baseline.match(/<main\b[\s\S]*?<\/main>/)[0]);
+  const main=current.match(/<main\b[\s\S]*?<\/main>/)?.[0]||'';
+  assert(main.includes('新分頁開啟外部 Notion 網站'));
+  assert(main.includes('填寫與送出都在該網站進行'));
+  assert(main.includes('本頁不會顯示填寫或送出狀態'));
+  assert.match(main,/<a\b(?=[^>]*href="https:\/\/lihong-tw\.notion\.site\/)[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*>/);
+  assert.match(main,/<a\b[^>]*href="tel:\+88678212536"[^>]*>/);
  });
 }finally{await browser.close();server?.kill('SIGTERM');}
 const report={engine,status:failures.length?'FAIL':'PASS',results,failures};await writeFile(new URL(engine+'-report.json',out),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(failures.length)process.exitCode=1;

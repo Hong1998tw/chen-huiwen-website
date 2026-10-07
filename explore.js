@@ -231,8 +231,9 @@
       button.addEventListener('click',()=>{
         currentPage=page;
         render();syncURL('push');
-        document.getElementById('explore-achievement-heading').scrollIntoView({behavior:motion(),block:'start'});
-        pagination.querySelector('[aria-current="page"]')?.focus({preventScroll:true});
+        const heading=document.getElementById('explore-achievement-heading');
+        heading.scrollIntoView({behavior:motion(),block:'start'});
+        heading.focus({preventScroll:true});
       });
       pagination.append(button);
     };
