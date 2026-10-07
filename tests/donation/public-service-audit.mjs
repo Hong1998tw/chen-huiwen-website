@@ -130,9 +130,13 @@ try{
  await check('petition clearly labels the external form and keeps its telephone route',async()=>{
   const page=await browser.newPage();await page.goto(base+'petition.html');
   const copy=await page.locator('main').innerText();
-  assert(copy.includes('新分頁開啟外部 Notion')&&copy.includes('填寫與送出都在該網站進行')&&copy.includes('本頁不會顯示填寫或送出狀態'));
-  const form=page.locator('a[href*="notion.site"]');assert.equal(await form.getAttribute('target'),'_blank');assert.match(await form.getAttribute('rel'),/noopener/);
-  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);
+  const disclosure=(await page.locator('.petition-panel > div > p').nth(2).innerText()).replace(/\s+/g,' ').trim();
+  assert.equal(disclosure,'線上表單會在新分頁開啟外部 Notion 網站，填寫與送出都在該網站進行；本頁不會顯示填寫或送出狀態。若不使用線上表單，可直接致電服務處。送出前請確認填寫資料正確；需要聯絡資訊時可查看服務處聯絡資訊。');
+  for(const phrase of ['把生活中的問題告訴我們，讓服務處能與你聯繫、了解需求。','道路、環境、公共設施或生活上的困難，歡迎使用線上表單登記，也可致電服務處反映。','姓名、電話與方便聯絡的時段。','說明發生什麼事、持續多久，以及希望如何改善。','可附現場照片或相關文件；若曾向機關反映，請提供案號。','法律諮詢請先確認服務資訊，再致電服務處預約。'])assert(copy.includes(phrase),phrase);
+  assert.equal(await page.locator('.prepare-list li').count(),3);
+  const form=page.locator('.petition-panel a[href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d"]');
+  assert.equal(await form.count(),1);assert.equal(await form.getAttribute('target'),'_blank');assert.equal(await form.getAttribute('rel'),'noopener noreferrer');
+  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);
   await page.close();
  });
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'service.html');
