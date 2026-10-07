@@ -1,5 +1,5 @@
 /* Civic reading system. Existing forest/lime identity; no remote fonts or imagery. */
-:root{--civic-paper:#f7f6ef;--civic-ink:#163e32;--civic-line:#ced6cc;--civic-muted:#506259;--civic-tint:#eaf0e6;--civic-accent:#dcf279;--civic-radius:4px;--civic-space:8px;--civic-serif:"Noto Serif TC","Songti TC","PMingLiU",serif}
+:root{--civic-paper:#f7f6ef;--civic-ink:#163e32;--civic-line:#ced6cc;--civic-muted:#506259;--civic-tint:#eaf0e6;--civic-accent:#dcf279;--civic-radius:4px;--civic-space:8px;--civic-serif:var(--huiwen-font-family);--civic-sans:var(--huiwen-font-family)}
 body{background:var(--civic-paper);color:#233a31}
 :where(a,button,input,select,summary):focus-visible{outline:3px solid #075548;outline-offset:4px}
 :where(h1,h2,h3,p,a,dd,span){overflow-wrap:break-word}
@@ -31,14 +31,14 @@ body .map-controls{border-radius:4px;border:1px solid var(--civic-line);backgrou
 body .map-panel{border-radius:4px;box-shadow:none}
 body .map-panel[hidden]{display:none!important}
 body .footer{margin-top:48px}
-.civic-kicker{font:700 .78rem/1.6 system-ui,sans-serif;letter-spacing:.13em;color:#38634d;margin:0 0 18px}
+.civic-kicker{font:700 .78rem/1.6 var(--civic-sans);letter-spacing:.13em;color:#38634d;margin:0 0 18px}
 .civic-lead{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.75fr);gap:72px;padding-block:58px 46px;align-items:start}
 .civic-lead h2{font-family:var(--civic-serif);font-size:clamp(2.5rem,4.6vw,4.65rem);font-weight:800;line-height:1.28;letter-spacing:.015em;margin:0 0 26px;color:var(--civic-ink)}
 .civic-deck{font-size:1.08rem;line-height:1.9;color:#506259;margin:0 0 28px}
 .civic-search label{display:block;font-size:.83rem;font-weight:700;margin-bottom:8px}
 .civic-search>div{display:flex;border:1px solid var(--civic-ink);background:#fff;min-height:58px}
 .civic-search input{min-width:0;flex:1;border:0;border-radius:0;padding:14px 16px;font:inherit;background:transparent;color:var(--civic-ink)}
-.civic-search button{border:0;border-radius:0;background:var(--civic-ink);color:#fff;padding:12px 24px;font:700 1rem system-ui;cursor:pointer}
+.civic-search button{border:0;border-radius:0;background:var(--civic-ink);color:#fff;padding:12px 24px;font:700 1rem var(--civic-sans);cursor:pointer}
 .civic-search small{display:block;color:#506259;margin-top:8px;font-size:.76rem;line-height:1.7}
 .civic-suggestions{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:.78rem;color:#506259;margin:16px 0 0}
 .civic-suggestions a{color:#163e32;text-decoration:underline;text-underline-offset:4px;min-height:32px;display:inline-flex;align-items:center}
@@ -72,7 +72,7 @@ body .footer{margin-top:48px}
 .civic-feature-copy small,.civic-reading small{font-size:.75rem;color:#506259}
 .civic-reading-row{display:grid;grid-template-columns:32px 1fr;gap:18px;padding:24px 0;border-top:1px solid var(--civic-line)}
 .civic-reading-row:first-child{padding-top:0;border-top:0}
-.civic-number{font-family:Georgia,serif;font-size:1.45rem;color:#56745b}
+.civic-number{font-family:var(--civic-sans);font-size:1.45rem;color:#56745b}
 .civic-reading-row .civic-kicker{margin-bottom:9px;font-size:.7rem}
 .civic-reading-row h3{font-family:var(--civic-serif);font-size:1.35rem;line-height:1.5;margin:0 0 10px}
 .civic-reading-row p:not(.civic-kicker){color:#506259;font-size:.88rem;line-height:1.85;margin:0 0 12px}

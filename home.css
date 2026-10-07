@@ -1,5 +1,4 @@
-@font-face{font-family:HuiwenHomeSerif;src:url(assets/home-heading.woff2) format("woff2");font-display:swap}
-.home-redesign{--ink:#173f33;--paper:#f7f6ef;--lime:#d5f582;--muted:#465e50;--line:#cad2c7;--serif:HuiwenHomeSerif,"Noto Serif CJK TC",serif;--sans:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+.home-redesign{--ink:#173f33;--paper:#f7f6ef;--lime:#d5f582;--muted:#465e50;--line:#cad2c7;--serif:var(--huiwen-font-family);--sans:var(--huiwen-font-family)}
 .home-redesign *{box-sizing:border-box}
 .home-redesign{margin:0;color:var(--ink);background:var(--paper);font:17px/1.75 var(--sans)}
 .home-redesign a{color:inherit;text-decoration:none}
