@@ -237,6 +237,7 @@ def explore_dynamic_text(root: Path, *, core: bool) -> str:
         "交通與基建 教育與文化 環境與綠地 社福與衛環 經濟與產業",
         "主題探索 里別探索 選擇里別 選擇主題 全部進度",
         "再搜尋 道路、學校、長照 建設與服務紀錄 新聞 政見 歷屆政見原文",
+        "目前沒有其他相關新聞或政見內容。",
     ]
 
     def card_text(item: dict) -> str:
@@ -252,13 +253,65 @@ def explore_dynamic_text(root: Path, *, core: bool) -> str:
         return " ".join(str(value) for value in fields if value)
 
     if core:
-        # The core face covers the initial default view, every native-select
-        # option, and all result-card strings that are present on first render.
+        # URL parameters can select any topic or village before the first user
+        # interaction. Include every resulting heading, subtitle, reading note,
+        # and visible record card in the core face rather than assuming the
+        # default topic is the only first-render state.
+        explore_path = root / "explore.js"
+        if not explore_path.is_file():
+            raise ValueError("FONT_EXPLORE_SOURCE_MISSING: explore.js")
+        explore_source = explore_path.read_text(encoding="utf-8")
+        taxonomy = re.search(r"taxonomy:\{topics:\{(.*?)\}\}\};", explore_source, re.S)
+        if not taxonomy:
+            raise ValueError("FONT_EXPLORE_TAXONOMY_NOT_FOUND")
+        topics = re.findall(r"'([^']+)':\s*\[", taxonomy.group(1))
+        if not topics:
+            raise ValueError("FONT_EXPLORE_TOPICS_NOT_FOUND")
+        villages = sorted({village for record in records for village in (record.get("villages") or [])})
+        for topic in topics:
+            pieces.extend((
+                f"{topic}｜主題探索",
+                f"查看{topic}相關的政績、新聞與歷屆政見。",
+                f"從「{topic}」相關的生活問題開始，閱讀各案行動、辦理階段與原始來源。收錄紀錄數不代表完工成果數。",
+            ))
+        for village in villages:
+            pieces.extend((
+                f"探索 {village}",
+                f"查看 {village} 收錄的建設與服務，並延伸到共同主題內容。",
+                f"從 {village} 收錄的地方問題開始，閱讀各案行動、辦理階段與原始來源。地圖代表位置不等於施工範圍。",
+            ))
+
+        # These are the link labels inserted by renderRelations() on the first
+        # render, including when a query string selects another topic/village.
+        news_path = root / "news.html"
+        platforms_path = root / "data/platforms.json"
+        if not news_path.is_file():
+            raise ValueError("FONT_EXPLORE_SOURCE_MISSING: news.html")
+        if not platforms_path.is_file():
+            raise ValueError("FONT_EXPLORE_SOURCE_MISSING: data/platforms.json")
+        news_soup = BeautifulSoup(news_path.read_text(encoding="utf-8"), "html.parser")
+        for article in news_soup.select("main article, [data-news-grid] [data-record]"):
+            heading = article.select_one("h1, h2, h3")
+            if not heading:
+                continue
+            date = article.select_one("time, .eyebrow")
+            pieces.append(heading.get_text(" ", strip=True))
+            if date:
+                pieces.append(date.get_text(" ", strip=True))
+        platforms = json.loads(platforms_path.read_text(encoding="utf-8"))
+        if not isinstance(platforms, dict) or not isinstance(platforms.get("elections", []), list):
+            raise ValueError("FONT_EXPLORE_PLATFORMS_FORMAT")
+        for election in platforms.get("elections", []):
+            pieces.append(f"{election.get('year', '')} {election.get('election', '')}")
+            pieces.append("歷屆政見原文")
+
+        # Every non-pending card can be selected by a topic/village URL before
+        # interaction; status/village labels also populate native controls.
         for record in records:
-            if record.get("status") != "待核驗" and "交通與基建" in (record.get("categories") or []):
+            if record.get("status") != "待核驗":
                 pieces.append(card_text(record))
         pieces.extend(str(record.get("status", "")) for record in records)
-        pieces.extend(village for record in records for village in (record.get("villages") or []))
+        pieces.extend(villages)
         return "\n".join(pieces)
 
     # The full face must cover every result that filters/searches can render,

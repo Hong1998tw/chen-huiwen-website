@@ -33,7 +33,7 @@
 @font-face{font-family:"Huiwen Sans TC election Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-election-full-a98fb3a4797e.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="election"]{--huiwen-font-family:"Huiwen Sans TC election Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="election"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC election Full","Huiwen Sans JP Support",sans-serif}
-@font-face{font-family:"Huiwen Sans TC explore Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-explore-core-35a0f5e27103.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+@font-face{font-family:"Huiwen Sans TC explore Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-explore-core-43fb2c4c53e2.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 @font-face{font-family:"Huiwen Sans TC explore Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-explore-full-f34e2bfe3216.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="explore"]{--huiwen-font-family:"Huiwen Sans TC explore Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="explore"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC explore Full","Huiwen Sans JP Support",sans-serif}

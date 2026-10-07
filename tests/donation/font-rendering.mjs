@@ -54,6 +54,56 @@ function assertCustomHan(fonts,label){
   label+' did not render with an embedded Source Han subset: '+JSON.stringify(fonts)
  );
 }
+async function assertEveryHanGlyphCustom(page,session,selector,label){
+ const fullFamily=await page.evaluate(()=>{
+  const family=document.documentElement.dataset.huiwenFontFullFamily;
+  delete document.documentElement.dataset.huiwenFontFullFamily;
+  return family||'';
+ });
+ const glyphs=await page.evaluate(selector=>{
+  const han=/\p{Script=Han}/u;
+  const matches=[...document.querySelectorAll(selector)],found=[];
+  let index=0;
+  for(const target of matches){
+   const walker=document.createTreeWalker(target,NodeFilter.SHOW_TEXT);
+   const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+   for(const node of nodes){
+    const text=node.data;
+    const positions=[];
+    for(let offset=0;offset<text.length;){
+     const codepoint=text.codePointAt(offset),character=String.fromCodePoint(codepoint);
+     const width=character.length;
+     if(han.test(character))positions.push({offset,width,character});
+     offset+=width;
+    }
+    for(const position of positions.reverse()){
+     const range=document.createRange();range.setStart(node,position.offset);range.setEnd(node,position.offset+position.width);
+     const span=document.createElement('span');span.dataset.pr159FontHan=String(index++);
+     range.surroundContents(span);found.push(position.character);
+    }
+   }
+  }
+  return found;
+ },selector);
+ assert(glyphs.length>0,label+' contains no Han glyphs to verify');
+ try{
+  for(let index=0;index<glyphs.length;index++){
+   const selector='[data-pr159-font-han="'+index+'"]';
+   await page.locator(selector).scrollIntoViewIfNeeded();
+   const fonts=await platformFonts(session,selector);
+   assert(
+    fonts.some(font=>font.isCustomFont&&(/Huiwen Sans TC|Huiwen Sans JP Support/.test(font.familyName))),
+    label+' Han glyph '+glyphs[index]+' fell back outside the embedded Source Han subsets: '+JSON.stringify(fonts)
+   );
+  }
+ }finally{
+  await page.evaluate(()=>{
+   document.querySelectorAll('[data-pr159-font-han]').forEach(span=>span.replaceWith(document.createTextNode(span.textContent||'')));
+  });
+  if(fullFamily)await page.evaluate(family=>document.documentElement.dataset.huiwenFontFullFamily=family,fullFamily);
+ }
+ return glyphs.length;
+}
 async function visibleHanNodes(page,session){
  const rows=await page.evaluate(()=>{
   const pattern=/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u,found=[];
@@ -112,6 +162,31 @@ try{
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-'+slug+'-full-')),route+' full face loaded before interaction');
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-site-sans-tc-20261007.woff2')),route+' loaded the 568 KB global face before interaction');
    const coreCls=await page.evaluate(()=>window.__layoutShift);
+   if(route==='explore.html'&&viewport.width===390){
+    const relationCount=await page.locator('.explore-related-item strong').count();
+    assert(relationCount>0,'explore did not render initial related news/platform links');
+    const relationGlyphCount=await assertEveryHanGlyphCustom(page,session,'.explore-related-item strong',route+' initial related links');
+    const cardGlyphCount=await assertEveryHanGlyphCustom(page,session,'.explore-result-card:first-child h3',route+' initial default card');
+
+    const village=await page.evaluate(async()=>{
+     const records=await(await fetch('data/achievements-public.json')).json();
+     return records.find(record=>record.status!=='待核驗'&&record.villages?.length)?.villages[0]||'';
+    });
+    assert(village,'could not find a public village for a direct-query font check');
+    const queryURL=new URL('explore.html',base);queryURL.searchParams.set('type','village');queryURL.searchParams.set('value',village);
+    const queryPage=await context.newPage();queryPage.setDefaultTimeout(15000);
+    await openIsolated(queryPage,queryURL.href);
+    assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-page'),'explore');
+    assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-full'),null,'query-selected Explore view upgraded before interaction');
+    assert((await queryPage.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--huiwen-font-family'))).includes('Huiwen Sans TC explore Core'),'query-selected Explore view did not retain its core face');
+    assert.equal(await queryPage.locator('#explore-title').innerText(),'探索 '+village,'query-selected village was not rendered before interaction');
+    assert(await queryPage.locator('.explore-result-card h3').count()>0,'query-selected village has no result card to verify');
+    const querySession=await cdpSession(queryPage);
+    const queryTitleGlyphCount=await assertEveryHanGlyphCustom(queryPage,querySession,'#explore-title','query-selected Explore title');
+    const queryCardGlyphCount=await assertEveryHanGlyphCustom(queryPage,querySession,'.explore-result-card:first-child h3','query-selected Explore result card');
+    report.dynamic.explore={village,relationLinks:relationCount,relationGlyphCount,defaultCardGlyphCount:cardGlyphCount,queryTitleGlyphCount,queryCardGlyphCount,queryURL:queryURL.href};
+    await querySession.detach();await queryPage.close();
+   }
    await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';scrollTo(0,Math.min(1800,document.documentElement.scrollHeight));});
    await page.waitForFunction(()=>document.documentElement.dataset.huiwenFontFull==='1');
    await page.evaluate(()=>document.fonts.ready);
