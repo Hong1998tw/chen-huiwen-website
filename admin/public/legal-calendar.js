@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const week = '日一二三四五六';
+  const cardFont = '"Huiwen Sans TC"';
   const monthParts = value => {
     if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(value)) throw Error('月份格式不正確');
     return value.split('-').map(Number);
@@ -17,21 +18,21 @@
     if (sessions.some(s=>!s.lawyer)) throw Error('此月份未完整收錄律師姓名，請使用文字時間表或來電確認');
     if(sessions.some(s=>![2,3,4,5,6].includes(weekday(s.date)))) throw Error('此月份包含額外服務日，請以文字時間表為準');
     const base=options.assetBase || 'assets/legal/';
-    await Promise.all([document.fonts.load('700 48px HuiwenCardSerif'),document.fonts.load('700 30px HuiwenCardSans')]);
-    if (!document.fonts.check('700 48px HuiwenCardSerif') || !document.fonts.check('700 30px HuiwenCardSans')) throw Error('圖卡字型尚未載入');
+    await Promise.all([document.fonts.load('700 48px '+cardFont),document.fonts.load('700 30px '+cardFont)]);
+    if (!document.fonts.check('700 48px '+cardFont) || !document.fonts.check('700 30px '+cardFont)) throw Error('圖卡字型尚未載入');
     const portrait=new Image(), brand=new Image();portrait.src=base+'portrait.webp';brand.src=base+'brand-reference.webp';
     await Promise.all([portrait.decode(),brand.decode()]);
     const canvas=document.createElement('canvas');canvas.width=1920;canvas.height=1080;
     canvas.setAttribute('role','img');canvas.setAttribute('aria-label',year+'年'+month+'月公益律師諮詢圖卡；完整日期、律師與時段見文字表');
     const ctx=canvas.getContext('2d');ctx.fillStyle='#76a5a1';ctx.fillRect(0,0,1920,1080);
-    const text=(value,x,y,size,color='#242120',font='HuiwenCardSerif',align='left')=>{
+    const text=(value,x,y,size,color='#242120',font=cardFont,align='left')=>{
       ctx.fillStyle=color;ctx.font='700 '+size+'px '+font;ctx.textAlign=align;ctx.fillText(value,x,y);
     };
     const rect=(x,y,w,h,r,color)=>{ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();};
     ctx.save();ctx.beginPath();ctx.rect(0,145,715,935);ctx.clip();ctx.drawImage(portrait,-60,24,836.4,1255.2);ctx.restore();
     ctx.drawImage(brand,20,22,204,139,20,22,204,139);
     ctx.drawImage(brand,14,911,340,164,14,911,340,164);
-    rect(710,35,270,132,25,'#9283bd');text(month+'月',846,143,109,'#fff','HuiwenCardSans','center');
+    rect(710,35,270,132,25,'#9283bd');text(month+'月',846,143,109,'#fff',cardFont,'center');
     let titleX=1010;for(const ch of '公益律師諮詢'){text(ch,titleX,144,116,'#fff');titleX+=148;}
     ctx.fillStyle='#f7c38a';for(let x=698;x<1915;x+=14)ctx.fillRect(x,190,7,7);
     const first=weekday(data.month+'-01');
@@ -39,18 +40,18 @@
       const x=672+(w-2)*249.5, onDay=sessions.filter(s=>weekday(s.date)===w);
       const times=[...new Set(onDay.map(s=>s.start+'~'+s.end))], mixed=times.length>1;
       rect(x,248,228,721,29,'#cbbbb5');rect(x+24,265,180,144,26,'#efebe8');
-      text('週 '+week[w],x+114,345,58,'#578f89','HuiwenCardSerif','center');
-      text(times.length===1?times[0]:mixed?'各日時間':'本月無場次',x+114,383,27,'#578f89','HuiwenCardSans','center');
+      text('週 '+week[w],x+114,345,58,'#578f89',cardFont,'center');
+      text(times.length===1?times[0]:mixed?'各日時間':'本月無場次',x+114,383,27,'#578f89',cardFont,'center');
       for(let d=1;d<=last;d++){
         const date=data.month+'-'+String(d).padStart(2,'0');if(weekday(date)!==w)continue;
         const row=Math.floor((d+first-1)/7), y=449+row*110, slot=sessions.find(s=>s.date===date);
-        text(String(d),x+42,y,37,'#578f89','HuiwenCardSans');
-        text(slot?slot.lawyer:'無',x+128,y+(mixed?42:58),slot&&slot.lawyer.length>4?32:43,'#242120','HuiwenCardSerif','center');
-        if(slot&&mixed)text(slot.start+'~'+slot.end,x+114,y+69,20,'#242120','HuiwenCardSans','center');
+        text(String(d),x+42,y,37,'#578f89',cardFont);
+        text(slot?slot.lawyer:'無',x+128,y+(mixed?42:58),slot&&slot.lawyer.length>4?32:43,'#242120',cardFont,'center');
+        if(slot&&mixed)text(slot.start+'~'+slot.end,x+114,y+69,20,'#242120',cardFont,'center');
       }
     }
-    text(options.draft?'未發布':'huiwen.tw',1285,1052,28,'#242120','HuiwenCardSans','center');
-    text(year+'年'+month+'月',1904,1052,28,'#242120','HuiwenCardSans','right');
+    text(options.draft?'未發布':'huiwen.tw',1285,1052,28,'#242120',cardFont,'center');
+    text(year+'年'+month+'月',1904,1052,28,'#242120',cardFont,'right');
     return canvas;
   }
   async function download(data,options={}) {

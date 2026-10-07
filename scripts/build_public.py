@@ -41,7 +41,8 @@ LEGACY_PAGES = (
     '398bd146805480f98aecedb69d2e1070/index.html', 'renwu-anju-social-housing/index.html',
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
-VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt'}
+VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
+BUILD_ONLY_FILES = {'assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding'}
 PUBLIC_DATA_PROJECTIONS = {
     'data/election-2026.json', 'data/platforms.json', 'data/site-profile.json',
@@ -325,7 +326,7 @@ def public_paths(root=ROOT):
         paths.add(path + 'index.html' if not path or path.endswith('/') else path)
     for path in (root / 'assets').rglob('*'):
         rel = path.relative_to(root).as_posix()
-        if path.is_file() and (path.suffix.lower() in MEDIA_EXTENSIONS or rel in VENDOR_FILES):
+        if path.is_file() and rel not in BUILD_ONLY_FILES and (path.suffix.lower() in MEDIA_EXTENSIONS or rel in VENDOR_FILES):
             paths.add(rel)
     for rel in paths:
         path = root / rel

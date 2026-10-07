@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install canonical validators
-        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1'
       - name: Verify reviewed source and projection
         run: |
           python scripts/quality.py

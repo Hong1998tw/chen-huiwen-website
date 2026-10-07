@@ -6,7 +6,7 @@ permissions:
 jobs:
   activity-schedule:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1'
       - run: python scripts/build_all.py
       - name: Preserve deterministic generation evidence
         run: |
@@ -45,7 +45,8 @@ jobs:
       - run: python -m unittest discover -s tests -p test_event_path_guard.py
       - run: node tests/events/reminder-links.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
-      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
       - run: node tests/donation/events.mjs
       - name: Require committed generated outputs
         run: |

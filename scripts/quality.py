@@ -9,7 +9,9 @@ BUILDERS=('build_all.py',)
 VALIDATORS=('validate_achievements.py','validate_site.py','validate_donation.py','validate_seo.py','validate_p0.py','validate_public_copy.py','validate_domain_migration.py')
 
 def snapshot(root):
-    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/achievements-public.json','sitemap.xml','updates.xml')]
+    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/achievements-public.json','sitemap.xml','updates.xml','styles.css','sw.js','digital.js','site.js')]
+    generated_fonts=root/'assets/fonts/huiwen-site-sans/generated'
+    if generated_fonts.is_dir(): paths.extend(generated_fonts.glob('*.woff2'))
     paths=[p for p in paths if p.exists()]
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
@@ -19,7 +21,7 @@ def run(root,args):
 def generated(root):
     before=snapshot(root)
     # Diagnostics only: a mismatch still fails the same publication gate.
-    before_text={name:(root/name).read_text() for name in before}
+    before_text={name:(root/name).read_text(errors='replace') for name in before}
     for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
     after=snapshot(root)
     if before != after:

@@ -1,7 +1,7 @@
 @view-transition { navigation: auto; }
 
 .global-search-trigger{display:inline-flex;align-items:center;gap:.38rem;border:1px solid rgba(7,85,72,.2);background:#fff;color:#075548;border-radius:999px;padding:.52rem .7rem;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
-.global-search-trigger kbd{font:600 .72rem/1 system-ui,sans-serif;border:1px solid #d9e1dd;border-bottom-width:2px;border-radius:.35rem;padding:.22rem .36rem;color:#5a6d66;background:#f7f9f8}
+.global-search-trigger kbd{font:600 .72rem/1 var(--huiwen-font-family);border:1px solid #d9e1dd;border-bottom-width:2px;border-radius:.35rem;padding:.22rem .36rem;color:#5a6d66;background:#f7f9f8}
 .global-search-dialog{width:min(720px,calc(100% - 24px));max-height:min(78vh,760px);border:0;border-radius:22px;padding:0;background:#fff;box-shadow:0 26px 80px rgba(10,37,31,.28);color:#173a32}
 .global-search-dialog::backdrop{background:rgba(7,32,28,.52);backdrop-filter:blur(7px)}
 .global-search-shell{display:flex;flex-direction:column;min-height:340px;max-height:min(78vh,760px)}

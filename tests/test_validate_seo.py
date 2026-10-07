@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -72,12 +73,10 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             temp_root = Path(directory)
             self.make_site(temp_root)
             index = temp_root / "index.html"
-            index.write_text(
-                index.read_text(encoding="utf-8").replace(
-                    '<html lang="zh-Hant-TW">', '<html lang="en">', 1
-                ),
-                encoding="utf-8",
-            )
+            source = index.read_text(encoding="utf-8")
+            modified, count = re.subn(r'(<html\b[^>]*\blang=")[^"]*', r'\1en', source, count=1)
+            self.assertEqual(count, 1)
+            index.write_text(modified, encoding="utf-8")
             code, result = self.run_validator(temp_root)
             self.assertNotEqual(code, 0)
             self.assertTrue(any("expected html lang" in error for error in result["errors"]))
