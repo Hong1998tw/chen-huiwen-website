@@ -365,7 +365,8 @@ def build_css(root: Path, routes: dict, jp_filename: str | None, jp_fallback: li
         )
         lines.append(
             f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
-            f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support",sans-serif}}'
+            f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'
+            f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support",sans-serif}}'
         )
     lines.append(
         ".global-search-dialog,.map-insight-panel,.map-popup,.map-popup-case,"
@@ -501,6 +502,7 @@ def build(root: Path = ROOT) -> None:
         full = page_text(root, route)
         core_codepoints = {ord(char) for char in core}
         full_codepoints = {ord(char) for char in full}
+        full_delta_codepoints = full_codepoints - core_codepoints
         core_payload = subset_bytes(
             root / TC_SOURCE.relative_to(ROOT),
             core_codepoints,
@@ -509,7 +511,7 @@ def build(root: Path = ROOT) -> None:
         )
         full_payload = subset_bytes(
             root / TC_SOURCE.relative_to(ROOT),
-            full_codepoints,
+            full_delta_codepoints,
             f"Huiwen Sans TC {slug} Full",
             f"Huiwen Sans TC {slug} Full subset",
         )
@@ -521,7 +523,7 @@ def build(root: Path = ROOT) -> None:
             "core_bytes": core_bytes,
             "full_bytes": full_bytes,
             "core_glyphs": len(core_codepoints.intersection(tc_cmap)),
-            "full_glyphs": len(full_codepoints.intersection(tc_cmap)),
+            "full_glyphs": len(full_delta_codepoints.intersection(tc_cmap)),
         }
         write_page_metadata(
             root,
@@ -567,9 +569,9 @@ def build(root: Path = ROOT) -> None:
         raise ValueError("FONT_SERVICE_WORKER_SHELL_FONT_NOT_UPDATED")
 
     print(
-        "Built Source Han TC route fonts: "
+        "Built Source Han TC route fonts (Full is the Core glyph delta): "
         + ", ".join(
-            f"{slug} core={items['core_bytes']}B/{items['core_glyphs']} full={items['full_bytes']}B/{items['full_glyphs']}"
+            f"{slug} core={items['core_bytes']}B/{items['core_glyphs']} full+={items['full_bytes']}B/{items['full_glyphs']}"
             for slug, items in page_routes.items()
         )
     )

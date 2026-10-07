@@ -6,7 +6,7 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,7 +29,8 @@ jobs:
       - run: node --check tests/donation/digital-civic.mjs
       - run: node --check tests/donation/election-mode.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
-      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
       - run: node tests/donation/browser.mjs
       - run: node tests/donation/sticky-navigation.mjs
       - run: node tests/donation/small-q.mjs
@@ -55,7 +56,7 @@ jobs:
 
   lighthouse:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,7 +74,8 @@ jobs:
         # content digests in summary.json / content-manifest.json prove that.
         run: python scripts/build_cloudflare_public.py --output "$RUNNER_TEMP/public-site"
       - run: npm ci --ignore-scripts --prefix tests/donation
-      - run: npx --prefix tests/donation playwright install --with-deps chromium
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
       - name: Verify the Lighthouse static server (Content-Encoding, 404, root boundary, path handling)
         run: node tests/donation/static-server-check.mjs
       - name: Verify the Lighthouse comparison refuses runs without identical-content evidence

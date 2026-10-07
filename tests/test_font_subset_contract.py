@@ -52,15 +52,48 @@ class FontSubsetContractTests(unittest.TestCase):
                 self.assertEqual(family, f"Huiwen Sans TC {slug} Full")
                 preloads = soup.select('link[rel~="preload"][as="font"]')
                 self.assertEqual(len(preloads), 1)
-                first_style = soup.select_one('link[rel~="stylesheet"]')
                 self.assertLess(source.index("HUIWEN_FONT_PRELOAD:start"), source.index('rel="stylesheet"'))
                 core_path = ROOT / preloads[0]["href"].lstrip("/")
                 self.assertTrue(core_path.is_file())
                 self.assertIn(f'font-family:"Huiwen Sans TC {slug} Core"', css)
                 self.assertIn(f'font-family:"{family}"', css)
+                full_stack = (
+                    f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
+                    f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'
+                    f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support",sans-serif}}'
+                )
+                self.assertIn(full_stack, css)
                 self.assertIsNotNone(soup.select_one("script[data-huiwen-font-upgrade]"))
                 self.assertIn("document.fonts.load", source)
                 self.assertIn("data-huiwen-font-full", css)
+
+    def test_full_faces_cover_route_specific_cjk_glyph_deltas(self):
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        tc_codepoints = set(fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT)))
+        tc_cjk = {codepoint for codepoint in tc_codepoints if fonts.is_cjk(codepoint)}
+        for route, (slug, selectors) in fonts.ROUTES.items():
+            with self.subTest(route=route):
+                core_text = fonts.page_text(ROOT, route, selectors)
+                full_text = fonts.page_text(ROOT, route)
+                core_expected = {ord(char) for char in core_text}.intersection(tc_cjk)
+                full_delta_expected = (
+                    {ord(char) for char in full_text}
+                    - {ord(char) for char in core_text}
+                ).intersection(tc_cjk)
+                paths = {}
+                for face in ("Core", "Full"):
+                    match = re.search(
+                        rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} {face}";'
+                        rf'src:url\("([^"]+)"\)',
+                        css,
+                    )
+                    self.assertIsNotNone(match)
+                    paths[face] = ROOT / match.group(1).lstrip("/")
+                    self.assertTrue(paths[face].is_file())
+                core_actual = {codepoint for codepoint in fonts.cmap(paths["Core"]) if fonts.is_cjk(codepoint)}
+                full_actual = {codepoint for codepoint in fonts.cmap(paths["Full"]) if fonts.is_cjk(codepoint)}
+                self.assertEqual(core_actual, core_expected)
+                self.assertEqual(full_actual, full_delta_expected)
 
     def test_dynamic_search_and_map_surfaces_use_the_full_site_face(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")

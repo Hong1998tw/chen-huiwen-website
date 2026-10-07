@@ -175,16 +175,33 @@ try{
     assert(village,'could not find a public village for a direct-query font check');
     const queryURL=new URL('explore.html',base);queryURL.searchParams.set('type','village');queryURL.searchParams.set('value',village);
     const queryPage=await context.newPage();queryPage.setDefaultTimeout(15000);
-    await openIsolated(queryPage,queryURL.href);
+    let releaseRecords;const recordsGate=new Promise(resolve=>releaseRecords=resolve);
+    await queryPage.route('**/data/achievements-public.json',async route=>{await recordsGate;await route.continue();});
+    await queryPage.addInitScript(()=>{
+     window.__layoutShift=0;
+     new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.__layoutShift+=entry.value}).observe({type:'layout-shift',buffered:true});
+    });
+    await queryPage.goto(queryURL.href,{waitUntil:'domcontentloaded'});
+    try{
+     assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-page'),'explore');
+     assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-full'),null,'query-selected Explore view upgraded before interaction');
+     assert((await queryPage.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--huiwen-font-family'))).includes('Huiwen Sans TC explore Core'),'query-selected Explore view did not retain its core face');
+     assert.equal(await queryPage.locator('#explore-title').innerText(),'探索 '+village,'query-selected title flashed the default topic before data loaded');
+     assert.equal(await queryPage.locator('#explore-subtitle').innerText(),'查看 '+village+' 收錄的建設與服務，並延伸到共同主題內容。','query-selected subtitle was not bootstrapped before data loaded');
+     assert((await queryPage.locator('#explore-reading-note').innerText()).includes('從 '+village+' 收錄'),'query-selected reading note was not bootstrapped before data loaded');
+    }finally{releaseRecords();}
+    await queryPage.waitForLoadState('networkidle');
+    await queryPage.evaluate(()=>document.fonts.ready);
+    const queryCls=await queryPage.evaluate(()=>window.__layoutShift);
+    assert(queryCls<0.02,'query-selected Explore initial state shifted by '+queryCls);
     assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-page'),'explore');
     assert.equal(await queryPage.locator('html').getAttribute('data-huiwen-font-full'),null,'query-selected Explore view upgraded before interaction');
-    assert((await queryPage.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--huiwen-font-family'))).includes('Huiwen Sans TC explore Core'),'query-selected Explore view did not retain its core face');
-    assert.equal(await queryPage.locator('#explore-title').innerText(),'探索 '+village,'query-selected village was not rendered before interaction');
+    assert.equal(await queryPage.locator('#explore-title').innerText(),'探索 '+village,'query-selected village did not remain rendered');
     assert(await queryPage.locator('.explore-result-card h3').count()>0,'query-selected village has no result card to verify');
     const querySession=await cdpSession(queryPage);
     const queryTitleGlyphCount=await assertEveryHanGlyphCustom(queryPage,querySession,'#explore-title','query-selected Explore title');
     const queryCardGlyphCount=await assertEveryHanGlyphCustom(queryPage,querySession,'.explore-result-card:first-child h3','query-selected Explore result card');
-    report.dynamic.explore={village,relationLinks:relationCount,relationGlyphCount,defaultCardGlyphCount:cardGlyphCount,queryTitleGlyphCount,queryCardGlyphCount,queryURL:queryURL.href};
+    report.dynamic.explore={village,relationLinks:relationCount,relationGlyphCount,defaultCardGlyphCount:cardGlyphCount,queryTitleGlyphCount,queryCardGlyphCount,queryCLS:queryCls,queryURL:queryURL.href};
     await querySession.detach();await queryPage.close();
    }
    await page.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';scrollTo(0,Math.min(1800,document.documentElement.scrollHeight));});
