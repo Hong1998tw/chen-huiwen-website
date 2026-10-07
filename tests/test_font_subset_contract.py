@@ -29,6 +29,16 @@ class FontSubsetContractTests(unittest.TestCase):
         fallback_path = ROOT / match.group(1).lstrip("/")
         self.assertTrue(fallback_path.is_file())
         self.assertTrue(set(fallback).issubset(fonts.cmap(fallback_path)))
+        support_face = re.search(
+            r'@font-face\{font-family:"Huiwen Sans JP Support"[^}]*unicode-range:([^}]+)',
+            css,
+        )
+        self.assertIsNotNone(support_face)
+        declared = {
+            int(value.removeprefix("U+"), 16)
+            for value in support_face.group(1).split(",")
+        }
+        self.assertEqual(declared, set(fallback))
 
     def test_route_font_is_preloaded_before_stylesheets_and_upgrades_after_interaction(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")

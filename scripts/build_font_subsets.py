@@ -210,22 +210,32 @@ def face(
     filename: str,
     generated: bool = True,
     display: str = "optional",
+    unicode_range: str | None = None,
 ) -> str:
     path = f"generated/{filename}" if generated else filename
     uri = f"/assets/fonts/huiwen-site-sans/{path}"
+    coverage = f";unicode-range:{unicode_range}" if unicode_range else ""
     return (
         f'@font-face{{font-family:"{family}";src:url("{uri}") format("woff2");'
-        f"font-style:normal;font-weight:250 900;font-display:{display}" + "}"
+        f"font-style:normal;font-weight:250 900;font-display:{display}{coverage}" + "}"
     )
 
 
-def build_css(root: Path, routes: dict, jp_filename: str | None) -> None:
+def build_css(root: Path, routes: dict, jp_filename: str | None, jp_fallback: list[int]) -> None:
     lines = [
         STYLE_START,
         face("Huiwen Sans TC", "huiwen-site-sans-tc-20261007.woff2", generated=False, display="swap"),
     ]
     if jp_filename:
-        lines.append(face("Huiwen Sans JP Support", jp_filename, display="swap"))
+        support_coverage = ",".join(f"U+{codepoint:04X}" for codepoint in jp_fallback)
+        lines.append(
+            face(
+                "Huiwen Sans JP Support",
+                jp_filename,
+                display="swap",
+                unicode_range=support_coverage,
+            )
+        )
     for slug, values in routes.items():
         lines.append(face(f"Huiwen Sans TC {slug} Core", values["core_file"]))
         lines.append(face(f"Huiwen Sans TC {slug} Full", values["full_file"]))
@@ -401,7 +411,7 @@ def build(root: Path = ROOT) -> None:
             core_file,
         )
 
-    build_css(root, page_routes, jp_filename)
+    build_css(root, page_routes, jp_filename, jp_fallback)
     sw_path = root / "sw.js"
     sw_source = sw_path.read_text(encoding="utf-8")
     sw_source = sw_source.replace(

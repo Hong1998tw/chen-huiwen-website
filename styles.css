@@ -1,6 +1,6 @@
 /* HUIWEN_FONT_SUBSETS:start */
 @font-face{font-family:"Huiwen Sans TC";src:url("/assets/fonts/huiwen-site-sans/huiwen-site-sans-tc-20261007.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
-@font-face{font-family:"Huiwen Sans JP Support";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-cjk-support-6bf9d1f237b5.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
+@font-face{font-family:"Huiwen Sans JP Support";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-cjk-support-6bf9d1f237b5.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap;unicode-range:U+52FE,U+5E55,U+5F53,U+6E7E,U+7D9A,U+7DEF}
 @font-face{font-family:"Huiwen Sans TC index Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-b48f98ceb877.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 @font-face{font-family:"Huiwen Sans TC index Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-index-full-34dc0425a576.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="index"]{--huiwen-font-family:"Huiwen Sans TC index Core","Huiwen Sans JP Support",sans-serif}
