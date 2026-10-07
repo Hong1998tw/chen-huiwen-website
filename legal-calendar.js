@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const week = '日一二三四五六';
-  const cardFont = '"Source Han Sans TC"';
+  const cardFont = '"Huiwen Sans TC"';
   const monthParts = value => {
     if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(value)) throw Error('月份格式不正確');
     return value.split('-').map(Number);

@@ -1,7 +1,7 @@
 'use strict';
 const CACHE='huiwen-digital-v14-20261007-source-han-fonts';
 const OFFLINE='./offline.html';
-const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/source-han-sans/SourceHanSansTW-VF-2.005R.woff2','./assets/fonts/source-han-sans/SourceHanSansJP-VF-2.005R.woff2'];
+const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/huiwen-site-sans-tc-20261007.woff2'];
 const rawSource=url=>url.pathname.endsWith('/data/achievements.json');
 async function remember(cache,request,response) {
   const headers=new Headers(response.headers);headers.set('X-Huiwen-Cached-At',new Date().toISOString());
@@ -28,7 +28,7 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 async function markedOffline(response) {
   const at=response.headers.get('X-Huiwen-Cached-At');
   const stamp=at?new Intl.DateTimeFormat('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'}).format(new Date(at)):'時間未記錄';
-  const banner=`<aside role="status" data-offline-cache style="position:relative;z-index:10000;background:#fff1c2;color:#3d3214;padding:12px 20px;font:16px/1.6 'Source Han Sans TC','Source Han Sans JP',sans-serif;border-bottom:1px solid #bcaa70">目前離線／連線異常，正在閱讀快取，內容非即時資訊。儲存時間：${stamp}（台灣時間）。恢復網路後請重新整理。</aside>`;
+  const banner=`<aside role="status" data-offline-cache style="position:relative;z-index:10000;background:#fff1c2;color:#3d3214;padding:12px 20px;font:16px/1.6 'Huiwen Sans TC',sans-serif;border-bottom:1px solid #bcaa70">目前離線／連線異常，正在閱讀快取，內容非即時資訊。儲存時間：${stamp}（台灣時間）。恢復網路後請重新整理。</aside>`;
   const html=(await response.text()).replace(/(<body\b[^>]*>)/i,'$1'+banner);
   const headers=new Headers(response.headers);headers.delete('Content-Length');headers.delete('Content-Encoding');headers.set('X-Huiwen-Offline','true');
   return new Response(html,{status:response.status,headers});
