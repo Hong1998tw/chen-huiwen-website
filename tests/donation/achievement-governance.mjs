@@ -28,7 +28,13 @@ const firstPublicIds=[
 const updatedPublicIds=['guangfu-drainage','mingfeng-12-gongyuan-road'];
 const targetIds=[...firstPublicIds,...updatedPublicIds];
 const report={scope:'Step 7 achievement candidate QA',checks:[],failures:[],metrics:{},targets:targetIds};
-const check=async(name,fn)=>{try{await fn();report.checks.push({name,status:'Passed'});}catch(e){report.checks.push({name,status:'Failed',error:String(e)});report.failures.push(name);}};
+const check=async(name,fn,cleanup)=>{
+ let error;
+ try{await fn();}catch(e){error=e;}
+ if(cleanup)try{await cleanup();}catch(e){error=error?new Error(`${error}; cleanup failed: ${e}`):e;}
+ if(error){report.checks.push({name,status:'Failed',error:String(error)});report.failures.push(name);}
+ else report.checks.push({name,status:'Passed'});
+};
 const searchable=c=>[
  c.title,c.summary,c.scope,c.status,c.locationName,c.locationNote,...(c.categories||[]),...(c.subcategories||[]),
  ...(c.villages||[]),...(c.paragraphs||[]),...(c.villageHeadPartners||[]).flatMap(p=>[p.village,p.name,p.role,p.from,p.to]),
@@ -72,12 +78,25 @@ try{
   page.on('console',msg=>{if(msg.type()==='error')browserErrors.push(`console: ${msg.text()}`);});
   page.on('response',res=>{const u=new URL(res.url());if(u.hostname==='127.0.0.1'&&res.status()>=400)browserErrors.push(`HTTP ${res.status()}: ${u.pathname}`);});
   const go=async path=>{await page.goto(base+path,{waitUntil:'domcontentloaded'});if(path.startsWith('achievements.html'))await page.getByRole('button',{name:'地圖與列表',exact:true}).click();};
-  const waitCases=async()=>page.waitForFunction(()=>!!window.HuiwenCases);
-  const count=async n=>page.waitForFunction(n=>window.HuiwenCases?.getState().visible.length===n,n);
+  const allCaseIds=source.map(c=>c.id);
+  const sortedIds=ids=>[...ids].sort();
+  const waitCases=async()=>page.waitForFunction(n=>window.HuiwenCases?.getState().data.length===n,source.length);
+  const waitCaseIds=async ids=>page.waitForFunction(expected=>{
+   const actual=window.HuiwenCases?.getState().visible.map(c=>c.id);
+   return actual?.length===expected.length&&JSON.stringify([...actual].sort())===JSON.stringify(expected);
+  },sortedIds(ids));
+  const assertCaseIds=async ids=>assert.deepEqual(sortedIds(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id))),sortedIds(ids));
+  const resetOverview=async()=>{
+   if(new URL(page.url()).pathname!==new URL('achievements.html',base).pathname)await go('achievements.html');
+   await waitCases();await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);
+   await page.waitForFunction(()=>new URL(location.href).search==='');
+  };
+  const resetFilters=async()=>{await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);};
 
-  await go('achievements.html');await waitCases();
   await check(`${width}: reviewed Wende funding is readable in list and map without totals across cases`,async()=>{
    await go('achievements.html?q='+encodeURIComponent('文德國小'));await waitCases();
+   const expected=source.filter(c=>searchable(c).includes('文德國小')).map(c=>c.id);
+   await waitCaseIds(expected);
    const card=page.locator('[data-case="wende-school-center"]');
    assert.match(await card.locator('.case-funding-total').textContent(),/核定總經費.*6,035\.7萬元/);
    await card.locator('.case-funding summary').click();
@@ -94,13 +113,18 @@ try{
    assert.match(await popup.textContent(),/非決算或已撥款/);
    assert.equal(await popup.locator('a[href*="#case-sources"]').count(),1);
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   const styles=await popup.locator('.map-popup-case.is-selected a').evaluateAll(links=>links.map(link=>({color:getComputedStyle(link).color,background:getComputedStyle(link.closest('.map-popup-case')).backgroundColor})));
+   assert(styles.length>=3);
+   assert(styles.every(style=>style.color==='rgb(37, 76, 62)'&&style.background==='rgb(237, 246, 223)'),JSON.stringify(styles));
    const axe=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
-   assert.deepEqual(axe.violations.map(v=>v.id),[]);
+   if(axe.violations.length) await writeFile(out+`map-funding-axe-${width}.json`,JSON.stringify(axe.violations,null,2));
+   const contrastFailures=axe.violations.flatMap(v=>v.nodes.map(n=>({id:v.id,target:n.target,summary:n.failureSummary})));
+   assert.deepEqual(axe.violations.map(v=>v.id),[],JSON.stringify(contrastFailures));
    await page.screenshot({path:out+`map-funding-${width}.png`,fullPage:true});
-   await go('achievements.html');await waitCases();
-  });
+  },resetOverview);
 
   await check(`${width}: overview layout, pagination and map availability`,async()=>{
+   await resetOverview();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
    assert((await page.locator('#case-count').textContent()).startsWith(`共 ${source.length} 個專題`));
@@ -110,45 +134,48 @@ try{
    await page.locator('.leaflet-overlay-pane path').first().waitFor({state:'attached'});
    assert(await page.locator('.leaflet-overlay-pane path').count()>0);
    await page.screenshot({path:out+`step7-overview-${width}.png`,fullPage:true});
-  });
+  },resetOverview);
 
   await check(`${width}: keyword, status, category and village filters match source`,async()=>{
+   await resetOverview();
    const search='個人行動器具';
    const expectedSearch=source.filter(c=>searchable(c).includes(search)).map(c=>c.id);
-   await page.locator('#case-search').fill(search);await count(expectedSearch.length);
-   assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),expectedSearch);
-   await page.locator('#reset-map-filters').click();
+   await page.locator('#case-search').fill(search);await waitCaseIds(expectedSearch);
+   await assertCaseIds(expectedSearch);
+   await resetFilters();
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-   const completed=source.filter(c=>c.status==='已完成');await page.locator('#status-filter').selectOption('已完成');await count(completed.length);
-   await page.locator('#reset-map-filters').click();
+   const completed=source.filter(c=>c.status==='已完成');await page.locator('#status-filter').selectOption('已完成');await waitCaseIds(completed.map(c=>c.id));
+   await resetFilters();
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-   const traffic=source.filter(c=>(c.categories||[]).includes('交通與基建'));await page.locator('#category-filter').selectOption('交通與基建');await count(traffic.length);
-   await page.locator('#reset-map-filters').click();
+   const traffic=source.filter(c=>(c.categories||[]).includes('交通與基建'));await page.locator('#category-filter').selectOption('交通與基建');await waitCaseIds(traffic.map(c=>c.id));
+   await resetFilters();
    const village='大德里';const byVillage=source.filter(c=>(c.villages||[]).includes(village));
-   if(byVillage.length){await page.locator('#village-filter').selectOption('v:'+village);await count(byVillage.length);}
-   await page.locator('#reset-map-filters').click();
-  });
+   if(byVillage.length){await page.locator('#village-filter').selectOption('v:'+village);await waitCaseIds(byVillage.map(c=>c.id));}
+   await resetFilters();
+  },resetOverview);
 
   await check(`${width}: historical partner search and facts do not regress to current-head labels`,async()=>{
+   await resetOverview();
    const q='侯俊傑';const expected=source.filter(c=>searchable(c).includes(q)).map(c=>c.id);
    assert(expected.includes('mingfeng-12-gongyuan-road'));
-   await page.locator('#case-search').fill(q);await count(expected.length);
-   assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id)),expected);
+   await page.locator('#case-search').fill(q);await waitCaseIds(expected);
+   await assertCaseIds(expected);
    assert(!await page.locator('body').textContent().then(t=>t.includes('現任里長')));
    await page.keyboard.press('Control+k');const input=page.locator('#global-search-dialog input');await input.fill(q);
    await page.locator('.global-search-result[href$="/achievement-mingfeng-12-gongyuan-road.html"]').waitFor();await page.keyboard.press('Escape');
-   await page.locator('#reset-map-filters').click();
-  });
+   await resetFilters();
+  },resetOverview);
 
   await check(`${width}: map deep link and selected result remain synchronized`,async()=>{
    await go('achievements.html?case=dingbao-bridge');await waitCases();await page.locator('.map-insight-panel').waitFor();
+   await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='dingbao-bridge');
    assert.equal(new URL(page.url()).searchParams.get('case'),'dingbao-bridge');
    assert(await page.locator('.case-card.is-selected').isVisible());
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    await page.locator('#category-filter').selectOption('社福與衛環');
-   const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await count(expected.length);
+   const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await waitCaseIds(expected.map(c=>c.id));
    assert.equal(await page.locator('.case-card.is-selected').count(),0);assert.equal(await page.locator('.insight-clear').count(),0);assert(await page.locator('.map-insight-panel').isVisible());assert(!new URL(page.url()).searchParams.has('case'));
-  });
+  },resetOverview);
 
   await check(`${width}: all 13 first-public and 2 updated detail pages render, fit and expose correct OG`,async()=>{
    for(const id of targetIds){
@@ -165,16 +192,17 @@ try{
     assert.deepEqual(axe.violations.map(v=>v.id),[],`axe ${id}: ${axe.violations.map(v=>v.id).join(',')}`);
     await page.screenshot({path:out+`step7-${id}-${width}.png`,fullPage:true});
    }
-  });
+  },resetOverview);
 
   await check(`${width}: overview accessibility`,async()=>{
-   await go('achievements.html');await waitCases();
+   await resetOverview();
    const axe=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
    await writeFile(out+`step7-overview-axe-${width}.json`,JSON.stringify(axe.violations,null,2));
    assert.deepEqual(axe.violations.map(v=>v.id),[]);
-  });
+  },resetOverview);
 
   if(width===390)await check('390: mobile navigation opens, closes and restores focus',async()=>{
+   await page.goto(base+'index.html',{waitUntil:'domcontentloaded'});await page.locator('.menu-toggle').waitFor();
    await page.locator('.menu-toggle').click();assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'),'true');
    await page.keyboard.press('Escape');assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'),'false');assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));
   });

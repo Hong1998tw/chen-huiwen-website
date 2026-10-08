@@ -278,6 +278,7 @@ try {
     assert.equal(reachable,62,'all 62 matching records must be reachable through pagination');
     await page.reload();
     assert.equal(new URL(page.url()).searchParams.get('page'),'7');
+    await page.waitForFunction(()=>document.querySelectorAll('#explore-achievements .explore-result-card').length===2);
     assert.equal(await page.locator('#explore-achievements .explore-result-card').count(),2);
     await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
     await page.locator('#explore-achievements .explore-result-card').first().waitFor();
