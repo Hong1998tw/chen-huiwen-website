@@ -652,5 +652,11 @@
     "status": "已完成",
     "place": "曹公里",
     "sha256": "1bc62ee6c6fba502dc0aa196cd9da5037941bdce8491ad698fc20dfebc582e75"
+  },
+  "achievement-jingwu-sidewalk-ramp": {
+    "title": "降低人行道坡度｜鳳山北清潔隊經武路側",
+    "status": "已完成",
+    "place": "鳳山區",
+    "sha256": "56ca726d4c7dc6b337d3ea182e8c12c9067f832731ffbe18d630467e9874622e"
   }
 }
