@@ -60,7 +60,10 @@ def render(media: dict) -> str:
         visual = f'<video src="{escaped(embed)}" controls preload="none" aria-label="{escaped(media["alt"])}"></video>'
     else:
         visual = f'<iframe src="{escaped(embed)}" title="{escaped(media["alt"])}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>'
-    return (f'<figure class="case-external-media">{visual}<figcaption>{escaped(media["caption"])}'
+    figure_class = 'case-external-media'
+    if provider == 'facebook' and media['kind'] == 'photo':
+        figure_class += ' case-external-media--facebook-photo'
+    return (f'<figure class="{figure_class}">{visual}<figcaption>{escaped(media["caption"])}'
             f'<span class="case-photo-credit">來源：{escaped(media["credit"])} · '
             f'<a href="{escaped(media["url"])}" target="_blank" rel="noopener noreferrer">開啟原始內容 ↗</a></span>'
             '</figcaption></figure>')

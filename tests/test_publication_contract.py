@@ -24,7 +24,7 @@ class PublicProjectionTests(unittest.TestCase):
         raw = json.loads((ROOT / 'data/achievements.json').read_text())
         self.assertEqual({r['id'] for r in self.rows}, {r['id'] for r in raw})
         self.assertTrue(all(public.is_public(r) for r in raw))
-        self.assertEqual(108, len(raw))
+        self.assertEqual(109, len(raw))
         for row in self.rows:
             self.assertFalse({'notes', 'editorialReview', 'verification', 'verifiedAt', 'villageMethod'} & row.keys())
             self.assertFalse(any('checkedAt' in source for source in row.get('sources', [])))
