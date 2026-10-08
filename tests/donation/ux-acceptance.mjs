@@ -262,7 +262,7 @@ try {
   await page.locator('#explore-achievements .explore-result-card').first().waitFor();
   await check('exploration separates counts, retains filters in URL and returns with browser back', async () => {
     assert.equal(await page.locator('#explore-achievements .explore-result-card').count(), 10);
-    assert.equal(Number(await page.locator('[data-explore-count="achievements"]').innerText()),62);
+    assert.equal(Number(await page.locator('[data-explore-count="achievements"]').innerText()),63);
     assert.equal(await page.locator('#explore-news-section').count(), 1);
     assert.equal(await page.locator('#explore-platforms-section').count(), 1);
     assert.match(await page.locator('#explore-related').innerText(), /方便延伸閱讀/);
@@ -272,14 +272,14 @@ try {
       await page.getByRole('button',{name:`第 ${number} 頁，共 7 頁`}).click();
       await page.waitForFunction(number=>new URL(location.href).searchParams.get('page')===String(number),number);
       const count=await page.locator('#explore-achievements .explore-result-card').count();
-      assert.equal(count,number===7?2:10);
+      assert.equal(count,number===7?3:10);
       reachable+=count;
     }
-    assert.equal(reachable,62,'all 62 matching records must be reachable through pagination');
+    assert.equal(reachable,63,'all 63 matching records must be reachable through pagination');
     await page.reload();
     assert.equal(new URL(page.url()).searchParams.get('page'),'7');
-    await page.waitForFunction(()=>document.querySelectorAll('#explore-achievements .explore-result-card').length===2);
-    assert.equal(await page.locator('#explore-achievements .explore-result-card').count(),2);
+    await page.waitForFunction(()=>document.querySelectorAll('#explore-achievements .explore-result-card').length===3);
+    assert.equal(await page.locator('#explore-achievements .explore-result-card').count(),3);
     await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
     await page.locator('#explore-achievements .explore-result-card').first().waitFor();
     await page.getByRole('button', { name: '下一頁' }).click();
