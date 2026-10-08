@@ -116,6 +116,7 @@ jobs:
             tests/donation/results/events/
             tests/donation/results/*.json
             tests/donation/results/*.png
+          retention-days: 3
 
       - name: Fail production verification when a check failed
         if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success') }}
