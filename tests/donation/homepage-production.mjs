@@ -55,7 +55,14 @@ try{
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   await page.goto(base);await page.addStyleTag({content:'html{font-size:200%!important}'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',reflow:'PASS',search:'PASS',lawyerKeyboardEntry:'PASS'});
+  const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{left:r.left,right:r.right,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
+  assert(legalLayout.height>=44,JSON.stringify(legalLayout));
+  assert(legalLayout.left>=0&&legalLayout.right<=width,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollWidth<=legalLayout.clientWidth,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollHeight<=legalLayout.clientHeight,JSON.stringify(legalLayout));
+  assert.equal(legalLayout.whiteSpace,'normal');
+  await page.screenshot({path:out+`home-${width}-text-200-top.png`});
+  report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',reflow:'PASS',search:'PASS',lawyerKeyboardEntry:'PASS',text200LegalShortcut:legalLayout});
   await ctx.close();
  }
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}}),page=await ctx.newPage();

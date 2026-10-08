@@ -1,7 +1,7 @@
 'use strict';
 const CACHE='huiwen-digital-v15-20261008-route-font-subsets';
 const OFFLINE='./offline.html';
-const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-47824af19577.woff2'];
+const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-19f042554aab.woff2'];
 const rawSource=url=>url.pathname.endsWith('/data/achievements.json');
 async function remember(cache,request,response) {
   const headers=new Headers(response.headers);headers.set('X-Huiwen-Cached-At',new Date().toISOString());

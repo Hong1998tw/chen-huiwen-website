@@ -32,7 +32,7 @@ UPGRADE_END = "<!-- HUIWEN_FONT_UPGRADE:end -->"
 ROUTES = {
     "index.html": (
         "index",
-        ("main > .hero", "main > .home-task-paths", "main > .mobile-actions"),
+        ("main > .hero", "main > .home-task-paths", "main .home-recent-event", "main > .mobile-actions"),
     ),
     "about.html": (
         "about",
