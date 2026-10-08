@@ -32,7 +32,7 @@ UPGRADE_END = "<!-- HUIWEN_FONT_UPGRADE:end -->"
 ROUTES = {
     "index.html": (
         "index",
-        ("main > .hero", "main > .services", "main > .mobile-actions"),
+        ("main > .hero", "main > .home-task-paths", "main .home-recent-event", "main > .mobile-actions"),
     ),
     "about.html": (
         "about",
@@ -261,7 +261,7 @@ def explore_dynamic_text(root: Path, *, core: bool) -> str:
         if not explore_path.is_file():
             raise ValueError("FONT_EXPLORE_SOURCE_MISSING: explore.js")
         explore_source = explore_path.read_text(encoding="utf-8")
-        taxonomy = re.search(r"taxonomy:\{topics:\{(.*?)\}\}\};", explore_source, re.S)
+        taxonomy = re.search(r"taxonomy:\s*\{\s*topics:\s*\{(.*?)\}\s*\}\s*\};", explore_source, re.S)
         if not taxonomy:
             raise ValueError("FONT_EXPLORE_TAXONOMY_NOT_FOUND")
         topics = re.findall(r"'([^']+)':\s*\[", taxonomy.group(1))
@@ -357,7 +357,11 @@ def build_css(root: Path, routes: dict, jp_filename: str | None, jp_fallback: li
             )
         )
     for slug, values in routes.items():
-        lines.append(face(f"Huiwen Sans TC {slug} Core", values["core_file"]))
+        # Core faces are preloaded for the first render. Keep their glyphs in
+        # the active font stack when a cold request outlasts the short block
+        # period; `optional` can otherwise leave the whole route in a system
+        # CJK fallback for that page view even after the subset arrives.
+        lines.append(face(f"Huiwen Sans TC {slug} Core", values["core_file"], display="swap"))
         lines.append(face(f"Huiwen Sans TC {slug} Full", values["full_file"]))
         lines.append(
             f':root[data-huiwen-font-page="{slug}"]'

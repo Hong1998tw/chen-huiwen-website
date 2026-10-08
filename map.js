@@ -17,7 +17,7 @@
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
   const data = cards.map(card => JSON.parse(card.dataset.meta));
   const textById = new Map(cards.map(card => [card.dataset.case, normalize(card.innerText)]));
-  const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+  const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   let map, markers, boundaries, mapPromise, dataPromise, fullDataLoaded = false, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
   const boundaryLayers = new Map();
   list.dataset.pageSize = String(PAGE_SIZE);
@@ -28,7 +28,7 @@
   list.after(pagination);
   const live=document.querySelector('.case-live-summary');
   const params = () => Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value]));
-  function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage }; }
+  function getState() { return { data, visible, selectedId, groupIds, filters: params(), page: currentPage, mapView:map?{zoom:map.getZoom(),bounds:map.getBounds().toBBoxString()}:null }; }
   function announce() { document.dispatchEvent(new CustomEvent('huiwen:cases-change', { detail: getState() })); }
   async function ensureData() {
     if (fullDataLoaded) return true;
@@ -130,6 +130,10 @@
     selectedId = id; groupIds = group.filter(id => visible.some(c => c.id === id));
     currentPage = Math.floor(i / PAGE_SIZE) + 1;
     renderCards(); syncURL(); announce();
+    if (map && markers) {
+      draw();
+      markers.eachLayer(marker => { if (marker.options.caseIds?.includes(id)) marker.openPopup(); });
+    }
   }
   function fit() {
     if (!map) return;
@@ -159,10 +163,16 @@
       if (neighbor) neighbor.push(...cases); else separated.push([...cases]);
     }
     for (const cases of separated) {
+      const selectedCase = cases.find(c => c.id === selectedId);
+      const popupCases = selectedCase ? [selectedCase, ...cases.filter(c => c.id !== selectedCase.id)] : cases;
       const pop = document.createElement('div'); pop.className = 'map-popup';
-      const title = document.createElement('strong'); title.textContent = cases.length > 1 ? `${cases.length} 個附近專題（放大地圖可分開查看）` : cases[0].title; pop.append(title);
-      for (const c of cases) {
+      const title = document.createElement('strong'); title.textContent = selectedCase ? selectedCase.title : cases.length > 1 ? `${cases.length} 個附近專題（放大地圖可分開查看）` : cases[0].title; pop.append(title);
+      for (const c of popupCases) {
         const item = document.createElement('section'); item.className = 'map-popup-case';
+        if (c.id === selectedId) {
+          item.classList.add('is-selected');
+          const selected = document.createElement('p'); selected.className = 'map-popup-selected'; selected.textContent = '目前選取'; item.append(selected);
+        }
         const a = document.createElement('a'); a.href = `achievement-${c.id}.html`; a.textContent = c.title + ' →'; item.append(a);
         if (c.funding) {
           const f = c.funding, amount = value => (value / 10000).toLocaleString('zh-TW', {maximumFractionDigits: 2}) + '萬元';
@@ -208,7 +218,7 @@
     if (requested) selectCase(requested.id);
     fit();
   }
-  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);if(key==='q'&&String(value).trim())ensureData().finally(()=>filter());else filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();announce();}});
+  window.HuiwenCases = Object.freeze({getState, setFilter(key,value) {const el=controls[key];if(!el)return;if(key!=='q'&&![...el.options].some(o=>o.value===value))return;el.value=value;clearTimeout(searchTimer);if(key==='q'&&String(value).trim())ensureData().finally(()=>filter());else filter();}, selectCase, clearSelection(){selectedId=null;groupIds=[];renderCards();syncURL();if(map){map.closePopup();draw();fit();}announce();}});
   controls.q.addEventListener('input', event => {
     clearTimeout(searchTimer);
     if (!event.isComposing) searchTimer = setTimeout(() => {
@@ -248,7 +258,8 @@
     });
   }
   readURL();
-  if (controls.q.value.trim()) ensureData().then(() => filter(false,false));
+  if (new URLSearchParams(location.search).has('case')) ensureMap();
+  else if (controls.q.value.trim()) ensureData().then(() => filter(false,false));
   function ensureMap() {
     if (map) return Promise.resolve(map);
     if (mapPromise) return mapPromise;
@@ -271,9 +282,31 @@
           const choose=()=>window.HuiwenCases.setFilter('village','v:'+f.properties.name);
           layer.on('click',choose);
           layer.on('add',()=>{const el=layer.getElement();if(el){el.setAttribute('role','button');el.setAttribute('aria-label','篩選'+f.properties.name);el.setAttribute('tabindex','0');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});}});
-        }}).addTo(map);draw();fit();
+        }}).addTo(map);draw();
+        const selected=visible.find(record=>record.id===selectedId);
+        if(selected?.coordinates){
+          map.setView(selected.coordinates,16,{animate:false});
+          requestAnimationFrame(()=>requestAnimationFrame(()=>markers.eachLayer(marker=>{if(marker.options.caseIds?.includes(selected.id))marker.openPopup();})));
+        }else fit();
       }).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與專題點位查詢。';}).finally(()=>clearTimeout(timeout));
       draw();fit();announce();
+      const directCase = new URLSearchParams(location.search).get('case');
+      const directRecord = directCase && visible.find(record => record.id === directCase);
+      if (directRecord?.coordinates) {
+        const showSelectedPoint = () => {
+          markers.eachLayer(marker => {
+            if (marker.options.caseIds?.includes(directCase)) marker.openPopup();
+          });
+        };
+        map.once('moveend',showSelectedPoint);
+        map.setView(directRecord.coordinates,16,{animate:false});
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          showSelectedPoint();
+          root.scrollIntoView({behavior:motion(),block:'center'});
+        }));
+      } else if (directCase && directRecord) {
+        message.textContent='這筆紀錄沒有可定位座標；完整專題與列表篩選仍可使用。';
+      }
       return map;
     })().finally(()=>{if(!map)mapPromise=null;});
     return mapPromise;

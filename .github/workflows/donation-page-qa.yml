@@ -27,6 +27,8 @@ jobs:
       - run: node --check election.js
       - run: node --check tests/donation/production-browser.mjs
       - run: node --check tests/donation/digital-civic.mjs
+      - run: node --check tests/donation/ux-acceptance.mjs
+      - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/election-mode.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
@@ -40,6 +42,8 @@ jobs:
       - run: node tests/donation/service-tools.mjs
       - run: node tests/donation/legal-calendar.mjs
       - run: node tests/donation/digital-civic.mjs
+      - run: node tests/donation/ux-acceptance.mjs
+      - run: node tests/donation/font-rendering.mjs
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs
       - run: node tests/donation/election-mode.mjs

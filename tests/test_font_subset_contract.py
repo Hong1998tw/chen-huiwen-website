@@ -57,6 +57,20 @@ class FontSubsetContractTests(unittest.TestCase):
                 self.assertTrue(core_path.is_file())
                 self.assertIn(f'font-family:"Huiwen Sans TC {slug} Core"', css)
                 self.assertIn(f'font-family:"{family}"', css)
+                core_face = re.search(
+                    rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} Core";'
+                    rf'[^}}]*font-display:([^;}}]+)',
+                    css,
+                )
+                full_face = re.search(
+                    rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} Full";'
+                    rf'[^}}]*font-display:([^;}}]+)',
+                    css,
+                )
+                self.assertIsNotNone(core_face)
+                self.assertEqual(core_face.group(1), "swap")
+                self.assertIsNotNone(full_face)
+                self.assertEqual(full_face.group(1), "optional")
                 full_stack = (
                     f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
                     f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'
@@ -114,18 +128,26 @@ class FontSubsetContractTests(unittest.TestCase):
         self.assertIn("font-display:swap", global_face)
         self.assertIn("Huiwen Sans JP Support", css)
 
+    def test_homepage_headquarters_title_is_covered_by_the_preloaded_core_face(self):
+        soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
+        heading = soup.select_one("#opening-title").get_text(" ", strip=True)
+        core_text = fonts.page_text(ROOT, "index.html", fonts.ROUTES["index.html"][1])
+        tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
+        expected = {ord(char) for char in heading if ord(char) in tc_cmap}
+        present = {ord(char) for char in core_text}
+        self.assertTrue(expected.issubset(present), "homepage event title must not switch from system fallback after interaction")
+
     def test_homepage_places_award_then_headquarters_then_local_story(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        main = soup.find("main")
-        sections = {
-            section.get("id"): index
-            for index, section in enumerate(main.find_all("section", recursive=False))
-        }
-        self.assertLess(sections["news"], sections["opening"])
-        self.assertLess(sections["opening"], sections["projects"])
-        self.assertIn("獲選", soup.select_one("#news").get_text(" ", strip=True))
+        recent = soup.select_one("#recent .home-recent-list")
+        self.assertEqual(
+            [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
+            ["award", "headquarters", "local"],
+        )
+        self.assertIn("獲選", recent.select_one("[data-home-recent-item='award']").get_text(" ", strip=True))
         self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))
-        self.assertIn("一件地方事", soup.select_one("#projects").get_text(" ", strip=True))
+        self.assertEqual(recent.select_one("[data-home-local-record]")["data-home-local-record"], "wende-school-center")
+        self.assertIn("閱讀這件地方事", recent.get_text(" ", strip=True))
 
 
 if __name__ == "__main__":

@@ -109,6 +109,22 @@
     return (serviceIntent ? 300 : 0) + 20 + (title === query ? 120 : title.startsWith(query) ? 70 : title.includes(query) ? 45 : 0) + tokens.filter(token => title.includes(token)).length * 15;
   }
 
+  function searchReason(item, query) {
+    const intents=(item.intents||[]).map(normalize);
+    if(intents.includes(query))return `服務項目：${query}`;
+    const tokens=query.split(' ').filter(Boolean);
+    const region=normalize(item.primaryRegion);
+    if(region&&tokens.every(token=>region.includes(token)))return `地區命中：${item.primaryRegion}`;
+    const fields=[
+      ['標題',normalize(item.title)],
+      ['主題',normalize((item.categories||[]).join(' '))],
+      ['摘要',normalize(item.summary||item.description)],
+      ['紀錄內容',normalize(item.keywords)]
+    ];
+    const hits=fields.filter(([,value])=>value&&tokens.some(token=>value.includes(token))).map(([label])=>label);
+    return hits.length?`符合欄位：${hits.join('、')}`:'符合收錄文字';
+  }
+
   async function loadSearchIndex() {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
     try {
@@ -147,7 +163,7 @@
       const mapped=visible.filter(c=>c.coordinates).length;
       const item=visible.find(c=>c.id===selectedId);
       if(item){
-        const latest=item.history?.at(-1);
+        const latest=item.lastRecordDate?item.history?.find(event=>event.date===item.lastRecordDate):null;
         const card=document.querySelector(`.case-card[data-case="${CSS.escape(item.id)}"]`);
         const summary=item.summary||card?.querySelector('.case-summary')?.textContent||'';
         insight.innerHTML=`<div class="insight-top"><p class="eyebrow">SELECTED PLACE</p><button type="button" class="insight-clear" aria-label="取消地圖選取">取消選取 ×</button></div><h2>${escapeHTML(item.title)}</h2><p>${escapeHTML(summary)}</p><div class="insight-breakdown"><span>${escapeHTML(item.status)}</span><span>${escapeHTML(item.villages.join('、')||item.scope)}</span></div>${latest?`<p class="insight-history">最後一筆歷程 · ${escapeHTML(latest.date)}<br>${escapeHTML(latest.title)}</p>`:''}<p class="insight-location">${escapeHTML(item.locationNote||'點位為代表位置，不是工程範圍。')}</p><a href="achievement-${encodeURIComponent(item.id)}.html">閱讀完整紀錄與來源 →</a>${groupIds.length>1?'<div class="insight-group"><h3>附近的其他專題</h3></div>':''}`;
@@ -169,7 +185,7 @@
     trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-label','搜尋陳慧文官網');
     trigger.innerHTML='<span aria-hidden="true">⌕</span><span>搜尋</span><kbd>⌘ K</kbd>';
     header.insertBefore(trigger,header.querySelector('.menu-toggle'));
-    let dialog,input,box,status,more,retry,indexPromise,buttons=[],active=0,limit=12,returnFocus;
+    let dialog,input,box,status,more,retry,emptyState,clearSearch,keyboardHint,indexPromise,buttons=[],active=0,limit=12,returnFocus;
     const updateActive=()=>{buttons.forEach((button,i)=>{button.classList.toggle('is-active',i===active);button.setAttribute('aria-selected',String(i===active));});if(buttons[active])input.setAttribute('aria-activedescendant',buttons[active].id);else input.removeAttribute('aria-activedescendant');};
     const highlight=(text,query)=>{
       const span=document.createElement('span');span.textContent=text;
@@ -192,25 +208,33 @@
       box.replaceChildren();
       all.slice(0,limit).forEach((item,i)=>{
         const link=document.createElement('a');link.href=new URL(item.url,assetBase).href;link.id=`global-result-${i}`;link.className='global-search-result';link.setAttribute('role','option');
-        let snippet=item.description||item.url;
-        if(query&&item.type!=='服務'&&!normalize(snippet).includes(query.split(' ')[0])){const body=String(item.keywords||'');const offset=body.toLocaleLowerCase('zh-Hant-TW').indexOf(query.split(' ')[0]);if(offset>=0)snippet=(offset>22?'…':'')+body.slice(Math.max(0,offset-22),offset+95);}
-        link.innerHTML=`<span class="global-search-type">${escapeHTML(item.type)}</span><span class="global-search-result-copy"><strong>${highlight(item.title,query)}</strong><small>${highlight(snippet,query)}</small></span><span aria-hidden="true">→</span>`;
+        const snippet=item.summary||item.description||'';
+        const metadata=item.type==='服務'
+          ?`服務地區：${item.primaryRegion||'未標示'} · 紀錄日期與辦理階段：不適用`
+          :`地區：${item.primaryRegion||'未標示'} · 最後紀錄：${item.lastRecordDate||'未載明'} · 階段：${item.recordStage||'未標示'}`;
+        const reason=query?searchReason(item,query):'';
+        link.innerHTML=`<span class="global-search-type">${escapeHTML(item.type||'內容')}</span><span class="global-search-result-copy"><strong>${highlight(item.title,query)}</strong><small>${highlight(snippet,query)}</small><small class="global-search-meta">${escapeHTML(metadata)}</small>${reason?`<small class="global-search-reason">${escapeHTML(reason)}</small>`:''}</span><span aria-hidden="true">→</span>`;
         box.append(link);
       });
       buttons=[...box.querySelectorAll('a')];active=0;updateActive();
       more.hidden=all.length<=limit;retry.hidden=!payload.partial;
-      status.textContent=(payload.partial?'搜尋資料暫時無法載入，目前僅顯示常用頁面。 ': '')+(query?(all.length?`找到 ${all.length} 個結果，顯示 ${buttons.length} 個`:'找不到符合內容，試試不同關鍵字。'):'搜尋全站政績、新聞、政見、活動與服務資訊。');
+      emptyState.hidden=!query||all.length>0;
+      keyboardHint.hidden=buttons.length===0;
+      status.textContent=payload.partial
+        ?(query?(all.length?`完整搜尋資料暫時無法載入；目前常用頁面找到 ${all.length} 個結果。`:'搜尋資料暫時無法載入，目前只查詢常用頁面，尚無符合結果。可重新載入完整索引。'):'搜尋資料暫時無法載入，目前僅顯示常用頁面。')
+        :(query?(all.length?`找到 ${all.length} 個結果，顯示 ${buttons.length} 個`:'沒有找到符合內容，可清除查詢或前往下方入口。'):'搜尋全站政績、新聞、政見、活動與服務資訊。');
     }
     const close=()=>dialog?.close();
     function ensure(){
       if(dialog)return;
       dialog=document.createElement('dialog');dialog.id='global-search-dialog';dialog.className='global-search-dialog';dialog.setAttribute('aria-label','全站搜尋');
-      dialog.innerHTML=`<div class="global-search-shell" role="search"><div class="global-search-input-row"><span aria-hidden="true">⌕</span><input type="search" autocomplete="off" spellcheck="false" aria-label="搜尋陳慧文官網" aria-controls="global-search-results" aria-autocomplete="list" placeholder="搜尋政績、新聞、政見、里別……"><button type="button" class="global-search-close" aria-label="關閉搜尋">Esc</button></div><div class="global-search-status" role="status">搜尋資料載入中…</div><div class="global-search-results" id="global-search-results" role="listbox" aria-label="搜尋結果"></div><div class="search-extra"><button type="button" data-search-more hidden>顯示更多結果</button><button type="button" data-search-retry hidden>重新載入搜尋資料</button></div><div class="global-search-footer"><span>↑↓ 選擇 · Enter 開啟 · Esc 關閉</span><a href="${new URL('explore.html',assetBase).href}">進階探索 →</a></div></div>`;
-      document.body.append(dialog);input=dialog.querySelector('input');box=dialog.querySelector('.global-search-results');status=dialog.querySelector('.global-search-status');more=dialog.querySelector('[data-search-more]');retry=dialog.querySelector('[data-search-retry]');
+      dialog.innerHTML=`<div class="global-search-shell" role="search"><div class="global-search-input-row"><span aria-hidden="true">⌕</span><input type="search" autocomplete="off" spellcheck="false" aria-label="搜尋陳慧文官網" aria-controls="global-search-results" aria-autocomplete="list" placeholder="搜尋政績、新聞、政見、里別……"><button type="button" class="global-search-close" aria-label="關閉搜尋">Esc</button></div><div class="global-search-status" role="status">搜尋資料載入中…</div><div class="global-search-results" id="global-search-results" role="listbox" aria-label="搜尋結果"></div><section class="global-search-empty" data-search-empty hidden aria-label="沒有符合的搜尋結果"><p>可以清除查詢，或改從以下入口繼續。</p><button type="button" data-search-clear>清除查詢</button><a href="${new URL('explore.html',assetBase).href}">探索地方與議題 →</a><a href="${new URL('service.html#contact',assetBase).href}">聯絡服務處 →</a></section><div class="search-extra"><button type="button" data-search-more hidden>顯示更多結果</button><button type="button" data-search-retry hidden>重新載入搜尋資料</button></div><div class="global-search-footer"><span class="global-search-key-hint">↑↓ 選擇 · Enter 開啟 · Esc 關閉</span><a href="${new URL('explore.html',assetBase).href}">進階探索 →</a></div></div>`;
+      document.body.append(dialog);input=dialog.querySelector('input');box=dialog.querySelector('.global-search-results');status=dialog.querySelector('.global-search-status');more=dialog.querySelector('[data-search-more]');retry=dialog.querySelector('[data-search-retry]');emptyState=dialog.querySelector('[data-search-empty]');clearSearch=dialog.querySelector('[data-search-clear]');keyboardHint=dialog.querySelector('.global-search-key-hint');
       input.addEventListener('input',e=>{limit=12;if(!e.isComposing)render();});input.addEventListener('compositionend',()=>render());
       more.addEventListener('click',()=>{limit+=12;render();});retry.addEventListener('click',()=>{indexPromise=null;status.textContent='重新載入中…';render();});
+      clearSearch.addEventListener('click',()=>{input.value='';limit=12;render();input.focus();});
       dialog.querySelector('.global-search-close').addEventListener('click',close);
-      dialog.addEventListener('close',()=>{document.body.classList.remove('search-open');const target=returnFocus?.isConnected&&returnFocus.getClientRects().length?returnFocus:document.querySelector('.menu-toggle');target?.focus();});
+      dialog.addEventListener('close',()=>{document.body.classList.remove('search-open');const canFocus=el=>el?.isConnected&&el!==document.body&&el!==document.documentElement&&el.getClientRects().length>0;const target=canFocus(returnFocus)?returnFocus:[trigger,document.querySelector('.menu-toggle')].find(canFocus);target?.focus();});
       dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close();}});
       dialog.addEventListener('keydown',e=>{
         if(e.isComposing)return;

@@ -21,6 +21,7 @@ const count=async(n)=>page.waitForFunction(n=>document.querySelector('#case-coun
 try{
  await go('index.html');
  await check('Public-page search, lazy index and Cmd+K keyboard navigation',async()=>{
+  try {
   assert(!await page.evaluate(()=>performance.getEntriesByType('resource').some(e=>e.name.includes('search-index'))));
   await page.keyboard.press('Meta+k');await page.locator('#global-search-dialog').waitFor({state:'visible'});
   const input=page.locator('#global-search-dialog input');await input.fill('文德國小');await page.locator('.global-search-result[href$="/achievement-wende-school-center.html"]').waitFor();
@@ -28,8 +29,13 @@ try{
   await input.fill('鳳山');await page.waitForFunction(()=>document.querySelectorAll('.global-search-result').length>1);
   const id=await input.getAttribute('aria-activedescendant');await page.keyboard.press('ArrowDown');assert.notEqual(await input.getAttribute('aria-activedescendant'),id);
   await input.fill('');await page.locator('[data-search-more]').click();await page.waitForFunction(()=>document.querySelectorAll('.global-search-result').length===24);
-  await input.fill('不存在XYZ<svg onload=alert(1)>');await page.waitForFunction(()=>document.querySelector('.global-search-status').textContent.includes('找不到'));
-  assert.equal(await page.locator('#global-search-dialog svg').count(),0);await page.keyboard.press('Escape');
+  await input.fill('不存在XYZ<svg onload=alert(1)>');
+  await page.waitForFunction(()=>{const empty=document.querySelector('[data-search-empty]');return empty&&!empty.hidden;});
+  assert.match(await page.locator('.global-search-status').innerText(),/沒有找到符合內容/);
+  assert.equal(await page.locator('#global-search-dialog svg').count(),0);
+  } finally {
+   await page.evaluate(()=>{const dialog=document.querySelector('#global-search-dialog');if(dialog?.open)dialog.close();document.body.classList.remove('search-open');}).catch(()=>{});
+  }
  });
  await check('Mobile search restores focus to the visible menu button',async()=>{
   await page.setViewportSize({width:390,height:844});await page.locator('.menu-toggle').click();await page.locator('.global-search-trigger').click();await page.keyboard.press('Escape');await page.locator('#global-search-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.classList.contains('menu-toggle'));

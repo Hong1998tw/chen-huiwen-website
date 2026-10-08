@@ -30,7 +30,13 @@ class PublicProjectionTests(unittest.TestCase):
             self.assertFalse(any('checkedAt' in source for source in row.get('sources', [])))
             self.assertFalse(any('publicAccessConfirmed' in media for media in row.get('media', [])))
         public.validate_schema(self.rows, self.schema)
-        self.assertEqual(raw, self.rows)
+        source_projection = copy.deepcopy(self.rows)
+        for row in source_projection:
+            latest = public.latest_history_event(row.get('history', []))
+            expected = latest.get('date', '') if latest else ''
+            self.assertEqual(expected, row['lastRecordDate'])
+            row.pop('lastRecordDate')
+        self.assertEqual(raw, source_projection)
 
     def test_public_source_rejects_review_metadata_and_unapproved_rows(self):
         with tempfile.TemporaryDirectory() as directory:

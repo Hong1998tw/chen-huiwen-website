@@ -3,7 +3,7 @@ import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
@@ -36,7 +36,13 @@ try{
   await page.locator('.hero-portrait img').evaluate(el=>el.decode());
   await page.screenshot({path:fileURLToPath(new URL('home-'+width+'.png',out))});
   await check(width+' direct homepage actions',async()=>{
-   for(const href of ['https://line.me/R/ti/p/@yve2766q','#projects']){
+   const actions=page.locator('.hero-actions a');
+   const actual=await actions.evaluateAll(rows=>rows.map(a=>({href:a.getAttribute('href'),label:a.innerText.trim()})));
+   assert.deepEqual(actual,[
+    {href:'service.html#contact',label:'聯絡服務處'},
+    {href:'https://line.me/R/ti/p/@yve2766q',label:'LINE 官方帳號 ↗'}
+   ]);
+   for(const href of ['service.html#contact','https://line.me/R/ti/p/@yve2766q']){
     const a=page.locator('.hero-actions a[href="'+href+'"]');assert(await a.isVisible());
     const b=await a.boundingBox();assert(b.y+b.height<844);
    }
@@ -121,10 +127,17 @@ try{
   assert(await page.locator('#case-search').isEnabled());assert(await page.locator('#status-filter').isEnabled());assert(await page.locator('#case-list a').first().isVisible());
   await page.locator('#case-search').fill('文德');await page.waitForFunction(()=>window.HuiwenCases?.getState().visible.length>0);await ctx.close();
  });
- if(!process.env.BASE_URL)await check('excluded petition main unchanged',async()=>{
-  const old=execFileSync('git',['show','8319451a6e104dbebe5ca2a4b359185247abd90a:petition.html'],{cwd:root,encoding:'utf8'});
-  const current=await readFile(root+'petition.html','utf8');
-  assert.equal(current.match(/<main[\s\S]*?<\/main>/)[0],old.match(/<main[\s\S]*?<\/main>/)[0]);
+ await check('petition clearly labels the external form and keeps its telephone route',async()=>{
+  const page=await browser.newPage();await page.goto(base+'petition.html');
+  const copy=await page.locator('main').innerText();
+  const disclosure=(await page.locator('.petition-panel > div > p').nth(2).innerText()).replace(/\s+/g,' ').trim();
+  assert.equal(disclosure,'線上表單會在新分頁開啟外部 Notion 網站，填寫與送出都在該網站進行；本頁不會顯示填寫或送出狀態。若不使用線上表單，可直接致電服務處。送出前請確認填寫資料正確；需要聯絡資訊時可查看服務處聯絡資訊。');
+  for(const phrase of ['把生活中的問題告訴我們，讓服務處能與你聯繫、了解需求。','道路、環境、公共設施或生活上的困難，歡迎使用線上表單登記，也可致電服務處反映。','姓名、電話與方便聯絡的時段。','說明發生什麼事、持續多久，以及希望如何改善。','可附現場照片或相關文件；若曾向機關反映，請提供案號。','法律諮詢請先確認服務資訊，再致電服務處預約。'])assert(copy.includes(phrase),phrase);
+  assert.equal(await page.locator('.prepare-list li').count(),3);
+  const form=page.locator('.petition-panel a[href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d"]');
+  assert.equal(await form.count(),1);assert.equal(await form.getAttribute('target'),'_blank');assert.equal(await form.getAttribute('rel'),'noopener noreferrer');
+  assert.equal(await page.locator('main a[href="tel:+88678212536"]').count(),1);
+  await page.close();
  });
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'service.html');
  await check('no JS current schedule and booking remain without retired cards',async()=>{assert.equal(await page.locator('.schedule-text tbody tr').count(),sessionTotal);assert.equal(await page.locator('.schedule-original,.schedule-archive,.schedule-auto-embed').count(),0);assert(await page.locator('.schedule-phone-cta').isVisible());});await ctx.close();

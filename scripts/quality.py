@@ -21,14 +21,21 @@ def run(root,args):
 def generated(root):
     before=snapshot(root)
     # Diagnostics only: a mismatch still fails the same publication gate.
-    before_text={name:(root/name).read_text(errors='replace') for name in before}
+    before_bytes={name:(root/name).read_bytes() for name in before}
     for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
     after=snapshot(root)
     if before != after:
         changed=sorted(name for name in set(before)|set(after) if before.get(name)!=after.get(name))
         print('Generated output differences: '+', '.join(changed),file=sys.stderr)
         for name in changed[:8]:
-            old=before_text.get(name,'');new=(root/name).read_text() if (root/name).exists() else ''
+            old_bytes=before_bytes.get(name,b'');new_bytes=(root/name).read_bytes() if (root/name).exists() else b''
+            try:
+                old=old_bytes.decode('utf-8');new=new_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                old_hash=hashlib.sha256(old_bytes).hexdigest() if name in before else 'missing'
+                new_hash=hashlib.sha256(new_bytes).hexdigest() if name in after else 'missing'
+                print(f'{name}: binary output differs; before_sha256={old_hash}; after_sha256={new_hash}',file=sys.stderr)
+                continue
             offset=next((i for i,(a,b) in enumerate(zip(old,new)) if a!=b),min(len(old),len(new)))
             print(f'{name}: first difference at {offset}; before={old[max(0,offset-60):offset+120]!r}; after={new[max(0,offset-60):offset+120]!r}',file=sys.stderr)
         raise RuntimeError('GENERATED_STALE: rebuild, review and commit generated outputs before checking')

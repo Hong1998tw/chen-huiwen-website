@@ -54,11 +54,29 @@ try{
   });
   await context.close();
  }
- // Explicit build chrome cannot mutate the excluded form's main bytes.
- await check('Excluded petition main remains byte identical to reviewed baseline',async()=>{
+ await check('Petition preserves its original content and target while adding only the approved disclosure',async()=>{
   const baseline=execFileSync('git',['show','49660bf529c3d41008217125464594571b83d202:petition.html'],{cwd:root,encoding:'utf8'});
   const current=await (await fetch(base+'petition.html')).text();
-  assert.equal(current.match(/<main\b[\s\S]*?<\/main>/)[0],baseline.match(/<main\b[\s\S]*?<\/main>/)[0]);
+  const getMain=source=>{
+   const start=source.indexOf('<main');
+   const end=source.indexOf('</main>',start);
+   assert(start>=0&&end>=0,'petition main is present');
+   return source.slice(start,end+7);
+  };
+  const baselineMain=getMain(baseline),main=getMain(current);
+  const priorStart=baselineMain.indexOf('<p>線上表單為');
+  const priorEnd=baselineMain.indexOf('</p>',priorStart)+4;
+  const noticeStart=main.indexOf('<p>線上表單會在新分頁');
+  const noticeEnd=main.indexOf('</p>',noticeStart)+4;
+  assert(priorStart>=0&&priorEnd>priorStart&&noticeStart>=0&&noticeEnd>noticeStart);
+  const priorNotice=baselineMain.slice(priorStart,priorEnd);
+  const disclosure=main.slice(noticeStart,noticeEnd);
+  const expected='<p>線上表單會在新分頁開啟外部 Notion 網站，填寫與送出都在該網站進行；本頁不會顯示填寫或送出狀態。若不使用線上表單，可直接致電服務處。送出前請確認填寫資料正確；需要聯絡資訊時可查看<a class="text-link" href="service.html#contact">服務處聯絡資訊</a>。</p>';
+  assert.equal(disclosure,expected,'The added copy discloses the outside form without promising a service outcome');
+  assert.equal(main.replace(disclosure,priorNotice),baselineMain,'Every prior main-content element outside the approved disclosure remains intact');
+  assert(main.includes('<a class="button button-green" href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d" target="_blank" rel="noopener noreferrer">前往服務案件登記 ↗</a>'));
+  assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 ↗</a>'));
  });
+
 }finally{await browser.close();server?.kill('SIGTERM');}
 const report={engine,status:failures.length?'FAIL':'PASS',results,failures};await writeFile(new URL(engine+'-report.json',out),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(failures.length)process.exitCode=1;

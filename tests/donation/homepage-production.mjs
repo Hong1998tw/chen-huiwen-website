@@ -27,7 +27,9 @@ try{
   assert.equal(await page.locator('h1').count(),1);
   const portraitBox=await page.locator('.hero-portrait').boundingBox(),heroBox=await page.locator('.hero').boundingBox();
   assert(portraitBox.width>=heroBox.width*(width>=768?.36:.95),'Approved portrait must fill its responsive column');
-  assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+  assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
+  assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');
+  assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
   assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
   assert.equal(await page.locator('main [data-home-legal-month]').getAttribute('data-home-legal-month'),schedule.month);
   assert.deepEqual(await page.locator('.civic-story-grid [data-record-id]').evaluateAll(xs=>xs.map(x=>x.dataset.recordId)),ids);
@@ -36,7 +38,7 @@ try{
   assert.equal(await page.locator('[data-home-event] time').getAttribute('datetime'),event.start);
   assert((await page.locator('[data-home-event]').innerText()).includes(event.location));
   const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
-  assert.deepEqual(axe.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);
+  assert.deepEqual(axe.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),[]);
   await page.evaluate(()=>scrollTo(0,0));
   await page.screenshot({path:out+`home-${width}-top.png`});
   await page.screenshot({path:out+`home-${width}-full.png`,fullPage:true});
@@ -53,7 +55,14 @@ try{
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   await page.goto(base);await page.addStyleTag({content:'html{font-size:200%!important}'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',reflow:'PASS',search:'PASS',lawyerKeyboardEntry:'PASS'});
+  const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{left:r.left,right:r.right,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
+  assert(legalLayout.height>=44,JSON.stringify(legalLayout));
+  assert(legalLayout.left>=0&&legalLayout.right<=width,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollWidth<=legalLayout.clientWidth,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollHeight<=legalLayout.clientHeight,JSON.stringify(legalLayout));
+  assert.equal(legalLayout.whiteSpace,'normal');
+  await page.screenshot({path:out+`home-${width}-text-200-top.png`});
+  report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',reflow:'PASS',search:'PASS',lawyerKeyboardEntry:'PASS',text200LegalShortcut:legalLayout});
   await ctx.close();
  }
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}}),page=await ctx.newPage();
