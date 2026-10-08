@@ -308,6 +308,11 @@ try {
     const viewportHeight=await page.evaluate(()=>innerHeight);
     assert(headingBox.y>=0&&headingBox.y+headingBox.height<=viewportHeight,JSON.stringify({headingBox,viewportHeight}));
     await page.keyboard.press('Tab');
+    await page.waitForFunction(()=>{
+      const first=document.querySelector('#explore-achievements .explore-result-card a');
+      const rect=first?.getBoundingClientRect();
+      return !!rect&&rect.top>=0&&rect.bottom<=innerHeight;
+    },null,{timeout:5000});
     const nextFocus=await page.evaluate(()=>{
       const first=document.querySelector('#explore-achievements .explore-result-card a');
       const rect=first?.getBoundingClientRect();

@@ -232,7 +232,7 @@
         currentPage=page;
         render();syncURL('push');
         const heading=document.getElementById('explore-achievement-heading');
-        heading.scrollIntoView({behavior:motion(),block:'start'});
+        heading.scrollIntoView({behavior:'instant',block:'start'});
         heading.focus({preventScroll:true});
       });
       pagination.append(button);
