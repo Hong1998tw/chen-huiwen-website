@@ -238,7 +238,7 @@
         render();syncURL('push');
         const heading=document.getElementById('explore-achievement-heading');
         heading.scrollIntoView({behavior:'instant',block:'start'});
-        pagination.querySelector('[aria-current="page"]')?.focus({preventScroll:true});
+        heading.focus({preventScroll:true});
       });
       pagination.append(button);
     };
