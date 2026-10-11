@@ -10,7 +10,7 @@ permissions:
 jobs:
   publication-path-guard:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     steps:
       - name: Checkout trusted base revision (PR code is never executed here)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,6 +29,10 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
 
+      - name: Install pinned dependencies for trusted homepage rebuild
+        if: startsWith(github.event.pull_request.head.ref, 'notion-publish/home-content/')
+        run: python -m pip install --disable-pip-version-check beautifulsoup4==4.13.5 'fonttools[woff]==4.66.1' brotli==1.2.0 zopfli==0.4.3
+
       - name: Enforce executor path allowlist from the base revision
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -42,4 +46,4 @@ jobs:
             echo "Bootstrap: the trusted base revision has no guard yet; nothing to enforce."
             exit 0
           fi
-          git diff --name-only "${BASE_SHA}...${HEAD_SHA}" | python scripts/publication_path_guard.py
+          git diff --name-only --no-renames "${BASE_SHA}...${HEAD_SHA}" | python scripts/publication_path_guard.py

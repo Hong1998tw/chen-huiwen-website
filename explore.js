@@ -84,7 +84,12 @@
       if (!heading) return;
       const titleText = heading.textContent.trim();
       const direct = article.querySelector('a[href^="news-"],a[href*="news-"]');
-      const url = direct?.getAttribute('href') || (article.id ? `news.html#${article.id}` : 'news.html');
+      const officialSource = [...article.querySelectorAll('a[href^="https://"]')].find(link => {
+        try { const host = new URL(link.href).hostname; return host === 'kcc.gov.tw' || host.endsWith('.kcc.gov.tw'); }
+        catch { return false; }
+      });
+      const externalSource = officialSource || article.querySelector('a[href^="https://"]');
+      const url = direct?.getAttribute('href') || (article.id ? `news.html#${article.id}` : externalSource?.href || 'news.html');
       const key = `${titleText}|${url}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -255,6 +260,7 @@
     if(news.length){
       news.forEach(item=>{
         const a=node('a',undefined,'explore-related-item');a.href=item.url;
+        if(/^https:\/\//i.test(item.url)){a.target='_blank';a.rel='noopener noreferrer';}
         a.append(node('span','新聞','global-search-type'),node('strong',item.title),node('small',item.date));newsBox.append(a);
       });
     }else newsBox.append(node('p','目前沒有符合主題的新聞。'));

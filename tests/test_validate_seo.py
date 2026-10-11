@@ -19,6 +19,12 @@ class SeoValidatorRegressionTests(unittest.TestCase):
     def make_site(self, temp_root: Path) -> None:
         (temp_root / 'data').mkdir(exist_ok=True)
         copy2(ROOT / 'data/events.json', temp_root / 'data/events.json')
+        copy2(ROOT / 'data/page-content.json', temp_root / 'data/page-content.json')
+        for relative in ('assets/og/achievement-jingwu-sidewalk-ramp.png', 'assets/site-share-20260909.png'):
+            source = ROOT / relative
+            target = temp_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copy2(source, target)
         for path in ROOT.glob("*.html"):
             copy2(path, temp_root / path.name)
         for path in ROOT.glob("*/index.html"):
@@ -56,6 +62,40 @@ class SeoValidatorRegressionTests(unittest.TestCase):
             code, result = self.run_validator(root)
             self.assertNotEqual(code, 0)
             self.assertTrue(any("this achievement's share card" in e for e in result['errors']))
+
+    def test_accepts_a_valid_achievement_seo_image_override(self):
+        from scripts.page_seo import apply as apply_seo
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_site(root)
+            path = 'achievement-dingbao-bridge.html'
+            overlay = json.loads((root / 'data/page-content.json').read_text())
+            seo = {'title': '政績分享圖測試｜陳慧文', 'description': '檢查已設定的政績分享圖是否套用至社群中繼資料與網頁結構化資料。',
+                   'image': BASE + 'assets/site-share-20260909.png', 'imageAlt': '陳慧文官網分享圖'}
+            overlay['pages'].setdefault(path, {})['seo'] = seo
+            (root / 'data/page-content.json').write_text(json.dumps(overlay, ensure_ascii=False))
+            page = root / path
+            page.write_text(apply_seo(page.read_text(), seo, path, root))
+            code, result = self.run_validator(root)
+            self.assertEqual(code, 0, result['errors'])
+
+    def test_unpublished_page_is_not_required_in_sitemap_or_indexable_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_site(root)
+            path = 'terms.html'
+            state_path = root / 'data/page-content.json'
+            state = json.loads(state_path.read_text())
+            state['pages'].setdefault(path, {})['status'] = 'unpublished'
+            state_path.write_text(json.dumps(state))
+            sitemap = root / 'sitemap.xml'
+            tree = ET.parse(sitemap)
+            for entry in list(tree.getroot()):
+                if entry.findtext('{*}loc') == BASE + path:
+                    tree.getroot().remove(entry)
+            tree.write(sitemap, encoding='unicode', xml_declaration=True)
+            code, result = self.run_validator(root)
+            self.assertEqual(code, 0, result['errors'])
 
     def test_rejects_missing_achievement_schema(self):
         import re

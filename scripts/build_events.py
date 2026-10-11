@@ -51,9 +51,12 @@ def validate(event):
         raise ValueError('Event must be an object')
     if event.get('location') is not None and not isinstance(event['location'], str):
         raise ValueError('Event location must be public text')
-    for key in ('id', 'name', 'start', 'content', 'registration'):
+    for key in ('id', 'name', 'start'):
         if not isinstance(event.get(key), str) or not event[key].strip():
             raise ValueError(f'Missing event field: {key}')
+    for key in ('content', 'registration'):
+        if event.get(key) is not None and not isinstance(event[key], str):
+            raise ValueError(f'Event {key} must be public text')
     if not EVENT_ID.fullmatch(event['id']):
         raise ValueError('Event id must be a lowercase URL slug')
     start = parse_time(event['start'])
@@ -134,7 +137,7 @@ def calendar_url(event):
     return 'https://calendar.google.com/calendar/r/eventedit?' + urlencode({
         'action': 'TEMPLATE', 'text': event['name'], 'dates': dates,
         'stz': 'Asia/Taipei', 'etz': 'Asia/Taipei',
-        'details': event['content'] + '\n\n' + CALENDAR_COPY_NOTICE + '\n' + SITE + event_path(event),
+        'details': (event.get('content') or '活動內容請以主辦單位公告為準。') + '\n\n' + CALENDAR_COPY_NOTICE + '\n' + SITE + event_path(event),
         'location': (event.get('location') or '')})
 
 
@@ -183,7 +186,7 @@ def render_calendar(event):
     if event.get('end'):
         return f'<a class="button button-outline event-calendar-link" href="{e(calendar_url(event))}" target="_blank" rel="noopener noreferrer">加入 Google 日曆 ↗</a>'
     field_id = 'reminder-duration-' + event['id']
-    data = {'name': event['name'], 'start': event['start'], 'content': event['content'],
+    data = {'name': event['name'], 'start': event['start'], 'content': event.get('content') or '',
             'location': (event.get('location') or ''), 'url': SITE + event_path(event)}
     return (
         f'<details class="event-reminder" data-event-reminder="{e(json.dumps(data, ensure_ascii=False))}">'
@@ -241,8 +244,9 @@ def render_events(events):
         start = parse_time(event['start']).astimezone(TAIPEI)
         body += f'<li class="event-timeline-item"><div class="event-date-rail" aria-hidden="true"><span>{start:%Y}</span><strong>{start:%m.%d}</strong><span>星期{"一二三四五六日"[start.weekday()]}</span></div><article class="event-card" id="event-{e(event["id"])}" data-event-status="{status}"><p class="event-status">{STATUS_LABELS[status]}</p><h2><a href="{e(event_path(event))}">{e(event["name"])}</a></h2>'
         body += render_change(event) + render_facts(event)
-        summary = ' '.join(event['content'].split())
-        body += f'<p class="event-summary">{e(summary[:180] + ("…" if len(summary) > 180 else ""))}</p>'
+        summary = ' '.join((event.get('content') or '').split())
+        if summary:
+            body += f'<p class="event-summary">{e(summary[:180] + ("…" if len(summary) > 180 else ""))}</p>'
         body += render_actions(event) + render_notice(event) + '</article></li>'
     return body + '</ol></section>'
 
@@ -254,7 +258,9 @@ def render_detail(event):
     body += f'<article class="event-detail" id="event-{e(event["id"])}" data-event-status="{status}"><header><p class="event-status">{STATUS_LABELS[status]}</p><h1>{e(event["name"])}</h1></header>'
     body += render_change(event) + render_facts(event) + render_actions(event, detail=True)
     body += '<section class="event-detail-section"><h2>活動內容</h2>'
-    body += ''.join(f'<p>{e(p)}</p>' for p in event['content'].split('\n') if p.strip())
+    body += ''.join(f'<p>{e(p)}</p>' for p in (event.get('content') or '').split('\n') if p.strip())
+    if not (event.get('content') or '').strip():
+        body += '<p>活動內容請以主辦單位公告為準。</p>'
     body += '</section>'
     if event.get('images'):
         body += '<section class="event-detail-section"><h2>活動圖卡</h2><div class="event-posters">'
@@ -262,7 +268,8 @@ def render_detail(event):
             body += f'<figure><a href="{e(image["src"])}" target="_blank" rel="noopener noreferrer" aria-label="開啟完整{e(image["caption"])}"><img src="{e(image["src"])}" width="{image["width"]}" height="{image["height"]}" alt="{e(image["alt"])}" loading="lazy" decoding="async"></a><figcaption>{e(image["caption"])} · {e(image["credit"])}</figcaption><a class="text-link" href="{e(image["src"])}" download>下載{e(image["caption"])}</a></figure>'
         body += '</div></section>'
     body += '<section class="event-detail-section"><h2>報名與洽詢</h2>'
-    body += '<p>本活動已取消，請勿依原行程前往。</p>' if status == 'cancelled' else f'<p>{e(event["registration"])}</p>'
+    registration = (event.get('registration') or '').strip()
+    body += '<p>本活動已取消，請勿依原行程前往。</p>' if status == 'cancelled' else f'<p>{e(registration) if registration else "參與方式請以主辦單位公告為準。"}</p>'
     body += '</section>' + render_notice(event)
     body += f'<p><a class="text-link event-back-link" href="activities.html#event-{e(event["id"])}">← 回到活動時間軸</a></p></article></div>'
     return body
@@ -272,7 +279,7 @@ def structured_event(event):
     validate(event)
     status = event.get('status', 'scheduled')
     data = {'@context': 'https://schema.org', '@type': 'Event', '@id': SITE + event_path(event) + '#event',
-            'name': event['name'], 'description': event['content'], 'url': SITE + event_path(event),
+            'name': event['name'], 'description': event.get('content') or event['name'], 'url': SITE + event_path(event),
             'startDate': event['start'],
             'eventStatus': 'https://schema.org/' + {'scheduled': 'EventScheduled', 'rescheduled': 'EventRescheduled', 'cancelled': 'EventCancelled'}[status]}
     if event.get('end'):
@@ -291,7 +298,7 @@ def render_page(template, events, event=None):
     if event:
         path = event_path(event)
         title = event['name'] + '｜' + parse_time(event['start']).astimezone(TAIPEI).strftime('%Y/%m/%d') + '｜陳慧文公開行程'
-        description = (STATUS_LABELS[event.get('status', 'scheduled')] + '：' + event['name'] + '。' + time_text(event) + '，' + (event.get('location') or '地點以機關或主辦單位公告為準') + '。' + ' '.join(event['content'].split()))[:280]
+        description = (STATUS_LABELS[event.get('status', 'scheduled')] + '：' + event['name'] + '。' + time_text(event) + '，' + (event.get('location') or '地點以機關或主辦單位公告為準') + '。' + ' '.join((event.get('content') or '').split()))[:280]
         image = event['images'][0] if event.get('images') else BRAND_IMAGE
         body = render_detail(event)
         structured = [{'@context': 'https://schema.org', '@type': 'WebPage', '@id': SITE + path + '#page', 'url': SITE + path, 'name': title, 'description': description, 'inLanguage': 'zh-Hant-TW', 'mainEntity': {'@id': SITE + path + '#event'}}, structured_event(event)]

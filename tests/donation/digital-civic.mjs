@@ -85,6 +85,13 @@ try {
     await page.locator('#case-search').fill('');
     await page.waitForFunction(() => document.querySelectorAll('#case-list .case-card:not([hidden])').length === 10);
   });
+  await check('achievement pagination keeps keyboard focus on the new current page', async () => {
+    const second = page.locator('.case-page-button[aria-label="第 2 頁"]');
+    await second.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.case-page-button[aria-current="page"]')?.textContent === '2');
+    assert.equal(await page.locator('.case-page-button[aria-current="page"]').evaluate(el => el === document.activeElement), true);
+  });
 
   await check('achievement subcategory filter supports pet cases', async () => {
     const select = page.locator('#subcategory-filter');
@@ -132,6 +139,47 @@ try {
     assert((await page.locator('#explore-achievements .explore-result-card').count()) > 0);
     await page.locator('#explore-related').waitFor({ state: 'visible' });
     assert.match(await page.locator('#explore-related').textContent(), /方便延伸閱讀/);
+  });
+
+  await page.goto(base + 'explore.html?type=topic&value=' + encodeURIComponent('交通與基建'));
+  await check('Explore article without a local route opens its official source', async () => {
+    const article = page.locator('#explore-news-list a[href="https://www.kcc.gov.tw/News_Content.aspx?n=47&s=16645"]');
+    await article.waitFor({state:'visible'});
+    assert.equal(await article.getAttribute('target'),'_blank');
+    assert.equal(await article.getAttribute('rel'),'noopener noreferrer');
+  });
+
+  await page.goto(base + 'news.html');
+  await check('news pagination restores focus after its controls rerender', async () => {
+    const second = page.locator('.news-page-button[aria-label="新聞報導第 2 頁"]');
+    await second.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.news-page-button[aria-current="page"]')?.textContent === '2');
+    assert.equal(await page.locator('.news-page-button[aria-current="page"]').evaluate(el => el === document.activeElement), true);
+  });
+
+  await page.goto(base + 'press.html');
+  await check('press pagination restores focus after its controls rerender', async () => {
+    const second = page.locator('.news-page-button[aria-label="新聞發稿第 2 頁"]');
+    assert.equal(await second.count(), 1, 'press page 2 must exist so the keyboard focus path is exercised');
+    await second.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.news-page-button[aria-current="page"]')?.textContent === '2');
+    assert.equal(await page.locator('.news-page-button[aria-current="page"]').evaluate(el => el === document.activeElement), true);
+  });
+
+  await page.goto(base + 'achievements.html');
+  await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
+  await check('keyboard map marker selection restores focus to the rebuilt marker', async () => {
+    await page.locator('#map-fit').click();
+    const marker = page.locator('#achievement-map .leaflet-marker-icon').first();
+    await marker.waitFor({state:'visible'});
+    const title = await marker.getAttribute('title');
+    await marker.focus();
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => Boolean(window.HuiwenCases?.getState().selectedId));
+    assert.equal(await page.locator('#achievement-map .leaflet-marker-icon:focus').count(),1);
+    assert.equal(await page.locator('#achievement-map .leaflet-marker-icon:focus').getAttribute('title'),title);
   });
 
   await page.goto(base + 'achievement-wende-school-center.html');

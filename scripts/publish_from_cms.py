@@ -229,7 +229,7 @@ def home_candidate(item, root, draft):
         return (2 <= len(ids) <= 13 and all(isinstance(i, str) and re.fullmatch(r'[a-z0-9-]{1,100}', i) for i in ids)
                 and len(set(ids)) == len(ids) and isinstance(value['summaries'], dict)
                 and set(value['summaries']) == set(ids)
-                and all(isinstance(s, str) and s.strip() and len(s) <= 500 and
+                and all(isinstance(s, str) and len(s) <= 500 and
                         not re.search(r'[\x00-\x1f\x7f]|<\s*/?[a-z!?]', s, re.I) for s in value['summaries'].values()))
     if not valid(edits) or not valid(baseline):
         raise engine.PublishError('VALIDATION', ['首頁專題排序格式不正確'])

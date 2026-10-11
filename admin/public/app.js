@@ -418,7 +418,7 @@ function pageControls() {
   if (newEditorial && pageDraft?.payload) {
     try {
       const data = JSON.parse(pageDraft.payload).editorial;
-      newEditorialReady = Boolean(data?.summary && data?.seo?.description && data?.blocks?.some(block => block.text || block.title || block.url || block.address));
+      newEditorialReady = Boolean(data?.seo?.description && data?.blocks?.some(block => block.text || block.title || block.url || block.address));
     } catch { newEditorialReady = false; }
   }
   const removed = editable && ["deleted", "unpublished"].includes(selectedPage?.publication_status);
@@ -1114,6 +1114,7 @@ async function selectPage(page) {
   extraBlocksBase = null;
   let homeUnavailable = false;
   let caseBaselineRebased = false;
+  let pageBaselineRebased = false;
   $("#page-editor-title").textContent = page.title || page.path;
   $("#page-path").textContent = `/${page.path} · 來源：${page.source_path}`;
   $("#page-status").textContent = pageStatusLabel(page);
@@ -1169,8 +1170,13 @@ async function selectPage(page) {
           const current = await api("/api/home");
           if (request !== pageSelectionRequest) return false;
           homeCases = new Map(current.cases.map(record => [record.id, record]));
-          if (!homeDraft) homeDraft = structuredClone(current.home);
-          if (!homeBase) homeBase = structuredClone(current.home);
+          if (!homeDraft) {
+            homeDraft = structuredClone(current.home);
+            homeBase = structuredClone(current.home);
+          } else if (sameValue(homeDraft, current.home) && !sameValue(homeBase, current.home)) {
+            homeBase = structuredClone(current.home);
+            pageBaselineRebased = true;
+          }
         } catch (error) {
           if (request !== pageSelectionRequest) return false;
           if (homeDraft) throw error;
@@ -1180,20 +1186,34 @@ async function selectPage(page) {
       if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
         const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
         if (request !== pageSelectionRequest) return false;
-        if (!editorialDraft) editorialDraft = structuredClone(current);
-        if (!editorialBase) editorialBase = structuredClone(current);
+        if (!editorialDraft) {
+          editorialDraft = structuredClone(current);
+          editorialBase = structuredClone(current);
+        } else if (sameValue(editorialDraft, current) && !sameValue(editorialBase, current)) {
+          editorialBase = structuredClone(current);
+          pageBaselineRebased = true;
+        }
       }
       if (!editorialDraft && page.source_kind !== "editorial-draft" && page.path !== "index.html" && !isCasePage(page)) {
         const currentBlocks = (await api(`/api/page-blocks?path=${encodeURIComponent(page.path)}`)).blocks;
         if (request !== pageSelectionRequest) return false;
-        if (!extraBlocks) extraBlocks = structuredClone(currentBlocks);
-        if (!extraBlocksBase) extraBlocksBase = structuredClone(currentBlocks);
+        if (!extraBlocks) {
+          extraBlocks = structuredClone(currentBlocks);
+          extraBlocksBase = structuredClone(currentBlocks);
+        } else if (sameValue(extraBlocks, currentBlocks) && !sameValue(extraBlocksBase, currentBlocks)) {
+          extraBlocksBase = structuredClone(currentBlocks);
+          pageBaselineRebased = true;
+        }
+      }
+      if (pageBaselineRebased) {
+        pageDirty = true;
+        pageEditRevision++;
       }
       const history = await api(`/api/page-draft/history?path=${encodeURIComponent(page.path)}`);
       if (request !== pageSelectionRequest) return false;
       renderPageHistory(history.versions || []);
       $("#page-history-panel").hidden = !history.versions?.length;
-      setPageStatus(caseBaselineRebased ? "正式政績內容已包含此草稿變更；基準已安全對齊，儲存草稿後即可發布其他獨立變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
+      setPageStatus(caseBaselineRebased || pageBaselineRebased ? "正式來源已包含此草稿內容；比較基準已安全對齊，儲存草稿後即可發布後續變更。" : homeUnavailable ? "首頁專題來源暫時無法載入；排序請稍後重試，其他頁面文字仍可編輯。" :
         pageDraft?.version ? `草稿 v${pageDraft.version} · ${pageDraft.publication_status === "unpublished" ? "已下架" : pageDraft.publication_status === "deleted" ? "垃圾桶" : "已儲存"}` : "尚無草稿；可點選下方正式頁面文字開始編輯。");
     } else {
       $("#page-history-panel").hidden = true;

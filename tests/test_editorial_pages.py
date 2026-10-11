@@ -1,4 +1,6 @@
 import copy
+import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -30,6 +32,16 @@ class EditorialPages(unittest.TestCase):
         self.assertIn('2026-09-27T10:00+08:00',html)
         self.assertIn('<h1>議會公開資料整理</h1>',html)
 
+    def test_editorial_summary_and_timeline_description_are_optional(self):
+        path='page-council-public-record.html'
+        record=self.sample()
+        record['summary']=''
+        record['blocks']=[{'type':'timeline','title':'提案時間','text':'','date':'2026-09-27','url':'','alt':'','credit':'','address':'','publicAccessConfirmed':False}]
+        validate_page(path,record,ROOT)
+        rendered=render_page(path,record,ROOT)
+        self.assertNotIn('<h1>議會公開資料整理</h1><p></p>',rendered)
+        self.assertNotIn('<p></p></div></article>',rendered)
+
     def test_invalid_calendar_time_and_vague_location_fail_closed(self):
         path='page-council-public-record.html'
         record=self.sample(); record['eventStart']='2026-02-30T10:00+08:00'
@@ -57,6 +69,9 @@ class EditorialPages(unittest.TestCase):
         self.assertIn('property="og:description" content="'+seo['description']+'"',changed)
         self.assertIn('name="twitter:description" content="'+seo['description']+'"',changed)
         self.assertIn('"description":"'+seo['description']+'"',changed)
+        schema=next(json.loads(match) for match in re.findall(r'<script type="application/ld\+json">(.*?)</script>',changed) if 'WebPage' in match)
+        webpage=next(node for node in schema if isinstance(node,dict) and node.get('@type')=='WebPage')
+        self.assertEqual(webpage['image'],seo['image'])
 
     def test_publisher_path_guard_allows_exact_new_page_and_parent(self):
         branch='notion-publish/editorial-page/page-council-public-record.html-abcdef12'

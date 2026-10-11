@@ -34,6 +34,7 @@ function harness(api: (path: string, method?: string, body?: unknown) => Promise
   const noOp = () => {};
   const context = vm.createContext({
     api, $: node, document: { getElementById: node }, structuredClone,
+    sameValue: (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right),
     confirm: () => true, isPageEditable: () => true, isCasePage: () => false,
     pageStatusLabel: () => "正式頁面", setPageStatus: (value: string) => { node("#page-draft-status").textContent = value; },
     pageControls: noOp, renderCaseEditor: noOp, renderHomeEditor: noOp,
@@ -81,6 +82,38 @@ test("stale request failure does not turn the newer page into an error", async (
   assert.equal(await first, false);
   assert.equal(h.read("pageLoadFailed"), false);
   assert.equal(h.read("pageFields.get('title').value"), "B");
+});
+
+test("page reload rebases an unchanged home draft after publication", async () => {
+  const current = { featured: "case-b", reading: ["case-a"], summaries: { "case-a": "A", "case-b": "B" } };
+  const staleBase = { featured: "case-a", reading: ["case-b"], summaries: { "case-a": "A", "case-b": "B" } };
+  const h = harness(async path => path.startsWith("/api/page-draft?")
+    ? { draft: { version: 4, payload: JSON.stringify({ home: current, homeBase: staleBase }) } }
+    : path === "/api/home" ? { home: current, cases: [] }
+      : path.includes("/history") ? { versions: [] } : { blocks: [] });
+  const homePage = { ...pageA, path: "index.html", title: "首頁" };
+  h.context.homePage = homePage;
+  assert.equal(await h.read("selectPage(homePage)"), true);
+  assert.equal(h.read("pageDirty"), true);
+  assert.equal(h.read("pageEditRevision"), 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.read("homeBase"))), current);
+  assert.match(h.node("#page-draft-status").textContent, /比較基準已安全對齊/);
+});
+
+test("page reload preserves a home draft that diverges from the published source", async () => {
+  const current = { featured: "case-b", reading: ["case-a"], summaries: { "case-a": "A", "case-b": "B" } };
+  const draftHome = { ...current, featured: "case-a", reading: ["case-b"] };
+  const staleBase = { ...current, featured: "case-c", reading: ["case-a"] };
+  const h = harness(async path => path.startsWith("/api/page-draft?")
+    ? { draft: { version: 4, payload: JSON.stringify({ home: draftHome, homeBase: staleBase }) } }
+    : path === "/api/home" ? { home: current, cases: [] }
+      : path.includes("/history") ? { versions: [] } : { blocks: [] });
+  const homePage = { ...pageA, path: "index.html", title: "首頁" };
+  h.context.homePage = homePage;
+  assert.equal(await h.read("selectPage(homePage)"), true);
+  assert.equal(h.read("pageDirty"), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.read("homeBase"))), staleBase);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.read("homeDraft"))), draftHome);
 });
 
 test("current load failure offers retry and leaves editing gated", async () => {
