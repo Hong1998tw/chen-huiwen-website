@@ -162,7 +162,7 @@
     const button=document.createElement('button'); button.type='button'; button.className='news-page-button'; button.textContent=text;
     button.disabled=Boolean(options.disabled); if(options.current)button.setAttribute('aria-current','page');
     button.setAttribute('aria-label',options.label||`${pageLabel}第 ${page} 頁`);
-    button.addEventListener('click',()=>{currentPage=page;render();section.scrollIntoView({behavior:'smooth',block:'start'});});
+    button.addEventListener('click',()=>{currentPage=page;render();pagination.querySelector('[aria-current="page"]')?.focus();section.scrollIntoView({behavior:'smooth',block:'start'});});
     return button;
   };
   const renderPagination=(total,pages)=>{

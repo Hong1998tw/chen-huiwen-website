@@ -135,6 +135,30 @@ class ContentReviewTests(unittest.TestCase):
         self.assertNotIn('legal-schedule-month', before['newExpiredIds'])
         self.assertIn('legal-schedule-month', after['newExpiredIds'])
 
+    def test_missing_optional_schedule_review_date_is_backlog_not_error(self):
+        path = self.root / 'data/legal-schedule.json'
+        data = json.loads(path.read_text())
+        data.pop('nextReviewAt', None)
+        path.write_text(json.dumps(data))
+        result = evaluate(self.root, '2026-09-22')
+        self.assertTrue(any(row['id'] == 'legal-schedule-month:review' and row['state'] == 'review_date_missing'
+                            for row in result['findings']))
+
+    def test_missing_optional_event_update_date_keeps_due_review_report_usable(self):
+        path = self.root / 'data/events.json'
+        data = json.loads(path.read_text())
+        data['events'].append({
+            'id': 'optional-update-date-fixture', 'name': '選填來源更新日測試',
+            'start': '2026-10-20T10:00:00+08:00', 'end': None,
+            'status': 'scheduled', 'verifiedAt': '2026-10-10',
+            'reviewDueAt': '2026-10-12', 'updatedAt': None,
+        })
+        path.write_text(json.dumps(data))
+        result = evaluate(self.root, '2026-10-12')
+        row = next(item for item in result['findings'] if item['id'] == 'event-lifecycle:optional-update-date-fixture')
+        self.assertEqual(row['state'], 'reconfirmation_due')
+        self.assertEqual(row['version'], '2026-10-12:unknown')
+
     def test_same_expiry_does_not_alert_every_day(self):
         first = evaluate(self.root, '2026-10-01')
         next_day = evaluate(self.root, '2026-10-02', previous=first)

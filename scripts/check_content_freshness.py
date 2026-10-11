@@ -88,12 +88,16 @@ def evaluate(root=ROOT, as_of=None, previous=None):
                 if (session_day.year, session_day.month) != (year, month):
                     raise ValueError('Every session must belong to the declared month')
             reviewed = date.fromisoformat(payload['observedAt'])
-            due = date.fromisoformat(payload['nextReviewAt'])
-            if reviewed > due or due > last_day:
+            due_value = payload.get('nextReviewAt')
+            due = date.fromisoformat(due_value) if due_value else None
+            if due and (reviewed > due or due > last_day):
                 raise ValueError('Schedule review dates must be in chronological order')
             if payload['month'] != today.strftime('%Y-%m'):
                 add(check['id'], 'expired', 'current_month_missing', source, owner_id, action,
                     payload['month'])
+            elif due is None:
+                add(check['id'] + ':review', 'backlog', 'review_date_missing', source, owner_id,
+                    action, payload.get('observedAt', 'unknown'))
             elif today >= due:
                 add(check['id'] + ':review', 'due', 'review_due', source, owner_id,
                     '本月資料仍在適用期間；請準備下月版本並核對本月異動。' + action, due)
@@ -112,7 +116,7 @@ def evaluate(root=ROOT, as_of=None, previous=None):
                         owner_id, action, event.get('verifiedAt', 'unknown'))
                 elif today >= date.fromisoformat(due_value):
                     add(check['id'] + ':' + event['id'], 'expired', 'reconfirmation_due', source,
-                        owner_id, action, due_value + ':' + event.get('updatedAt', 'unknown'))
+                        owner_id, action, due_value + ':' + (event.get('updatedAt') or 'unknown'))
         elif kind == 'records':
             threshold = check['reviewAgeDays']
             if not isinstance(threshold, int) or threshold < 1:

@@ -73,6 +73,8 @@ def apply(source: str, value: dict, path: str, root: Path):
                 if node.get('@type') in {'WebPage', 'Article', 'ProfilePage', 'CollectionPage', 'ContactPage'} and node.get('url', node.get('@id', '')).split('#')[0] in {BASE + ('' if path == 'index.html' else path), BASE + 'index.html'}:
                     node['name'] = seo['title']
                     node['description'] = seo['description']
+                    if node.get('@type') == 'WebPage':
+                        node['image'] = seo['image']
                 for child in node.values(): update(child)
         update(data)
         output = json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c')

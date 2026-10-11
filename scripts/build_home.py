@@ -37,7 +37,8 @@ def render_event(events):
     if event.get('images'):
         image = event['images'][0]
         photo = f'<a href="{e(url)}" aria-label="查看{e(event["name"])}的完整行程與圖卡"><img src="{e(image["src"])}" width="{image["width"]}" height="{image["height"]}" alt="{e(image["alt"])}" loading="lazy" decoding="async"></a>'
-    return f'''<section class="home-recent-event" id="opening" aria-labelledby="opening-title" data-home-event="{e(event['id'])}"><div><p class="kicker">{status}</p><p class="event-date"><time datetime="{e(event['start'])}">{start.month}月{start.day}日<span>星期{'一二三四五六日'[start.weekday()]}　{start:%H:%M} 開始</span></time></p><h3 id="opening-title">{e(event['name'])}</h3><p class="event-location">{e(event.get('location', ''))}</p>{change}<p>{e(event['registration'])}</p><a class="source" href="{e(url)}">完整行程、地點與圖卡下載 ↗</a></div>{photo}</section>'''
+    registration = event.get('registration') or '參與方式請以主辦單位公告為準。'
+    return f'''<section class="home-recent-event" id="opening" aria-labelledby="opening-title" data-home-event="{e(event['id'])}"><div><p class="kicker">{status}</p><p class="event-date"><time datetime="{e(event['start'])}">{start.month}月{start.day}日<span>星期{'一二三四五六日'[start.weekday()]}　{start:%H:%M} 開始</span></time></p><h3 id="opening-title">{e(event['name'])}</h3><p class="event-location">{e(event.get('location', ''))}</p>{change}<p>{e(registration)}</p><a class="source" href="{e(url)}">完整行程、地點與圖卡下載 ↗</a></div>{photo}</section>'''
 
 
 def render_recent_local(root):

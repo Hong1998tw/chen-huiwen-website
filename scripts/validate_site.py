@@ -139,8 +139,12 @@ for runtime_path in ['data/achievements.json','data/achievement-map.json','data/
  require(runtime_path in verify_source,f'production verification: runtime live data snapshot missing {runtime_path}')
 locs=[x.text for x in ET.parse(R/'sitemap.xml').iter('{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
 require(len(locs)==len(set(locs)),'duplicate sitemap canonical')
+page_states=json.loads((R/'data/page-content.json').read_text()).get('pages',{})
+inactive_pages={name for name,entry in page_states.items() if isinstance(entry,dict) and entry.get('status','published') in {'unpublished','deleted'}}
 for name,doc in pages.items():
- if name not in ('404.html','offline.html'):require(doc.select_one('link[rel="canonical"]')['href'] in locs,f'{name}: sitemap canonical')
+ canonical=doc.select_one('link[rel="canonical"]')
+ if name not in ('404.html','offline.html') and name not in inactive_pages:require(canonical and canonical['href'] in locs,f'{name}: sitemap canonical')
+ if name in inactive_pages:require(not canonical or canonical['href'] not in locs,f'{name}: inactive page in sitemap')
 for p in (R/'data').glob('*.json'):json.loads(p.read_text())
 for width in [240,480,800]:
  for fmt in ['avif','webp']:require((R/f'assets/chen-huiwen-{width}.{fmt}').stat().st_size<100000,'portrait size budget')

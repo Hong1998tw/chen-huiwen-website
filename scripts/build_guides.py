@@ -119,7 +119,7 @@ def load_office(root):
 
 def resolve_source(source, legal):
     if source.get('reference') == 'legal-schedule':
-        resolved = {'title': legal['sourceTitle'], 'url': legal['sourceUrl'], 'checkedAt': legal['observedAt']}
+        resolved = {'title': legal.get('sourceTitle') or '服務處公開排程', 'url': legal['sourceUrl'], 'checkedAt': legal['observedAt']}
         validate_url(resolved['url'])
         date.fromisoformat(resolved['checkedAt'])
         return resolved

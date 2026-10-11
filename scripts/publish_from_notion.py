@@ -279,6 +279,7 @@ class Candidate:
     digest: str
     preserved: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    generated_files: set = field(default_factory=set, repr=False)
 
     @property
     def branch(self):
@@ -304,14 +305,14 @@ def normalize_event(fields):
         'start': clean_datetime(fields.get('start'), '開始', errors),
         'end': clean_datetime(fields.get('end'), '結束', errors, required=False),
         'location': clean_text(fields.get('location'), '已公開活動地點或地址', errors, required=False, max_len=500),
-        'content': clean_text(fields.get('content'), '活動說明', errors, multiline=True, max_len=4000),
-        'registration': clean_text(fields.get('registration'), '報名方式', errors, max_len=300),
+        'content': clean_text(fields.get('content'), '活動說明', errors, required=False, multiline=True, max_len=4000) or '',
+        'registration': clean_text(fields.get('registration'), '報名方式', errors, required=False, max_len=300) or '',
         'sourceUrl': clean_url(fields.get('sourceUrl'), '來源網址', errors),
         'verifiedAt': clean_date(fields.get('verifiedAt'), '來源核對日', errors),
         'status': None,
         'changeNote': clean_text(fields.get('changeNote'), '異動說明', errors, required=False, max_len=300),
-        'updatedAt': clean_date(fields.get('updatedAt'), '來源更新日', errors),
-        'reviewDueAt': clean_date(fields.get('reviewDueAt'), '下次複查', errors),
+        'updatedAt': clean_date(fields.get('updatedAt'), '來源更新日', errors, required=False),
+        'reviewDueAt': clean_date(fields.get('reviewDueAt'), '下次複查', errors, required=False),
     }
     status = STATUS_IN.get(str(fields.get('status') or '').strip())
     if not status:
@@ -394,8 +395,8 @@ def event_preview(record, main_record, preserved):
     if record.get('location'):
         lines.append(f"活動地點：{record['location']}")
     lines.append(f"報名：{record['registration']}")
-    lines.append(f"來源：{host_of(record['sourceUrl'])}（核對 {record['verifiedAt']}；來源更新 {record['updatedAt']}）")
-    lines.append(f"下次複查：{record['reviewDueAt']}")
+    lines.append(f"來源：{host_of(record['sourceUrl'])}（核對 {record['verifiedAt']}；來源更新 {record.get('updatedAt') or '未提供'}）")
+    lines.append(f"下次複查：{record.get('reviewDueAt') or '未提供'}")
     if preserved:
         lines.append('原樣保留（Notion 未管理）：' + '、'.join(preserved))
     return '\n'.join(lines)
@@ -456,10 +457,10 @@ def normalize_legal(fields, sessions):
         'month': month,
         'observedAt': clean_date(fields.get('observedAt'), '核對日', errors),
         'sourceUrl': clean_url(fields.get('sourceUrl'), '來源圖卡網址', errors),
-        'sourceTitle': clean_text(fields.get('sourceTitle'), '圖卡標題', errors, max_len=120),
+        'sourceTitle': clean_text(fields.get('sourceTitle'), '圖卡標題', errors, required=False, max_len=120) or '',
         'sessions': [],
         'validThrough': None,
-        'nextReviewAt': clean_date(fields.get('nextReviewAt'), '下次核對', errors),
+        'nextReviewAt': clean_date(fields.get('nextReviewAt'), '下次核對', errors, required=False),
         'availability': 'telephone_confirmation_required',
     }
     rows = []
@@ -542,8 +543,8 @@ def legal_preview(managed, main):
         lines.append(f'與網站目前同月份版本相比：新增 {len(new - old)} 個、移除 {len(old - new)} 個時段')
     else:
         lines.append(f"將取代網站目前 {main.get('month')} 的 {len(main.get('sessions', []))} 個時段")
-    lines.append(f"來源：{managed['sourceTitle']}（{host_of(managed['sourceUrl'])}；核對 {managed['observedAt']}）")
-    lines.append(f"有效至 {managed['validThrough']}；下次核對 {managed['nextReviewAt']}；名額一律須電話確認。")
+    lines.append(f"來源：{managed.get('sourceTitle') or '未提供圖卡標題'}（{host_of(managed['sourceUrl'])}；核對 {managed['observedAt']}）")
+    lines.append(f"有效至 {managed['validThrough']}；下次核對 {managed.get('nextReviewAt') or '未設定'}；名額一律須電話確認。")
     return '\n'.join(lines)
 
 
@@ -619,6 +620,8 @@ def changed_files(repo):
 
 def allowed_for(candidate):
     allowed = set(ALLOWED_PATHS[candidate.domain])
+    if candidate.domain == 'home-content':
+        allowed.update(candidate.generated_files)
     if candidate.domain == 'events':
         try:
             events = build_events.public_events(json.loads(candidate.new_text))
@@ -644,6 +647,7 @@ def check_allowed(domain, files, candidate=None):
 
 def materialize(candidate, repo, *, quality=True):
     """Write the candidate into `repo` (a disposable worktree), rebuild and verify. Returns changed files."""
+    candidate.generated_files.clear()
     if candidate.domain == 'deployment-control' and (Path(repo) / deployment_target.REQUEST_FILE).is_symlink():
         raise PublishError('PATH_NOT_ALLOWED', [deployment_target.REQUEST_FILE])
     (Path(repo) / DATA_FILES[candidate.domain]).write_text(candidate.new_text, encoding='utf-8')
@@ -663,6 +667,8 @@ def materialize(candidate, repo, *, quality=True):
         tail = [line for line in (exc.output or '').splitlines() if re.search(r'Error|FAIL|STALE|assert', line)][-3:]
         raise PublishError('BUILD_FAILED', [re.sub(r'\s+', ' ', t)[:200] for t in tail]) from None
     files = changed_files(repo)
+    if candidate.domain == 'home-content':
+        candidate.generated_files.update(set(files) - ALLOWED_PATHS[candidate.domain])
     check_allowed(candidate.domain, files, candidate)
     return files
 

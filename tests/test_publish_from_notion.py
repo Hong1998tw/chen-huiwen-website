@@ -169,6 +169,18 @@ class GoldenFixtureTests(unittest.TestCase):
         self.assertIn('鳳山區公所 3 樓', html)
         self.assertIn('https://example.gov.tw/register', html)
 
+    def test_optional_event_fields_can_be_blank_and_render_safe_fallbacks(self):
+        row = new_event_row(content='', registration='', updatedAt='', reviewDueAt='')
+        candidate = P.prepare_event(row, EVENTS_TEXT)
+        self.assertEqual(candidate.errors, [])
+        record = next(item for item in json.loads(candidate.new_text)['events'] if item['id'] == candidate.record_key)
+        self.assertEqual((record['content'], record['registration'], record['updatedAt'], record['reviewDueAt']), ('', '', None, None))
+        listing = build_events.render_events([record])
+        detail = build_events.render_detail(record)
+        self.assertNotIn('<p class="event-summary"></p>', listing)
+        self.assertIn('活動內容請以主辦單位公告為準。', detail)
+        self.assertIn('參與方式請以主辦單位公告為準。', detail)
+
     def test_new_event_matches_current_key_convention(self):
         cand = P.prepare_event(new_event_row(), EVENTS_TEXT)
         new = json.loads(cand.new_text)['events'][-1]
@@ -213,6 +225,15 @@ class GoldenFixtureTests(unittest.TestCase):
         errors = P.prepare_legal(bad, LEGAL_TEXT).errors
         for needle in ('不在 2026-10 月內', '開始時間必須早於結束時間', '同一天只能有一個時段'):
             self.assertTrue(any(needle in e for e in errors), (needle, errors))
+
+    def test_optional_legal_source_title_and_next_review_can_be_blank(self):
+        row = legal_row(sourceTitle='', nextReviewAt='')
+        candidate = P.prepare_legal(row, LEGAL_TEXT)
+        self.assertEqual(candidate.errors, [])
+        data = json.loads(candidate.new_text)
+        self.assertEqual(data['sourceTitle'], '')
+        self.assertIsNone(data['nextReviewAt'])
+        self.assertIn('服務處公開排程', build_service.source_markup(data))
 
 
 class ApprovalBindingTests(unittest.TestCase):
@@ -346,6 +367,7 @@ class GitHubBehaviourTests(unittest.TestCase):
     def test_auto_publish_workflow_uses_scoped_app_and_has_no_direct_merge(self):
         code = (ROOT / 'scripts/publish_from_notion.py').read_text(encoding='utf-8')
         workflow = (ROOT / '.github/workflows/publish-executor.yml').read_text(encoding='utf-8')
+        cms_publisher = (ROOT / '.github/workflows/cms-publisher.yml').read_text(encoding='utf-8')
         runtime = re.sub(r'FORBIDDEN_GITHUB = .*', '', code)
         for pattern in (r"request\('PUT'.*/merge", r'gh pr merge', r'mergePullRequest'):
             self.assertIsNone(re.search(pattern, runtime), pattern)
@@ -356,6 +378,7 @@ class GitHubBehaviourTests(unittest.TestCase):
         self.assertIn('HUIWEN_PUBLISH_APP_KEY', workflow)
         self.assertIn('GH_TOKEN: ${{ steps.app-token.outputs.token }}', workflow)
         self.assertIn('PUBLISHER_AUTO_PUBLISH: ${{ vars.PUBLISHER_AUTO_PUBLISH }}', workflow)
+        self.assertIn("'fonttools[woff]==4.66.1'", cms_publisher)
 
     def test_gate_supports_auto_publish_without_bypassing_checks(self):
         self.assertEqual(P.evaluate_gate(SINGLE_MAINTAINER_RULES, {'allow_auto_merge': True},

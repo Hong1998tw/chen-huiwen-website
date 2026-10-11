@@ -74,7 +74,7 @@
     button.type = 'button'; button.className = 'case-page-button'; button.textContent = label; button.disabled = disabled;
     button.setAttribute('aria-label', /^\d+$/.test(label) ? `第 ${page} 頁` : label);
     if (String(currentPage) === label) button.setAttribute('aria-current','page');
-    button.addEventListener('click', () => { currentPage = page; selectedId = null; groupIds = []; renderCards(); syncURL(); announce(); document.getElementById('case-results').scrollIntoView({behavior:motion(),block:'start'}); });
+    button.addEventListener('click', () => { currentPage = page; selectedId = null; groupIds = []; renderCards(); pagination.querySelector('[aria-current="page"]')?.focus(); syncURL(); announce(); document.getElementById('case-results').scrollIntoView({behavior:motion(),block:'start'}); });
     return button;
   }
   function renderFilterChips() {
@@ -124,7 +124,7 @@
       pagination.append(pageButton('下一頁', currentPage + 1, currentPage === pages));
     }
   }
-  function selectCase(id, group = []) {
+  function selectCase(id, group = [], restoreMarkerFocus = false) {
     const i = visible.findIndex(c => c.id === id);
     if (i < 0) return;
     selectedId = id; groupIds = group.filter(id => visible.some(c => c.id === id));
@@ -132,7 +132,12 @@
     renderCards(); syncURL(); announce();
     if (map && markers) {
       draw();
-      markers.eachLayer(marker => { if (marker.options.caseIds?.includes(id)) marker.openPopup(); });
+      markers.eachLayer(marker => {
+        if (marker.options.caseIds?.includes(id)) {
+          marker.openPopup();
+          if (restoreMarkerFocus) marker.getElement()?.focus({preventScroll:true});
+        }
+      });
     }
   }
   function fit() {
@@ -187,7 +192,7 @@
         pop.append(item);
       }
       const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[44,44],iconAnchor:[22,22]}), title:cases.map(c=>c.title).join('、'),caseIds:cases.map(c=>c.id),keyboard:true}).bindPopup(pop,{maxWidth:320,autoPan:false}).addTo(markers);
-      marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id)));
+      marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id), document.activeElement === marker.getElement()));
       marker.getElement()?.addEventListener('keydown', event => {
         if (event.key === ' ') { event.preventDefault(); marker.fire('click'); }
       });

@@ -12,6 +12,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+from page_seo import validate as validate_page_seo
 
 BASE = "https://www.huiwen.tw/"
 HOST = urlsplit(BASE).netloc
@@ -185,6 +186,18 @@ def main() -> int:
 
     page_paths = sorted(root.glob("*.html")) + sorted(p for p in root.glob("*/index.html") if not p.parent.name.startswith(("_", ".")))
     pages = {p.relative_to(root).as_posix(): parse(p)[0] for p in page_paths}
+    page_content_path = root / "data/page-content.json"
+    page_states = {}
+    if page_content_path.is_file():
+        try:
+            page_states = json.loads(page_content_path.read_text(encoding="utf-8")).get("pages", {})
+            if not isinstance(page_states, dict):
+                raise ValueError("pages must be an object")
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            fail(f"data/page-content.json: cannot read page status or SEO overrides ({exc})")
+            page_states = {}
+    inactive_pages = {name for name, state in page_states.items()
+                      if isinstance(state, dict) and state.get("status", "published") in {"unpublished", "deleted"}}
     indexable: dict[str, Document] = {}
     canonicals: dict[str, str] = {}
     inbound: Counter[str] = Counter()
@@ -194,8 +207,10 @@ def main() -> int:
 
     for name, doc in pages.items():
         robots = " ".join(meta_values(doc, "name", "robots")).lower()
-        if "noindex" not in robots:
+        if name not in inactive_pages and "noindex" not in robots:
             indexable[name] = doc
+        if name in inactive_pages:
+            continue
         if name in ("404.html", "offline.html") and "noindex" not in robots:
             fail("404.html: missing robots noindex")
         if name not in ("404.html", "offline.html") and "noindex" in robots:
@@ -294,7 +309,16 @@ def main() -> int:
             missing_schema.append(name)
             fail(f"{name}: missing JSON-LD types {sorted(expected - types)}")
         if name.startswith("achievement-"):
-            expected_image = BASE + "assets/og/" + Path(name).stem + ".png"
+            seo_override = page_states.get(name, {}).get("seo") if isinstance(page_states.get(name), dict) else None
+            if isinstance(seo_override, dict):
+                try:
+                    seo_override = validate_page_seo(seo_override, root)
+                except (ValueError, OSError) as exc:
+                    fail(f"{name}: invalid CMS SEO override ({exc})")
+                    seo_override = None
+            expected_image = seo_override.get("image") if isinstance(seo_override, dict) else None
+            if not expected_image:
+                expected_image = BASE + "assets/og/" + Path(name).stem + ".png"
             if c != BASE + name:
                 fail(f"{name}: achievement canonical must identify its own page")
             if first_meta(doc, "property", "og:type") != "website":
@@ -384,6 +408,8 @@ def main() -> int:
             fail("sitemap.xml: 404.html must not be indexed")
         if target and target not in pages:
             fail(f"sitemap.xml: missing local page {target}")
+        if target in inactive_pages:
+            fail(f"sitemap.xml: inactive page must not be indexed: {target}")
     for name, c in canonicals.items():
         if c not in locs:
             fail(f"{name}: canonical missing from sitemap")

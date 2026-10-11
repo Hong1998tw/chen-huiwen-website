@@ -72,7 +72,7 @@ def validate_page(path, value, root: Path):
     if value['section'] != matched[1]:
         raise ValueError('頁面區塊與網址不一致')
     title = clean(value['title'], '頁面標題', 150, True)
-    summary = clean(value['summary'], '頁面摘要', 500, True)
+    summary = clean(value['summary'], '頁面摘要', 500)
     updated = day(value['updated'], '內容整理日期')
     start = datetime_taipei(value['eventStart'], '開始時間')
     end = datetime_taipei(value['eventEnd'], '結束時間')
@@ -99,7 +99,7 @@ def validate_blocks(blocks, required=False):
         if typ == 'paragraph': clean(block['text'], '段落', 4000, True)
         if typ == 'timeline':
             day(block['date'], '時間軸日期'); clean(block['title'], '時間軸標題', 200, True)
-            clean(block['text'], '時間軸說明', 4000, True)
+            clean(block['text'], '時間軸說明', 4000)
         if typ == 'source':
             clean(block['title'], '來源名稱', 200, True); public_url(block['url'], '資料來源')
             if block['date']: day(block['date'], '來源日期')
@@ -126,7 +126,7 @@ def render_block(block):
     e = lambda key: escape(block[key], quote=True)
     if typ == 'heading': return '<h2>' + e('title') + '</h2>'
     if typ == 'paragraph': return '<p>' + e('text').replace('\n','<br>') + '</p>'
-    if typ == 'timeline': return f'<article class="content-card"><div class="card-body"><time datetime="{e("date")}">{e("date")}</time><h2>{e("title")}</h2><p>{e("text")}</p></div></article>'
+    if typ == 'timeline': return f'<article class="content-card"><div class="card-body"><time datetime="{e("date")}">{e("date")}</time><h2>{e("title")}</h2>{"<p>" + e("text") + "</p>" if block["text"] else ""}</div></article>'
     if typ == 'source':
         stamp = f'<time datetime="{e("date")}">{e("date")}</time> · ' if block['date'] else ''
         return f'<p class="source-note">{stamp}<a href="{e("url")}" target="_blank" rel="noopener noreferrer">{e("title")} ↗</a></p>'
@@ -145,7 +145,7 @@ def render_page(path, page, root):
     e = lambda value: escape(value, quote=True)
     canonical = BASE + path
     body = (f'<div class="wrap breadcrumb"><a href="./">首頁</a><span>/</span><a href="{section_path}">{section_label}</a><span>/</span><span>{e(page["title"])}</span></div>'
-            f'<section class="page-head"><div class="wrap"><p class="eyebrow">{section_label}</p><h1>{e(page["title"])}</h1><p>{e(page["summary"])}</p></div></section>'
+            f'<section class="page-head"><div class="wrap"><p class="eyebrow">{section_label}</p><h1>{e(page["title"])}</h1>{"<p>" + e(page["summary"]) + "</p>" if page["summary"] else ""}</div></section>'
             '<article class="wrap section editorial-body">' + ''.join(render_block(block) for block in page['blocks']) +
             f'<p class="source-note">內容整理 <time datetime="{page["updated"]}">{page["updated"]}</time></p></article>')
     if page['eventStart']:
@@ -181,7 +181,7 @@ def build(root: Path):
                 if page['section'] == section and managed.get(path, {}).get('status', 'published') == 'published']
         if rows:
             rows.sort(key=lambda item: (item[1]['eventStart'] or item[1]['updated'], item[0]), reverse=True)
-            cards = ''.join(f'<article class="content-card"><div class="card-body"><time datetime="{page["updated"]}">{page["updated"]}</time><h3><a href="{path}">{escape(page["title"])}</a></h3><p>{escape(page["summary"])}</p></div></article>' for path, page in rows)
+            cards = ''.join(f'<article class="content-card"><div class="card-body"><time datetime="{page["updated"]}">{page["updated"]}</time><h3><a href="{path}">{escape(page["title"])}</a></h3>{"<p>" + escape(page["summary"]) + "</p>" if page["summary"] else ""}</div></article>' for path, page in rows)
             list_html = f'<!-- editorial-list:start --><section class="wrap section"><h2>{label}專頁</h2><div class="content-grid">{cards}</div></section><!-- editorial-list:end -->'
             source = source.replace('</main>', list_html + '</main>', 1)
         (root / index_path).write_text(source, encoding='utf-8')

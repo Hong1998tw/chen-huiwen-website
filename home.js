@@ -5,8 +5,14 @@
   const month = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Taipei',year:'numeric',month:'2-digit'}).format(new Date());
   const legal = main.querySelector('[data-home-legal-month]');
   if (legal && legal.dataset.homeLegalMonth !== month) {
-    legal.querySelector('strong').textContent = '律師時間表 ↗';
-    legal.querySelector('small').textContent = '查看已公布場次，來電確認預約';
+    const title = legal.querySelector('strong');
+    const note = legal.querySelector('small');
+    if (title && note) {
+      title.textContent = '律師時間表 ↗';
+      note.textContent = '查看已公布場次，來電確認預約';
+    } else {
+      legal.textContent = '公益法律諮詢 · 查看已公布場次 ↗';
+    }
   }
   main.addEventListener('click', event => {
     const button = event.target.closest('[data-filter]');

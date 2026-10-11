@@ -65,6 +65,16 @@ try{
   report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',reflow:'PASS',search:'PASS',lawyerKeyboardEntry:'PASS',text200LegalShortcut:legalLayout});
   await ctx.close();
  }
+ const nextMonth=await browser.newContext({viewport:{width:390,height:844}}),nextMonthPage=await nextMonth.newPage();
+ await nextMonthPage.clock.install({time:new Date('2026-11-01T01:00:00+08:00')});
+ await nextMonth.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
+ await nextMonthPage.goto(base);
+ const lawyerLink=nextMonthPage.locator('main [data-home-legal-month]');
+ assert.doesNotMatch(await lawyerLink.innerText(),/10月律師時間表/);
+ await nextMonthPage.getByRole('button',{name:'教育與文化',exact:true}).click();
+ assert.equal(await nextMonthPage.locator('.place:visible').count(),1,'month change must not block homepage filters');
+ report.checks.push({date:'2026-11-01T01:00:00+08:00',monthMismatch:'PASS',homepageFilter:'PASS'});
+ await nextMonth.close();
  const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}}),page=await ctx.newPage();
  await ctx.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
  await page.goto(base);assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);assert((await page.locator('[data-home-event]').innerText()).includes(event.name));assert.equal(await page.locator('.place').count(),5);await ctx.close();
