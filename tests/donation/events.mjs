@@ -78,6 +78,7 @@ try{
   await assertPicker(page,card);await assertLayout(page);
   await page.screenshot({path:out+'/activities-'+width+'.png',fullPage:true});
   await card.locator('.event-detail-link').click();
+  await page.waitForLoadState('load');
   assert.equal(new URL(page.url()).pathname,'/'+detail(opening));
   const article=page.locator('.event-detail');
   assert((await article.innerText()).includes('07-821-2536'));
