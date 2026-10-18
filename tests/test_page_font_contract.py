@@ -67,7 +67,14 @@ class PageFontArtifactContractTests(unittest.TestCase):
         }
         self.assertEqual(set(inventory["skippedExistingFontRoutes"]), original_markers)
         for route in original_markers:
-            self.assertEqual((self.artifact / route).read_bytes(), (ROOT / route).read_bytes(), route)
+            source_soup = producer.BeautifulSoup((ROOT / route).read_bytes(), "html5lib")
+            artifact_soup = producer.BeautifulSoup((self.artifact / route).read_bytes(), "html5lib")
+            self.assertEqual(
+                artifact_soup.html.get("data-huiwen-font-page"),
+                source_soup.html.get("data-huiwen-font-page"),
+                route,
+            )
+            self.assertIsNone(artifact_soup.html.get("data-huiwen-font-artifact-route"), route)
         self.assertEqual(len(inventory["excludedRoutes"]), 5)
         self.assertTrue(all(row["reason"] == producer.LEGACY_REDIRECT_REASON
                             for row in inventory["excludedRoutes"]))

@@ -29,7 +29,8 @@ const legacyRoutes = [
   ['explore.html', 'explore'],
 ];
 const schemaRoutes = ['offline.html', 'renwu-anju-social-housing/index.html'];
-const results = { samples: [], schemaRoutes: [], legacyRoutes: [], cmsPreview: {}, negativeGuards: {} };
+const results = { samples: [], schemaRoutes: [], initialFontNetwork: {}, legacyRoutes: [],
+  cmsPreview: {}, negativeGuards: {} };
 const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1365, height: 950 } });
@@ -139,6 +140,77 @@ try {
     }
     results.schemaRoutes.push({ route, preloads: state.preloads, rootFamily: state.rootFamily,
       bodyFamily: state.bodyFamily, headingFamily: state.headingFamily });
+  }
+  const fontOnlyRoutes = Object.keys(fontManifest.routes).sort();
+  const fullTcInitialViolations = [];
+  const fontOnlyStarted = performance.now();
+  for (const route of fontOnlyRoutes) {
+    const routeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    try {
+      const routePage = await routeContext.newPage();
+      if (route === 'service.html')
+        await routePage.clock.setFixedTime(new Date('2026-10-19T08:00:00+08:00'));
+      const fullTcRequests = [];
+      routePage.on('request', (request) => {
+        if (new URL(request.url()).pathname === `/${fullTcPath}`) fullTcRequests.push(request.url());
+      });
+      const response = await routePage.goto(new URL(route, base).href, { waitUntil: 'domcontentloaded' });
+      assert.equal(response.status(), 200, `${route}: initial font-only visit`);
+      if (route === 'service.html') {
+        await routePage.waitForFunction(() =>
+          document.querySelector('.schedule-text table caption')?.textContent.includes('僅顯示尚未結束的場次'));
+      }
+      await routePage.evaluate(() => document.fonts.ready.then(() => true));
+      const observedPreloads = await routePage.evaluate(() => performance.getEntriesByType('resource')
+        .map((entry) => new URL(entry.name).pathname)
+        .filter((path) => path.startsWith('/assets/fonts/huiwen-site-sans/page-'))
+        .sort());
+      const expectedPreloads = fontManifest.routes[route].preloads.map((path) => `/${path}`).sort();
+      assert.deepEqual(observedPreloads, expectedPreloads, `${route}: isolated first-view font closure`);
+      if (fullTcRequests.length) fullTcInitialViolations.push({ route, requests: fullTcRequests });
+      assert.deepEqual(fullTcRequests, [], `${route}: first view requested the 783,820-byte full TC font`);
+
+      if (route === 'service.html') {
+        const cardFontResponsePromise = routePage.waitForResponse((item) =>
+          new URL(item.url()).pathname === `/${fullTcPath}` && item.status() === 200);
+        await routePage.locator('[data-legal-view="card"]').click();
+        const cardFontResponse = await cardFontResponsePromise;
+        const cardFontBytes = await cardFontResponse.body();
+        assert.equal(cardFontBytes.byteLength, 783820, 'legal-card request size differs from the full TC font');
+        assert.equal(createHash('sha256').update(cardFontBytes).digest('hex'), fullTcSha,
+          'legal-card request differs from the published full TC font');
+        await routePage.locator('.legal-card-preview canvas').waitFor();
+        results.serviceInitial = { route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
+          initialFullTcRequests: fullTcRequests.length, cardFullTcBytes: cardFontBytes.byteLength,
+          cardFullTcSha256: fullTcSha };
+      }
+    } finally {
+      await routeContext.close();
+    }
+  }
+  results.initialFontNetwork = { routesChecked: fontOnlyRoutes.length,
+    fullTcInitialViolations, durationSeconds: Number(((performance.now() - fontOnlyStarted) / 1000).toFixed(2)) };
+  assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
+  assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
+
+  const crossMonthContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const crossMonthPage = await crossMonthContext.newPage();
+    await crossMonthPage.clock.setFixedTime(new Date('2026-11-01T08:00:00+08:00'));
+    const crossMonthFullTcRequests = [];
+    crossMonthPage.on('request', (request) => {
+      if (new URL(request.url()).pathname === `/${fullTcPath}`) crossMonthFullTcRequests.push(request.url());
+    });
+    await crossMonthPage.goto(new URL('service.html', base).href, { waitUntil: 'domcontentloaded' });
+    await crossMonthPage.waitForFunction(() =>
+      document.querySelector('[data-legal-month-state]')?.textContent.includes('此為2026年10月時間表'));
+    await crossMonthPage.evaluate(() => document.fonts.ready.then(() => true));
+    assert.deepEqual(crossMonthFullTcRequests, [],
+      'the cross-month legal-calendar state requested the 783,820-byte full TC font');
+    results.serviceCrossMonth = { route: 'service.html', viewport: '390x844', fixedTaipeiDate: '2026-11-01',
+      initialFullTcRequests: crossMonthFullTcRequests.length };
+  } finally {
+    await crossMonthContext.close();
   }
   assert.deepEqual(observedFullTc, [], 'initial representative page visits downloaded the 783,820-byte full TC font');
 
@@ -364,6 +436,11 @@ try {
   await mkdir(output, { recursive: true });
   await writeFile(resolve(output, 'report.json'), JSON.stringify(results, null, 2) + '\n');
   console.log(JSON.stringify({ samples: results.samples.length, schemaRoutes: results.schemaRoutes.length,
+    allRouteFontChecks: results.initialFontNetwork.routesChecked,
+    allRouteFontSeconds: results.initialFontNetwork.durationSeconds,
+    serviceInitialFullTcRequests: results.serviceInitial.initialFullTcRequests,
+    serviceCardFullTcBytes: results.serviceInitial.cardFullTcBytes,
+    serviceCrossMonthFullTcRequests: results.serviceCrossMonth.initialFullTcRequests,
     legacyRoutes: results.legacyRoutes.length,
     cmsFontBytes: results.cmsPreview.fontBytes, negativeGuards: Object.keys(results.negativeGuards) }));
 } finally {
