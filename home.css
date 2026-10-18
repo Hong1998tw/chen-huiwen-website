@@ -72,15 +72,39 @@
 .home-redesign .primary { color: #fff; background: var(--ink); }
 .home-redesign .outline { background: transparent; }
 .home-redesign .portrait { grid-area: portrait; min-width: 0; margin: 0; }
-.home-redesign .portrait-frame picture { display: block; }
+.home-redesign .hero-portrait {
+  height: auto;
+  min-height: 0;
+  max-width: 380px;
+  overflow: visible;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.home-redesign .hero-portrait::after { content: none; }
+.home-redesign .portrait-frame {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1.04;
+  place-items: center;
+}
+.home-redesign .portrait-frame picture {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}
 .home-redesign .portrait-frame img {
   display: block;
-  width: min(100%, 380px);
+  width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: 100%;
   margin-inline: auto;
+  aspect-ratio: auto;
   object-fit: contain;
 }
-.home-redesign .hero-portrait figcaption { margin-top: 8px; color: var(--muted); font-size: 13px; letter-spacing: .08em; }
+.home-redesign .hero-portrait figcaption { position: static; margin-top: 8px; color: var(--muted); font-size: 13px; letter-spacing: .08em; }
 .home-redesign .home-task-paths {
   grid-area: tasks;
   display: grid;
@@ -104,7 +128,7 @@
 .home-redesign .home-lawyer-link { grid-area: lawyer; margin: -38px 0 0; font-size: 14px; }
 .home-redesign .home-lawyer-link a { min-height: 44px; padding: 8px 0; font-weight: 700; text-underline-offset: 4px; }
 
-.home-redesign .section { padding-block: var(--space-section); }
+.home-redesign .section { padding-block: calc(var(--space-section) / 2); }
 .home-redesign .home-recent-heading { max-width: 680px; margin-bottom: 26px; }
 .home-redesign .section h2,
 .home-redesign .home-council h2,
@@ -229,18 +253,33 @@ body.homepage-v2 .footer { padding-bottom: 30px; }
   .home-redesign .hero-portrait { width: min(100%, 380px); }
   .home-redesign .hero-portrait figcaption { text-align: center; }
   .home-redesign .home-task-paths { grid-template-columns: minmax(0, 1fr); }
-  .home-redesign .home-task-paths a { min-height: 86px; border-right: 0; border-bottom: 1px solid #557668; }
+  .home-redesign .home-task-paths a { min-height: 76px; padding-block: 12px; border-right: 0; border-bottom: 1px solid #557668; }
   .home-redesign .home-task-paths a:last-child { border-bottom: 0; }
   .home-redesign .home-task-paths strong { font-size: 21px; }
   .home-redesign .home-lawyer-link { margin: -8px 0 0; }
   .home-redesign .home-recent-list { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .home-redesign .home-recent-list article { min-height: 0; }
-  .home-redesign .home-recent-art { height: 150px; }
-  .home-redesign .home-recent-card-copy { min-height: 230px; padding: 18px 20px; }
-  .home-redesign .home-local-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .home-redesign .home-recent-list article {
+    display: grid;
+    grid-template-columns: minmax(92px, 30%) minmax(0, 1fr);
+    min-height: 0;
+  }
+  .home-redesign .home-recent-art { height: auto; min-height: 100%; padding: 10px; }
+  .home-redesign .home-recent-art--council strong { font-size: clamp(20px, 6vw, 28px); }
+  .home-redesign .home-recent-art--local span:last-child { font-size: clamp(18px, 5vw, 23px); }
+  .home-redesign .home-recent-card-copy { min-height: 0; padding: 14px; }
+  .home-redesign .home-local-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .home-redesign .home-local-discovery { grid-row: 1; }
+  .home-redesign .home-map-preview a {
+    display: grid;
+    height: min(58vw, 210px);
+    min-height: 168px;
+    place-items: center;
+    background: #e9eee6;
+  }
+  .home-redesign .home-map-preview img { width: 100%; height: 100%; object-fit: contain; }
   .home-redesign .home-council { align-items: flex-start; flex-direction: column; gap: 18px; }
-  .home-redesign .contact-grid { grid-template-columns: minmax(0, 1fr); gap: 30px; }
+  .home-redesign .contact-section { padding-block: clamp(36px, 5vw, 48px); }
+  .home-redesign .contact-grid { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 }
 
 @media (max-width: 620px) {
@@ -251,7 +290,7 @@ body.homepage-v2 .footer { padding-bottom: 30px; }
   .home-redesign .hero-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
   .home-redesign .primary,
   .home-redesign .outline { min-height: 48px; padding-inline: 8px; font-size: 14px; }
-  .home-redesign .section { padding-block: 64px; }
+  .home-redesign .section { padding-block: 32px; }
   .home-redesign .home-recent-heading { margin-bottom: 20px; }
   .home-redesign .home-recent-card-copy h3 { font-size: 22px; }
   .home-redesign .home-status-stats { gap: 0 12px; }
@@ -260,7 +299,19 @@ body.homepage-v2 .footer { padding-bottom: 30px; }
   .home-redesign .home-village-controls select { grid-column: 1 / -1; }
   .home-redesign .home-village-reset { grid-column: auto; }
   .home-redesign .contact-grid dl { grid-template-columns: minmax(100px, .7fr) 1fr; gap: 8px 12px; }
-  body.homepage-v2 .footer { padding-bottom: 30px; }
+  body.homepage-v2 .footer {
+    margin-top: 0;
+    padding-block: 24px 16px;
+  }
+  body.homepage-v2 .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 16px 20px;
+  }
+  body.homepage-v2 .footer-grid > div { min-width: 0; overflow-wrap: anywhere; }
+  body.homepage-v2 .footer-grid > div:first-child { grid-column: 1 / -1; }
+  body.homepage-v2 .footer-bottom { gap: 10px; margin-top: 16px; padding-top: 12px; }
+  body.homepage-v2 .footer-bottom > div { gap: 8px 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

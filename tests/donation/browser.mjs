@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
@@ -169,6 +170,7 @@ try {
       await page.goto(base + 'index.html');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
+      await page.evaluate(() => document.fonts.ready);
       assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
       assert.equal(await img.getAttribute('loading'),'eager');
       const frame = await page.locator('.portrait-frame').boundingBox();
@@ -178,7 +180,9 @@ try {
       assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
       assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
       assert(frame && heading);
-      assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',()=>{
+        assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+      });
       assert(frame.x >= 0 && frame.x + frame.width <= width);
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
       assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');

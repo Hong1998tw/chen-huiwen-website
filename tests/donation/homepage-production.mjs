@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertWithHomeDiagnostics} from './homepage-diagnostics.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=root+'tests/donation/results/homepage-production/';
@@ -92,8 +93,10 @@ try{
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   await page.evaluate(()=>scrollTo(0,0));
   const pageHeight=await page.evaluate(()=>document.documentElement.scrollHeight);
-  if(width===390)assert(pageHeight<=5000,`mobile page height ${pageHeight}px exceeds 5000px`);
-  if(width===1440)assert(pageHeight<=4000,`desktop page height ${pageHeight}px exceeds 4000px`);
+  await assertWithHomeDiagnostics(page,out,width,'page-height',()=>{
+   if(width===390)assert(pageHeight<5000,`mobile page height ${pageHeight}px must stay below 5000px`);
+   if(width===1440)assert(pageHeight<4000,`desktop page height ${pageHeight}px must stay below 4000px`);
+  });
   if(width===1440){
    const cardHeights=await page.locator('.home-recent-list article').evaluateAll(xs=>xs.map(x=>x.getBoundingClientRect().height));
    assert(Math.max(...cardHeights)-Math.min(...cardHeights)<1,JSON.stringify(cardHeights));
