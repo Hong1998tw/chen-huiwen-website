@@ -74,7 +74,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
       - name: Build the final public artifact (the same build Cloudflare publishes)
         # Lighthouse measures this _site (JSON projections, CMS text and rewritten HTML references
         # applied), not the repository root. It is built once and both runs below read the same tree;

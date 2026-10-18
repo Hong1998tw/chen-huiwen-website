@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
-      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
       - run: python scripts/build_cloudflare_public.py
       - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
       - name: Verify exact assets, existing routes and private-path exclusion

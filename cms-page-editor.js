@@ -3,6 +3,7 @@
   const params = new URLSearchParams(location.search);
   const loader = document.querySelector("script[data-cms-editor-loader]");
   if (params.get("cmsEdit") !== "1" || window.parent === window) return;
+  document.documentElement.dataset.huiwenFontArtifactPreview = "1";
   const SITE_ORIGIN = "https://www.huiwen.tw";
   const ADMIN_ORIGIN = loader?.dataset.cmsAdminOrigin || "https://admin.huiwen.tw";
   const EDITABLE_TAGS = new Set(["h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "dt", "dd"]);
