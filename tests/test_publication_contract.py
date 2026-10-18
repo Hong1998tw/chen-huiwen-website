@@ -383,14 +383,19 @@ class PublicCopyNavigationPolicyTests(unittest.TestCase):
 
     def test_ui_label_guard_preserves_brands_proper_names_and_code(self):
         markup = '''<h1>地方報導</h1><h2>TVBS 與 KUMAMOTO 相關消息</h2>
-          <p>保留 AI、YouBike 與日文專有名稱。</p><code>PUBLIC RECORDS</code>'''
+          <h3>Reuters Events 專訪摘要</h3><p class="eyebrow">Human Rights Watch</p>
+          <p>保留 AI、YouBike 與日文專有名稱。</p><p>EVENTS</p><code>PUBLIC RECORDS</code>'''
         self.assertEqual([], copyguard.check_public_ui_labels('fixture.html', markup))
 
-    def test_ui_label_guard_rejects_only_targeted_english_headings(self):
-        markup = '<p class="eyebrow">NEWS &amp; UPDATES</p><h1>最新動態</h1>'
+    def test_ui_label_guard_rejects_exact_targeted_labels_in_ui_positions(self):
+        markup = '''<p class="eyebrow">NEWS &amp; UPDATES</p><h1>EVENTS</h1>
+          <h2>最新動態</h2><h3>Human Rights Watch 專訪</h3>
+          <p class="eyebrow"> HUMAN RIGHTS </p>'''
         failures = copyguard.check_public_ui_labels('fixture.html', markup)
-        self.assertEqual(1, len(failures), failures)
-        self.assertIn('NEWS & UPDATES', failures[0])
+        self.assertEqual(3, len(failures), failures)
+        self.assertTrue(any('NEWS & UPDATES' in item for item in failures), failures)
+        self.assertTrue(any('EVENTS' in item for item in failures), failures)
+        self.assertTrue(any('HUMAN RIGHTS' in item for item in failures), failures)
 
 
 if __name__ == '__main__':

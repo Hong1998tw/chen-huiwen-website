@@ -243,11 +243,11 @@ def check_public_ui_labels(path, markup):
     findings = []
     relative = Path(path).as_posix()
     soup = BeautifulSoup(markup, "html5lib")
-    heading_text = [" ".join(node.get_text(" ", strip=True).split())
-                    for node in soup.select("h1, h2, h3, h4, .eyebrow")]
-    folded = [text.casefold() for text in heading_text]
+    ui_labels = [" ".join(node.get_text(" ", strip=True).split())
+                 for node in soup.select("h1, h2, h3, h4, .eyebrow")]
+    folded = {text.casefold() for text in ui_labels}
     for label in LEGACY_PUBLIC_UI_LABELS:
-        if any(label.casefold() in text for text in folded):
+        if label.casefold() in folded:
             findings.append(f"{relative}: untranslated public UI label {label}")
     for selector, expected in REQUIRED_PUBLIC_UI_LABELS.get(relative, ()):
         actual = [" ".join(node.get_text(" ", strip=True).split()) for node in soup.select(selector)]
