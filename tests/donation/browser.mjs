@@ -175,15 +175,15 @@ try {
       assert.equal(await img.getAttribute('loading'),'eager');
       const frame = await page.locator('.portrait-frame').boundingBox();
       const heading = await page.locator('.hero-copy h1').boundingBox();
-      assert.equal(await page.locator('h1').count(),1);
-      assert(await page.locator('.home-village-form #home-village').isVisible());
-      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
-      assert(frame && heading);
-      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',()=>{
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',async()=>{
+        assert.equal(await page.locator('h1').count(),1);
+        assert(await page.locator('.home-village-form #home-village').isVisible());
+        assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
+        assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
+        assert(frame && heading);
         assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+        assert(frame.x >= 0 && frame.x + frame.width <= width);
       });
-      assert(frame.x >= 0 && frame.x + frame.width <= width);
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
       assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
       assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');

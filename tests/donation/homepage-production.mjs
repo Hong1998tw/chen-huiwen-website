@@ -84,23 +84,22 @@ try{
   assert.equal(await page.locator('[data-home-event] time').getAttribute('datetime'),event.start);
   assert((await page.locator('[data-home-event]').innerText()).includes(event.location));
 
-  const localLayout=await page.locator('.home-local-layout').evaluate(el=>({display:getComputedStyle(el).display,columns:getComputedStyle(el).gridTemplateColumns.split(' ').map(parseFloat)}));
-  if(width>780){assert.equal(localLayout.display,'grid');assert(Math.abs(localLayout.columns[0]/localLayout.columns[1]-5/7)<.04,JSON.stringify(localLayout));}
-  else assert.equal(localLayout.columns.length,1,'the local progress layout is one column at and below 780px');
-  const recentColumns=await page.locator('.home-recent-list').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);
-  if(width<=780)assert.equal(recentColumns,1,'recent cards stack below 780px');
-
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   await page.evaluate(()=>scrollTo(0,0));
   const pageHeight=await page.evaluate(()=>document.documentElement.scrollHeight);
-  await assertWithHomeDiagnostics(page,out,width,'page-height',()=>{
+  await assertWithHomeDiagnostics(page,out,width,'page-height',async()=>{
+   const localLayout=await page.locator('.home-local-layout').evaluate(el=>({display:getComputedStyle(el).display,columns:getComputedStyle(el).gridTemplateColumns.split(' ').map(parseFloat)}));
+   if(width>780){assert.equal(localLayout.display,'grid');assert(Math.abs(localLayout.columns[0]/localLayout.columns[1]-5/7)<.04,JSON.stringify(localLayout));}
+   else assert.equal(localLayout.columns.length,1,'the local progress layout is one column at and below 780px');
+   const recentColumns=await page.locator('.home-recent-list').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);
+   if(width<=780)assert.equal(recentColumns,1,'recent cards stack below 780px');
    if(width===390)assert(pageHeight<5000,`mobile page height ${pageHeight}px must stay below 5000px`);
    if(width===1440)assert(pageHeight<4000,`desktop page height ${pageHeight}px must stay below 4000px`);
+   if(width===1440){
+    const cardHeights=await page.locator('.home-recent-list article').evaluateAll(xs=>xs.map(x=>x.getBoundingClientRect().height));
+    assert(Math.max(...cardHeights)-Math.min(...cardHeights)<1,JSON.stringify(cardHeights));
+   }
   });
-  if(width===1440){
-   const cardHeights=await page.locator('.home-recent-list article').evaluateAll(xs=>xs.map(x=>x.getBoundingClientRect().height));
-   assert(Math.max(...cardHeights)-Math.min(...cardHeights)<1,JSON.stringify(cardHeights));
-  }
   const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   assert.deepEqual(axe.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),[]);
   await page.screenshot({path:out+`home-${width}-top.png`});
