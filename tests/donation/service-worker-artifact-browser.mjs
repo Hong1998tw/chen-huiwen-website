@@ -35,7 +35,8 @@ function check(name, fn) {
 async function waitFor(predicate, message, timeoutMs = 12000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await predicate()) return;
+    const result = await predicate();
+    if (result) return result;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('Timed out waiting for ' + message);
@@ -47,6 +48,7 @@ async function listenFixture({workerBytes, failingOffline = false} = {}) {
     failingOffline,
     workerResponses: [],
     offlineRequests: 0,
+    offlineResponses: [],
   };
   const server = createServer((request, response) => {
     const url = new URL(request.url || '/', 'http://127.0.0.1');
@@ -65,6 +67,7 @@ async function listenFixture({workerBytes, failingOffline = false} = {}) {
       state.offlineRequests += 1;
       if (state.failingOffline) {
         response.writeHead(503, {'Content-Type': 'text/plain', 'Cache-Control': 'no-store'});
+        state.offlineResponses.push({status: response.statusCode, path: url.pathname});
         response.end('fixture: required offline fallback unavailable');
         return;
       }
@@ -110,6 +113,7 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
   context.setDefaultNavigationTimeout(15000);
   const page = await context.newPage();
   const serverWorkerBytes = Buffer.from(await readFile(join(ARTIFACT, 'sw.js')));
+  const emittedWorkerText = emittedWorker.toString('utf8');
   const expectedWorkerHash = sha256(serverWorkerBytes);
   assert.equal(manifest.files?.['sw.js'], expectedWorkerHash, 'publication manifest must hash the emitted Service Worker');
 
@@ -167,7 +171,7 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
   assert.deepEqual(JSON.parse(activeState.servedDeployment), deployment);
   assert.equal(sha256(Buffer.from(activeState.servedManifest)), deployment.publicArtifactDigest,
     'the deployment receipt must identify the served publication manifest');
-  const cacheName = emittedWorker.match(/const CACHE='([^']+)';/)?.[1];
+  const cacheName = emittedWorkerText.match(/const CACHE='([^']+)';/)?.[1];
   assert(cacheName, 'emitted worker must define its derived cache name');
   assert.equal(new URL(activeState.activeScript).pathname, '/sw.js');
   assert.equal(activeState.controller, activeState.activeScript, 'active controller and registration must use the emitted worker');
@@ -182,7 +186,7 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
     publicArtifactDigest: deployment.publicArtifactDigest,
   };
 
-  const shell = JSON.parse(emittedWorker.match(/const SHELL=(\[[^;]*\]);/)?.[1] || 'null');
+  const shell = JSON.parse(emittedWorkerText.match(/const SHELL=(\[[^;]*\]);/)?.[1] || 'null');
   const queryEntry = shell.find(value => /\.(?:css|js)\?/.test(value));
   assert(queryEntry, 'artifact SHELL must contain a versioned CSS or JavaScript URL');
   const absoluteShellUrl = new URL(queryEntry, new URL('/', BASE_URL)).href;
@@ -326,54 +330,132 @@ async function runFailedInstallUpdateCheck(browser, emittedWorker) {
   context.setDefaultTimeout(12000);
   context.setDefaultNavigationTimeout(15000);
   const page = await context.newPage();
-  await page.goto(fixture.baseUrl + '/', {waitUntil: 'domcontentloaded'});
-  await page.evaluate(async () => {
-    await navigator.serviceWorker.register('/sw.js', {scope: '/', updateViaCache: 'none'});
-    await navigator.serviceWorker.ready;
-  });
-  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, {timeout: 12000});
-  const oldState = await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration('/');
-    await caches.open('huiwen-digital-v11-c11-working-controller').then(cache =>
-      cache.put(new Request(location.origin + '/working-controller-marker'), new Response('old controller remains active')));
-    window.__oldController = navigator.serviceWorker.controller;
-    window.__oldActiveWorker = registration.active;
-    return {controllerScript: window.__oldController.scriptURL, activeScript: registration.active.scriptURL};
-  });
-  const beforeOfflineRequests = fixture.state.offlineRequests;
-  fixture.state.workerBytes = Buffer.from(emittedWorker);
-  fixture.state.failingOffline = true;
-  await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration('/');
-    try { await registration.update(); } catch { /* Failed installation is asserted through the active controller below. */ }
-  });
-  await waitFor(() => fixture.state.workerResponses.length >= 2, 'the browser to request the emitted update worker');
-  await waitFor(() => fixture.state.offlineRequests > beforeOfflineRequests,
-    'the emitted worker to fail its required offline fallback install');
-  await page.waitForTimeout(800);
-  const afterState = await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration('/');
-    return {
-      sameController: navigator.serviceWorker.controller === window.__oldController,
-      sameActiveWorker: registration.active === window.__oldActiveWorker,
-      controllerState: navigator.serviceWorker.controller?.state,
-      activeState: registration.active?.state,
-      installingState: registration.installing?.state || null,
-      caches: await caches.keys(),
+  let oldState = null;
+  let terminalState = null;
+  let afterState = null;
+  try {
+    await page.goto(fixture.baseUrl + '/', {waitUntil: 'domcontentloaded'});
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.register('/sw.js', {scope: '/', updateViaCache: 'none'});
+      await navigator.serviceWorker.ready;
+    });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, {timeout: 12000});
+    oldState = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      await caches.open('huiwen-digital-v11-c11-working-controller').then(cache =>
+        cache.put(new Request(location.origin + '/working-controller-marker'), new Response('old controller remains active')));
+      window.__oldController = navigator.serviceWorker.controller;
+      window.__oldActiveWorker = registration.active;
+      return {controllerScript: window.__oldController.scriptURL, activeScript: registration.active.scriptURL};
+    });
+    const beforeOfflineRequests = fixture.state.offlineRequests;
+    fixture.state.workerBytes = Buffer.from(emittedWorker);
+    fixture.state.failingOffline = true;
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      window.__failedUpdateWorker = null;
+      const captureInstallingWorker = () => {
+        if (registration.installing) window.__failedUpdateWorker = registration.installing;
+      };
+      registration.addEventListener('updatefound', captureInstallingWorker);
+      try { await registration.update(); } catch { /* Failed installation is asserted through the active controller below. */ }
+      captureInstallingWorker();
+    });
+    await waitFor(() => fixture.state.workerResponses.includes(sha256(emittedWorker)),
+      'the browser to request the exact emitted update worker');
+    await waitFor(() => fixture.state.offlineRequests > beforeOfflineRequests
+        && fixture.state.offlineResponses.some(result => result.status === 503),
+      'the emitted worker to receive HTTP 503 for its required offline fallback install');
+    terminalState = await waitFor(async () => page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      const failedWorker = window.__failedUpdateWorker;
+      if (failedWorker?.state !== 'redundant' || registration.installing || registration.waiting) return null;
+      return {
+        failedWorkerState: failedWorker.state,
+        installingState: registration.installing?.state || null,
+        waitingState: registration.waiting?.state || null,
+      };
+    }), 'the failed worker to become redundant and registration slots to clear');
+    afterState = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      const markerCache = await caches.open('huiwen-digital-v11-c11-working-controller');
+      const marker = await markerCache.match(new Request(location.origin + '/working-controller-marker'));
+      return {
+        sameController: navigator.serviceWorker.controller === window.__oldController,
+        sameActiveWorker: registration.active === window.__oldActiveWorker,
+        controllerState: navigator.serviceWorker.controller?.state,
+        activeState: registration.active?.state,
+        failedWorkerState: window.__failedUpdateWorker?.state || null,
+        installingState: registration.installing?.state || null,
+        waitingState: registration.waiting?.state || null,
+        caches: await caches.keys(),
+        priorCacheMarker: marker ? await marker.text() : null,
+      };
+    });
+    assert.equal(fixture.state.workerResponses.at(-1), sha256(emittedWorker),
+      'the failed update fixture must serve the exact emitted Service Worker bytes');
+    assert(fixture.state.offlineResponses.some(result => result.status === 503 && result.path === '/offline.html'),
+      'the emitted worker must receive HTTP 503 for the required offline fallback');
+    assert.equal(terminalState.failedWorkerState, 'redundant');
+    assert.equal(terminalState.installingState, null);
+    assert.equal(terminalState.waitingState, null);
+    assert.equal(afterState.failedWorkerState, 'redundant');
+    assert.equal(afterState.installingState, null);
+    assert.equal(afterState.waitingState, null);
+    assert.equal(afterState.sameController, true, 'failed install must not replace the old working controller');
+    assert.equal(afterState.sameActiveWorker, true, 'failed install must keep the original active worker');
+    assert.equal(afterState.controllerState, 'activated');
+    assert.equal(afterState.activeState, 'activated');
+    assert(afterState.caches.includes('huiwen-digital-v11-c11-working-controller'),
+      'the prior working cache must remain after the required offline fallback returns 503');
+    assert.equal(afterState.priorCacheMarker, 'old controller remains active',
+      'the old worker cache entry must remain unchanged after the failed update');
+    assert.equal(oldState.controllerScript, oldState.activeScript);
+    return {checks: ['exact emitted-worker update failure', 'HTTP 503 required fallback',
+      'redundant terminal state and cleared registration slots', 'old active controller and cache retained']};
+  } finally {
+    let finallyState = null;
+    let finallyStateError = null;
+    try {
+      finallyState = await page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.getRegistration('/');
+        const cacheName = 'huiwen-digital-v11-c11-working-controller';
+        const names = await caches.keys();
+        const cache = names.includes(cacheName) ? await caches.open(cacheName) : null;
+        const marker = cache && await cache.match(new Request(location.origin + '/working-controller-marker'));
+        return {
+          failedWorkerState: window.__failedUpdateWorker?.state || null,
+          installingState: registration?.installing?.state || null,
+          waitingState: registration?.waiting?.state || null,
+          sameController: navigator.serviceWorker.controller === window.__oldController,
+          sameActiveWorker: registration?.active === window.__oldActiveWorker,
+          controllerState: navigator.serviceWorker.controller?.state || null,
+          activeState: registration?.active?.state || null,
+          oldCachePresent: names.includes(cacheName),
+          priorCacheMarker: marker ? await marker.text() : null,
+        };
+      });
+    } catch (error) {
+      finallyStateError = error?.stack || String(error);
+    }
+    report.failedInstallUpdate = {
+      expectedWorkerSha256: sha256(emittedWorker),
+      workerResponseHashes: fixture.state.workerResponses,
+      offlineRequests: fixture.state.offlineRequests,
+      offlineResponses: fixture.state.offlineResponses,
+      oldState,
+      terminalState,
+      afterState,
+      finallyState,
+      finallyStateError,
     };
-  });
-  assert(fixture.state.workerResponses.includes(sha256(emittedWorker)),
-    'the failed update fixture must serve the exact emitted Service Worker bytes');
-  assert.equal(afterState.sameController, true, 'failed install must not replace the old working controller');
-  assert.equal(afterState.sameActiveWorker, true, 'failed install must keep the original active worker');
-  assert.equal(afterState.controllerState, 'activated');
-  assert.equal(afterState.activeState, 'activated');
-  assert(afterState.caches.includes('huiwen-digital-v11-c11-working-controller'),
-    'the prior working cache must remain after the required offline fallback returns 503');
-  assert.equal(oldState.controllerScript, oldState.activeScript);
-  await context.close();
-  await fixture.close();
-  return {checks: ['emitted-worker update failure', 'old active controller retained', 'old working cache retained']};
+    try { await context.close(); } catch (error) {
+      report.failedInstallUpdate.contextCloseError = error?.stack || String(error);
+    }
+    try { await fixture.close(); } catch (error) {
+      report.failedInstallUpdate.fixtureCloseError = error?.stack || String(error);
+    }
+  }
 }
 
 async function main() {

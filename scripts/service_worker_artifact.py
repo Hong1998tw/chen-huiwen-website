@@ -19,6 +19,8 @@ CACHE_RE = re.compile(r"(?m)^const CACHE=['\"][^'\"]*['\"];[ \t]*$")
 SHELL_RE = re.compile(r'(?m)^const SHELL=\[[^\r\n]*\];[ \t]*$')
 OFFLINE_RE = re.compile(r"(?m)^const OFFLINE=['\"]\./offline\.html['\"];[ \t]*$")
 POLICY_MARKER = '/* {{CACHE_POLICY}} */'
+POLICY_START_MARKER = '/* BEGIN HUIWEN SW CACHE POLICY */'
+POLICY_END_MARKER = '/* END HUIWEN SW CACHE POLICY */'
 CORE_FONT_RE = re.compile(
     r'^/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-[0-9a-f]{12}\.woff2$'
 )
@@ -124,6 +126,29 @@ def shell_urls(index_html: bytes, artifact_dir: Path) -> list[str]:
     return result
 
 
+def _policy_offsets(text: str) -> tuple[int, int, int, int]:
+    """Locate the one canonical policy block embedded in the root worker."""
+    if text.count(POLICY_START_MARKER) != 1 or text.count(POLICY_END_MARKER) != 1:
+        raise ValueError('Service Worker template must contain one delimited cache policy block')
+    block_start = text.index(POLICY_START_MARKER)
+    body_start = block_start + len(POLICY_START_MARKER)
+    body_end = text.index(POLICY_END_MARKER, body_start)
+    block_end = body_end + len(POLICY_END_MARKER)
+    if body_end < body_start or not text[body_start:body_end].strip():
+        raise ValueError('Service Worker cache policy block must not be empty')
+    return block_start, body_start, body_end, block_end
+
+
+def _cache_policy_source(template: bytes) -> bytes:
+    """Return the exact policy source used by both raw and emitted workers."""
+    try:
+        text = template.decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise ValueError('Service Worker template must be UTF-8') from error
+    _, body_start, body_end, _ = _policy_offsets(text)
+    return text[body_start:body_end].encode('utf-8')
+
+
 def _normalized_template(template: bytes) -> bytes:
     try:
         text = template.decode('utf-8')
@@ -131,10 +156,14 @@ def _normalized_template(template: bytes) -> bytes:
         raise ValueError('Service Worker template must be UTF-8') from error
     text, cache_count = CACHE_RE.subn("const CACHE='{{CACHE}}';", text)
     text, shell_count = SHELL_RE.subn('const SHELL={{SHELL}};', text)
+    if POLICY_MARKER in text:
+        raise ValueError('Service Worker template must not contain an unresolved cache policy marker')
+    block_start, _, _, block_end = _policy_offsets(text)
+    text = text[:block_start] + POLICY_MARKER + text[block_end:]
     policy_count = text.count(POLICY_MARKER)
     offline_count = len(OFFLINE_RE.findall(text))
     if cache_count != 1 or shell_count != 1 or policy_count != 1 or offline_count != 1:
-        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, policy, and required offline declaration')
+        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, delimited policy, and required offline declaration')
     return text.encode('utf-8')
 
 
@@ -163,12 +192,7 @@ def render_service_worker(artifact_dir: Path, template: bytes) -> bytes:
     """Render deterministic cache identity and SHELL into the controlled template."""
     artifact_dir = Path(artifact_dir).resolve()
     normalized = _normalized_template(template)
-    policy_path = Path(__file__).with_name('service_worker_cache_policy.js')
-    policy = policy_path.read_bytes()
-    try:
-        policy_text = policy.decode('utf-8')
-    except UnicodeDecodeError as error:
-        raise ValueError('Service Worker cache policy must be UTF-8') from error
+    policy = _cache_policy_source(template)
     urls = shell_urls((artifact_dir / 'index.html').read_bytes(), artifact_dir)
     closure = _public_closure(artifact_dir)
     material = json.dumps({
@@ -187,8 +211,6 @@ def render_service_worker(artifact_dir: Path, template: bytes) -> bytes:
         raise ValueError('Service Worker template must be UTF-8') from error
     text, cache_count = CACHE_RE.subn(f"const CACHE='{cache_name}';", text)
     text, shell_count = SHELL_RE.subn('const SHELL=' + shell_json + ';', text)
-    policy_count = text.count(POLICY_MARKER)
-    text = text.replace(POLICY_MARKER, policy_text)
-    if cache_count != 1 or shell_count != 1 or policy_count != 1 or len(OFFLINE_RE.findall(text)) != 1:
-        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, policy, and required offline declaration')
+    if cache_count != 1 or shell_count != 1 or len(OFFLINE_RE.findall(text)) != 1:
+        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, delimited policy, and required offline declaration')
     return text.encode('utf-8')

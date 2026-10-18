@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
-import {createRequire} from 'node:module';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 
-const require = createRequire(import.meta.url);
-const policy = require('../../scripts/service_worker_cache_policy.js');
+const workerTemplate = await readFile(new URL('../../sw.js', import.meta.url), 'utf8');
+const policyBlock = workerTemplate.match(
+  /\/\* BEGIN HUIWEN SW CACHE POLICY \*\/([\s\S]*?)\/\* END HUIWEN SW CACHE POLICY \*\//,
+);
+assert(policyBlock, 'root Service Worker must contain the canonical delimited cache policy');
+const policyContext = {URL};
+vm.runInNewContext(policyBlock[1] + '\nglobalThis.__policyUnderTest = cachePolicy;', policyContext);
+const policy = policyContext.__policyUnderTest;
 const origin = 'https://www.huiwen.tw';
 const request = (path, init) => new Request(new URL(path, origin), init);
 

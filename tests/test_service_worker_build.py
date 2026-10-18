@@ -64,6 +64,10 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
         self.assertEqual(manifest['files']['sw.js'], hashlib.sha256(first_worker).hexdigest())
         self.assertTrue(cache_name(first_worker).startswith('huiwen-digital-v16-'))
         self.assertNotEqual(first_worker, self.source_worker)
+        self.assertNotIn(b'{{CACHE_POLICY}}', self.source_worker)
+        self.assertEqual(self.source_worker.count(worker.POLICY_START_MARKER.encode()), 1)
+        self.assertEqual(self.source_worker.count(worker.POLICY_END_MARKER.encode()), 1)
+        self.assertIn(worker._cache_policy_source(self.source_worker), first_worker)
         self.assertEqual((ROOT / 'sw.js').read_bytes(), self.source_worker)
 
     def test_shell_keeps_exact_homepage_queries_and_excludes_private_or_external_urls(self):
@@ -113,6 +117,11 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
 
         changed_logic = self.source_worker.replace(b"Origin unavailable", b"Origin unavailable fixture")
         self.assertNotEqual(cache_name(worker.render_service_worker(self.first, changed_logic)), base_cache)
+        changed_policy = self.source_worker.replace(
+            b"segment.startsWith('cms-')",
+            b"segment.startsWith('cms-') || segment === 'fixture-private'",
+        )
+        self.assertNotEqual(cache_name(worker.render_service_worker(self.first, changed_policy)), base_cache)
 
         manual_defaults = re.sub(rb"(?m)^const CACHE=.*$", b"const CACHE='manual-stale-cache';", self.source_worker)
         manual_defaults = re.sub(rb"(?m)^const SHELL=.*$", b"const SHELL=['./manual-stale.js'];", manual_defaults)
@@ -149,12 +158,14 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
         self.assertTrue(live.source_parity('sw.js', expected, expected))
 
     def test_node_vm_keeps_install_gate_cleanup_raw_source_exclusion_and_query_matching(self):
-        result = subprocess.run(
-            ['node', str(ROOT / 'tests/donation/service-worker-vm.mjs'), str(self.first / 'sw.js')],
-            cwd=ROOT, text=True, capture_output=True, check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('Service Worker VM checks passed', result.stdout)
+        for worker_path in (ROOT / 'sw.js', self.first / 'sw.js'):
+            with self.subTest(worker=worker_path):
+                result = subprocess.run(
+                    ['node', str(ROOT / 'tests/donation/service-worker-vm.mjs'), str(worker_path)],
+                    cwd=ROOT, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('Service Worker VM checks passed', result.stdout)
 
 
 if __name__ == '__main__':

@@ -8,7 +8,9 @@ assert(workerPath, 'Pass the built public sw.js path');
 const source = await readFile(workerPath, 'utf8');
 const cacheName = source.match(/const CACHE='([^']+)';/)?.[1];
 assert(cacheName, 'Built worker must have a derived CACHE name');
-const shell = JSON.parse(source.match(/const SHELL=(\[[^;]*\]);/)?.[1] || 'null');
+const shellLiteral = source.match(/const SHELL=(\[[^;]*\]);/)?.[1];
+assert(shellLiteral, 'Worker must define SHELL');
+const shell = vm.runInNewContext('(' + shellLiteral + ')', {});
 assert(Array.isArray(shell), 'Built worker must have a derived SHELL');
 
 const origin = 'https://www.huiwen.tw';
@@ -181,8 +183,9 @@ const priorURL = origin + '/index.html';
   assert.equal((await publicJsonResponse).status, 200);
   assert((await active.match(publicJson)), 'public JSON must retain network-first caching');
 
-  const exact = shell.find(url => url.startsWith('./home.js?'));
-  assert(exact, 'homepage JavaScript URL must preserve its query string');
+  const exact = shell.find(url => url.startsWith('./home.js?'))
+    || shell.find(url => /\.(?:css|js)(?:\?|$)/.test(url));
+  assert(exact, 'worker SHELL must include a CSS or JavaScript resource for exact cache-key checks');
   const exactURL = resolve(exact);
   const exactRequest = new Request(exactURL);
   env.setNetworkOffline(true);
