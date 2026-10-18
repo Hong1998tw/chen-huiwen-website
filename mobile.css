@@ -3,14 +3,6 @@
 @media(max-width:900px){
  .hero-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:24px}.hero-portrait{width:100%}
 }
-/* Avoid a mobile navigation flash before the deferred menu script runs. Browsers
-   with scripting disabled do not match this media feature, so the no-JS nav stays visible. */
-@media(max-width:780px) and (scripting:enabled){
- .site-header nav:not(.is-open){display:none}
-}
-@media(max-width:780px) and (scripting:none){
- .menu-toggle{display:none}
-}
 @media(max-width:780px){
  body.menu-open{overflow:hidden}.wrap{width:calc(100% - 32px)}
  .topline .wrap{width:calc(100% - 32px)}
@@ -19,7 +11,7 @@
  .site-header.is-compact{height:52px;margin-bottom:12px}
  .nav-wrap{display:flex;flex-wrap:nowrap;gap:8px;width:100%;height:64px;min-height:64px;padding:0 16px;border-radius:0;transition:height .14s ease}
  .site-header.is-compact .nav-wrap{height:52px;min-height:52px}
- .brand{gap:7px;min-width:0}.brand-mark{flex:0 0 33px}.brand-name{font-size:1.1rem;letter-spacing:0}.brand-role{display:flex;flex-direction:row;gap:0;border:0;padding-left:0;font-size:.625rem;line-height:1.3;letter-spacing:0;white-space:nowrap}.brand-role br,.brand-english{display:none}.brand-district{display:inline}
+ .brand{gap:7px;min-width:0}.brand-mark{flex:0 0 33px}.brand-name{font-size:1.1rem;letter-spacing:0}.brand-role{display:flex;flex-direction:column;align-items:flex-start;gap:0;border:0;padding-left:0;font-size:max(12px,.75rem);line-height:1.3;letter-spacing:0;white-space:normal}.brand-role br,.brand-english{display:none}.brand-district{display:inline}
  .header-phone{display:inline-grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:50%;background:var(--green-soft);color:var(--green-dark)}
  .header-phone svg{width:20px;height:20px;fill:currentColor}
  .menu-toggle{display:inline-flex;align-items:center;justify-content:center;width:52px;min-width:52px;height:44px;min-height:44px;border:0;border-radius:999px;background:var(--green-soft);position:relative;z-index:102}
@@ -71,7 +63,25 @@
  .about-copy>.profile-block{grid-row:5;margin-top:8px}
 }
 @media(max-width:380px){
- .nav-wrap{padding-inline:8px}.brand{gap:4px}.brand-mark{width:30px;height:30px;line-height:30px;font-size:1.15rem;flex-basis:30px}.brand-name{font-size:1rem}.brand-role{font-size:.56rem}.menu-toggle{width:44px;min-width:44px}.site-header nav{left:10px;right:10px}.menu-ready .site-header nav{left:10px;right:10px}.menu-ready .site-header nav>a{padding-inline:10px}
+ .nav-wrap{padding-inline:8px}.brand{gap:4px}.brand-mark{width:30px;height:30px;line-height:30px;font-size:1.15rem;flex-basis:30px}.brand-name{font-size:1rem}.menu-toggle{width:44px;min-width:44px}.site-header nav{left:10px;right:10px}.menu-ready .site-header nav{left:10px;right:10px}.menu-ready .site-header nav>a{padding-inline:10px}
+}
+
+/* Before enhancement, keep the native details navigation inside the page flow. */
+@media(max-width:780px){
+ html:not(.menu-ready) .site-header{position:static;top:auto;height:auto;margin:0;z-index:auto}
+ html:not(.menu-ready) .site-header .nav-wrap{height:auto;min-height:64px;flex-wrap:wrap;gap:8px;padding-block:8px}
+ html:not(.menu-ready) .menu-toggle{display:none}
+ html:not(.menu-ready) .site-header nav{display:flex;flex:0 0 100%;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;position:static;z-index:auto;top:auto;left:auto;right:auto;width:100%;max-height:none;overflow:visible;overscroll-behavior:auto;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+ html:not(.menu-ready) .site-header nav>.nav-group{width:100%;border:1px solid var(--line);border-radius:12px;background:#fff}
+ html:not(.menu-ready) .site-header nav>.nav-group summary{display:flex;align-items:center;min-height:44px;padding:10px 12px;cursor:pointer}
+ html:not(.menu-ready) .site-header nav>.nav-group .nav-group-links{display:flex;flex-direction:column;padding:0 12px 8px}
+ html:not(.menu-ready) .site-header nav>.nav-group .nav-group-links a{display:flex;align-items:center;min-height:44px;padding:8px 0;border-top:1px solid var(--line);font-size:1rem;line-height:1.5;white-space:normal}
+ html:not(.menu-ready) .site-header nav>.nav-group .nav-group-links a:first-child{border-top:0}
+ html:not(.menu-ready) .site-header nav>a{display:flex;align-items:center;justify-content:flex-start;width:100%;min-height:44px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:1rem;line-height:1.5;white-space:normal}
+}
+/* Script-enabled browsers collapse the menu until the interactive control is ready. */
+@media(max-width:780px) and (scripting:enabled){
+ .site-header nav:not(.is-open){display:none}
 }
 
 /* Desktop navigation: clear brand row and comfortably sized navigation links. */

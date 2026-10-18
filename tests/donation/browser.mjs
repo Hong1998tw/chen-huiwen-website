@@ -142,6 +142,8 @@ try {
       assert.equal((await phone.boundingBox()).height, 44);
       assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
       assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
+      assert(await page.locator('.brand-role').isVisible());
+      assert(parseFloat(await page.locator('.brand-role').evaluate(el => getComputedStyle(el).fontSize)) >= 12);
       assert(await page.getByRole('banner').count() === 1);
 
       await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
@@ -580,6 +582,54 @@ try {
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
+  await check('no JavaScript: mobile native navigation flows, expands and leaves the page reachable', async () => {
+    await nojsPage.setViewportSize({ width: 320, height: 740 });
+    try {
+      await nojsPage.goto(base + 'service.html');
+      const header = nojsPage.locator('.site-header');
+      const navigation = nojsPage.locator('#navigation');
+      const role = nojsPage.locator('.brand-role');
+      const phone = nojsPage.locator('.site-header a.header-phone');
+      const canonicalPhone = nojsPage.locator('#contact .contact-card a.big-phone');
+      assert.equal(await nojsPage.locator('html.menu-ready').count(), 0);
+      assert.equal(await nojsPage.locator('.menu-toggle').isVisible(), false);
+      assert.equal(await header.evaluate(el => getComputedStyle(el).position), 'static');
+      assert.equal(await navigation.evaluate(el => getComputedStyle(el).position), 'static');
+      assert(await role.isVisible());
+      assert(parseFloat(await role.evaluate(el => getComputedStyle(el).fontSize)) >= 12);
+      assert((await role.innerText()).includes('高雄市議員'));
+      assert((await role.innerText()).includes('鳳山區'));
+      assert.equal(await phone.getAttribute('href'), await canonicalPhone.getAttribute('href'));
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+      const group = navigation.locator('.nav-group').first();
+      await group.locator('summary').click();
+      assert.equal(await group.getAttribute('open'), '');
+      assert(await group.locator('a[href="achievements.html"]').isVisible());
+      const flow = await nojsPage.evaluate(() => {
+        const headerRect = document.querySelector('.site-header').getBoundingClientRect();
+        const navRect = document.querySelector('#navigation').getBoundingClientRect();
+        const mainRect = document.querySelector('main').getBoundingClientRect();
+        const headingRect = document.querySelector('main h1').getBoundingClientRect();
+        return { headerBottom: headerRect.bottom, navBottom: navRect.bottom, mainTop: mainRect.top, headingTop: headingRect.top };
+      });
+      assert(flow.navBottom <= flow.headerBottom + 1, JSON.stringify(flow));
+      assert(flow.mainTop >= flow.headerBottom - 1, JSON.stringify(flow));
+      assert(flow.headingTop >= flow.mainTop - 1, JSON.stringify(flow));
+
+      const heading = nojsPage.locator('main h1').first();
+      await heading.scrollIntoViewIfNeeded();
+      const headingPosition = await heading.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+      });
+      assert(headingPosition.top >= 0 && headingPosition.top < headingPosition.viewportHeight, JSON.stringify(headingPosition));
+    } finally {
+      await nojsPage.setViewportSize({ width: 390, height: 844 });
+    }
+  });
   await check('no JavaScript: political donation remains readable', async () => {
     await nojsPage.goto(base + 'political-donation.html');
     assert(await nojsPage.locator('.brand[href="./"]').isVisible());
