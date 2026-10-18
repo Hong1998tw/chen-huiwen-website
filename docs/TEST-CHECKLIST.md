@@ -75,6 +75,14 @@
 - [ ] 主要 heading 層級合理。
 - [ ] broken link 抽查完成。
 
+### 自動 WCAG 2.2 AA 與 target-size 基準
+
+`tests/donation/` 的 axe 執行保留既有 WCAG 2.0／2.1 tags，並實際加入 `wcag22aa`；本次不移除既有 axe 規則或 Lighthouse best-practices 門檻。target-size 使用鎖定的 `@axe-core/playwright` 4.10.2／axe-core 4.10.3。
+
+`tests/donation/wcag22aa-baseline.json` 目前明確為 `pending-ci`，違規數為未知，不能當作零。PR browser CI 會把 route、viewport、scenario、axe selector、量得的 CSS bounding box、axe check／exception 證據與基準狀態輸出到 `tests/donation/results/wcag22aa-target-size.json`；readiness 與 production runners 也輸出各自視窗的同格式證據。核准基準須附真實 workflow run／artifact 來源，且每筆既有項目須有人工作成例外判定與理由；未有來源可核對的核准基準時 gate 失敗。核准後新增 selector／viewport 違規會失敗，已修復項目需先從基準移除才會通過。無法量得 selector 尺寸也會失敗並附量測錯誤。
+
+自動 axe 規則只提供工具能檢查的頁面線索，不等於完整 WCAG 2.2 AA 符合性認證。WCAG 2.5.8 例外、控制用途與上下文仍須人工覆核；鍵盤、真實輔助科技及其他無法由該規則確認的項目仍按各自流程檢查。
+
 ## H. Release Gate
 
 - [ ] 已閱讀完整 diff。
