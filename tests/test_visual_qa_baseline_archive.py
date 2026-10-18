@@ -2,6 +2,9 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,7 +12,10 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / 'scripts'
 MODULE_PATH = ROOT / 'scripts/verify_visual_qa_baseline_archive.py'
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location('visual_qa_baseline_archive', MODULE_PATH)
 archive_module = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = archive_module
@@ -95,6 +101,53 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
         self.assertEqual(result['status'], 'VERIFIED')
         self.assertEqual((result['captureCount'], result['pngCount'], result['metadataCount']), (30, 30, 30))
         self.assertEqual(len(list((self.root / 'unpacked').iterdir())), 62)
+
+    def test_cli_parses_and_verifies_archive_on_supported_python(self):
+        archive = self.archive('cli-approved.zip')
+        output = self.root / 'cli-unpacked'
+        result = subprocess.run(
+            [sys.executable, str(MODULE_PATH), str(archive), str(output), '--policy', str(self.policy_path)],
+            cwd=ROOT, capture_output=True, text=True,
+            env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, timeout=60
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt['status'], 'VERIFIED')
+        self.assertEqual((receipt['captureCount'], receipt['pngCount'], receipt['metadataCount']), (30, 30, 30))
+        self.assertEqual(len(list(output.iterdir())), 62)
+
+    def test_import_does_not_write_files(self):
+        with tempfile.TemporaryDirectory(prefix='a05-archive-import-') as temp:
+            scripts = Path(temp) / 'scripts'
+            scripts.mkdir()
+            module_path = scripts / MODULE_PATH.name
+            shutil.copy2(MODULE_PATH, module_path)
+            shutil.copy2(SCRIPTS / 'python_guard.py', scripts / 'python_guard.py')
+            before = sorted(
+                (('dir', path.relative_to(temp).as_posix()) if path.is_dir()
+                 else ('file', path.relative_to(temp).as_posix(), path.read_bytes()))
+                for path in Path(temp).rglob('*')
+            )
+            code = (
+                'import importlib.util, sys; from pathlib import Path; '
+                'module_path = Path(sys.argv[1]); sys.path.insert(0, str(module_path.parent)); '
+                'spec = importlib.util.spec_from_file_location("archive_import_probe", module_path); '
+                'module = importlib.util.module_from_spec(spec); sys.modules[spec.name] = module; '
+                'spec.loader.exec_module(module)'
+            )
+            result = subprocess.run(
+                [sys.executable, '-c', code, str(module_path)], cwd=temp,
+                capture_output=True, text=True,
+                env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, timeout=30
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, '')
+            after = sorted(
+                (('dir', path.relative_to(temp).as_posix()) if path.is_dir()
+                 else ('file', path.relative_to(temp).as_posix(), path.read_bytes()))
+                for path in Path(temp).rglob('*')
+            )
+            self.assertEqual(after, before)
 
     def test_zip_path_traversal_is_rejected(self):
         files = dict(self.files)

@@ -2,6 +2,9 @@
 """Validate and safely extract the exact 30-capture A-05 baseline artifact."""
 from __future__ import annotations
 
+from python_guard import require_supported_python
+require_supported_python()
+
 import argparse
 import hashlib
 import json
