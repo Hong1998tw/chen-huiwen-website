@@ -7,8 +7,30 @@ import hashlib
 import html
 import json
 import re
+from urllib.parse import urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+SITE_BASE = 'https://www.huiwen.tw/'
+
+
+def link_arrow(href):
+    """Use a right arrow for this site and contact actions, an up-right arrow elsewhere."""
+    value = str(href or '')
+    if urlsplit(value).scheme.lower() in {'mailto', 'tel'}:
+        return '→'
+    destination = urlsplit(urljoin(SITE_BASE, value))
+    origin = urlsplit(SITE_BASE)
+
+    def origin_key(url):
+        scheme = url.scheme.lower()
+        try:
+            port = url.port
+        except ValueError:
+            return (scheme, (url.hostname or '').lower(), -1)
+        default_port = 443 if scheme == 'https' else 80 if scheme == 'http' else None
+        return (scheme, (url.hostname or '').lower(), port or default_port)
+
+    return '→' if origin_key(destination) == origin_key(origin) else '↗'
 
 
 def region(text, name, body):

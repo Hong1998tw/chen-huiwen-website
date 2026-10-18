@@ -5,6 +5,7 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {chromium,webkit} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import {assertPetitionPreservesOriginalContent} from './petition-preservation.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const dadeRecord=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).find(record=>record.id==='dade-park-road-opening');
 const out=new URL('./results/site-maturity/',import.meta.url);await mkdir(out,{recursive:true});
@@ -90,18 +91,9 @@ try{
    return source.slice(start,end+7);
   };
   const baselineMain=getMain(baseline),main=getMain(current);
-  const priorStart=baselineMain.indexOf('<p>線上表單為');
-  const priorEnd=baselineMain.indexOf('</p>',priorStart)+4;
-  const noticeStart=main.indexOf('<p>線上表單會在新分頁');
-  const noticeEnd=main.indexOf('</p>',noticeStart)+4;
-  assert(priorStart>=0&&priorEnd>priorStart&&noticeStart>=0&&noticeEnd>noticeStart);
-  const priorNotice=baselineMain.slice(priorStart,priorEnd);
-  const disclosure=main.slice(noticeStart,noticeEnd);
-  const expected='<p>線上表單會在新分頁開啟外部 Notion 網站，填寫與送出都在該網站進行；本頁不會顯示填寫或送出狀態。若不使用線上表單，可直接致電服務處。送出前請確認填寫資料正確；需要聯絡資訊時可查看<a class="text-link" href="service.html#contact">服務處聯絡資訊</a>。</p>';
-  assert.equal(disclosure,expected,'The added copy discloses the outside form without promising a service outcome');
-  assert.equal(main.replace(disclosure,priorNotice),baselineMain,'Every prior main-content element outside the approved disclosure remains intact');
+  assertPetitionPreservesOriginalContent(baselineMain,main);
   assert(main.includes('<a class="button button-green" href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d" target="_blank" rel="noopener noreferrer">前往服務案件登記 ↗</a>'));
-  assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 ↗</a>'));
+  assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 →</a>'));
  });
 
 }finally{await browser.close();server?.kill('SIGTERM');}

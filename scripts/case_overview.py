@@ -40,5 +40,5 @@ def render_overview(record, root, paragraph_deduper=None):
     for title, text in points:
         if paragraph_deduper.keep(text):
             body += f'<div><h3>{e(title)}</h3><p>{e(text)}</p></div>'
-    body += '</div><a class="text-link" href="#case-sources">查看資料來源 ↓</a></section>'
+    body += '</div><a class="text-link" href="#case-sources">查看資料來源 →</a></section>'
     return body

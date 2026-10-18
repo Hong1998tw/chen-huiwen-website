@@ -9,6 +9,7 @@ import re
 from build_guides import load_office
 from build_events import validate as validate_event
 from build_service import validate_schedule
+from build_shared import link_arrow
 from achievement_metadata import latest_history_event
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,13 +22,13 @@ def e(value):
 
 def render_services(office, schedule):
     month = int(schedule['month'].split('-')[1])
-    return f'''<section class="wrap home-task-paths" aria-label="主要服務任務入口"><a href="service.html#contact" data-home-task="service"><span>服務協助</span><strong>聯絡服務處 ↗</strong><small>電話、地址與服務時間</small></a><a href="achievements.html#case-results" data-home-task="local"><span>地方進度</span><strong>查看地方紀錄 ↗</strong><small>依里別、主題與辦理階段查詢</small></a><a href="council-records.html" data-home-task="records"><span>問政紀錄</span><strong>查詢議會公開資料 ↗</strong><small>查看質詢紀錄與官方查詢入口</small></a></section><nav class="wrap home-service-shortcuts" aria-label="其他服務捷徑"><a class="button" style="display:inline-flex;align-items:center;justify-content:center;gap:0;box-sizing:border-box;width:min(100%,240px);max-width:100%;height:auto;min-height:44px;flex:0 1 240px;padding:8px;line-height:1.25;white-space:normal;overflow-wrap:anywhere" href="service.html#monthly-heading" data-home-legal-month="{e(schedule['month'])}">公益法律諮詢 · {month}月律師時間表</a><a href="service-guides.html">洽詢前準備指南</a><a href="{e(office['phoneUrl'])}">直接撥打 {e(office['phone'])}</a><span class="home-service-address">服務處地址：{e(office['address'])}</span></nav>'''
+    return f'''<section class="wrap home-task-paths" aria-label="主要服務任務入口"><a href="service.html#contact" data-home-task="service"><span>服務協助</span><strong>聯絡服務處 {link_arrow("service.html#contact")}</strong><small>電話、地址與服務時間</small></a><a href="achievements.html#case-results" data-home-task="local"><span>地方進度</span><strong>查看地方紀錄 {link_arrow("achievements.html#case-results")}</strong><small>依里別、主題與辦理階段查詢</small></a><a href="council-records.html" data-home-task="records"><span>問政紀錄</span><strong>查詢議會公開資料 {link_arrow("council-records.html")}</strong><small>查看質詢紀錄與官方查詢入口</small></a></section><nav class="wrap home-service-shortcuts" aria-label="其他服務捷徑"><a class="button" style="display:inline-flex;align-items:center;justify-content:center;gap:0;box-sizing:border-box;width:min(100%,240px);max-width:100%;height:auto;min-height:44px;flex:0 1 240px;padding:8px;line-height:1.25;white-space:normal;overflow-wrap:anywhere" href="service.html#monthly-heading" data-home-legal-month="{e(schedule['month'])}">公益法律諮詢 · {month}月律師時間表</a><a href="service-guides.html">洽詢前準備指南</a><a href="{e(office['phoneUrl'])}">直接撥打 {e(office['phone'])}</a><span class="home-service-address">服務處地址：{e(office['address'])}</span></nav>'''
 
 
 def render_event(events):
     event = next((item for item in events if item['id'] == FEATURED_EVENT), None)
     if event is None:
-        return '<section class="section wrap" id="opening"><h2>公開行程與活動</h2><p>查看活動日期、地點與參與資訊。</p><a class="source" href="activities.html">查看公開行程與活動 ↗</a></section>'
+        return '<section class="section wrap" id="opening"><h2>公開行程與活動</h2><p>查看活動日期、地點與參與資訊。</p><a class="source" href="activities.html">查看公開行程與活動 →</a></section>'
     validate_event(event)
     start = datetime.fromisoformat(event['start']).astimezone(ZoneInfo('Asia/Taipei'))
     url = 'event-' + event['id'] + '.html'
@@ -38,7 +39,7 @@ def render_event(events):
         image = event['images'][0]
         photo = f'<a href="{e(url)}" aria-label="查看{e(event["name"])}的完整行程與圖卡"><img src="{e(image["src"])}" width="{image["width"]}" height="{image["height"]}" alt="{e(image["alt"])}" loading="lazy" decoding="async"></a>'
     registration = event.get('registration') or '參與方式請以主辦單位公告為準。'
-    return f'''<section class="home-recent-event" id="opening" aria-labelledby="opening-title" data-home-event="{e(event['id'])}"><div><p class="kicker">{status}</p><p class="event-date"><time datetime="{e(event['start'])}">{start.month}月{start.day}日<span>星期{'一二三四五六日'[start.weekday()]}　{start:%H:%M} 開始</span></time></p><h3 id="opening-title">{e(event['name'])}</h3><p class="event-location">{e(event.get('location', ''))}</p>{change}<p>{e(registration)}</p><a class="source" href="{e(url)}">完整行程、地點與圖卡下載 ↗</a></div>{photo}</section>'''
+    return f'''<section class="home-recent-event" id="opening" aria-labelledby="opening-title" data-home-event="{e(event['id'])}"><div><p class="kicker">{status}</p><p class="event-date"><time datetime="{e(event['start'])}">{start.month}月{start.day}日<span>星期{'一二三四五六日'[start.weekday()]}　{start:%H:%M} 開始</span></time></p><h3 id="opening-title">{e(event['name'])}</h3><p class="event-location">{e(event.get('location', ''))}</p>{change}<p>{e(registration)}</p><a class="source" href="{e(url)}">完整行程、地點與圖卡下載 {link_arrow(url)}</a></div>{photo}</section>'''
 
 
 def render_recent_local(root):
@@ -53,12 +54,12 @@ def render_recent_local(root):
             f'<p class="kicker">地方專題 · {e((record.get("categories") or ["公開紀錄"])[0])}</p>'
             f'<h3><a href="achievement-{e(record["id"])}.html">{e(record["title"])}</a></h3>'
             f'<p>{e(summary)}</p><p class="home-recent-meta">{e(place)} · {e(record.get("status") or "階段未載")} · 最新收錄 {e(date_text)}</p>'
-            f'<a class="source" href="achievement-{e(record["id"])}.html">閱讀這件地方事與資料來源 ↗</a></article>')
+            f'<a class="source" href="achievement-{e(record["id"])}.html">閱讀這件地方事與資料來源 →</a></article>')
 
 
 def render_contact(office):
     hours = ''.join(f'<dt>{e(label)}</dt><dd>{e(value).replace("、", "<br>")}</dd>' for label, value in office['hours'])
-    return f'''<section class="contact-section civic-service-desk" id="contact"><div class="wrap contact-grid"><div><p class="kicker">有事找慧文</p><h2>先說說，<br>你遇到什麼事。</h2><a class="big-phone" href="{e(office['phoneUrl'])}">{e(office['phone'])}</a><p>{e(office['address'])}</p><a class="source" href="service.html#contact">完整聯絡資訊與地圖導航 ↗</a></div><div><dl>{hours}</dl><p>公益律師諮詢採預約制。請先來電確認日期、時段與名額。</p><small>來訪前，請先向服務處確認當日服務與預約安排。</small></div></div></section><nav class="mobile-actions" aria-label="手機常用服務"><a href="{e(office['phoneUrl'])}">電話預約</a><a href="service.html#contact">地址與時間</a></nav>'''
+    return f'''<section class="contact-section civic-service-desk" id="contact"><div class="wrap contact-grid"><div><p class="kicker">有事找慧文</p><h2>先說說，<br>你遇到什麼事。</h2><a class="big-phone" href="{e(office['phoneUrl'])}">{e(office['phone'])}</a><p>{e(office['address'])}</p><a class="source" href="service.html#contact">完整聯絡資訊與地圖導航 →</a></div><div><dl>{hours}</dl><p>公益律師諮詢採預約制。請先來電確認日期、時段與名額。</p><small>來訪前，請先向服務處確認當日服務與預約安排。</small></div></div></section><nav class="mobile-actions" aria-label="手機常用服務"><a href="{e(office['phoneUrl'])}">電話預約</a><a href="service.html#contact">地址與時間</a></nav>'''
 
 
 def build(root=ROOT):
