@@ -23,6 +23,14 @@ def block(text, name, body):
     return re.sub(pattern, lambda _: replacement, text, flags=re.S)
 
 
+def optional_block(text, name, body):
+    """Rebuild a legacy home region only while its explicit template marker exists."""
+    start, end = f'<!-- {name}:start -->', f'<!-- {name}:end -->'
+    if text.count(start) == 0 and text.count(end) == 0:
+        return text
+    return block(text, name, body)
+
+
 def amount_wan(value):
     """Format the canonical TWD amount in ten-thousands without inventing totals."""
     amount = (Decimal(str(value)) / Decimal(10000)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
@@ -153,9 +161,9 @@ def build():
     if set(config.get('summaries', {})) != set(ids):
         raise ValueError('Home summaries must match selected public records')
     page = R / 'index.html'
-    text = block(page.read_text(), 'civic-stories', render_stories(config, data))
-    if '<!-- civic-home-map:start -->' in text:
-        text = block(text, 'civic-home-map', render_home_map(config, data))
+    text = page.read_text()
+    text = optional_block(text, 'civic-stories', render_stories(config, data))
+    text = optional_block(text, 'civic-home-map', render_home_map(config, data))
     if '<!-- civic-questions:start -->' in text:
         guides = {item['recordId']: item for item in json.loads((R / 'data/case-context.json').read_text())['cases']}
         question_ids = ('metro-green-line', 'after-school-care', 'bade-detention')
@@ -163,8 +171,9 @@ def build():
             raise ValueError('Home questions must reference reviewed public context')
         questions = ''.join(f'<article class="civic-feature-copy"><h3>{e(guides[record_id]["question"])}</h3><a class="civic-read" href="achievement-{e(record_id)}.html">閱讀議題與來源 <span aria-hidden="true">→</span></a></article>' for record_id in question_ids)
         question_html = '<section class="wrap civic-reading-guide" id="civic-questions" aria-labelledby="civic-questions-heading"><h2 id="civic-questions-heading">從鳳山日常，問一個具體問題</h2><p>從交通、照顧與防汛，了解地方需求、議會提問與市府辦理進度。</p><div>' + questions + '</div></section>'
-        text = block(text, 'civic-questions', question_html)
-    page.write_text(text)
+        text = optional_block(text, 'civic-questions', question_html)
+    if text != page.read_text():
+        page.write_text(text)
     print('Built public civic home selections')
 
 

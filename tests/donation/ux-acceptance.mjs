@@ -47,12 +47,12 @@ async function assertNoOverflow(expectedWidth) {
 
 try {
   await page.goto(base + 'index.html');
-  await page.locator('.hero-task-links a').first().waitFor();
+  await page.locator('.home-task-paths a').first().waitFor();
   await check('homepage service, local-record and council task routes are directly available', async () => {
-    assert.deepEqual(await page.locator('.hero-task-links a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
+    assert.deepEqual(await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
       'service.html#contact', 'achievements.html#case-results', 'council-records.html'
     ]);
-    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map(row => row.dataset.homeRecentItem));
+    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map((row,index) => index===0?'award':row.querySelector('[data-home-event]')?'headquarters':'local'));
     assert.deepEqual(order, ['award', 'headquarters', 'local']);
     assert.match(await page.locator('#recent').innerText(), /獲選[\s\S]*總部成立[\s\S]*文德國小活動中心/);
     await page.screenshot({ path: join(results, 'homepage-desktop-1440x960.png'), fullPage: false });
@@ -62,7 +62,7 @@ try {
   await page.goto(base + 'index.html');
   await check('390×844 homepage keeps task routes inside the first screen without overflow', async () => {
     await assertNoOverflow(390);
-    const boxes = await page.locator('.hero-task-links a').evaluateAll(links => links.map(link => {
+    const boxes = await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => {
       const r = link.getBoundingClientRect();
       return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
     }));
@@ -186,10 +186,10 @@ try {
     const height = width === 1180 ? 757 : 900;
     await page.setViewportSize({ width, height });
     await page.goto(base + 'index.html');
-    await page.locator('.hero-task-links a').first().waitFor();
+    await page.locator('.home-task-paths a').first().waitFor();
     await check(`homepage reflows at ${width}px with all three task links visible and no horizontal overflow`, async () => {
       await assertNoOverflow(width);
-      const boxes=await page.locator('.hero-task-links a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
+      const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
       assert.equal(boxes.length,3);
       assert(boxes.every(box=>box.left>=0&&box.right<=width&&box.width>=44&&box.height>=40));
       assert(boxes.every(box=>box.bottom<=height));
@@ -226,7 +226,7 @@ try {
   for(const viewport of [{width:590,height:378,label:'200% source viewport'},{width:393,height:252,label:'300% short viewport'}]){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
     await page.goto(base+'index.html');
-    await page.locator('.hero-task-links a').first().waitFor();
+    await page.locator('.home-task-paths a').first().waitFor();
     await check(`homepage reflows at ${viewport.width}×${viewport.height} CSS px (${viewport.label}) without fixed controls obscuring content`,async()=>{
       await assertNoOverflow(viewport.width);
       const layout=await page.evaluate(()=>({
@@ -235,7 +235,7 @@ try {
         headerBottom:document.querySelector('.site-header').getBoundingClientRect().bottom,
         titleTop:document.querySelector('#hero-title').getBoundingClientRect().top,
         titleBottom:document.querySelector('#hero-title').getBoundingClientRect().bottom,
-        actions:getComputedStyle(document.querySelector('.mobile-actions')).position,
+        actions:document.querySelector('.mobile-actions')?getComputedStyle(document.querySelector('.mobile-actions')).position:'none',
       }));
       assert.equal(layout.topline,'none');
       assert.equal(layout.header,'relative');

@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ['admin/**', 'scripts/publish_from_cms.py', 'tests/test_standalone_cms.py', '.github/workflows/cms-*.yml']
+    paths: ['admin/**', 'cms-page-editor.js', 'index.html', 'scripts/publish_from_cms.py', 'tests/test_standalone_cms.py', '.github/workflows/cms-*.yml']
 permissions:
   contents: read
 jobs:

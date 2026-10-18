@@ -15,6 +15,7 @@ import {
   resolveTargetSizeMode,
   targetSizeGateMessage,
 } from './wcag22aa.mjs';
+import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
@@ -206,24 +207,27 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: portrait first, civic entry and CLS`, async () => {
+    await check(`homepage ${width}px: portrait first, local query entry and CLS`, async () => {
       await page.goto(base + 'index.html');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
+      await page.evaluate(() => document.fonts.ready);
       assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
       assert.equal(await img.getAttribute('loading'),'eager');
       const frame = await page.locator('.portrait-frame').boundingBox();
       const heading = await page.locator('.hero-copy h1').boundingBox();
-      assert.equal(await page.locator('h1').count(),1);
-      assert(await page.locator('.civic-search').isVisible());
-      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.civic-lead').boundingBox()).y);
-      assert(frame && heading);
-      assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
-      assert(frame.x >= 0 && frame.x + frame.width <= width);
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',async()=>{
+        assert.equal(await page.locator('h1').count(),1);
+        assert(await page.locator('.home-village-form #home-village').isVisible());
+        assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
+        assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
+        assert(frame && heading);
+        assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+        assert(frame.x >= 0 && frame.x + frame.width <= width);
+      });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
-      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');
+      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
+      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
       assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
@@ -481,10 +485,13 @@ try {
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const stories = page.locator('.civic-story-grid');
-      assert.equal(await stories.locator('.civic-reading-row').count(),4);
-      assert.equal(await stories.locator('[data-record-id="bade-detention"]').count(),0);
-      await stories.screenshot({path:fileURLToPath(new URL(`home-stories-${viewport.width}.png`, output))});
+      const recent = page.locator('.home-recent-list');
+      assert.equal(await recent.locator('> li').count(),3);
+      assert.equal(await page.locator('.home-recent-local').count(),1);
+      assert.equal(await page.locator('[data-home-local-record="bade-detention"]').count(),0);
+      assert.equal(await page.locator('.civic-story-grid, .civic-reading-row, .place').count(),0);
+      await recent.screenshot({path:fileURLToPath(new URL(`home-recent-${viewport.width}.png`, output))});
+      await page.locator('.home-local-progress').screenshot({path:fileURLToPath(new URL(`home-local-progress-${viewport.width}.png`, output))});
 
     });
   }

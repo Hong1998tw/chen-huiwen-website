@@ -60,11 +60,31 @@ STATIC_FILES = (
     "sw.js",
     "offline.html",
     "assets/fengshan-villages.geojson",
+    "assets/fengshan-home-map.svg",
+    "assets/legal/portrait.webp",
+    "assets/home-portrait-384.avif",
+    "assets/home-portrait-480.avif",
+    "assets/home-portrait-640.avif",
+    "assets/home-portrait-1004.avif",
+    "assets/home-portrait-384.webp",
+    "assets/home-portrait-480.webp",
+    "assets/home-portrait-640.webp",
+    "assets/events/campaign-opening-20261031-landscape-480.avif",
+    "assets/events/campaign-opening-20261031-landscape-800.avif",
+    "assets/events/campaign-opening-20261031-landscape-1087.avif",
+    "assets/events/campaign-opening-20261031-landscape-480.webp",
+    "assets/events/campaign-opening-20261031-landscape-800.webp",
+    "assets/events/campaign-opening-20261031-landscape-1087.webp",
+    "assets/events/campaign-opening-20261031-landscape.jpg",
     "assets/vendor/leaflet.css",
     "small-q.css",  # Loaded after window load; still required by the live snapshot.
     "assets/vendor/leaflet.js",
 )
 MIN_TEXT_COVERAGE = 0.95
+BINARY_SUFFIXES = frozenset({
+    ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".mp4", ".otf", ".pdf",
+    ".png", ".ttf", ".webm", ".webp", ".woff", ".woff2",
+})
 
 
 def normalize_space(value: str) -> str:
@@ -275,8 +295,13 @@ def normalize_text_bytes(data: bytes) -> bytes:
     return text.rstrip().encode("utf-8")
 
 
-def digest(data: bytes) -> str:
-    return hashlib.sha256(normalize_text_bytes(data)).hexdigest()
+def is_binary_path(path: str) -> bool:
+    return Path(path).suffix.lower() in BINARY_SUFFIXES
+
+
+def digest(data: bytes, *, binary: bool = False) -> str:
+    canonical = data if binary else normalize_text_bytes(data)
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def visible_text_coverage(local: PageParser, remote: PageParser) -> float:
@@ -309,9 +334,9 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
         return response.status, response.geturl(), response.read()
 
 
-def verification_cache_key(local: bytes, run_cache_key: str, attempt: int) -> str:
+def verification_cache_key(local: bytes, run_cache_key: str, attempt: int, *, binary: bool = False) -> str:
     """Use a fresh URL namespace for every workflow run and retry attempt."""
-    return f"{digest(local)[:16]}-{run_cache_key}-{attempt}"
+    return f"{digest(local, binary=binary)[:16]}-{run_cache_key}-{attempt}"
 
 
 def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, snapshot_dir: Path | None = None) -> dict:
@@ -338,7 +363,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             continue
 
         local = canonical_bytes(local_path)
-        cache_key = verification_cache_key(local, run_cache_key, attempt)
+        binary = is_binary_path(local_path)
+        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
         try:
             status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -347,7 +373,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             continue
 
         same_host = urlsplit(final_url).hostname == base_host
-        raw_parity = digest(local) == digest(remote)
+        raw_parity = digest(local, binary=binary) == digest(remote, binary=binary)
         if status == 200 and same_host:
             save_snapshot(local_path, remote)
 
@@ -397,8 +423,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                     "visibleTextCoverage": round(coverage, 4),
                     "expectedAssetsPresent": not missing_assets,
                     "criticalFactsMatch": not critical,
-                    "localSha256": digest(local),
-                    "remoteSha256": digest(remote),
+                    "localSha256": digest(local, binary=binary),
+                    "remoteSha256": digest(remote, binary=binary),
                 }
             )
             failures.extend(f"{local_path}: {failure}" for failure in page_failures)
@@ -412,8 +438,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                 "http": status,
                 "sameHost": same_host,
                 "sourceParity": parity,
-                "localSha256": digest(local),
-                "remoteSha256": digest(remote),
+                "localSha256": digest(local, binary=binary),
+                "remoteSha256": digest(remote, binary=binary),
             }
         )
         if status != 200:
@@ -429,7 +455,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             failures.append(f"{asset}: referenced canonical asset missing from source")
             continue
         local = source_path.read_bytes()
-        cache_key = verification_cache_key(local, run_cache_key, attempt)
+        binary = is_binary_path(asset)
+        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
         try:
             status, final_url, remote = fetch(base_url, "/" + asset, cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -438,7 +465,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             continue
 
         same_host = urlsplit(final_url).hostname == base_host
-        parity = digest(local) == digest(remote)
+        parity = digest(local, binary=binary) == digest(remote, binary=binary)
         if status == 200 and same_host:
             save_snapshot(asset, remote)
         checks.append(
@@ -448,8 +475,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                 "http": status,
                 "sameHost": same_host,
                 "sourceParity": parity,
-                "localSha256": digest(local),
-                "remoteSha256": digest(remote),
+                "localSha256": digest(local, binary=binary),
+                "remoteSha256": digest(remote, binary=binary),
             }
         )
         if status != 200:

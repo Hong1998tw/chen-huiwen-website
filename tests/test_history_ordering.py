@@ -1,6 +1,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 from bs4 import BeautifulSoup
@@ -12,6 +13,68 @@ from build_election_page import latest, tracking_items
 
 
 class HistoryOrderingTests(unittest.TestCase):
+    def test_cms_preview_ordering_matches_python_for_all_public_records(self):
+        records = json.loads((ROOT / 'data/achievements.json').read_text())
+        self.assertEqual(len(records), 429)
+        payload = [{'id': row['id'], 'history': row.get('history', [])} for row in records]
+        expected = []
+        for row in payload:
+            latest = latest_history_event(row['history'])
+            expected.append(latest.get('date') if latest else None)
+
+        source = (ROOT / 'cms-page-editor.js').read_text()
+        start = source.index('  // Match scripts/achievement_metadata.py:')
+        end = source.index('  function applyHomePreview', start)
+        helpers = source[start:end]
+        case_preview = source.split('  function applyCasePreview', 1)[1]
+        self.assertIn('const latest = latestHistoryEvent(history);', case_preview)
+        self.assertNotIn('localeCompare', case_preview)
+        runner = helpers + '''
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => {
+  const rows = JSON.parse(input);
+  process.stdout.write(JSON.stringify(rows.map(row => latestHistoryEvent(row.history)?.date ?? null)));
+});
+'''
+        result = subprocess.run(
+            ['node', '-e', runner], input=json.dumps(payload, ensure_ascii=False),
+            text=True, capture_output=True, check=True,
+        )
+        actual = json.loads(result.stdout)
+        self.assertEqual(actual, expected)
+
+        by_id = {row['id']: date for row, date in zip(payload, actual)}
+        self.assertEqual(by_id['wufu-2nd-lane81-drainage'], '2019-12-25')
+        self.assertEqual(by_id['fengbei-lane127-road-opening'], '2021-07-02')
+
+    def test_cms_preview_preserves_calendar_first_range_and_stable_tie_rules(self):
+        rows = [
+            {'history': [{'date': '第4屆第7次定期大會'}, {'date': '2026-09-17'}, {'date': '2026-09-22'}]},
+            {'history': [{'date': '2026-04-28'}, {'date': '2026-07-29 至 08-06'}]},
+            {'history': [{'date': '113學年度第2學期'}, {'date': '114學年度第2學期'}]},
+            {'history': [{'date': '2026-09-22', 'title': '先收錄'}, {'date': '2026-09-22', 'title': '後收錄'}]},
+        ]
+        expected = [(latest_history_event(row['history']) or {}).get('date') for row in rows]
+        source = (ROOT / 'cms-page-editor.js').read_text()
+        start = source.index('  // Match scripts/achievement_metadata.py:')
+        end = source.index('  function applyHomePreview', start)
+        runner = source[start:end] + '''
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => {
+  const rows = JSON.parse(input);
+  process.stdout.write(JSON.stringify(rows.map(row => latestHistoryEvent(row.history)?.date ?? null)));
+});
+'''
+        result = subprocess.run(
+            ['node', '-e', runner], input=json.dumps(rows, ensure_ascii=False),
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(json.loads(result.stdout), expected)
+
     def test_session_label_does_not_outrank_an_explicit_date(self):
         events = [
             {'date': '第4屆第7次定期大會', 'title': '提案'},

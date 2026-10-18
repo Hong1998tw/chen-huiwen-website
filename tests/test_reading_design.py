@@ -24,25 +24,34 @@ class ReadingDesignTests(unittest.TestCase):
         for url in ['achievements.html','explore.html','council-records.html','news.html','press.html','activities.html','updates.html','about.html','political-donation.html','service.html','service.html#monthly-heading','service-guides.html','petition.html','vision.html','election.html']:
             self.assertIn(url, urls)
             self.assertTrue((ROOT / url.split('#')[0]).is_file())
-    def test_home_story_precedes_secondary_discovery(self):
+    def test_home_story_precedes_local_discovery_without_repeated_case_lists(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
         main = soup.select_one('main')
-        self.assertLess(str(main).index('id="projects"'), str(main).index('id="map"'))
+        self.assertLess(str(main).index('id="recent"'), str(main).index('id="home-local-progress"'))
+        self.assertLess(str(main).index('id="home-local-progress"'), str(main).index('id="council"'))
         self.assertFalse(soup.select('.civic-tasknav'))
-        self.assertEqual(len(soup.select('#civic-query')), 1)
+        self.assertEqual(len(soup.select('.home-recent-list > li')), 3)
+        self.assertEqual(len(soup.select('.home-task-paths a')), 3)
+        form = soup.select_one('.home-village-form')
+        self.assertIsNotNone(form)
+        self.assertEqual(form.get('role'), 'search')
+        self.assertEqual(form.get('method'), 'get')
+        self.assertEqual(form.get('action'), 'achievements.html#case-results')
+        village = form.select_one('select#home-village[name="village"]')
+        self.assertIsNotNone(village)
+        self.assertIn('v:文德里', [option.get('value') for option in village.select('option')])
+        self.assertEqual(len(form.select('button[type="submit"]')), 1)
+        self.assertIn('完整文字紀錄仍可在建設與進度頁查看', form.select_one('noscript').get_text())
+        self.assertEqual(soup.select_one('.home-map-text-link')['href'], 'achievements.html#case-results')
+        self.assertFalse(soup.select('#civic-query, .civic-search'))
         self.assertEqual(len(soup.select('.hero-portrait')), 1)
         config = json.loads((ROOT / 'data/civic-home.json').read_text())
-        records = {r['id']: r for r in json.loads((ROOT / 'data/achievements-public.json').read_text())}
-        feature = soup.select_one('.civic-feature')
-        self.assertEqual(feature['data-record-id'], config['featured'])
-        self.assertIn('civic-feature-copy', feature.find(recursive=False).get('class', []))
-        record = records[config['featured']]
-        if record.get('funding'):
-            self.assertIsNotNone(feature.select_one('.civic-feature-funding'))
-        elif record.get('images'):
-            self.assertEqual(feature.select_one('.civic-feature-photo img')['loading'], 'lazy')
-        for image in soup.select('.civic-story-grid img'):
-            self.assertEqual(image['loading'], 'lazy')
+        feature = soup.select_one('.home-recent-local')
+        self.assertEqual(feature['data-home-local-record'], config['featured'])
+        self.assertEqual(len(soup.select('.home-recent-local')), 1)
+        self.assertFalse(soup.select('.civic-story-grid, .civic-reading-row, .place, .filters'))
+        self.assertEqual(soup.select_one('.hero-portrait img')['fetchpriority'], 'high')
+        self.assertEqual(soup.select_one('[data-home-event] img')['loading'], 'lazy')
     def test_overview_does_not_invent_uncollected_attribution(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
         byid = {r['id']: r for r in records}

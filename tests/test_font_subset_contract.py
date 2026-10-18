@@ -130,7 +130,7 @@ class FontSubsetContractTests(unittest.TestCase):
 
     def test_homepage_headquarters_title_is_covered_by_the_preloaded_core_face(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        heading = soup.select_one("#opening-title").get_text(" ", strip=True)
+        heading = soup.select_one("[data-home-event] h3").get_text(" ", strip=True)
         core_text = fonts.page_text(ROOT, "index.html", fonts.ROUTES["index.html"][1])
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
         expected = {ord(char) for char in heading if ord(char) in tc_cmap}
@@ -144,7 +144,7 @@ class FontSubsetContractTests(unittest.TestCase):
             [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
             ["award", "headquarters", "local"],
         )
-        self.assertIn("獲選", recent.select_one("[data-home-recent-item='award']").get_text(" ", strip=True))
+        self.assertIn("獲選", recent.find("li", attrs={"data-home-recent-item": "award"}).get_text(" ", strip=True))
         self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))
         self.assertEqual(recent.select_one("[data-home-local-record]")["data-home-local-record"], "wende-school-center")
         self.assertIn("閱讀這件地方事", recent.get_text(" ", strip=True))
