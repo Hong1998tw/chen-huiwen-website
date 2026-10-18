@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import date, time
 from html import escape as e
 from urllib.parse import urlsplit
+from build_shared import link_arrow
 R=Path(__file__).resolve().parents[1]
 OWN_SCHEDULE_URL='https://www.huiwen.tw/service.html#monthly-heading'
 
@@ -84,7 +85,7 @@ def source_markup(data):
     # Its publication URL remains usable by the existing CMS source contract.
     if data['sourceUrl']==OWN_SCHEDULE_URL:
         return title
-    return f'<a href="{e(data["sourceUrl"])}" target="_blank" rel="noopener noreferrer">{title} ↗</a>'
+    return f'<a href="{e(data["sourceUrl"])}" target="_blank" rel="noopener noreferrer">{title} {link_arrow(data["sourceUrl"])}</a>'
 
 def rows_markup(data, current=False):
     rows=[]

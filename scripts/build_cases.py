@@ -11,6 +11,7 @@ from validate_achievements import validate
 from case_context import render_case_context
 from case_overview import render_overview
 from case_media import render as render_media
+from build_shared import link_arrow
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
 BASE='https://www.huiwen.tw/'
@@ -28,7 +29,7 @@ template=(R/'templates/case-page.html').read_text()
 byid={x['id']:x for x in public_items}
 assert len({x['id']:x for x in items})==len(items)
 def href(i):return 'achievement-'+i+'.html'
-def ext(url,title):return f'<a href="{E(url)}" target="_blank" rel="noopener noreferrer">{E(title)} ↗</a>'
+def ext(url,title):return f'<a href="{E(url)}" target="_blank" rel="noopener noreferrer">{E(title)} {link_arrow(url)}</a>'
 def is_council_index(url):
  parsed=urlsplit(url)
  return parsed.hostname=='cissearch.kcc.gov.tw' and parsed.path.lower()=='/frame_councilor.aspx'
@@ -104,7 +105,7 @@ for c in public_items:
  related=''
  if c['related']:
   related_ids=[id for id in c['related'] if id in byid]
-  if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
+  if related_ids: related='<section class="section wrap"><p class="eyebrow">相關專題</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
  latest=latest_history_event(c['history'])
  latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
  evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'

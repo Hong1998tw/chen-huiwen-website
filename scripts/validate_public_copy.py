@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import re
 import sys
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Comment, NavigableString
 from build_public import (
@@ -12,6 +13,7 @@ from build_public import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+SITE_BASE = "https://www.huiwen.tw/"
 BANNED = [
     r"待核驗",
     r"資料核驗狀態",
@@ -164,18 +166,123 @@ def check_html(path, markup):
     return findings
 
 
+def is_external_link(href, page_path):
+    """Classify a rendered link against the canonical origin, including page-relative URLs."""
+    value = str(href or "")
+    try:
+        scheme = urlsplit(value).scheme.lower()
+        if scheme in {"mailto", "tel"}:
+            return False
+        page_url = urljoin(SITE_BASE, str(page_path).lstrip("/"))
+        destination = urlsplit(urljoin(page_url, value))
+        site = urlsplit(SITE_BASE)
+
+        def origin(url):
+            scheme = url.scheme.lower()
+            try:
+                port = url.port
+            except ValueError:
+                return (scheme, (url.hostname or "").lower(), -1)
+            default_port = 443 if scheme == "https" else 80 if scheme == "http" else None
+            return (scheme, (url.hostname or "").lower(), port or default_port)
+
+        return origin(destination) != origin(site)
+    except ValueError:
+        return True
+
+
+def check_directional_arrows(path, markup):
+    """Keep internal and contact links on → and links to other origins on ↗."""
+    findings = []
+    soup = BeautifulSoup(markup, "html5lib")
+    for anchor in soup.find_all("a", href=True):
+        text = anchor.get_text(" ", strip=True)
+        has_internal = "→" in text
+        has_external = "↗" in text
+        if not has_internal and not has_external:
+            continue
+        href = anchor.get("href", "")
+        if has_internal and has_external:
+            findings.append(f"{path}: link mixes → and ↗: {href}")
+            continue
+        external = is_external_link(href, path)
+        if has_external and not external:
+            findings.append(f"{path}: internal link uses ↗: {href}")
+        elif has_internal and external:
+            findings.append(f"{path}: external link uses →: {href}")
+    return findings
+
+
+LEGACY_PUBLIC_UI_LABELS = (
+    "ABOUT HUI-WEN", "EVENTS", "LOCAL STORY", "EXPLORE FENGSHAN",
+    "MOMENTS & MEMORIES", "KAOHSIUNG CITY COUNCIL",
+    "PRESS RELEASES & UPDATES", "PRESS RELEASE ARCHIVE", "NEWS & UPDATES",
+    "TELL US YOUR CONCERNS", "WE ARE HERE TO HELP", "WEBSITE TERMS",
+    "SOCIAL HOUSING", "HUMAN RIGHTS", "PUBLIC SCHEDULE", "PUBLIC RECORDS",
+    "STAY CONNECTED", "RELATED STORIES",
+)
+REQUIRED_PUBLIC_UI_LABELS = {
+    "about.html": ((".eyebrow", "關於慧文"), (".eyebrow", "追蹤慧文的近況")),
+    "activities.html": ((".eyebrow", "公開行程"),),
+    "activity-market.html": ((".eyebrow", "地方故事"),),
+    "explore.html": ((".eyebrow", "主題探索"),),
+    "gallery.html": ((".eyebrow", "相片集"),),
+    "council-records.html": ((".eyebrow", "議會公開紀錄"),),
+    "press.html": (("h1", "服務處新聞稿"), (".eyebrow", "服務處新聞稿"), (".eyebrow", "新聞稿與公開說明")),
+    "news.html": (("h1", "最新動態"), (".eyebrow", "最新動態")),
+    "petition.html": ((".eyebrow", "反映服務需求"), (".eyebrow", "服務協助")),
+    "terms.html": ((".eyebrow", "服務條款"),),
+    "history-kumamoto-relief.html": ((".eyebrow", "KAOHSIUNG · KUMAMOTO · 災後互助"),),
+    "history-meilidao.html": ((".eyebrow", "KAOHSIUNG · 人權 · 1979"),),
+    "election.html": ((".eyebrow", "公開追蹤紀錄"), (".eyebrow", "公開行程與活動")),
+    "renwu-anju-social-housing/index.html": ((".eyebrow", "社會住宅 · 2026"),),
+}
+
+
+def check_public_ui_labels(path, markup):
+    """Guard only the approved visible UI labels; preserve foreign names, brands and code."""
+    findings = []
+    relative = Path(path).as_posix()
+    soup = BeautifulSoup(markup, "html5lib")
+    heading_text = [" ".join(node.get_text(" ", strip=True).split())
+                    for node in soup.select("h1, h2, h3, h4, .eyebrow")]
+    folded = [text.casefold() for text in heading_text]
+    for label in LEGACY_PUBLIC_UI_LABELS:
+        if any(label.casefold() in text for text in folded):
+            findings.append(f"{relative}: untranslated public UI label {label}")
+    for selector, expected in REQUIRED_PUBLIC_UI_LABELS.get(relative, ()):
+        actual = [" ".join(node.get_text(" ", strip=True).split()) for node in soup.select(selector)]
+        if expected not in actual:
+            findings.append(f"{relative}: expected {selector} label {expected}")
+    if relative == "index.html":
+        news_link = soup.select_one('#navigation a[href="news.html"]')
+        if not news_link or news_link.get_text(" ", strip=True) != "最新動態與媒體報導":
+            findings.append("index.html: news navigation label must be 最新動態與媒體報導")
+    return findings
+
+
 def validate_artifact_surface(root):
     """Scan the finished artifact, including post-CMS HTML and every JSON file."""
     root = Path(root)
     failures = []
     html_files = sorted(root.rglob("*.html"))
     json_files = sorted(root.rglob("*.json"))
+    nonpublic_roots = {"admin", "docs", "templates", "tests"}
+    public_routes = {
+        path.relative_to(root).as_posix() for path in html_files
+        if path.relative_to(root).parts[0] not in nonpublic_roots
+    }
     present = {path.relative_to(root).as_posix() for path in json_files}
     for relative in sorted(ARTIFACT_JSON_REQUIRED - present):
         failures.append(f"{relative}: required public JSON is missing")
 
     for path in html_files:
-        failures.extend(check_html(path.relative_to(root).as_posix(), path.read_text(encoding="utf-8")))
+        relative = path.relative_to(root).as_posix()
+        markup = path.read_text(encoding="utf-8")
+        failures.extend(check_html(relative, markup))
+        if relative in public_routes:
+            failures.extend(check_directional_arrows(relative, markup))
+            failures.extend(check_public_ui_labels(relative, markup))
 
     from build_public import validate_public_projection
 
@@ -236,7 +343,11 @@ def validate(root=ROOT):
     failures = []
     html_files = public_html_paths(root)
     for path in html_files:
-        failures.extend(check_html(path.relative_to(root).as_posix(), path.read_text(encoding="utf-8")))
+        relative = path.relative_to(root).as_posix()
+        markup = path.read_text(encoding="utf-8")
+        failures.extend(check_html(relative, markup))
+        failures.extend(check_directional_arrows(relative, markup))
+        failures.extend(check_public_ui_labels(relative, markup))
     failures.extend(validate_public_data(root))
 
     index = BeautifulSoup((root / "index.html").read_text(encoding="utf-8"), "html5lib")

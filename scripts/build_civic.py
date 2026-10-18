@@ -5,6 +5,7 @@ from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import json, html, re, math
 from achievement_metadata import is_public
+from build_shared import link_arrow
 
 R = Path(__file__).resolve().parents[1]
 STATION_ID = 'metro-green-line'
@@ -64,7 +65,7 @@ def render_photo(record, class_name, station=False):
         f'alt="{e(metadata.get("alt", ""))}" width="{e(width)}" height="{e(height)}" '
         f'loading="lazy" decoding="async"><figcaption>{e(caption)} · '
         f'<a href="{e(metadata.get("sourceUrl", ""))}" target="_blank" '
-        f'rel="noopener noreferrer">{e(metadata.get("credit", ""))} ↗</a></figcaption></figure>'
+        f'rel="noopener noreferrer">{e(metadata.get("credit", ""))} {link_arrow(metadata.get("sourceUrl", ""))}</a></figcaption></figure>'
     )
 
 
@@ -78,7 +79,7 @@ def render_funding(record):
     source = ''
     if funding.get('sourceUrl'):
         source = (f'<a class="source civic-funding-source" href="{e(funding["sourceUrl"])}" '
-                  f'target="_blank" rel="noopener noreferrer">{e(funding.get("sourceTitle") or "核對經費來源")} ↗</a>')
+                  f'target="_blank" rel="noopener noreferrer">{e(funding.get("sourceTitle") or "核對經費來源")} {link_arrow(funding["sourceUrl"])}</a>')
     return (
         f'<aside class="budget civic-feature-funding" aria-label="{e(record["title"])}核定經費">'
         f'<p class="kicker">核定計畫總經費</p><p class="amount">{amount_wan(funding["total"])}<small>萬元</small></p>'
@@ -102,7 +103,7 @@ def render_stories(config, data):
         f'{e((featured.get("categories") or ["地方專題"])[0])} · {e(featured.get("status", ""))}</p>'
         f'<h3><a href="{e(url)}">{e(story_title(featured))}</a></h3>'
         f'<p>{e(summary_for(config, featured))}</p>{collaboration}'
-        f'<a class="source civic-read" href="{e(url)}#case-sources">閱讀歷程與資料來源 ↗</a>'
+        f'<a class="source civic-read" href="{e(url)}#case-sources">閱讀歷程與資料來源 →</a>'
         f'<small class="meta">內容整理 <time datetime="{e(featured["updated"])}">{e(featured["updated"])}</time></small></div>'
     )
     rows = []
@@ -138,7 +139,7 @@ def render_home_map(config, data):
         detail = '　／　'.join([*record.get('villages', []), status])
         rows.append(
             f'<article class="place" data-topic="{topic}" data-record-id="{e(record_id)}">'
-            f'<a href="achievement-{e(record_id)}.html">{e(story_title(record))} ↗</a><p>{e(detail)}</p></article>'
+            f'<a href="achievement-{e(record_id)}.html">{e(story_title(record))} →</a><p>{e(detail)}</p></article>'
         )
     return ''.join(rows) + f'<p class="meta" id="filter-status" aria-live="polite">本頁精選{len(ids)}筆，不代表全部案件或完工數。</p>'
 

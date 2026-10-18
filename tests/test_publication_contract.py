@@ -353,5 +353,43 @@ class CriticalDeploymentTests(unittest.TestCase):
         self.assertEqual(live.canonical_bytes('data/achievements.json'), (ROOT / public.PROJECTION).read_bytes())
 
 
+class PublicCopyNavigationPolicyTests(unittest.TestCase):
+    def test_directional_arrow_classifier_accepts_site_and_contact_links(self):
+        markup = '''<nav>
+          <a href="detail.html">相對連結 →</a>
+          <a href="#section">頁內錨點 →</a>
+          <a href="https://www.huiwen.tw/about.html">同來源絕對連結 →</a>
+          <a href="//www.huiwen.tw/service.html">同來源協定相對連結 →</a>
+          <a href="mailto:office@example.invalid">電子郵件 →</a>
+          <a href="tel:+88678212536">電話 →</a>
+          <a href="https://news.tvbs.com.tw/example">TVBS ↗</a>
+          <a href="//example.org/story">外部網站 ↗</a>
+        </nav>'''
+        self.assertEqual([], copyguard.check_directional_arrows('nested/page.html', markup))
+
+    def test_directional_arrow_classifier_rejects_misleading_destinations(self):
+        markup = '''<nav>
+          <a href="/about.html">站內卻標外連 ↗</a>
+          <a href="https://example.org/story">外部卻標站內 →</a>
+          <a href="#section">混用 → ↗</a>
+        </nav>'''
+        failures = copyguard.check_directional_arrows('fixture.html', markup)
+        self.assertEqual(3, len(failures), failures)
+        self.assertTrue(any('internal link uses ↗' in item for item in failures))
+        self.assertTrue(any('external link uses →' in item for item in failures))
+        self.assertTrue(any('mixes → and ↗' in item for item in failures))
+
+    def test_ui_label_guard_preserves_brands_proper_names_and_code(self):
+        markup = '''<h1>地方報導</h1><h2>TVBS 與 KUMAMOTO 相關消息</h2>
+          <p>保留 AI、YouBike 與日文專有名稱。</p><code>PUBLIC RECORDS</code>'''
+        self.assertEqual([], copyguard.check_public_ui_labels('fixture.html', markup))
+
+    def test_ui_label_guard_rejects_only_targeted_english_headings(self):
+        markup = '<p class="eyebrow">NEWS &amp; UPDATES</p><h1>最新動態</h1>'
+        failures = copyguard.check_public_ui_labels('fixture.html', markup)
+        self.assertEqual(1, len(failures), failures)
+        self.assertIn('NEWS & UPDATES', failures[0])
+
+
 if __name__ == '__main__':
     unittest.main()

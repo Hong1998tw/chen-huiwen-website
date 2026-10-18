@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from html import escape
 from urllib.parse import urlencode, urlsplit
+from build_shared import link_arrow
 import ipaddress
 import json, re
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,7 +216,7 @@ def render_actions(event, *, detail=False):
     if maps_url(event) and status != 'cancelled':
         text += f'<a class="button button-outline event-map-link" href="{e(maps_url(event))}" target="_blank" rel="noopener noreferrer">Google 地圖 ↗</a>'
     if event.get('sourceUrl'):
-        text += f'<a class="button button-outline" href="{e(event["sourceUrl"])}" target="_blank" rel="noopener noreferrer">{"高雄市議會｜查看官方行程" if council_source(event) else "官方資訊"} ↗</a>'
+        text += f'<a class="button button-outline" href="{e(event["sourceUrl"])}" target="_blank" rel="noopener noreferrer">{"高雄市議會｜查看官方行程" if council_source(event) else "官方資訊"} {link_arrow(event["sourceUrl"])}</a>'
     return text + '</div>'
 
 
@@ -235,7 +236,7 @@ def render_notice(event):
 
 def render_events(events):
     validate_events(events)
-    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">EVENTS</p><h1>公開行程與活動</h1><p>查看接下來的公開行程、活動詳情、日曆與交通資訊。</p></div></section><section class="wrap event-announcements" aria-label="活動時間軸">'
+    body = '<section class="page-head"><div class="wrap"><p class="eyebrow">公開行程</p><h1>公開行程與活動</h1><p>查看接下來的公開行程、活動詳情、日曆與交通資訊。</p></div></section><section class="wrap event-announcements" aria-label="活動時間軸">'
     if not events:
         return body + '<div class="event-empty"><p>新的公開行程與活動將於本頁發布。</p></div></section>'
     body += '<ol class="event-timeline">'
