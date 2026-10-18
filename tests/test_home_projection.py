@@ -2,7 +2,9 @@
 import copy
 import json
 from pathlib import Path
+import re
 import sys
+import tempfile
 import unittest
 from bs4 import BeautifulSoup
 
@@ -24,6 +26,25 @@ from publication_path_guard import compare_generated_outputs, evaluate
 
 
 class HomeProjectionTests(unittest.TestCase):
+    def test_home_task_card_background_matches_its_light_text_colors(self):
+        css=(ROOT/'home.css').read_text()
+        card_rule=re.search(r'\.home-redesign \.home-task-paths a\s*\{([^}]+)\}',css)
+        hover_rule=re.search(r'\.home-redesign \.home-task-paths a:hover\s*\{([^}]+)\}',css)
+        self.assertIsNotNone(card_rule)
+        self.assertIsNotNone(hover_rule)
+        self.assertIn('background: var(--ink);',card_rule.group(1))
+        self.assertIn('background: var(--ink);',hover_rule.group(1))
+        foregrounds=['#d5f582','#e1e8de']
+        background='#173f33'
+        def luminance(color):
+            channels=[int(color[i:i+2],16)/255 for i in (1,3,5)]
+            linear=[channel/12.92 if channel<=0.04045 else ((channel+0.055)/1.055)**2.4 for channel in channels]
+            return sum(weight*channel for weight,channel in zip((0.2126,0.7152,0.0722),linear))
+        dark=luminance(background)
+        for foreground in foregrounds:
+            light=luminance(foreground)
+            self.assertGreaterEqual((light+0.05)/(dark+0.05),4.5)
+
     def test_service_entry_uses_canonical_month_and_office(self):
         office=load_office(ROOT)
         for month in ['2026-10','2027-02']:
@@ -59,6 +80,19 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertEqual(len(main.select('[data-home-local-record]')),1)
         self.assertFalse(main.select('.civic-story-grid, #map, .filters, .place'))
         self.assertEqual(main.select_one('.home-local-progress img')['src'],'assets/fengshan-home-map.svg')
+        feature=main.select_one('[data-home-recent-item="local"] .home-recent-local')
+        self.assertIsNotNone(feature)
+        self.assertIsNotNone(feature.select_one('.home-recent-art--local span:first-child'))
+        self.assertIsNotNone(feature.select_one('.home-recent-art--local span:nth-child(2)'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy h3 a'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy .home-recent-copy'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy .home-recent-meta'))
+
+    def test_cms_home_preview_targets_the_current_published_feature_slot(self):
+        editor=(ROOT/'cms-page-editor.js').read_text()
+        self.assertIn('[data-home-recent-item="local"] .home-recent-local',editor)
+        self.assertIn('.home-recent-card-copy .home-recent-copy',editor)
+        self.assertNotIn('civic-story-grid',editor)
 
     def test_home_stats_and_village_options_follow_public_projection(self):
         records=json.loads((ROOT/'data/achievements-public.json').read_text())
@@ -97,7 +131,7 @@ class HomeProjectionTests(unittest.TestCase):
         progress=BeautifulSoup(render_home_progress(ROOT),'html.parser')
         self.assertIn(geojson['sourceUrl'],str(progress.select_one('.home-map-preview figcaption')))
         self.assertIn(geojson['license'],str(progress.select_one('.home-map-preview figcaption')))
-        map_link=progress.select_one('.home-map-preview a')['href']
+        map_link=progress.select_one('.home-map-preview a[aria-label^="在互動地圖查看公開紀錄"]')['href']
         self.assertEqual(map_link,'achievements.html?case=wende-school-center#achievement-map')
         self.assertEqual(progress.select_one('.home-map-text-link')['href'],'achievements.html#case-results')
         featured=next(row for row in records if row['id']=='wende-school-center')
@@ -133,6 +167,27 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertEqual(soup.select_one('h3 a').get_text(),featured['title'])
         self.assertEqual(soup.get_text().count(featured['title']),1)
         self.assertNotIn('civic-reading',html)
+
+    def test_saved_cms_feature_and_summary_render_into_the_current_home_card(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'data').mkdir()
+            record={
+                'id':'cms-selected-feature','title':'CMS 主打專題','summary':'原始政績摘要',
+                'status':'持續追蹤','categories':['交通與基建'],'villages':['測試里'],
+                'history':[{'date':'2026-09-27','title':'最新公開紀錄'}],
+            }
+            (root/'data/civic-home.json').write_text(json.dumps({
+                'featured':record['id'],'reading':['other-feature'],
+                'summaries':{record['id']:'CMS 儲存的首頁摘要'},
+            }),encoding='utf-8')
+            (root/'data/achievements-public.json').write_text(json.dumps([record]),encoding='utf-8')
+            soup=BeautifulSoup(render_recent_local(root),'html.parser')
+            card=soup.select_one('[data-home-local-record="cms-selected-feature"]')
+            self.assertEqual(card.select_one('h3 a').get_text(),'CMS 主打專題')
+            self.assertEqual(card.select_one('.home-recent-copy').get_text(),'CMS 儲存的首頁摘要')
+            self.assertEqual(card.select_one('.home-recent-art--local span:nth-child(2)').get_text(),'測試里')
+            self.assertIn('最新收錄 2026-09-27',card.select_one('.home-recent-meta').get_text())
 
     def test_home_feature_funding_uses_the_selected_record_amounts_and_source(self):
         record={

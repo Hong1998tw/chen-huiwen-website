@@ -165,7 +165,7 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: portrait first, civic entry and CLS`, async () => {
+    await check(`homepage ${width}px: portrait first, local query entry and CLS`, async () => {
       await page.goto(base + 'index.html');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
@@ -174,9 +174,9 @@ try {
       const frame = await page.locator('.portrait-frame').boundingBox();
       const heading = await page.locator('.hero-copy h1').boundingBox();
       assert.equal(await page.locator('h1').count(),1);
-      assert(await page.locator('.civic-search').isVisible());
+      assert(await page.locator('.home-village-form #home-village').isVisible());
       assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.civic-lead').boundingBox()).y);
+      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
       assert(frame && heading);
       assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
       assert(frame.x >= 0 && frame.x + frame.width <= width);

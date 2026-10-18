@@ -20,7 +20,7 @@ for(const width of [1440,390]){
  }
 }
 await check('Home search routes to published detail and Escape returns focus',async()=>{
- await page.goto(base);await page.locator('#civic-query').fill('文德國小');await page.locator('.civic-search button').click();await page.locator('#global-search-dialog').waitFor();await page.locator('.global-search-result').first().waitFor();assert((await page.locator('.global-search-results').innerText()).includes('文德國小'));await page.keyboard.press('Escape');assert.equal(await page.locator('#global-search-dialog').isVisible(),false);
+ await page.goto(base);await page.locator('.menu-toggle').click();const trigger=page.locator('#navigation .global-search-trigger');await trigger.click();const dialog=page.locator('#global-search-dialog');await dialog.waitFor({state:'visible'});await dialog.locator('input[type="search"]').fill('文德國小');await page.locator('.global-search-result').first().waitFor();assert((await page.locator('.global-search-results').innerText()).includes('文德國小'));await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal(await trigger.evaluate(el=>el===document.activeElement),true);
 });
 await check('List/map switch preserves filters and locate restores map',async()=>{
  await page.goto(base+'achievements.html?q=文德');await page.getByRole('button',{name:'只看列表',exact:true}).click();assert(await page.locator('.map-panel').isHidden());assert.equal(await page.locator('#case-search').inputValue(),'文德');await page.locator('[data-locate]').filter({visible:true}).first().click();assert(await page.locator('.map-panel').isVisible());

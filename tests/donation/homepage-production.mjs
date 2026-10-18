@@ -47,7 +47,12 @@ try{
   assert.equal((await main.innerText()).split('文德國小').length-1,1,'the featured local case appears once as a case');
   assert.equal(await main.locator('.civic-story-grid, #map, .filters, .place').count(),0);
   assert.equal(await page.locator('.home-map-preview img').getAttribute('alt'),'鳳山區里界示意圖；圓點只標示公開紀錄已有的鳳山區座標。');
-  assert.equal(await page.locator('.home-map-preview a').getAttribute('href'),'achievements.html?case=wende-school-center#achievement-map');
+  const mapEntry=page.getByRole('link',{name:'在互動地圖查看公開紀錄；也可使用下方里別選單或文字紀錄'});
+  assert.equal(await mapEntry.count(),1);
+  assert.equal(await mapEntry.getAttribute('href'),'achievements.html?case=wende-school-center#achievement-map');
+  const boundarySource=page.getByRole('link',{name:'內政部國土測繪中心村里界圖'});
+  assert.equal(await boundarySource.count(),1);
+  assert.equal(await boundarySource.getAttribute('href'),'https://data.gov.tw/dataset/7438');
   assert.equal(await page.locator('.home-map-text-link').getAttribute('href'),'achievements.html#case-results');
   assert.equal(await page.locator('.home-village-form').getAttribute('method'),'get');
   assert.equal(await page.locator('.home-village-form button[type=reset]').count(),1);
@@ -133,10 +138,17 @@ try{
  await noJsPage.goto(base);
  assert(await noJsPage.locator('h1').isVisible());
  assert.equal(await noJsPage.locator('.home-village-form noscript').count(),1);
+ assert((await noJsPage.locator('.home-village-form noscript').innerText()).includes('完整文字紀錄仍可在建設與進度頁查看'));
  assert.equal(await noJsPage.locator('.home-recent-list > li').count(),3);
  await noJsPage.locator('#home-village').selectOption('v:文德里');
  await Promise.all([noJsPage.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.searchParams.get('village')==='v:文德里'),noJsPage.getByRole('button',{name:'查看紀錄'}).click()]);
  assert(await noJsPage.locator('.case-card').count()>0,'complete static record list remains available without JavaScript');
+ await noJsPage.goto(base);
+ const textFallback=noJsPage.getByRole('link',{name:'不使用地圖也可直接查閱全部公開紀錄 →'});
+ assert.equal(await textFallback.getAttribute('href'),'achievements.html#case-results');
+ await textFallback.click();
+ await noJsPage.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.hash==='#case-results');
+ assert(await noJsPage.locator('.case-card').count()>0,'the explicit text link keeps the full no-JavaScript record list reachable');
  await noJs.close();
  assert.deepEqual(report.errors,[]);
 }finally{

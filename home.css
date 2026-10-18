@@ -94,8 +94,10 @@
   min-height: 112px;
   padding: 18px clamp(16px, 2.6vw, 30px);
   border-right: 1px solid #557668;
+  background: var(--ink);
 }
 .home-redesign .home-task-paths a:last-child { border-right: 0; }
+.home-redesign .home-task-paths a:hover { background: var(--ink); }
 .home-redesign .home-task-paths span { color: var(--lime); font-size: 13px; font-weight: 700; letter-spacing: .1em; }
 .home-redesign .home-task-paths strong { margin: 3px 0; font: 600 22px/1.35 var(--serif); }
 .home-redesign .home-task-paths small { color: #e1e8de; font-size: 14px; }

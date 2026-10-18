@@ -46,10 +46,30 @@ try{
     assert.match(await page.locator('.case-facts').innerText(),/大寮區內坑里六和路78-12號/);
     assert.match(await page.locator('.case-facts').innerText(),/07-792-0200/);
    });
-   await check('Search, Escape and focus restoration',async()=>{
-    await page.goto(base);await page.locator('#civic-query').fill('文德國小');await page.locator('.civic-search button').click();
-    await page.locator('#global-search-dialog').waitFor();await page.locator('.global-search-result').first().waitFor();
-    await page.keyboard.press('Escape');assert(await page.locator('#global-search-dialog').isHidden());
+   await check('Home village form routes to filtered public results',async()=>{
+    await page.goto(base);
+    const village=page.locator('.home-village-form #home-village');
+    await village.selectOption('v:文德里');
+    await Promise.all([
+     page.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.searchParams.get('village')==='v:文德里'&&url.hash==='#case-results'),
+     page.locator('.home-village-submit').click(),
+    ]);
+    await page.locator('#village-filter').waitFor();
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:文德里'&&window.HuiwenCases.getState().visible.length>0);
+    const result=await page.evaluate(()=>window.HuiwenCases.getState().visible.map(row=>row.villages));
+    assert(result.length>0);
+    assert(result.every(villages=>villages.includes('文德里')),JSON.stringify(result));
+   });
+   await check('Global search, Escape and focus restoration',async()=>{
+    await page.goto(base);
+    await page.locator('.menu-toggle').click();
+    const trigger=page.locator('#navigation .global-search-trigger');
+    await trigger.click();
+    const dialog=page.locator('#global-search-dialog');
+    await dialog.waitFor({state:'visible'});
+    await dialog.locator('input[type="search"]').fill('文德國小');
+    await page.locator('.global-search-result').first().waitFor();
+    await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
     assert(await page.evaluate(()=>document.activeElement?.tagName!=='BODY'));
    });
    await check('Filters keep records without map points and chips are keyboard removable',async()=>{

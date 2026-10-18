@@ -3,6 +3,7 @@
 from collections import Counter
 from datetime import datetime
 from html import escape
+from hashlib import sha256
 import json
 import math
 from pathlib import Path
@@ -22,6 +23,8 @@ MAP_LINK = "achievements.html?case=wende-school-center#achievement-map"
 NON_LOCAL_SCOPES = {"全市政策", "跨區服務"}
 STATUS_ORDER = ("已完成", "持續追蹤", "爭取規劃", "政策實施")
 LINE_URL = "https://line.me/R/ti/p/@yve2766q"
+EVENT_VARIANT_MANIFEST = Path("scripts/home-image-variants.json")
+SHA256_PATTERN = re.compile(r"[a-f0-9]{64}")
 
 
 def e(value):
@@ -56,33 +59,75 @@ def render_services(office, schedule):
     )
 
 
-def _responsive_event_picture(image):
+def _responsive_event_picture(image, root=ROOT):
     source = Path(image["src"])
-    widths = (480, 800, image["width"])
-    avif = ", ".join(
-        f"{e(source.with_name(source.stem + '-' + str(width) + '.avif').as_posix())} {width}w"
-        for width in widths
-    )
-    webp = ", ".join(
-        f"{e(source.with_name(source.stem + '-' + str(width) + '.webp').as_posix())} {width}w"
-        for width in widths
-    )
+    if source.is_absolute() or ".." in source.parts or not source.as_posix().startswith("assets/events/"):
+        raise ValueError("Homepage event image must be a reviewed local event asset")
+    source_file = Path(root) / source
+    if not source_file.is_file():
+        raise ValueError(f"Homepage event source image is missing: {source.as_posix()}")
+
+    widths = tuple(dict.fromkeys((480, 800, image["width"])))
+    responsive = None
+    try:
+        manifest = json.loads((Path(root) / EVENT_VARIANT_MANIFEST).read_text(encoding="utf-8"))
+        entry = manifest.get("assets", {}).get(source.as_posix())
+        if (manifest.get("schemaVersion") == 1 and isinstance(entry, dict) and
+                entry.get("sourceSha256") == sha256(source_file.read_bytes()).hexdigest()):
+            hashes = entry.get("variants")
+            if isinstance(hashes, dict) and set(hashes) == {str(width) for width in widths}:
+                verified = {"avif": [], "webp": []}
+                complete = True
+                for width in widths:
+                    variants = hashes.get(str(width))
+                    if not isinstance(variants, dict):
+                        complete = False
+                        break
+                    for fmt in ("avif", "webp"):
+                        expected_hash = variants.get(fmt)
+                        path = source.with_name(f"{source.stem}-{width}.{fmt}")
+                        asset = Path(root) / path
+                        if (not isinstance(expected_hash, str) or not SHA256_PATTERN.fullmatch(expected_hash) or
+                                not asset.is_file() or sha256(asset.read_bytes()).hexdigest() != expected_hash):
+                            complete = False
+                            break
+                        verified[fmt].append((path.as_posix(), width))
+                    if not complete:
+                        break
+                if complete:
+                    responsive = verified
+    except (AttributeError, OSError, ValueError, TypeError):
+        # A missing or stale manifest makes variants ineligible; the reviewed
+        # original remains the safe homepage fallback.
+        responsive = None
+
     sizes = (
         "(max-width: 620px) calc(100vw - 40px), "
         "(max-width: 780px) calc(100vw - 64px), "
         "(max-width: 900px) calc((100vw - 64px - 28px) / 3), "
         "(max-width: 1244px) calc((100vw - 64px - 40px) / 3), 380px"
     )
+    sources = ""
+    fallback = ""
+    if responsive:
+        srcsets = {
+            fmt: ", ".join(f"{e(path)} {width}w" for path, width in entries)
+            for fmt, entries in responsive.items()
+        }
+        sources = (
+            f'<source type="image/avif" srcset="{srcsets["avif"]}" sizes="{sizes}">'
+            f'<source type="image/webp" srcset="{srcsets["webp"]}" sizes="{sizes}">'
+        )
+        fallback = f' srcset="{srcsets["webp"]}" sizes="{sizes}"'
     return (
-        f'<picture><source type="image/avif" srcset="{avif}" sizes="{sizes}">'
-        f'<source type="image/webp" srcset="{webp}" sizes="{sizes}">'
-        f'<img src="{e(image["src"])}" srcset="{webp}" sizes="{sizes}" '
+        f'<picture>{sources}'
+        f'<img src="{e(image["src"])}"{fallback} '
         f'width="{image["width"]}" height="{image["height"]}" '
         f'alt="{e(image["alt"])}" loading="lazy" decoding="async"></picture>'
     )
 
 
-def render_event(events):
+def render_event(events, root=ROOT):
     event = next((item for item in events if item["id"] == FEATURED_EVENT), None)
     if event is None:
         return (
@@ -99,7 +144,7 @@ def render_event(events):
         "cancelled": "活動已取消",
     }[event.get("status", "scheduled")]
     change = f'<p class="home-recent-copy">{e(event["changeNote"])}</p>' if event.get("changeNote") else ""
-    photo = _responsive_event_picture(event["images"][0]) if event.get("images") else ""
+    photo = _responsive_event_picture(event["images"][0], root) if event.get("images") else ""
     registration = event.get("registration") or "參與方式請以主辦單位公告為準。"
     return (
         f'<article class="home-recent-event" id="opening" data-home-event="{e(event["id"])}">'
@@ -365,7 +410,7 @@ def build(root=ROOT):
     replacements = [
         ("HOME_PHONE_URL", e(office["phoneUrl"])),
         ("HOME_SERVICES", render_services(office, schedule)),
-        ("HOME_EVENT", render_event(events)),
+        ("HOME_EVENT", render_event(events, root)),
         ("HOME_LOCAL", render_recent_local(root)),
         ("HOME_PROGRESS", render_home_progress(root)),
         ("HOME_CONTACT", render_contact(office)),

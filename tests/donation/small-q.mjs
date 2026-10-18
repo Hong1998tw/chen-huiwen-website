@@ -62,6 +62,28 @@ try{
   await context.close();
  }
 
+ await check('mobile menu and search Escape keep their focus return when Small Q is already open',async()=>{
+  const c=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),p=await c.newPage();
+  await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);
+  const qToggle=p.locator('#small-q-toggle'),panel=p.locator('#small-q-panel'),menu=p.locator('.menu-toggle');
+  await qToggle.click();await panel.waitFor({state:'visible'});
+  await menu.click();await p.locator('#navigation.is-open').waitFor();
+  await p.keyboard.press('Escape');
+  assert.equal(await menu.getAttribute('aria-expanded'),'false');
+  assert.equal(await menu.evaluate(el=>el===document.activeElement),true,'menu Escape returns focus to its toggle');
+  assert.equal(await qToggle.getAttribute('aria-expanded'),'true');
+  assert(await panel.isVisible(),'menu Escape leaves the already-open companion available');
+
+  await menu.click();await p.locator('#navigation.is-open').waitFor();
+  const search=p.locator('.global-search-trigger').first();
+  await search.click();await p.locator('#global-search-dialog[open]').waitFor();
+  await p.keyboard.press('Escape');await p.locator('#global-search-dialog').waitFor({state:'hidden'});
+  assert.equal(await search.evaluate(el=>el===document.activeElement),true,'search Escape returns focus to its trigger');
+  assert.equal(await qToggle.getAttribute('aria-expanded'),'true');
+  assert(await panel.isVisible(),'search Escape does not close or refocus Small Q');
+  await c.close();
+ });
+
  await check('opened desktop context gestures stay finite and require explicit opening',async()=>{
   const c=await browser.newContext({viewport:{width:1440,height:960},reducedMotion:'no-preference'}),p=await c.newPage();
   await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);

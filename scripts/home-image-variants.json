@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "assets": {
+    "assets/events/campaign-opening-20261031-landscape.jpg": {
+      "sourceSha256": "3081ef40bbd0b4266c52352fc47d5d7b7298a8f1b0069bfdc43ad2e7ef6d48f8",
+      "variants": {
+        "480": {
+          "avif": "b9146b065224e4816373a9a60bae6c28d5c6e3b7dea4c0e511c695edd0c7f8b6",
+          "webp": "e45c639efaee68eb3be4f4c395e4f04f5aa561734108b5b763fa1f144148fcd2"
+        },
+        "800": {
+          "avif": "54be7b17bd6c3081283b9588639edd01ea76d3a42377b6bc39fa0c2711660f29",
+          "webp": "defbc10f033752c19f6aa1bbb17dc15c6a9268d504e29dec5529e432b4924d74"
+        },
+        "1087": {
+          "avif": "67cb1d8c0007c8248e81c87f1360b4782427298aa84d2480917ac58c59279320",
+          "webp": "401a3dab0eb2c002274a2699eba2027279500a875b44eb86b0a8a85be64ebf97"
+        }
+      }
+    }
+  }
+}

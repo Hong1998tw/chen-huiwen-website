@@ -105,7 +105,8 @@
     toggle.addEventListener('click', () => opened ? closePanel(false) : openPanel());
     close.addEventListener('click', () => closePanel(true));
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && opened) closePanel(true);
+      const anotherLayerOwnsEscape = document.querySelector('.menu-toggle[aria-expanded="true"], dialog[open]');
+      if (event.key === 'Escape' && opened && root.contains(document.activeElement) && !anotherLayerOwnsEscape) closePanel(true);
     });
     document.addEventListener('visibilitychange', () => {
       pageVisible = !document.hidden;

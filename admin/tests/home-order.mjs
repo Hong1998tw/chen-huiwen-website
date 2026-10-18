@@ -4,14 +4,15 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, consoleScript, style, dateTimeScript, editorRuntime] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript, editorRuntime, homepage] = await Promise.all([
   readFile(new URL("index.html", root)), readFile(new URL("app.js", root)),
   readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)), readFile(new URL("date-time.js", root)),
   readFile(new URL("../../cms-page-editor.js", import.meta.url)),
+  readFile(new URL("../../index.html", import.meta.url), "utf8"),
 ]);
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "摘要 A", b: "摘要 B", c: "摘要 C", d: "摘要 D" } };
-const cases = ["a", "b", "c", "d", "e"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], updated: "2026-09-27", images: [] }));
+const cases = ["a", "b", "c", "d", "e"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], villages: ["測試里"], history: [{ date: "2026-09-27" }], updated: "2026-09-27", images: [] }));
 const pages = [{ path: "index.html", title: "首頁", source_path: "data/civic-home.json", source_kind: "generated", editor_scope: "partial", commit_sha: "a".repeat(40), publication_status: "published", draft_version: 0 }];
 let draft = null, saved = null;
 const send = (res, body, type = "application/json") => { res.writeHead(200, { "content-type": type }); res.end(body); };
@@ -22,8 +23,16 @@ const server = createServer(async (req, res) => {
   if (path === "/console.js") return send(res, consoleScript, "application/javascript");
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
-  if (path === "/api/page-preview") return send(res,
-    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"><title>陳慧文｜測試首頁</title><meta name="description" content="測試首頁說明"><meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png"><meta property="og:image:alt" content="陳慧文・測試首頁"></head><body><main><div class="civic-story-grid"></div></main><script src="https://www.huiwen.tw/cms-page-editor.js" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json"></script></body></html>`, "text/html; charset=utf-8");
+  if (path === "/cms-page-editor.js") return send(res, editorRuntime, "application/javascript");
+  if (path === "/api/page-preview") {
+    const port = server.address().port;
+    const loader = `<script data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json">`;
+    let preview = homepage.replace("<script data-cms-editor-loader>", loader);
+    if (preview === homepage) throw new Error("New homepage CMS loader contract is missing");
+    preview = preview.replace(/<script\b([^>]*)>[\s\S]*?<\/script>/gi, (whole, attributes) =>
+      /\bdata-cms-editor-loader\b/.test(attributes) ? whole : "");
+    return send(res, preview, "text/html; charset=utf-8");
+  }
   if (path === "/api/session") return send(res, JSON.stringify({ login: "owner@example.test", csrf: "test" }));
   if (path === "/api/documents") return send(res, JSON.stringify({ documents: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
@@ -59,7 +68,9 @@ try {
   await page.locator('#open-page-drawer').click();
   await page.locator("#page-tree .tree-page").click();
   const preview = page.frameLocator("#page-frame");
-  await preview.locator(".civic-feature h3").getByText("專題 A").waitFor();
+  await preview.locator('.home-recent-local[data-home-local-record="a"] h3').getByText("專題 A").waitFor();
+  assert.equal(await preview.locator(".home-recent-local").count(), 1);
+  assert.equal(await preview.locator(".civic-story-grid").count(), 0);
   await page.locator('[data-home-index="0"] select').selectOption("2");
   assert.deepEqual(await page.locator("#home-editor-fields .case-editor-row p").allTextContents(),
     ["專題 B", "專題 C", "專題 A", "專題 D"]);
@@ -68,9 +79,9 @@ try {
   await page.locator("#home-add").click();
   await page.locator('[data-home-index="1"] [data-home-action="remove"]').click();
   await page.locator('[data-home-summary="b"]').fill("自訂首頁摘要");
-  await preview.locator(".civic-feature h3").getByText("專題 B").waitFor();
-  await preview.locator(".civic-reading-row h3").getByText("專題 C").waitFor({state:"detached"});
-  assert.deepEqual(await preview.locator(".civic-reading-row h3").allTextContents(), ["專題 D", "專題 A", "專題 E"]);
+  await preview.locator('.home-recent-local[data-home-local-record="b"] h3').getByText("專題 B").waitFor();
+  await preview.locator('.home-recent-local .home-recent-copy').getByText("自訂首頁摘要", { exact: true }).waitFor();
+  assert.equal(await preview.locator(".home-recent-local .home-recent-meta").textContent(), "持續追蹤 · 最新收錄 2026-09-27");
   await page.locator("#page-save").click();
   await page.getByText("草稿 v1 已儲存；正式頁面尚未變更。", { exact: true }).waitFor();
   assert.equal(saved.home.featured, "b");
@@ -79,6 +90,8 @@ try {
   assert.equal(saved.home.summaries.e, "摘要 e");
   assert.equal(saved.home.summaries.c, undefined);
   assert.deepEqual(saved.homeBase, home);
+  assert.equal(await preview.locator(".home-recent-local").getAttribute("data-home-local-record"), saved.home.featured);
+  assert.equal(await preview.locator(".home-recent-local .home-recent-copy").textContent(), saved.home.summaries[saved.home.featured]);
   await page.locator('#page-publish').click();
   await page.locator('#page-review-dialog').waitFor({state:'visible'});
   assert.match(await page.locator('#page-review-content').textContent(),/首頁專題.*主打專題/s);

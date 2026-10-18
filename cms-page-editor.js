@@ -54,8 +54,8 @@
     return item;
   };
   function applyHomePreview(home, records) {
-    const grid = document.querySelector(".civic-story-grid");
-    if (!grid || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
+    const card = document.querySelector('[data-home-recent-item="local"] .home-recent-local');
+    if (!card || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
     const cases = new Map(records.map(record => [record.id, record]));
     const ids = [home.featured, ...home.reading];
     if (ids.length < 2 || ids.length > 13 || new Set(ids).size !== ids.length || ids.some(id => !cases.has(id))) return;
@@ -67,8 +67,11 @@
           funding.total < funding.centralGrant) return null;
       return funding;
     };
-    const titleFor = record => record.id === "haibang-bridge" ? "海邦橋" : record.title || record.id;
-    const summaryFor = record => (home.summaries?.[record.id] || "").trim() || record.summary || "";
+    const titleFor = record => record.title || record.id;
+    const summaryFor = record => {
+      const summary = typeof home.summaries?.[record.id] === "string" ? home.summaries[record.id] : "";
+      return summary || record.summary || "";
+    };
     const externalLink = (value, label, className) => {
       let url;
       try { url = new URL(value); } catch { return node("span", label, className); }
@@ -114,30 +117,24 @@
       return aside;
     };
     const featured = cases.get(home.featured), url = `achievement-${featured.id}.html`;
-    const feature = node("article", undefined, "feature civic-feature"); feature.dataset.recordId = featured.id;
-    const copy = node("div", undefined, "civic-feature-copy");
-    copy.append(node("p", `${featured.categories?.[0] || "地方專題"} · ${featured.status || ""}`, "stage civic-kicker"));
-    const heading = node("h3"), title = node("a", titleFor(featured)); title.href = url; heading.append(title);
-    copy.append(heading, node("p", summaryFor(featured)));
-    const funding = fundingOf(featured);
-    if (funding?.collaboration) copy.append(node("p", funding.collaboration, "civic-collaboration"));
-    const read = node("a", "閱讀歷程與資料來源 ↗", "source civic-read"); read.href = url + "#case-sources";
-    copy.append(read, dated(featured)); feature.append(copy);
-    const side = fundingFor(featured) || photoFor(featured, "civic-feature-photo");
-    if (side) feature.append(side); else feature.classList.add("civic-feature--text-only");
-    const stories = node("div", undefined, "stories"), reading = node("div", undefined, "story-list civic-reading");
-    // Keep this fixed context image explicitly identified as Fengshan Station,
-    // including when the editor changes which projects appear beside it.
-    const station = photoFor(cases.get("metro-green-line"), "station civic-reading-photo", true);
-    if (station) stories.append(station); else stories.classList.add("stories--text-only");
-    home.reading.forEach(id => {
-      const record = cases.get(id), article = node("article", undefined, "civic-reading-row"), row = node("div");
-      article.dataset.recordId = id;
-      row.append(node("p", `${record.categories?.[0] || "地方專題"} · ${record.status || ""}`, "meta civic-kicker"));
-      const heading = node("h3"), title = node("a", titleFor(record)); title.href = `achievement-${id}.html`; heading.append(title);
-      row.append(heading, node("p", summaryFor(record)), dated(record)); article.append(row); reading.append(article);
-    });
-    stories.append(reading); grid.replaceChildren(feature, stories);
+    const art = card.querySelector(".home-recent-art--local");
+    const category = art?.querySelector("span:first-child");
+    const place = art?.querySelector("span:nth-child(2)");
+    const title = card.querySelector(".home-recent-card-copy h3 a");
+    const summary = card.querySelector(".home-recent-card-copy .home-recent-copy");
+    const meta = card.querySelector(".home-recent-card-copy .home-recent-meta");
+    const source = card.querySelector(".home-recent-card-copy > a.source");
+    if (!category || !place || !title || !summary || !meta || !source) return;
+    const villages = Array.isArray(featured.villages) ? featured.villages.filter(value => typeof value === "string") : [];
+    const history = Array.isArray(featured.history) ? featured.history.filter(item => item && typeof item.date === "string") : [];
+    const latest = history.sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+    card.dataset.homeLocalRecord = featured.id;
+    category.textContent = featured.categories?.[0] || "地方專題";
+    place.textContent = villages.join("、") || featured.scope || "地區未載";
+    title.textContent = titleFor(featured); title.href = url;
+    summary.textContent = summaryFor(featured);
+    meta.textContent = `${featured.status || "階段未載"} · 最新收錄 ${latest?.date || "日期未載"}`;
+    source.href = url;
 
     // Optional companion to the civic-home-map generated region. Filters remain
     // outside this container so their listeners and selected state survive.
