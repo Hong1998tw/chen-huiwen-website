@@ -120,9 +120,10 @@ def _append_references(result: list[str], seen: set[str], parser: _HTMLShellRefe
 
 
 def _safe_artifact_file(path: str, artifact_dir: Path, label: str) -> Path:
-    candidate = PurePosixPath(path)
-    if (not path or candidate.as_posix() != path or candidate.is_absolute()
-            or '..' in candidate.parts or '\\' in path):
+    relative_path = path[1:] if path.startswith('/') else path
+    candidate = PurePosixPath(relative_path)
+    if (not relative_path or candidate.as_posix() != relative_path or candidate.is_absolute()
+            or '..' in candidate.parts or '\\' in relative_path):
         raise ValueError(f'{label} has an unsafe path: ' + path)
     target = artifact_dir.joinpath(*candidate.parts)
     if (target.is_symlink() or not target.is_file()

@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_artifact_page_fonts as producer
 import build_public
 import page_font_contract as contract
+import service_worker_artifact as service_worker
 import verify_production
 from verify_cloudflare_assets import verify_private_paths
 
@@ -120,6 +121,17 @@ class PageFontContractUnitTests(unittest.TestCase):
             (root / common).unlink()
             with self.assertRaisesRegex(ValueError, 'PAGE_FONT_ASSET_PUBLICATION_BYTES_MISMATCH'):
                 contract.validate_publication_binding(root, publication, manifest, manifest_bytes)
+
+    def test_safe_shell_resolver_maps_root_relative_urls_inside_the_artifact(self):
+        with tempfile.TemporaryDirectory(prefix='public-shell-reference-') as name:
+            root = Path(name)
+            target = root / 'assets' / 'favicon.svg'
+            target.parent.mkdir()
+            target.write_text('<svg/>', encoding='utf-8')
+            self.assertEqual(
+                service_worker._safe_artifact_file('/assets/favicon.svg', root, 'HTML shell reference'),
+                target,
+            )
 
     def test_local_http_private_path_guard_rejects_public_exposure(self):
         class Handler(BaseHTTPRequestHandler):
