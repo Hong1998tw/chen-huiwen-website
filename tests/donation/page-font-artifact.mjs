@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { verifyPageFontPreloadEvidence } from './page-font-preload-contract.mjs';
 import { observePendingResult, preservePrimaryError, requireObservedValue } from './page-font-artifact-lifecycle.mjs';
 import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
+import {
+  VISUAL_CAPTURE_COUNT,
+  VISUAL_CAPTURE_SEED,
+  buildVisualCaptureRecord,
+  selectVisualRoutes,
+  validateArtifactIdentity,
+  visualPngMatchesHash,
+  visualPngPath,
+} from './page-font-artifact-visual.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const artifact = resolve(root, '_site');
@@ -13,9 +23,11 @@ const fontRoot = 'assets/fonts/huiwen-site-sans/';
 const fullTcPath = `${fontRoot}huiwen-site-sans-tc-20261007.woff2`;
 const output = resolve(root, 'tests/donation/results/page-font-artifact');
 const reportPath = resolve(output, 'report.json');
+const visualOutput = resolve(output, 'visual');
 let publication;
 let fontManifest;
 let fullTcSha;
+let artifactIdentity;
 
 function urlPath(value) {
   try {
@@ -24,6 +36,62 @@ function urlPath(value) {
   } catch {
     return null;
   }
+}
+
+function safeUrlSummary(value) {
+  try {
+    const url = new URL(value);
+    const summary = { origin: url.origin === 'null' ? null : url.origin, host: url.host || null, pathname: url.pathname };
+    const route = url.searchParams.get('path');
+    if (route !== null) summary.query = { path: /^[A-Za-z0-9_./-]{1,256}$/.test(route) ? route : '[invalid]' };
+    const cmsEdit = url.searchParams.get('cmsEdit');
+    if (cmsEdit === '0' || cmsEdit === '1') summary.query = { ...summary.query, cmsEdit };
+    return summary;
+  } catch {
+    return { origin: null, host: null, pathname: null };
+  }
+}
+
+function browserMessageCategory(message) {
+  const text = String(message || '').toLowerCase();
+  if (/content security policy|frame-ancestors|refused to frame/.test(text)) return 'csp-frame-policy';
+  if (/x-frame-options/.test(text)) return 'x-frame-options';
+  if (/err_blocked_by_response|blocked by response/.test(text)) return 'response-blocked';
+  if (/err_blocked_by_client|blocked by client/.test(text)) return 'client-blocked';
+  if (/net::err_|networkerror|failed to load resource/.test(text)) return 'network-error';
+  if (/\b(401|403|404)\b/.test(text)) return 'http-denied';
+  return 'other-browser-error';
+}
+
+function waitForCmsPreviewNavigation(page, timeout = 15000) {
+  return page.waitForEvent('framenavigated', {
+    predicate: (frame) => {
+      if (frame === page.mainFrame() || frame.parentFrame() !== page.mainFrame()) return false;
+      try {
+        const url = new URL(frame.url());
+        return url.origin === 'https://admin.huiwen.tw' && url.pathname === '/api/page-preview';
+      } catch {
+        return false;
+      }
+    },
+    timeout,
+  }).then((frame) => ({ frame }), (error) => ({ error }));
+}
+
+function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyResponses, blockedReasons, messages }) {
+  return {
+    frameURLs: page.frames().map((frame) => ({
+      ...safeUrlSummary(frame.url()),
+      mainFrame: frame === page.mainFrame(),
+      parent: frame.parentFrame() ? safeUrlSummary(frame.parentFrame().url()) : null,
+    })),
+    hostUrl: safeUrlSummary(page.url()),
+    hostNavigationStatus,
+    proxyRequests: proxyRequests.slice(0, 20),
+    proxyResponses: proxyResponses.slice(0, 20),
+    blockedReasons: [...new Set(blockedReasons)].slice(0, 20),
+    messages: messages.slice(0, 20),
+  };
 }
 
 function requestInitiator(initiator) {
@@ -152,6 +220,7 @@ const results = {
   ci: { githubSha: process.env.GITHUB_SHA || null, githubRef: process.env.GITHUB_REF || null,
     nodeVersion: process.version },
   source: { script: 'tests/donation/page-font-artifact.mjs', artifactRoot: artifact },
+  artifactIdentity: null,
   head: { commit: process.env.GITHUB_SHA || null,
     githubRef: process.env.GITHUB_REF || null },
   runtime: { nodeVersion: process.version, platform: process.platform, arch: process.arch,
@@ -162,6 +231,8 @@ const results = {
     routes: [], fullTcInitialViolations: [], preloadViolations: [], navigationErrors: [],
     criticalRequestFailures: [], runtimeErrors: [], observationErrors: [] },
   serviceInitial: { status: 'not-run', errors: [] }, legacyRoutes: [], cmsPreview: { status: 'not-run' }, negativeGuards: {},
+  visualCaptures: { status: 'not-run', seed: VISUAL_CAPTURE_SEED, expected: VISUAL_CAPTURE_COUNT,
+    viewport: { width: 390, height: 844 }, selectedRoutes: [], records: [], errors: [] },
   execution: {
     status: 'running', currentPhase: null, primaryError: null, secondaryErrors: [],
     phases: {
@@ -173,7 +244,7 @@ const results = {
       dynamicSearch: { status: 'not-run' },
       legacyRoutes: { status: 'not-run', expected: legacyRoutes.length, completed: 0, currentRoute: null },
       cmsPreview: { status: 'not-run' },
-      cmsNegativeGuards: { status: 'not-run', expected: 3, completed: 0, currentMode: null },
+      cmsNegativeGuards: { status: 'not-run', expected: 4, completed: 0, currentMode: null },
       topLevelCmsGuard: { status: 'not-run' },
       finalAssertions: { status: 'not-run' },
     },
@@ -226,6 +297,26 @@ try {
   publication = preflight.publication;
   fontManifest = preflight.fontManifest;
   fullTcSha = preflight.fullTcSha;
+  const [publicationBytes, deploymentBytes] = await Promise.all([
+    readFile(resolve(artifact, 'publication-manifest.json')),
+    readFile(resolve(artifact, 'deployment.json')),
+  ]);
+  artifactIdentity = validateArtifactIdentity({
+    deployment: JSON.parse(deploymentBytes.toString('utf8')),
+    publicationBytes,
+    expectedSourceCommit: process.env.GITHUB_SHA || null,
+  });
+  results.artifactIdentity = artifactIdentity;
+  const legalRoutes = Object.keys(fontManifest.routes);
+  assert.equal(legalRoutes.length, 464, 'visual selection requires the complete schema-2 route inventory');
+  const visualRoutes = selectVisualRoutes(legalRoutes, {
+    seed: VISUAL_CAPTURE_SEED,
+    count: VISUAL_CAPTURE_COUNT,
+  });
+  const visualRouteSet = new Set(visualRoutes);
+  results.visualCaptures.selectedRoutes = visualRoutes;
+  results.visualCaptures.status = 'running';
+  await mkdir(visualOutput, { recursive: true });
 
   browser = await chromium.launch({ headless: true });
   results.ci.chromiumVersion = await browser.version();
@@ -469,6 +560,99 @@ try {
         }
       }
 
+      if (visualRouteSet.has(route)) {
+        routeRecord.visualCapture = { status: 'running' };
+        routeNetwork.phase = 'visual-capture';
+        try {
+          assert.ok(response && response.status() === 200,
+            `${route}: selected visual route did not return a successful page`);
+          await routePage.evaluate(() => document.fonts.ready.then(() => true));
+          const fontState = await routePage.evaluate(({ commonFamily, deltaFamily }) => {
+            const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
+            const headingText = (heading?.textContent || '').trim();
+            const relevantFaces = [...document.fonts]
+              .filter((face) => [commonFamily, deltaFamily].includes(face.family))
+              .map((face) => ({ family: face.family, weight: face.weight, style: face.style, status: face.status }));
+            return {
+              documentFontsStatus: document.fonts.status,
+              bodyFontFamily: getComputedStyle(document.body).fontFamily,
+              headingFontFamily: getComputedStyle(heading).fontFamily,
+              fontFaces: relevantFaces,
+              fontLoaded: {
+                common: document.fonts.check(`16px "${commonFamily}"`, headingText),
+                delta: document.fonts.check(`16px "${deltaFamily}"`, headingText),
+              },
+            };
+          }, {
+            commonFamily: fontManifest.fonts[routeRow.commonFont].family,
+            deltaFamily: fontManifest.fonts[routeRow.deltaFont].family,
+          });
+          const viewport = routePage.viewportSize();
+          assert.deepEqual(viewport, results.visualCaptures.viewport,
+            `${route}: visual capture viewport changed during the font-only route sweep`);
+          const pngBytes = await routePage.screenshot({ type: 'png', fullPage: false, caret: 'hide' });
+          await routePage.evaluate(() => document.fonts.ready.then(() => true));
+          await routePage.evaluate(() => new Promise((resolveFrame) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
+          const file = visualPngPath(visualOutput, route);
+          await writeFile(file.path, pngBytes);
+          const storedPng = await readFile(file.path);
+          const captureNetwork = {
+            phase: 'visual-capture',
+            postCaptureFontLoadState: await routePage.evaluate(() => ({
+              status: document.fonts.status,
+              faces: [...document.fonts]
+                .filter((face) => /Huiwen Sans TC Page (Common|Delta)/.test(face.family))
+                .map((face) => ({ family: face.family, weight: face.weight, status: face.status })),
+            })),
+            initialFullTcRequestsBeforeCapture: routeNetwork.fullTcRequests
+              .filter((item) => item.phase === 'initial').length,
+            fullTcRequests: routeNetwork.fullTcRequests
+              .filter((item) => item.phase === 'visual-capture')
+              .map(({ path, requestType, initiator, response: fontResponse, failure }) => ({
+                path, requestType, initiator, status: fontResponse?.status ?? null,
+                failure: failure ? { category: browserMessageCategory(failure.errorText),
+                  blockedReason: failure.blockedReason || null } : null,
+              })),
+            pageFontRequests: routeNetwork.pageFontRequests
+              .filter((item) => item.phase === 'visual-capture')
+              .map(({ path, requestType, initiator, response: fontResponse, failure }) => ({
+                path, requestType, initiator, status: fontResponse?.status ?? null,
+                failure: failure ? { category: browserMessageCategory(failure.errorText),
+                  blockedReason: failure.blockedReason || null } : null,
+              })),
+          };
+          const record = buildVisualCaptureRecord({
+            route,
+            pngBytes,
+            artifactIdentity,
+            viewport,
+            typography: fontState,
+            preloads: {
+              expected: routeRecord.preloads.expected,
+              declared: routeRecord.preloads.declared,
+              observed: routeRecord.preloads.observed,
+            },
+            captureNetwork,
+          });
+          record.file = `visual/${file.fileName}`;
+          assert.ok(visualPngMatchesHash(storedPng, record.png.sha256),
+            `${route}: stored screenshot bytes do not match their recorded SHA-256`);
+          results.visualCaptures.records.push(record);
+          routeRecord.visualCapture = {
+            status: 'captured', file: record.file, pngSha256: record.png.sha256,
+            capturePhase: captureNetwork.phase,
+            fullTcRequestsDuringCapture: captureNetwork.fullTcRequests.length,
+            pageFontRequestsDuringCapture: captureNetwork.pageFontRequests.length,
+          };
+        } catch (error) {
+          const failure = { route, ...errorRecord(error) };
+          results.visualCaptures.errors.push(failure);
+          routeRecord.visualCapture = { status: 'failed', error: errorRecord(error) };
+          throw error;
+        }
+      }
+
       if (route === 'service.html' && response) {
         const initialFullTcRequests = routeNetwork.fullTcRequests.filter((item) => item.phase === 'initial').length;
         const card = { status: 'running', route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
@@ -557,6 +741,27 @@ try {
   results.initialFontNetwork.durationSeconds = Number(((performance.now() - fontOnlyStarted) / 1000).toFixed(2));
   results.initialFontNetwork.status = 'observed';
   completePhase('initialFontNetwork');
+  results.visualCaptures.status = results.visualCaptures.records.length === VISUAL_CAPTURE_COUNT
+    && results.visualCaptures.errors.length === 0 ? 'captured' : 'failed';
+  results.visualCaptures.visualReview = 'not-performed';
+  try {
+    assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
+    assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
+    assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
+    assert.deepEqual(results.initialFontNetwork.navigationErrors, [], 'at least one route had a navigation error');
+    assert.deepEqual(results.initialFontNetwork.criticalRequestFailures, [], 'at least one route had a critical request failure');
+    assert.deepEqual(results.initialFontNetwork.runtimeErrors, [], 'at least one route raised an uncaught page error');
+    assert.deepEqual(results.initialFontNetwork.observationErrors, [], 'at least one route could not be fully diagnosed');
+    results.initialFontNetwork.verification = 'passed';
+    results.execution.phases.initialFontNetwork.verification = 'passed';
+    results.initialFontNetwork.verificationEvaluation = { status: 'passed', assertions: 7 };
+  } catch (error) {
+    results.initialFontNetwork.verification = 'failed';
+    results.execution.phases.initialFontNetwork.verification = 'failed';
+    results.initialFontNetwork.verificationEvaluation = {
+      status: 'failed', assertions: 7, error: errorRecord(error),
+    };
+  }
 
   startPhase('crossMonth');
   const crossMonthContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -674,12 +879,13 @@ try {
       const url = new URL(route.request().url());
       if (url.pathname === '/__g02/cms') {
         const cmsEdit = mode === 'wrong-cms-edit' ? '0' : '1';
+        const previewPath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
         const evilFrame = mode === 'unauthorized-message' ? '<iframe title="untrusted sender" src="https://evil.test/send"></iframe>' : '';
         const handshake = ['valid', 'wrong-cms-edit'].includes(mode)
           ? `const sendInit=()=>frame.contentWindow.postMessage({type:'huiwen-cms-init',nonce:'${nonce}'},'*');frame.onload=sendInit;window.addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.origin!=='null')return;if(event.data?.type==='huiwen-cms-hello')sendInit();if(event.data?.type==='huiwen-cms-ready'&&event.data?.nonce==='${nonce}'&&!window.__draftSent){window.__draftSent=true;frame.contentWindow.postMessage({type:'huiwen-cms-case-preview',nonce:'${nonce}',case:{title:'CI草稿',updated:'2026-10-19',paragraphs:['CI草稿新增字：${draftChar}'],history:[],media:[]}},'*');}});`
           : '';
         return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html><body>
-          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(cmsRoute)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
+          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
           ${evilFrame}<script>const frame=document.querySelector('#preview');${handshake}</script></body></html>` });
       }
       if (url.pathname === '/api/page-preview') {
@@ -689,7 +895,8 @@ try {
         const authorizedOwner = accessEdgeHeaders['cf-access-jwt-assertion'] === accessAssertion;
         const correctRoute = url.searchParams.get('path') === cmsRoute;
         const correctSession = url.searchParams.get('session') === session;
-        if (!authorizedOwner || !correctRoute || !correctSession || !publication.files[cmsRoute])
+        const correctCapability = url.searchParams.get('cmsEdit') === '1';
+        if (!authorizedOwner || !correctRoute || !correctSession || !correctCapability || !publication.files[cmsRoute])
           return route.fulfill({ status: 401, body: 'unauthorized preview' });
         return route.fulfill({
           status: 200, body: await fetchPublishedPreview(),
@@ -702,14 +909,81 @@ try {
   }
 
   const cmsPage = await cmsContext.newPage();
+  const isCmsProxyUrl = (value) => {
+    try {
+      const url = new URL(value);
+      return url.origin === 'https://admin.huiwen.tw' && url.pathname === '/api/page-preview';
+    } catch {
+      return false;
+    }
+  };
+  const cmsProxyRequests = [];
+  const cmsProxyResponses = [];
+  const cmsProxyBlockedReasons = [];
+  const cmsBrowserMessages = [];
+  cmsPage.on('request', (request) => {
+    if (isCmsProxyUrl(request.url())) cmsProxyRequests.push({ method: request.method(), ...safeUrlSummary(request.url()) });
+  });
+  cmsPage.on('response', (response) => {
+    if (isCmsProxyUrl(response.url())) cmsProxyResponses.push({ status: response.status(), ...safeUrlSummary(response.url()) });
+  });
+  cmsPage.on('requestfailed', (request) => {
+    if (!isCmsProxyUrl(request.url())) return;
+    const category = browserMessageCategory(request.failure()?.errorText);
+    cmsProxyBlockedReasons.push(category);
+  });
+  cmsPage.on('console', (message) => {
+    if (!['error', 'warning'].includes(message.type())) return;
+    cmsBrowserMessages.push({ type: message.type(), category: browserMessageCategory(message.text()) });
+  });
+  cmsPage.on('pageerror', (error) => {
+    cmsBrowserMessages.push({ type: 'pageerror', name: error?.name || 'Error',
+      category: browserMessageCategory(error?.message) });
+  });
   cmsFullFontResponseWait = observePendingResult(cmsPage.waitForResponse((response) =>
     new URL(response.url()).pathname === `/${fullTcPath}` && response.status() === 200));
   await installAdminRoutes(cmsPage, 'valid');
-  await cmsPage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
-  const frame = cmsPage.frames().find((item) => item.url().includes('/api/page-preview'));
-  assert.ok(frame, 'authenticated CMS proxy iframe did not load');
-  await frame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
-  await frame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
+  const cmsProxyNavigation = waitForCmsPreviewNavigation(cmsPage);
+  let cmsHostResponse;
+  let cmsProxyFrame;
+  try {
+    cmsHostResponse = await cmsPage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
+    assert.equal(cmsHostResponse?.status(), 200, 'CMS fixture host route did not return HTTP 200');
+    const navigation = await cmsProxyNavigation;
+    if (navigation.error) throw navigation.error;
+    cmsProxyFrame = navigation.frame;
+    await cmsPage.frameLocator('#preview').locator('html').waitFor({ state: 'attached', timeout: 15000 });
+    await cmsProxyFrame.waitForLoadState('domcontentloaded', { timeout: 15000 });
+    const proxyUrl = new URL(cmsProxyFrame.url());
+    assert.equal(proxyUrl.origin, 'https://admin.huiwen.tw', 'CMS proxy frame navigated on an unexpected host');
+    assert.equal(proxyUrl.pathname, '/api/page-preview', 'CMS proxy frame navigated to an unexpected path');
+    assert.equal(proxyUrl.searchParams.get('path'), cmsRoute, 'CMS proxy frame requested an unexpected public route');
+    assert.equal(proxyUrl.searchParams.get('cmsEdit'), '1', 'CMS proxy request did not carry its edit capability');
+    if (proxyUrl.searchParams.get('session') !== session)
+      throw new Error('CMS proxy request did not carry the fixture session');
+    const proxyResponse = cmsProxyResponses.at(-1);
+    assert.ok(proxyResponse, 'CMS proxy frame navigation produced no response');
+    assert.equal(proxyResponse.status, 200, 'authenticated CMS proxy route was denied or failed');
+    await cmsProxyFrame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
+    await cmsProxyFrame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
+  } catch (error) {
+    results.cmsPreview.failureSnapshot = cmsFailureSnapshot({
+      page: cmsPage,
+      hostNavigationStatus: cmsHostResponse?.status() ?? null,
+      proxyRequests: cmsProxyRequests,
+      proxyResponses: cmsProxyResponses,
+      blockedReasons: cmsProxyBlockedReasons,
+      messages: cmsBrowserMessages,
+    });
+    throw error;
+  }
+  const frame = cmsProxyFrame;
+  results.cmsPreview.proxyNavigation = {
+    hostUrl: safeUrlSummary(cmsPage.url()),
+    hostStatus: cmsHostResponse.status(),
+    frameUrl: safeUrlSummary(frame.url()),
+    proxyStatus: cmsProxyResponses.at(-1)?.status ?? null,
+  };
   const fullFontResponseOutcome = await cmsFullFontResponseWait;
   results.cmsPreview.fullFontResponseWait = { status: fullFontResponseOutcome.status,
     error: fullFontResponseOutcome.status === 'rejected' ? errorRecord(fullFontResponseOutcome.error) : null };
@@ -744,7 +1018,7 @@ try {
   completePhase('cmsPreview');
 
   startPhase('cmsNegativeGuards');
-  for (const mode of ['unauthenticated', 'wrong-cms-edit', 'unauthorized-message']) {
+  for (const mode of ['unauthenticated', 'wrong-path', 'wrong-cms-edit', 'unauthorized-message']) {
     results.execution.phases.cmsNegativeGuards.currentMode = mode;
     const negativeContext = await browser.newContext();
     await negativeContext.route('https://www.huiwen.tw/**', async (route) => {
@@ -760,13 +1034,18 @@ try {
       const url = new URL(route.request().url());
       if (url.pathname === '/__g02/cms') {
         const cmsEdit = mode === 'wrong-cms-edit' ? '0' : '1';
+        const previewPath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
         const sender = mode === 'unauthorized-message' ? '<iframe title="untrusted sender" src="https://evil.test/send"></iframe>' : '';
         return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><body>
-          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(cmsRoute)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>${sender}</body>` });
+          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>${sender}</body>` });
       }
       if (url.pathname === '/api/page-preview') {
         // This negative route models Access denying the request before the Worker.
         if (mode === 'unauthenticated') return route.fulfill({ status: 401, body: 'unauthorized preview' });
+        if (url.searchParams.get('path') !== cmsRoute
+          || url.searchParams.get('session') !== session
+          || url.searchParams.get('cmsEdit') !== '1')
+          return route.fulfill({ status: 401, body: 'unauthorized preview' });
         return route.fulfill({ status: 200, body: await fetchPublishedPreview(),
           headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
             'x-frame-options': 'SAMEORIGIN', 'content-security-policy': previewCsp },
@@ -775,9 +1054,12 @@ try {
       return route.fulfill({ status: 404, body: 'not found' });
     });
     const negativePage = await negativeContext.newPage();
+    const negativeProxyNavigation = waitForCmsPreviewNavigation(negativePage);
     await negativePage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
-    const negativeFrame = negativeContext.pages()[0].frames().find((item) => item.url().includes('/api/page-preview'));
-    assert.ok(negativeFrame, `${mode}: proxy frame missing`);
+    const negativeNavigation = await negativeProxyNavigation;
+    if (negativeNavigation.error) throw negativeNavigation.error;
+    const negativeFrame = negativeNavigation.frame;
+    await negativePage.frameLocator('#preview').locator('html').waitFor({ state: 'attached', timeout: 15000 });
     await negativeFrame.waitForLoadState('domcontentloaded');
     if (mode === 'unauthorized-message') {
       await negativeFrame.waitForFunction(() => Boolean(document.querySelector('script[data-cms-editor-runtime]')),
@@ -792,6 +1074,9 @@ try {
     if (mode === 'unauthenticated') {
       assert.equal(state.marker, null, 'an unauthenticated request unexpectedly enabled preview font mode');
       assert.equal(state.editorRuntime, false, 'an unauthenticated request loaded the CMS runtime');
+    } else if (mode === 'wrong-path') {
+      assert.equal(state.marker, null, 'an unexpected route path enabled preview font mode');
+      assert.equal(state.editorRuntime, false, 'an unexpected route path loaded the CMS runtime');
     } else if (mode === 'wrong-cms-edit') {
       assert.equal(state.marker, null, 'cmsEdit=0 unexpectedly enabled preview font mode');
       assert.equal(state.editorRuntime, false, 'cmsEdit=0 loaded the CMS runtime');
@@ -801,6 +1086,13 @@ try {
       assert.equal(state.editorRuntime, true, 'the iframe did not load its guarded CMS runtime');
     }
     results.negativeGuards[mode] = state;
+    if (mode === 'wrong-path') {
+      const unknownRouteResponse = await negativePage.goto('https://admin.huiwen.tw/__g02/unrecognized');
+      assert.equal(unknownRouteResponse?.status(), 404, 'unrecognized CMS handler path did not fail closed');
+      assert.equal((await negativePage.locator('body').innerText()).trim(), 'not found',
+        'unrecognized CMS handler path returned unexpected content');
+      results.negativeGuards.handlerFailClosed = { status: unknownRouteResponse.status(), body: 'not found' };
+    }
     await negativeContext.close();
     results.execution.phases.cmsNegativeGuards.completed += 1;
   }
@@ -822,6 +1114,12 @@ try {
 
   startPhase('finalAssertions');
   try {
+    assert.equal(results.visualCaptures.status, 'captured', 'the 20-route visual capture set did not complete');
+    assert.equal(results.visualCaptures.records.length, VISUAL_CAPTURE_COUNT,
+      'the visual capture set does not contain exactly 20 real page screenshots');
+    assert.equal(new Set(results.visualCaptures.records.map((record) => record.route)).size, VISUAL_CAPTURE_COUNT,
+      'the visual capture set contains duplicate routes');
+    assert.deepEqual(results.visualCaptures.errors, [], 'at least one selected visual page could not be captured');
     assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
     assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
     assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
@@ -883,6 +1181,7 @@ if (runError) throw runError;
 console.log(JSON.stringify({ samples: results.samples.length, schemaRoutes: results.schemaRoutes.length,
   allRouteFontChecks: results.initialFontNetwork.routesChecked,
   allRouteFontSeconds: results.initialFontNetwork.durationSeconds,
+  visualCaptures: results.visualCaptures.records.length,
   serviceInitialFullTcRequests: results.serviceInitial.initialFullTcRequests,
   serviceCardFullTcBytes: results.serviceInitial.cardFullTcBytes,
   serviceCrossMonthFullTcRequests: results.serviceCrossMonth.initialFullTcRequests,
