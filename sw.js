@@ -1,11 +1,15 @@
 'use strict';
+/* {{CACHE_POLICY}} */
+const cachePolicy=self.HuiwenServiceWorkerCachePolicy;
 const CACHE='huiwen-digital-v15-20261008-route-font-subsets';
 const OFFLINE='./offline.html';
 const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-ead400a26308.woff2'];
-const rawSource=url=>url.pathname.endsWith('/data/achievements.json');
+const scopedRequest=url=>new Request(new URL(url,self.registration.scope));
 async function remember(cache,request,response) {
+  if(!cachePolicy.canCache(request,response))return false;
   const headers=new Headers(response.headers);headers.set('X-Huiwen-Cached-At',new Date().toISOString());
   await cache.put(request,new Response(await response.clone().arrayBuffer(),{status:response.status,statusText:response.statusText,headers}));
+  return true;
 }
 async function boundedFetch(request,ms=6000) {
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),ms);
@@ -14,15 +18,22 @@ async function boundedFetch(request,ms=6000) {
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   // Without the core fallback the new worker must not activate over a working old version.
-  const response=await boundedFetch(OFFLINE);if(!response.ok)throw new Error('Offline fallback unavailable');
-  await remember(cache,OFFLINE,response);
-  await Promise.allSettled(SHELL.filter(url=>url!==OFFLINE).map(async url=>{const r=await boundedFetch(url);if(r.ok)await remember(cache,url,r);}));
+  const offlineRequest=scopedRequest(OFFLINE),response=await boundedFetch(offlineRequest);
+  if(!cachePolicy.canCache(offlineRequest,response))throw new Error('Offline fallback unavailable');
+  if(!await remember(cache,offlineRequest,response))throw new Error('Offline fallback unavailable');
+  await Promise.allSettled(SHELL.filter(url=>url!==OFFLINE).map(async url=>{
+    const request=scopedRequest(url);if(!cachePolicy.isCacheableRequest(request))return;
+    const r=await boundedFetch(request);if(cachePolicy.canCache(request,r))await remember(cache,request,r);
+  }));
   await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
   for(const key of await caches.keys())if(key.startsWith('huiwen-digital-')&&key!==CACHE)await caches.delete(key);
   const cache=await caches.open(CACHE);
-  for(const request of await cache.keys())if(rawSource(new URL(request.url)))await cache.delete(request);
+  for(const request of await cache.keys()){
+    const response=await cache.match(request);
+    if(!cachePolicy.canCache(request,response))await cache.delete(request);
+  }
   await self.clients.claim();
 })()));
 async function markedOffline(response) {
@@ -38,7 +49,7 @@ async function networkFirst(request) {
   try {
     const response=await boundedFetch(request);
     if(response.status>=500)throw new Error('Origin unavailable');
-    if(response.ok&&!rawSource(new URL(request.url))){try{await remember(cache,request,response);}catch{/* Storage limits must not hide a fresh network response. */}}
+    if(cachePolicy.canCache(request,response)){try{await remember(cache,request,response);}catch{/* Storage limits must not hide a fresh network response. */}}
     return response;
   }catch {
     const cached=await cache.match(request);
@@ -49,13 +60,13 @@ async function networkFirst(request) {
 }
 async function asset(request,event) {
   const cache=await caches.open(CACHE),cached=await cache.match(request);
-  const update=boundedFetch(request).then(async response=>{if(response.ok){try{await remember(cache,request,response);}catch{}}return response;}).catch(()=>null);
+  const update=boundedFetch(request).then(async response=>{if(cachePolicy.canCache(request,response)){try{await remember(cache,request,response);}catch{}}return response;}).catch(()=>null);
   event.waitUntil(update.then(()=>{}));
   return cached || (await update) || Response.error();
 }
 self.addEventListener('fetch',event=>{
   const request=event.request;if(request.method!=='GET')return;
-  const url=new URL(request.url);if(url.origin!==location.origin)return;
+  const url=new URL(request.url);if(url.origin!==location.origin||!cachePolicy.isCacheableRequest(request))return;
   if(request.mode==='navigate'||url.pathname.endsWith('.json')||request.destination==='style'||request.destination==='script')event.respondWith(networkFirst(request));
   else event.respondWith(asset(request,event));
 });

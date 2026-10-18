@@ -17,10 +17,14 @@ const keyOf = value => resolve(value);
 
 class TestCache {
   constructor() { this.entries = new Map(); }
-  async put(request, response) { this.entries.set(keyOf(request), response.clone()); }
-  async match(request) { return this.entries.get(keyOf(request))?.clone(); }
+  async put(request, response) {
+    const key = keyOf(request);
+    const storedRequest = typeof request === 'string' ? new Request(key) : request.clone();
+    this.entries.set(key, {request: storedRequest, response: response.clone()});
+  }
+  async match(request) { return this.entries.get(keyOf(request))?.response.clone(); }
   async delete(request) { return this.entries.delete(keyOf(request)); }
-  async keys() { return [...this.entries.keys()].map(url => new Request(url)); }
+  async keys() { return [...this.entries.values()].map(entry => entry.request.clone()); }
 }
 
 function makeWorker({failOffline = false, failOptionalPath = null, networkOffline = false} = {}) {
@@ -46,6 +50,7 @@ function makeWorker({failOffline = false, failOptionalPath = null, networkOfflin
   };
   const self = {
     addEventListener(name, callback) { handlers[name] = callback; },
+    registration: {scope: origin + '/'},
     async skipWaiting() { skipWaitingCount += 1; },
     clients: {async claim() { claimCount += 1; }},
   };
@@ -56,7 +61,10 @@ function makeWorker({failOffline = false, failOptionalPath = null, networkOfflin
     if (failOffline && path === '/offline.html') return new Response('offline unavailable', {status: 503});
     if (failOptionalPath && path === failOptionalPath) return new Response('optional unavailable', {status: 503});
     if (networkOffline) throw new Error('fixture offline');
-    return new Response('fixture:' + url, {status: 200, headers: {'Content-Type': 'text/plain'}});
+    const headers = {'Content-Type': 'text/plain'};
+    if (new URL(url).searchParams.get('v') === 'no-store') headers['Cache-Control'] = 'no-store';
+    if (new URL(url).searchParams.get('v') === 'private-response') headers['Cache-Control'] = 'private';
+    return new Response('fixture:' + url, {status: 200, headers});
   };
   const context = {
     self, caches, fetch, location: {origin}, URL, Request, Response, Headers,
@@ -105,24 +113,73 @@ const priorURL = origin + '/index.html';
   assert.equal(env.calls.filter(url => url.endsWith('/offline.html')).length, 1,
     'offline is fetched once as a required resource, even though it is listed in SHELL');
   const active = await env.caches.open(cacheName);
-  const raw = new Request(origin + '/data/achievements.json');
-  await active.put(raw, new Response('[{"id":"raw-source"}]'));
+  const staleEntries = [
+    new Request(origin + '/index.html?cmsEdit=1'),
+    new Request(origin + '/api/private.json?token=fixture'),
+    new Request(origin + '/cms-page-editor.deadbeef.js'),
+    new Request(origin + '/cms-editor-manifests/draft.json'),
+    new Request(origin + '/runtime/config.json'),
+    new Request(origin + '/sw.js'),
+    new Request(origin + '/data/achievements.json'),
+    new Request(origin + '/styles.css?v=old-auth', {headers: {Authorization: 'Bearer fixture'}}),
+    new Request(origin + '/styles.css?v=old-cookie', {headers: {Cookie: 'session=fixture'}}),
+    new Request(origin + '/deployment.json'),
+    new Request(origin + '/publication-manifest.json'),
+    new Request(origin + '/index.html?session=fixture'),
+    new Request(origin + '/index.html?private-response=1'),
+    new Request(origin + '/styles.css?v=no-store'),
+  ];
+  for (const request of staleEntries) {
+    const headers = request.url.includes('private-response') ? {'Cache-Control': 'private'}
+      : request.url.includes('no-store') ? {'Cache-Control': 'no-store'} : {};
+    await active.put(request, new Response('stale private fixture', {headers}));
+  }
+  const exactPublicQuery = new Request(origin + '/styles.css?v=public-hash');
+  await active.put(exactPublicQuery, new Response('public exact query'));
   let activation;
   env.handlers.activate({waitUntil(promise) { activation = promise; }});
   await activation;
   assert.deepEqual((await env.caches.keys()).sort(), [cacheName, 'unrelated-cache'].sort());
   assert.equal(env.claimCount, 1);
-  assert.equal(await active.match(raw), undefined);
+  for (const request of staleEntries) assert.equal(await active.match(request), undefined, request.url);
+  assert.equal(await active.match(exactPublicQuery).then(response => response.text()), 'public exact query');
   assert((await active.match(origin + '/offline.html')));
   const failedShellUrl = env.calls.find(url => new URL(url).pathname === '/styles.css');
   assert(failedShellUrl, 'fixture exercised an optional shell request failure');
 
-  // A network-first raw source response remains uncached even after a successful fetch.
-  const rawRequest = new Request(origin + '/data/achievements.json');
-  let rawResponse;
-  env.handlers.fetch({request: rawRequest, respondWith(promise) { rawResponse = promise; }, waitUntil() {}});
-  assert.equal((await rawResponse).status, 200);
-  assert.equal(await active.match(rawRequest), undefined);
+  // Sensitive requests are left to the browser's network path, even for fake 200 responses.
+  const bypassRequests = [
+    new Request(origin + '/index.html?cmsEdit=1'),
+    new Request(origin + '/api/private.json?token=fixture'),
+    new Request(origin + '/cms-page-editor.deadbeef.js'),
+    new Request(origin + '/index.html?preview=1'),
+    new Request(origin + '/index.html?session=fixture'),
+    new Request(origin + '/data/achievements.json'),
+    new Request(origin + '/sw.js'),
+    new Request(origin + '/deployment.json'),
+    new Request(origin + '/styles.css?v=auth', {headers: {Authorization: 'Bearer fixture'}}),
+    new Request(origin + '/styles.css?v=cookie', {headers: {Cookie: 'session=fixture'}}),
+  ];
+  for (const request of bypassRequests) {
+    let intercepted = false;
+    env.handlers.fetch({request, respondWith() { intercepted = true; }, waitUntil() {}});
+    assert.equal(intercepted, false, request.url + ' must bypass the worker');
+    assert.equal(await active.match(request), undefined, request.url + ' must not enter Cache Storage');
+  }
+
+  // A public-looking request still must not cache a fake 200 carrying private/no-store headers.
+  for (const query of ['no-store', 'private-response']) {
+    const request = new Request(origin + '/public-data.json?v=' + query);
+    let responsePromise;
+    env.handlers.fetch({request, respondWith(promise) { responsePromise = promise; }, waitUntil() {}});
+    assert.equal((await responsePromise).status, 200);
+    assert.equal(await active.match(request), undefined, query + ' response must not be stored');
+  }
+  const publicJson = new Request(origin + '/data/legal-schedule.json?v=public-hash');
+  let publicJsonResponse;
+  env.handlers.fetch({request: publicJson, respondWith(promise) { publicJsonResponse = promise; }, waitUntil() {}});
+  assert.equal((await publicJsonResponse).status, 200);
+  assert((await active.match(publicJson)), 'public JSON must retain network-first caching');
 
   const exact = shell.find(url => url.startsWith('./home.js?'));
   assert(exact, 'homepage JavaScript URL must preserve its query string');

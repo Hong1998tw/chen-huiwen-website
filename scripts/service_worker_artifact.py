@@ -18,6 +18,7 @@ EXCLUDED_CLOSURE_PATHS = {
 CACHE_RE = re.compile(r"(?m)^const CACHE=['\"][^'\"]*['\"];[ \t]*$")
 SHELL_RE = re.compile(r'(?m)^const SHELL=\[[^\r\n]*\];[ \t]*$')
 OFFLINE_RE = re.compile(r"(?m)^const OFFLINE=['\"]\./offline\.html['\"];[ \t]*$")
+POLICY_MARKER = '/* {{CACHE_POLICY}} */'
 CORE_FONT_RE = re.compile(
     r'^/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-[0-9a-f]{12}\.woff2$'
 )
@@ -130,9 +131,10 @@ def _normalized_template(template: bytes) -> bytes:
         raise ValueError('Service Worker template must be UTF-8') from error
     text, cache_count = CACHE_RE.subn("const CACHE='{{CACHE}}';", text)
     text, shell_count = SHELL_RE.subn('const SHELL={{SHELL}};', text)
+    policy_count = text.count(POLICY_MARKER)
     offline_count = len(OFFLINE_RE.findall(text))
-    if cache_count != 1 or shell_count != 1 or offline_count != 1:
-        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, and required offline declaration')
+    if cache_count != 1 or shell_count != 1 or policy_count != 1 or offline_count != 1:
+        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, policy, and required offline declaration')
     return text.encode('utf-8')
 
 
@@ -161,11 +163,18 @@ def render_service_worker(artifact_dir: Path, template: bytes) -> bytes:
     """Render deterministic cache identity and SHELL into the controlled template."""
     artifact_dir = Path(artifact_dir).resolve()
     normalized = _normalized_template(template)
+    policy_path = Path(__file__).with_name('service_worker_cache_policy.js')
+    policy = policy_path.read_bytes()
+    try:
+        policy_text = policy.decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise ValueError('Service Worker cache policy must be UTF-8') from error
     urls = shell_urls((artifact_dir / 'index.html').read_bytes(), artifact_dir)
     closure = _public_closure(artifact_dir)
     material = json.dumps({
         'schemaVersion': 1,
         'templateSha256': hashlib.sha256(normalized).hexdigest(),
+        'cachePolicySha256': hashlib.sha256(policy).hexdigest(),
         'files': closure,
     }, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
     cache_digest = hashlib.sha256(material).hexdigest()
@@ -178,6 +187,8 @@ def render_service_worker(artifact_dir: Path, template: bytes) -> bytes:
         raise ValueError('Service Worker template must be UTF-8') from error
     text, cache_count = CACHE_RE.subn(f"const CACHE='{cache_name}';", text)
     text, shell_count = SHELL_RE.subn('const SHELL=' + shell_json + ';', text)
-    if cache_count != 1 or shell_count != 1 or len(OFFLINE_RE.findall(text)) != 1:
-        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, and required offline declaration')
+    policy_count = text.count(POLICY_MARKER)
+    text = text.replace(POLICY_MARKER, policy_text)
+    if cache_count != 1 or shell_count != 1 or policy_count != 1 or len(OFFLINE_RE.findall(text)) != 1:
+        raise ValueError('Service Worker template must contain one supported CACHE, SHELL, policy, and required offline declaration')
     return text.encode('utf-8')
