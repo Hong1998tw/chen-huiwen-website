@@ -9,6 +9,7 @@ const FONT_ROLES = ['common', 'delta'];
 
 export const VISUAL_CAPTURE_SEED = 'huiwen-g02-20261018';
 export const VISUAL_CAPTURE_COUNT = 20;
+export const SYSTEM_FALLBACK_CODEPOINTS = Object.freeze([0x2630, 0x2733]);
 
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -122,6 +123,8 @@ function validateExpectedFonts(expectedFonts) {
       || (typeof font.weight === 'string' && font.weight.trim().length > 0),
     `${font.role}: expected font weight is missing`);
     assert.match(font.sha256 || '', SHA256, `${font.role}: expected font digest is invalid`);
+    assert.ok(Number.isInteger(font.bytes) && font.bytes > 0,
+      `${font.role}: expected font byte length is invalid`);
     assert.ok(Array.isArray(font.codepoints) && font.codepoints.length > 0,
       `${font.role}: parsed font cmap is missing`);
     assert.ok(font.codepoints.every((codepoint) => Number.isInteger(codepoint)
@@ -137,8 +140,33 @@ function validateExpectedFonts(expectedFonts) {
   return Object.fromEntries(expectedFonts.map((font) => [font.role, font]));
 }
 
-export function validateVisualTypography({ route, routeCodepoints, expectedFonts, typography, stage }) {
-  assertSafePublicRoute(route);
+function validateFallbackCodepoints(routeFallbacks) {
+  const jp = routeFallbacks?.jp ?? [];
+  const system = SYSTEM_FALLBACK_CODEPOINTS;
+  if (routeFallbacks?.system !== undefined) {
+    assert.deepEqual(routeFallbacks.system, SYSTEM_FALLBACK_CODEPOINTS,
+      'system fallback must match the explicit artifact codepoint allowlist');
+  }
+  for (const [name, codepoints] of [['JP', jp], ['system', system]]) {
+    assert.ok(Array.isArray(codepoints), `${name} fallback codepoints must be an array`);
+    assert.ok(codepoints.every((codepoint) => Number.isInteger(codepoint)
+      && codepoint >= 0 && codepoint <= 0x10ffff
+      && !(codepoint >= 0xd800 && codepoint <= 0xdfff)),
+    `${name} fallback contains an invalid Unicode scalar`);
+    assert.equal(new Set(codepoints).size, codepoints.length, `${name} fallback contains duplicate codepoints`);
+  }
+  assert.deepEqual([...jp].filter((codepoint) => system.includes(codepoint)), [],
+    'JP and system fallback contracts overlap');
+  return { jp: [...jp], system: [...system] };
+}
+
+export function validateVisibleCodepointCoverage({
+  route,
+  routeCodepoints,
+  expectedFonts,
+  visibleCodepoints,
+  routeFallbacks = {},
+}) {
   const expectedByRole = validateExpectedFonts(expectedFonts);
   assert.ok(Array.isArray(routeCodepoints) && routeCodepoints.length > 0,
     `${route}: schema-2 route cmap is missing`);
@@ -148,11 +176,97 @@ export function validateVisualTypography({ route, routeCodepoints, expectedFonts
   `${route}: schema-2 route cmap contains an invalid Unicode scalar`);
   assert.equal(new Set(routeCodepoints).size, routeCodepoints.length,
     `${route}: schema-2 route cmap contains duplicate codepoints`);
-  const expectedCoverage = new Set(expectedFonts.flatMap((font) => font.codepoints));
-  for (const codepoint of routeCodepoints) {
-    assert.ok(expectedCoverage.has(codepoint),
-      `${route}: schema-2 route cmap character U+${codepoint.toString(16).toUpperCase()} has no Common/page Delta font coverage`);
+  assert.ok(Array.isArray(visibleCodepoints), `${route}: visible user-text codepoints are missing`);
+  assert.ok(visibleCodepoints.every((codepoint) => Number.isInteger(codepoint)
+    && codepoint >= 0 && codepoint <= 0x10ffff
+    && !(codepoint >= 0xd800 && codepoint <= 0xdfff)),
+  `${route}: visible user text contains an invalid Unicode scalar`);
+  assert.equal(new Set(visibleCodepoints).size, visibleCodepoints.length,
+    `${route}: visible user text contains duplicate codepoints`);
+
+  const required = new Set(routeCodepoints);
+  const common = new Set(expectedByRole.common.codepoints);
+  const delta = new Set(expectedByRole.delta.codepoints);
+  const fontCovered = new Set([...common, ...delta]);
+  for (const codepoint of required) {
+    assert.ok(fontCovered.has(codepoint),
+      `${route}: manifest-required character U+${codepoint.toString(16).toUpperCase()} is absent from its actual Common/Delta cmap`);
   }
+
+  const fallback = validateFallbackCodepoints(routeFallbacks);
+  const jpFallback = new Set(fallback.jp);
+  const systemFallback = new Set(fallback.system);
+  for (const codepoint of [...jpFallback, ...systemFallback]) {
+    assert.ok(!fontCovered.has(codepoint),
+      `${route}: fallback character U+${codepoint.toString(16).toUpperCase()} is already in the page-font cmap`);
+  }
+
+  const coverage = { common: 0, delta: 0, jpFallback: 0, systemFallback: 0 };
+  for (const codepoint of visibleCodepoints) {
+    if (common.has(codepoint)) coverage.common += 1;
+    else if (delta.has(codepoint)) coverage.delta += 1;
+    else if (jpFallback.has(codepoint)) coverage.jpFallback += 1;
+    else if (systemFallback.has(codepoint)) coverage.systemFallback += 1;
+    else assert.fail(
+      `${route}: visible character U+${codepoint.toString(16).toUpperCase()} is outside the page manifest and explicit JP/system fallback contracts`);
+  }
+  return { visibleCount: visibleCodepoints.length, coverage, fallbacks: fallback };
+}
+
+function parseComputedFontFamily(value) {
+  assert.ok(typeof value === 'string' && value.trim().length > 0, 'computed font stack is empty');
+  const families = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      current += character;
+      escaped = false;
+    } else if (character === '\\') {
+      escaped = true;
+    } else if (quote) {
+      if (character === quote) quote = null;
+      else current += character;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ',') {
+      families.push(current.trim());
+      current = '';
+    } else {
+      current += character;
+    }
+  }
+  assert.equal(quote, null, 'computed font stack contains an unclosed quote');
+  if (escaped) current += '\\';
+  families.push(current.trim());
+  assert.ok(families.every((family) => family.length > 0), 'computed font stack contains an empty family');
+  return families;
+}
+
+function assertFontStackPrefix({ route, label, stack, expectedPrefix, needsSystemFallback }) {
+  const families = parseComputedFontFamily(stack);
+  assert.deepEqual(families.slice(0, expectedPrefix.length), expectedPrefix,
+    `${route}: ${label} must begin with producer-contract family order ${expectedPrefix.join(' → ')}`);
+  if (needsSystemFallback) {
+    const systemFallback = families.slice(1).some((family) =>
+      ['sans-serif', 'system-ui', 'serif', 'monospace'].includes(family.toLowerCase()));
+    assert.ok(systemFallback,
+      `${route}: ${label} has no generic system fallback after ${expectedPrefix.join(' → ')}`);
+  }
+  return families;
+}
+
+export function validateVisualTypography({
+  route,
+  routeCodepoints,
+  expectedFonts,
+  typography,
+  stage,
+  routeFallbacks = {},
+}) {
+  assertSafePublicRoute(route);
+  const expectedByRole = validateExpectedFonts(expectedFonts);
   const label = stage || 'visual capture';
   assert.ok(typography && typeof typography === 'object', `${route}: ${label} font readiness evidence is missing`);
   assert.equal(typography.route, route, `${route}: ${label} evidence is bound to a different route`);
@@ -162,17 +276,28 @@ export function validateVisualTypography({ route, routeCodepoints, expectedFonts
     `${route}: ${label} document.fonts status is not loaded`);
   assert.ok(typeof typography.bodyFontFamily === 'string' && typeof typography.headingFontFamily === 'string',
     `${route}: ${label} computed font stacks are missing`);
-  assert.ok(typography.bodyFontFamily.includes(expectedByRole.common.family),
-    `${route}: ${label} body stack omits manifest Common family ${expectedByRole.common.family}`);
-  assert.ok(typography.headingFontFamily.includes(expectedByRole.delta.family),
-    `${route}: ${label} heading stack omits manifest page Delta family ${expectedByRole.delta.family}`);
   assert.ok(Array.isArray(typography.visibleCodepoints),
     `${route}: ${label} visible user-text codepoints are missing`);
-  const visibleCodepoints = new Set(typography.visibleCodepoints);
-  assert.ok(typography.visibleCodepoints.every((codepoint) => Number.isInteger(codepoint)
-    && codepoint >= 0 && codepoint <= 0x10ffff
-    && !(codepoint >= 0xd800 && codepoint <= 0xdfff)),
-  `${route}: ${label} visible user text contains an invalid Unicode scalar`);
+  assert.equal(typography.visibleCodepointsTruncated, false,
+    `${route}: ${label} visible codepoint capture was truncated`);
+  assert.equal(typography.uncoveredVisibleGlyphCount, 0,
+    `${route}: ${label} has uncovered visible glyphs`);
+  assert.deepEqual(typography.uncoveredVisibleGlyphs, [],
+    `${route}: ${label} uncovered visible glyph diagnostics are not empty`);
+  const coverage = validateVisibleCodepointCoverage({
+    route,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: typography.visibleCodepoints,
+    routeFallbacks,
+  });
+  const fallbackVisible = coverage.coverage.jpFallback + coverage.coverage.systemFallback > 0;
+  assertFontStackPrefix({ route, label: `${label} body stack`, stack: typography.bodyFontFamily,
+    expectedPrefix: [expectedByRole.common.family, expectedByRole.delta.family],
+    needsSystemFallback: fallbackVisible });
+  assertFontStackPrefix({ route, label: `${label} heading stack`, stack: typography.headingFontFamily,
+    expectedPrefix: [expectedByRole.delta.family, expectedByRole.common.family],
+    needsSystemFallback: fallbackVisible });
   assert.ok(Array.isArray(typography.fontFaces), `${route}: ${label} FontFaceSet entries are missing`);
   assert.ok(Array.isArray(typography.fontChecks) && typography.fontChecks.length === FONT_ROLES.length,
     `${route}: ${label} document.fonts.load/check evidence is missing`);
@@ -188,7 +313,7 @@ export function validateVisualTypography({ route, routeCodepoints, expectedFonts
     assert.equal(check.family, expected.family,
       `${route}: ${label} ${role} check is bound to a different manifest family`);
     assert.ok(Number.isInteger(check.probeCodepoint)
-      && visibleCodepoints.has(check.probeCodepoint)
+      && typography.visibleCodepoints.includes(check.probeCodepoint)
       && expected.codepoints.includes(check.probeCodepoint),
     `${route}: ${label} ${role} probe is not a visible user character covered by the manifest cmap for ${expected.path}`);
     assert.equal(check.checkResult, true,
@@ -206,37 +331,57 @@ function validateCaptureNetwork({ route, expectedFonts, preloads, captureNetwork
   assert.ok(captureNetwork && typeof captureNetwork === 'object', `${route}: capture network evidence is missing`);
   assert.equal(captureNetwork.route, route, `${route}: capture network evidence is bound to a different route`);
   assert.equal(captureNetwork.phase, 'visual-capture', 'screenshot network phase is missing');
+  assert.equal(captureNetwork.snapshotStage, 'after-context-close',
+    `${route}: network metadata was finalized before the route observation closed`);
+  assert.equal(captureNetwork.observationClosed, true,
+    `${route}: network observation was not closed before the final snapshot`);
   assert.deepEqual(captureNetwork.preOnDemandPhases, ['initial', 'visual-capture'],
     `${route}: pre-on-demand route phases are incomplete or out of order`);
   assert.ok(Array.isArray(captureNetwork.fullTcRequests)
-    && Array.isArray(captureNetwork.preOnDemandFullTcRequests),
+    && Array.isArray(captureNetwork.preOnDemandFullTcRequests)
+    && Array.isArray(captureNetwork.postTriggerFullTcRequests),
   `${route}: Full-TC network evidence is missing`);
+  assert.deepEqual(captureNetwork.violations, [], `${route}: final network snapshot contains gate violations`);
   assert.deepEqual(captureNetwork.fullTcRequests, [],
     `${route}: visual capture triggered a Full-TC request`);
   assert.deepEqual(captureNetwork.preOnDemandFullTcRequests, [],
     `${route}: pre-on-demand route work triggered a Full-TC request`);
   assert.ok(captureNetwork.phaseCounts && typeof captureNetwork.phaseCounts === 'object',
     `${route}: per-phase network counts are missing`);
-  assert.ok(Array.isArray(captureNetwork.pageFontRequests),
-    `${route}: page-font CDP request evidence is missing`);
-  for (const phase of captureNetwork.preOnDemandPhases) {
+  for (const phase of ['initial', 'visual-capture', 'post-trigger', 'unclassified']) {
     const counts = captureNetwork.phaseCounts[phase];
     assert.ok(counts && Number.isInteger(counts.fullTc) && counts.fullTc >= 0
       && Number.isInteger(counts.pageFont) && counts.pageFont >= 0,
-    `${route}: ${phase} network phase counts are incomplete`);
+    `${route}: ${phase} final network counts are incomplete`);
   }
+  assert.equal(captureNetwork.phaseCounts['visual-capture'].fullTc, captureNetwork.fullTcRequests.length,
+    `${route}: screenshot-phase Full-TC count does not match its request records`);
+  assert.equal(captureNetwork.phaseCounts.initial.fullTc + captureNetwork.phaseCounts['visual-capture'].fullTc,
+    captureNetwork.preOnDemandFullTcRequests.length,
+    `${route}: pre-on-demand Full-TC count does not match its request records`);
+  assert.equal(captureNetwork.phaseCounts['post-trigger'].fullTc, captureNetwork.postTriggerFullTcRequests.length,
+    `${route}: post-trigger Full-TC count does not match its request records`);
+  if (route === 'service.html') {
+    assert.equal(captureNetwork.postTriggerFullTcRequests.length, 1,
+      `${route}: the trusted service-card gesture must cause exactly one Full-TC request`);
+    assert.equal(captureNetwork.serviceCardEvidence?.valid, true,
+      `${route}: the exact on-demand Full-TC response or canvas evidence failed`);
+  } else {
+    assert.deepEqual(captureNetwork.postTriggerFullTcRequests, [],
+      `${route}: a non-service route received a post-trigger Full-TC exemption`);
+  }
+  assert.ok(Array.isArray(captureNetwork.pageFontRequests),
+    `${route}: page-font CDP request evidence is missing`);
   assert.equal(captureNetwork.initialFullTcRequestsBeforeCapture, captureNetwork.phaseCounts.initial.fullTc,
     `${route}: initial Full-TC request count is inconsistent`);
-  assert.equal(captureNetwork.fullTcRequests.length, captureNetwork.phaseCounts['visual-capture'].fullTc,
-    `${route}: visual-capture Full-TC phase count does not match its request records`);
-  assert.equal(captureNetwork.preOnDemandFullTcRequests.length,
-    captureNetwork.phaseCounts.initial.fullTc + captureNetwork.phaseCounts['visual-capture'].fullTc,
-  `${route}: pre-on-demand Full-TC request count is inconsistent`);
   assert.equal(captureNetwork.pageFontRequests.filter((request) => request.phase === 'initial').length,
     captureNetwork.phaseCounts.initial.pageFont, `${route}: initial page-font phase count is inconsistent`);
   assert.equal(captureNetwork.pageFontRequests.filter((request) => request.phase === 'visual-capture').length,
     captureNetwork.phaseCounts['visual-capture'].pageFont,
   `${route}: visual-capture page-font phase count is inconsistent`);
+  assert.equal(captureNetwork.pageFontRequests.filter((request) => request.phase === 'post-trigger').length,
+    captureNetwork.phaseCounts['post-trigger'].pageFont,
+  `${route}: post-trigger page-font phase count is inconsistent`);
 
   const preloadPaths = new Set(preloads.expected);
   assert.equal(preloadPaths.size, preloads.expected.length,
@@ -250,6 +395,20 @@ function validateCaptureNetwork({ route, expectedFonts, preloads, captureNetwork
     assert.ok(Number.isFinite(request.encodedDataLength) && request.encodedDataLength > 0,
       `${route}: page-font request ${request.path} has no nonzero CDP byte count`);
     assert.equal(request.failure, null, `${route}: page-font request ${request.path} failed or was blocked`);
+    assert.equal(request.origin, captureNetwork.routeOrigin,
+      `${route}: page-font request ${request.path} changed origin`);
+    assert.equal(request.isMainFrame, true,
+      `${route}: page-font request ${request.path} was issued outside the current main frame`);
+    assert.equal(request.terminal, 'finished',
+      `${route}: page-font request ${request.path} remained pending at observation close`);
+    const expectedFont = expectedFonts.find((font) => `/${font.path}` === request.path);
+    assert.ok(expectedFont, `${route}: page-font request ${request.path} has no expected manifest artifact`);
+    assert.equal(request.bodyBytes, expectedFont.bytes,
+      `${route}: page-font request ${request.path} has an unexpected response byte length`);
+    assert.equal(request.bodySha256, expectedFont.sha256,
+      `${route}: page-font request ${request.path} hash differs from the producer manifest`);
+    assert.equal(request.bodyError, null,
+      `${route}: page-font request ${request.path} response body could not be hashed`);
   }
   for (const font of expectedFonts) {
     const path = `/${font.path}`;
@@ -278,6 +437,7 @@ export function buildVisualCaptureRecord({
   typography,
   preloads,
   captureNetwork,
+  routeFallbacks = {},
 }) {
   assertSafePublicRoute(route);
   assert.ok(Buffer.isBuffer(pngBytes) && pngBytes.length > PNG_SIGNATURE.length,
@@ -292,10 +452,17 @@ export function buildVisualCaptureRecord({
     && Array.isArray(preloads.declared) && Array.isArray(preloads.observed), 'preload evidence is missing');
   assert.ok(typography && typeof typography === 'object', `${route}: before/after capture typography evidence is missing`);
   validateVisualTypography({ route, routeCodepoints, expectedFonts,
-    typography: typography.beforeCapture, stage: 'before screenshot' });
+    typography: typography.beforeCapture, stage: 'before screenshot', routeFallbacks });
   validateVisualTypography({ route, routeCodepoints, expectedFonts,
-    typography: typography.afterCapture, stage: 'after screenshot' });
+    typography: typography.afterCapture, stage: 'after screenshot', routeFallbacks });
   validateCaptureNetwork({ route, expectedFonts, preloads, captureNetwork });
+  const coverage = validateVisibleCodepointCoverage({
+    route,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: typography.beforeCapture.visibleCodepoints,
+    routeFallbacks,
+  });
 
   const { fileName } = visualPngPath('.', route);
   return {
@@ -305,8 +472,9 @@ export function buildVisualCaptureRecord({
     viewport,
     png: { fileName, mimeType: 'image/png', bytes: pngBytes.byteLength, pixelSize, sha256: sha256(pngBytes) },
     routeCmapCodepointCount: routeCodepoints.length,
-    expectedFonts: expectedFonts.map(({ role, path, family, weight, sha256: fontSha256, codepoints }) => ({
-      role, path, family, weight, sha256: fontSha256,
+    routeFallbackContract: coverage.fallbacks,
+    expectedFonts: expectedFonts.map(({ role, path, family, weight, bytes, sha256: fontSha256, codepoints }) => ({
+      role, path, family, weight, bytes, sha256: fontSha256,
       codepointCount: codepoints.length,
     })),
     typography,

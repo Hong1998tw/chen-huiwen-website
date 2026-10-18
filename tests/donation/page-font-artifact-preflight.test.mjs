@@ -64,6 +64,12 @@ async function writeFont(artifactRoot, bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+async function writeManifest(artifactRoot, contents = '{}') {
+  const bytes = Buffer.from(contents);
+  await writeFile(join(artifactRoot, 'page-font-manifest.json'), bytes);
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
 async function assertTerminalPreflightFailure(prepareArtifacts, expectedError) {
   const { thrown, report } = await runCase(prepareArtifacts);
   assert.ok(thrown, 'preflight failure unexpectedly returned success');
@@ -92,7 +98,7 @@ async function assertTerminalPreflightFailure(prepareArtifacts, expectedError) {
 test('missing manifest writes a terminal preflight report and preserves the read error', async () => {
   await assertTerminalPreflightFailure(async (artifactRoot) => {
     await writeFont(artifactRoot, Buffer.from('font fixture'));
-    await writeFile(join(artifactRoot, 'page-font-manifest.json'), '{}');
+    await writeManifest(artifactRoot);
   }, { name: 'Error', message: /publication-manifest\.json/ });
 });
 
@@ -104,17 +110,32 @@ test('malformed JSON writes a terminal preflight report with the parse error', a
 
 test('SHA mismatch writes a terminal preflight report with the assertion error', async () => {
   await assertTerminalPreflightFailure(async (artifactRoot) => {
-    await writeFile(join(artifactRoot, 'publication-manifest.json'), JSON.stringify({ files: { [fontPath]: '0'.repeat(64) } }));
-    await writeFile(join(artifactRoot, 'page-font-manifest.json'), '{}');
+    const pageFontManifestSha = await writeManifest(artifactRoot);
+    await writeFile(join(artifactRoot, 'publication-manifest.json'), JSON.stringify({ files: {
+      [fontPath]: '0'.repeat(64), 'page-font-manifest.json': pageFontManifestSha,
+    } }));
     await writeFont(artifactRoot, Buffer.from('font fixture'));
   }, { name: 'AssertionError', message: /strictly equal|Expected values/ });
+});
+
+test('page-font manifest bytes must match the publication manifest digest', async () => {
+  await assertTerminalPreflightFailure(async (artifactRoot) => {
+    await writeManifest(artifactRoot);
+    await writeFile(join(artifactRoot, 'publication-manifest.json'), JSON.stringify({ files: {
+      [fontPath]: '0'.repeat(64),
+      'page-font-manifest.json': '0'.repeat(64),
+    } }));
+    await writeFont(artifactRoot, Buffer.from('font fixture'));
+  }, { name: 'AssertionError', message: /page-font manifest bytes differ from the publication manifest/ });
 });
 
 test('font size mismatch writes a terminal preflight report with the assertion error', async () => {
   await assertTerminalPreflightFailure(async (artifactRoot) => {
     const bytes = Buffer.from('font fixture');
     const sha = await writeFont(artifactRoot, bytes);
-    await writeFile(join(artifactRoot, 'publication-manifest.json'), JSON.stringify({ files: { [fontPath]: sha } }));
-    await writeFile(join(artifactRoot, 'page-font-manifest.json'), '{}');
+    const pageFontManifestSha = await writeManifest(artifactRoot);
+    await writeFile(join(artifactRoot, 'publication-manifest.json'), JSON.stringify({ files: {
+      [fontPath]: sha, 'page-font-manifest.json': pageFontManifestSha,
+    } }));
   }, { name: 'AssertionError', message: /strictly equal|Expected values/ });
 });
