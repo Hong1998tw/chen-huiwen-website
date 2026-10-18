@@ -108,3 +108,6 @@ body{background:#f8faf8}h1,h2,h3{letter-spacing:-.035em}a,button{touch-action:ma
 .case-latest-wrap:empty{display:none}
 .case-photo-credit{display:block;margin-top:4px;font-size:14px}
 .case-photo-credit a{text-decoration:underline;text-underline-offset:3px}
+
+/* G-04: expose the service phone number as a distinct pointer target without changing inline editorial links. */
+.topline span a{display:inline-flex;align-items:center;min-height:24px}

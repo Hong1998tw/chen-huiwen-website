@@ -9,7 +9,8 @@
 }
 @media(max-width:780px){
  body.menu-open{overflow:hidden}.wrap{width:calc(100% - 32px)}
- .topline .wrap{width:calc(100% - 32px)}
+ .topline .wrap{width:calc(100% - 32px);flex-wrap:wrap;gap:0 12px}
+ .topline span a{min-height:44px}
  .site-header{position:sticky;top:0;margin:0 10px;z-index:90;border:1px solid var(--line);border-radius:20px}
  .nav-wrap{width:100%;min-height:70px;padding:0 16px;border-radius:20px}
  .brand{gap:10px}.brand-name{font-size:1.35rem}.brand-role{display:none}
