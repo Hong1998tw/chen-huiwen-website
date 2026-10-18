@@ -241,6 +241,7 @@ try {
       }
 
       const failed = Boolean(result.error || result.fontViolations.length || !result.horizontalOverflow?.passed);
+      result.status = failed ? 'FAIL' : 'PASS';
       if (failed) {
         const screenshotPath = resolve(out, `${viewport.width}x${route.id}.png`);
         try {
@@ -274,6 +275,9 @@ try {
     report.kbdMinimumFontPx = kbdMinimumFontPx;
     report.roundingEpsilonPx = roundingEpsilonPx;
     report.completedCases = report.cases.length;
+    report.status = !fatalErrors.length && report.completedCases === routes.length && report.failures.length === 0
+      ? 'PASS'
+      : 'FAIL';
     report.fatalErrors = fatalErrors;
     await writeFile(resolve(out, `min-font-${width}.json`), `${JSON.stringify(report, null, 2)}\n`);
   }
@@ -283,11 +287,13 @@ const totalCases = [...reports.values()].reduce((sum, report) => sum + report.ca
 const failureCount = [...reports.values()].reduce((sum, report) => sum + report.failures.length, 0);
 console.log(JSON.stringify({
   check: 'computed minimum visible text font size and horizontal overflow',
+  status: !fatalErrors.length && failureCount === 0 && totalCases === routes.length * viewports.length ? 'PASS' : 'FAIL',
   pageCount: routes.length,
   expectedCases: routes.length * viewports.length,
   completedCases: totalCases,
   viewports: viewports.map(viewport => ({
     width: viewport.width,
+    status: reports.get(viewport.width).status,
     completedCases: reports.get(viewport.width).completedCases,
     failureCount: reports.get(viewport.width).failures.length,
     artifact: resolve(out, `min-font-${viewport.width}.json`)
