@@ -2,10 +2,12 @@
 from html import escape
 from case_context import _load
 from achievement_metadata import latest_history_event
+from case_paragraph_dedupe import ParagraphDeduper
 
-def render_overview(record, root):
+def render_overview(record, root, paragraph_deduper=None):
     contexts, _ = _load(root)
     context = contexts.get(record['id'])
+    paragraph_deduper = paragraph_deduper or ParagraphDeduper()
     e = lambda value: escape(str(value), quote=True)
     issue = context['impact']['text'] if context else record.get('summary', '')
     if not issue:
@@ -36,6 +38,7 @@ def render_overview(record, root):
             f'<span>最新紀錄：{e(latest_date)}</span></p>'
             f'<h2 id="{heading}">先看懂這件事</h2><div class="case-overview-grid">')
     for title, text in points:
-        body += f'<div><h3>{e(title)}</h3><p>{e(text)}</p></div>'
+        if paragraph_deduper.keep(text):
+            body += f'<div><h3>{e(title)}</h3><p>{e(text)}</p></div>'
     body += '</div><a class="text-link" href="#case-sources">查看資料來源 ↓</a></section>'
     return body

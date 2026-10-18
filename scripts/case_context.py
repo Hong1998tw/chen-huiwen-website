@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import json
 import re
+from case_paragraph_dedupe import ParagraphDeduper
 
 ROOT = Path(__file__).resolve().parents[1]
 FACT_FIELDS = (('impact', '與生活的關係'), ('councillorAction', '慧文的提案與質詢'), ('governmentRole', '市府回應與辦理情形'))
@@ -54,21 +55,24 @@ def _load(root):
     return contexts, records
 
 
-def render_case_context(record_id, root=ROOT):
+def render_case_context(record_id, root=ROOT, paragraph_deduper=None):
     """Return a standalone section, or an empty string for records without a guide."""
     contexts, records = _load(Path(root))
     context = contexts.get(record_id)
     if context is None:
         return ''
+    paragraph_deduper = paragraph_deduper or ParagraphDeduper()
     sources = {source['url']: source for source in records[record_id]['sources']}
     e = lambda value: escape(str(value), quote=True)
     heading_id = f'case-context-{record_id}'
-    body = f'<section id="case-context" class="case-context" aria-labelledby="{heading_id}"><p class="civic-kicker">閱讀這個議題</p><h2 id="{heading_id}">議題導讀</h2><p class="case-context-updated">導讀整理 <time datetime="{e(context["preparedOn"])}">{e(context["preparedOn"])}</time></p><p class="case-context-question">{e(context["question"])}</p><div class="case-context-grid">'
+    question = f'<p class="case-context-question">{e(context["question"])}</p>' if paragraph_deduper.keep(context['question']) else ''
+    body = f'<section id="case-context" class="case-context" aria-labelledby="{heading_id}"><p class="civic-kicker">閱讀這個議題</p><h2 id="{heading_id}">議題導讀</h2><p class="case-context-updated">導讀整理 <time datetime="{e(context["preparedOn"])}">{e(context["preparedOn"])}</time></p>{question}<div class="case-context-grid">'
     for field, title in FACT_FIELDS:
         block = context[field]
         if field == 'councillorAction' and block['evidenceStatus'] == 'not_collected':
             continue
-        body += f'<div class="case-context-point"><h3>{title}</h3><p>{e(block["text"])}</p>'
+        paragraph = f'<p>{e(block["text"])}</p>' if paragraph_deduper.keep(block['text']) else ''
+        body += f'<div class="case-context-point"><h3>{title}</h3>{paragraph}'
         if block['sources']:
             links = []
             for url in block['sources']:
@@ -78,6 +82,6 @@ def render_case_context(record_id, root=ROOT):
             body += '<p class="case-context-sources">' + ' · '.join(links) + '</p>'
         body += '</div>'
     body += '</div><details class="case-context-next"><summary>後續進度與相關資訊</summary><div><h3>閱讀提醒</h3>'
-    body += ''.join(f'<p>{e(text)}</p>' for text in context['notEstablished'])
+    body += ''.join(f'<p>{e(text)}</p>' for text in context['notEstablished'] if paragraph_deduper.keep(text))
     body += '<h3>後續關注重點</h3><ul>' + ''.join(f'<li>{e(text)}</li>' for text in context['nextEvidence']) + '</ul></div></details></section>'
     return body
