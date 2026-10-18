@@ -21,13 +21,29 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   const header = document.querySelector('.site-header');
   if (!header) return;
   const mobile = window.matchMedia('(max-width: 780px)');
-  let lastY = window.scrollY;
+  let lastY;
   let direction = 0;
-  let directionStartY = lastY;
+  let directionStartY;
+  let initialized = false;
+  let pendingMediaReset = false;
   let queued = false;
   const update = () => {
     queued = false;
     const y = window.scrollY;
+    if (!initialized) {
+      initialized = true;
+      lastY = y;
+      direction = 0;
+      directionStartY = y;
+      if (pendingMediaReset) {
+        header.classList.remove('is-compact');
+        pendingMediaReset = false;
+      } else if (mobile.matches && y > 8) {
+        header.classList.add('is-compact');
+        document.dispatchEvent(new Event('site:header-layout-change'));
+      }
+      return;
+    }
     const movement = Math.sign(y - lastY);
     if (!mobile.matches || y <= 8) {
       header.classList.remove('is-compact');
@@ -56,20 +72,26 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     queued = true;
     window.requestAnimationFrame(update);
   };
-  if (mobile.matches && lastY > 8) header.classList.add('is-compact');
   window.addEventListener('scroll', onScroll, {passive:true});
   mobile.addEventListener('change', () => {
+    if (!initialized) {
+      pendingMediaReset = true;
+      header.classList.remove('is-compact');
+      return;
+    }
     lastY = window.scrollY;
     direction = 0;
     directionStartY = lastY;
     header.classList.remove('is-compact');
   });
+  onScroll();
 })();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
   const toggle = document.querySelector('.menu-toggle');
   const navigation = document.getElementById('navigation');
   if (!toggle || !navigation) return;
+  const header = document.querySelector('.site-header');
   document.documentElement.classList.add('menu-ready');
   const backdrop = document.createElement('button');
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
@@ -121,6 +143,13 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     const bottom = document.querySelector('.site-header').getBoundingClientRect().bottom;
     navigation.style.setProperty('--menu-top', `${Math.ceil(bottom + 12)}px`);
   }
+  document.addEventListener('site:header-layout-change', () => {
+    if (toggle.getAttribute('aria-expanded') === 'true') positionMenu();
+  });
+  header?.addEventListener('transitionend', event => {
+    if (event.target === header && event.propertyName === 'min-height' &&
+        toggle.getAttribute('aria-expanded') === 'true') positionMenu();
+  });
   function closeMenu(returnFocus = false) {
     navigation.classList.remove('is-open'); document.body.classList.remove('menu-open');
     toggle.setAttribute('aria-expanded', 'false'); backdrop.hidden = true;

@@ -38,6 +38,8 @@ jobs:
       - run: node --check tests/donation/election-mode.mjs
       - run: node --check tests/donation/petition-preservation.mjs
       - run: node tests/donation/petition-preservation.test.mjs
+      - name: Verify compact-header startup state from the shipped site.js source
+        run: node tests/donation/site-header-controller.mjs
       - name: Verify inline-link target-size exception predicate with pure fixtures
         run: node tests/donation/target-size-inline.test.mjs
       - name: Verify target-size cleanup and report persistence failures
