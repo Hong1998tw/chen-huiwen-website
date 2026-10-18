@@ -18,8 +18,15 @@ import {
   verifyCaptureMetadata
 } from './visual-qa-lib.mjs';
 import { startStaticServer } from './static-server.mjs';
-import { assertAllowedOptions, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
+import {
+  combineCaptureAndSourceIntegrityErrors,
+  createMetadataPathRegistry,
+  invalidateSourceMetadata,
+  prepareCaptureOutput,
+  writeCaptureMetadata,
+} from './visual-qa-source-integrity.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runnerVersion = '1.0.0';
@@ -102,13 +109,12 @@ function captureId(route, viewport) {
   return `${route.id}-${viewport.width}`;
 }
 
-async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
+async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, metadataRegistry, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
   const id = captureId(route, viewport);
   const screenshotEnabled = environment === 'local-http-uncompressed';
   const screenshotPath = screenshotEnabled ? `${id}.png` : null;
   const metadataPath = `${id}.json`;
   const absoluteScreenshotPath = screenshotEnabled ? resolve(runOutput, screenshotPath) : null;
-  const absoluteMetadataPath = resolve(runOutput, metadataPath);
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: policy.capture.deviceScaleFactor,
@@ -392,9 +398,7 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     network: requestRecords
   };
   record.captureQuality = evaluateCaptureQuality(record, { expectedHttpStatus, screenshotRequired: screenshotEnabled });
-  const metadataBytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
-  await writeFile(absoluteMetadataPath, metadataBytes);
-  record.metadataSha256 = sha256(metadataBytes);
+  record.metadataSha256 = await writeCaptureMetadata({ registry: metadataRegistry, id, metadataPath, record });
   await cdp.detach().catch(() => {});
   await context.close();
   return record;
@@ -422,148 +426,205 @@ async function runCapture(options) {
     outputDir: options['output-dir'],
     defaultOutput,
   });
-  const policy = await readPolicy();
   const outputRoot = identity.outputRoot;
   const runOutput = resolve(outputRoot, environment);
-  await mkdir(runOutput, { recursive: true });
-  let server = null;
-  let baseUrl;
-  if (environment === 'local-http-uncompressed') {
-    server = await startStaticServer({ root: identity.siteRoot, compression: 'none', port: 0 });
-    baseUrl = server.url;
-  } else {
-    baseUrl = options['base-url'] ?? process.env.VISUAL_QA_BASE_URL ?? defaultCloudflareBase;
-    if (!/^https:\/\//.test(baseUrl)) throw new Error('Cloudflare capture requires an HTTPS --base-url');
-    if (!baseUrl.endsWith('/')) baseUrl += '/';
+  const metadataRegistry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const sourceGuard = identity.independentSiteSource && process.env.BASE_ROOT
+    ? await protectReadOnlyBaseSource({
+      root: identity.siteRoot,
+      runnerTemp: process.env.RUNNER_TEMP,
+      baseRoot: process.env.BASE_ROOT,
+    })
+    : null;
+  if (identity.independentSiteSource && process.env.GITHUB_EVENT_NAME === 'pull_request' && !sourceGuard) {
+    throw new Error('A-05 PR base capture requires the verified RUNNER_TEMP/a05-main-reference source guard.');
   }
-
-  const checkoutSHA = identity.captureToolSHA;
-  const siteSourceSHA = identity.siteSourceSHA;
-  const deploymentAtStart = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
-
-  const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
-  let browser;
   const captures = [];
+  let captureError = null;
   try {
-    browser = await chromium.launch({ headless: true });
-    for (const route of policy.routes) {
-      for (const viewport of policy.viewports) {
-        const capture = await captureOne({
-          browser,
-          route,
-          viewport,
-          baseUrl,
-          policy,
-          environment,
-          runOutput,
-          playwrightVersion: packageJson.devDependencies.playwright,
-          siteSourceSHA,
-          captureToolSHA: identity.captureToolSHA,
-          deploymentAtStart
+    if (sourceGuard && sourceGuard.initialState.headSha !== identity.siteSourceSHA) {
+      throw new Error(`A-05 PR base changed between identity capture (${identity.siteSourceSHA}) and read-only protection (${sourceGuard.initialState.headSha}).`);
+    }
+    await prepareCaptureOutput(metadataRegistry);
+    const policy = await readPolicy();
+    let server = null;
+    let baseUrl;
+    if (environment === 'local-http-uncompressed') {
+      server = await startStaticServer({ root: identity.siteRoot, compression: 'none', port: 0 });
+      baseUrl = server.url;
+    } else {
+      baseUrl = options['base-url'] ?? process.env.VISUAL_QA_BASE_URL ?? defaultCloudflareBase;
+      if (!/^https:\/\//.test(baseUrl)) throw new Error('Cloudflare capture requires an HTTPS --base-url');
+      if (!baseUrl.endsWith('/')) baseUrl += '/';
+    }
+
+    const checkoutSHA = identity.captureToolSHA;
+    const siteSourceSHA = identity.siteSourceSHA;
+    const deploymentAtStart = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
+
+    const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
+    let browser;
+    try {
+      browser = await chromium.launch({ headless: true });
+      for (const route of policy.routes) {
+        for (const viewport of policy.viewports) {
+          const capture = await captureOne({
+            browser,
+            route,
+            viewport,
+            baseUrl,
+            policy,
+            environment,
+            runOutput,
+            metadataRegistry,
+            playwrightVersion: packageJson.devDependencies.playwright,
+            siteSourceSHA,
+            captureToolSHA: identity.captureToolSHA,
+            deploymentAtStart
+          });
+          captures.push(capture);
+        }
+      }
+    } finally {
+      if (browser) await browser.close();
+      if (server) await server.close();
+    }
+
+    const deploymentAtEnd = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
+    const liveEvidence = environment === 'cloudflare-production'
+      ? deploymentEvidence(checkoutSHA, deploymentAtStart?.receipt, deploymentAtEnd?.receipt)
+      : null;
+    const deploymentWindow = liveEvidence?.verification ?? null;
+    if (deploymentWindow) {
+      for (const capture of captures) {
+        capture.sourceSHA = liveEvidence.sourceSHA;
+        capture.siteSourceSHA = null;
+        capture.liveDeployment = liveEvidence.liveDeployment;
+        capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
+        const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
+        capture.environmentVerification.status = responseVerified && deploymentWindow.status === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED';
+        capture.captureQuality = evaluateCaptureQuality(capture, { expectedHttpStatus: capture.expectedHttpStatus, screenshotRequired: false });
+        delete capture.metadataSha256;
+        capture.metadataSha256 = await writeCaptureMetadata({
+          registry: metadataRegistry,
+          id: capture.id,
+          metadataPath: capture.metadataPath,
+          record: capture,
         });
-        captures.push(capture);
       }
     }
+    let siteSourceIntegrity = null;
+    if (sourceGuard) {
+      try {
+        siteSourceIntegrity = await sourceGuard.verifyAndRestore();
+      } catch (sourceIntegrityError) {
+        const reportErrors = await invalidateSourceMetadata({
+          registry: metadataRegistry,
+          captures,
+          expectedHeadSha: identity.siteSourceSHA,
+          claimedSourceSHAAtStart: identity.siteSourceSHA,
+          reason: sourceIntegrityError,
+        });
+        throw combineCaptureAndSourceIntegrityErrors(null, sourceIntegrityError, reportErrors);
+      }
+    }
+    const verificationFailures = captures.filter(item => item.environmentVerification.status !== 'VERIFIED');
+    const screenshotEnabled = environment === 'local-http-uncompressed';
+    const failedCaptures = captures.filter(item => item.captureQuality.status !== 'COMPLETE');
+    const deploymentChanged = deploymentWindow?.status === 'MIXED_DEPLOYMENT';
+    const manifest = {
+      schemaVersion: 3,
+      status: deploymentChanged ? 'MIXED_DEPLOYMENT' : captures.length === 30 && !failedCaptures.length && !verificationFailures.length
+        ? screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY'
+        : 'CAPTURE_INCOMPLETE',
+      baselineApproval: null,
+      approval: null,
+      exceptions: [],
+      environment,
+      baseUrl: new URL(baseUrl).origin,
+      sourceSHA: liveEvidence ? liveEvidence.sourceSHA : siteSourceSHA,
+      siteSourceSHA: liveEvidence ? null : siteSourceSHA,
+      siteSourceIntegrity,
+      captureToolSHA: identity.captureToolSHA,
+      checkoutSHA,
+      liveDeployment: liveEvidence ? {
+        before: deploymentAtStart,
+        after: deploymentAtEnd,
+        verification: deploymentWindow,
+        checkoutSHA: liveEvidence.checkoutSHA
+      } : null,
+      capturedAt: new Date().toISOString(),
+      toolVersions: {
+        visualQaRunner: runnerVersion,
+        node: process.version,
+        playwright: packageJson.devDependencies.playwright,
+        pixelmatch: packageJson.devDependencies.pixelmatch,
+        chromium: captures[0]?.browserVersion ?? null
+      },
+      policy: {
+        viewportCount: policy.viewports.length,
+        routeCount: policy.routes.length,
+        expectedCaptureCount: 30,
+        budgets: policy.budgets,
+        comparisonPolicy: policy.comparison,
+        captureConditions: policy.capture,
+        exceptionCandidates: policy.routes.filter(item => item.exceptionCandidates?.length).map(item => ({ routeId: item.id, candidates: item.exceptionCandidates }))
+      },
+      comparisonPolicy: policy.comparison,
+      counts: {
+        captures: captures.length,
+        screenshots: captures.filter(item => item.screenshotSha256).length,
+        failedCaptures: failedCaptures.length,
+        environmentVerificationFailures: verificationFailures.length,
+        firstPartyRequestFailures: captures.reduce((sum, item) => sum + item.captureQuality.firstPartyRequestFailureCount, 0),
+        thirdPartyFailures: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyFailureCount, 0),
+        thirdPartyPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyPageErrorCount, 0),
+        unclassifiedPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.unclassifiedPageErrorCount, 0)
+      },
+      captures
+    };
+    const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(resolve(runOutput, 'manifest.json'), manifestBytes);
+    await writeFile(resolve(runOutput, 'manifest.sha256'), `${sha256(manifestBytes)}  manifest.json\n`);
+    const receipt = {
+      status: manifest.status,
+      comparisonStatus: screenshotEnabled ? 'PENDING_BASELINE_APPROVAL' : 'NOT_APPLICABLE_MEASUREMENT_ONLY',
+      sourceSHA: manifest.sourceSHA,
+      siteSourceSHA: manifest.siteSourceSHA,
+      siteSourceIntegrity,
+      captureToolSHA: manifest.captureToolSHA,
+      checkoutSHA: manifest.checkoutSHA,
+      environment,
+      liveDeployment: manifest.liveDeployment?.verification ?? null,
+      captureCount: captures.length,
+      screenshotCount: manifest.counts.screenshots,
+      transferAndDomBudgetEnforcement: 'OBSERVATION_ONLY_UNTIL_BASELINE_APPROVED',
+      baseline: null
+    };
+    await writeFile(resolve(runOutput, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
+    const expectedStatus = screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY';
+    if (manifest.status !== expectedStatus) process.exitCode = 1;
+  } catch (error) {
+    captureError = error;
+    throw error;
   } finally {
-    if (browser) await browser.close();
-    if (server) await server.close();
-  }
-
-  const deploymentAtEnd = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
-  const liveEvidence = environment === 'cloudflare-production'
-    ? deploymentEvidence(checkoutSHA, deploymentAtStart?.receipt, deploymentAtEnd?.receipt)
-    : null;
-  const deploymentWindow = liveEvidence?.verification ?? null;
-  if (deploymentWindow) {
-    for (const capture of captures) {
-      capture.sourceSHA = liveEvidence.sourceSHA;
-      capture.siteSourceSHA = null;
-      capture.liveDeployment = liveEvidence.liveDeployment;
-      capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
-      const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
-      capture.environmentVerification.status = responseVerified && deploymentWindow.status === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED';
-      capture.captureQuality = evaluateCaptureQuality(capture, { expectedHttpStatus: capture.expectedHttpStatus, screenshotRequired: false });
-      delete capture.metadataSha256;
-      const metadataBytes = Buffer.from(`${JSON.stringify(capture, null, 2)}\n`);
-      await writeFile(resolve(runOutput, capture.metadataPath), metadataBytes);
-      capture.metadataSha256 = sha256(metadataBytes);
+    if (sourceGuard && !sourceGuard.completed) {
+      try {
+        await sourceGuard.verifyAndRestore();
+      } catch (sourceIntegrityError) {
+        const reportErrors = await invalidateSourceMetadata({
+          registry: metadataRegistry,
+          captures,
+          expectedHeadSha: identity.siteSourceSHA,
+          claimedSourceSHAAtStart: identity.siteSourceSHA,
+          reason: sourceIntegrityError,
+          captureError,
+        });
+        throw combineCaptureAndSourceIntegrityErrors(captureError, sourceIntegrityError, reportErrors);
+      }
     }
   }
-  const verificationFailures = captures.filter(item => item.environmentVerification.status !== 'VERIFIED');
-  const screenshotEnabled = environment === 'local-http-uncompressed';
-  const failedCaptures = captures.filter(item => item.captureQuality.status !== 'COMPLETE');
-  const deploymentChanged = deploymentWindow?.status === 'MIXED_DEPLOYMENT';
-  const manifest = {
-    schemaVersion: 3,
-    status: deploymentChanged ? 'MIXED_DEPLOYMENT' : captures.length === 30 && !failedCaptures.length && !verificationFailures.length
-      ? screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY'
-      : 'CAPTURE_INCOMPLETE',
-    baselineApproval: null,
-    approval: null,
-    exceptions: [],
-    environment,
-    baseUrl: new URL(baseUrl).origin,
-    sourceSHA: liveEvidence ? liveEvidence.sourceSHA : siteSourceSHA,
-    siteSourceSHA: liveEvidence ? null : siteSourceSHA,
-    captureToolSHA: identity.captureToolSHA,
-    checkoutSHA,
-    liveDeployment: liveEvidence ? {
-      before: deploymentAtStart,
-      after: deploymentAtEnd,
-      verification: deploymentWindow,
-      checkoutSHA: liveEvidence.checkoutSHA
-    } : null,
-    capturedAt: new Date().toISOString(),
-    toolVersions: {
-      visualQaRunner: runnerVersion,
-      node: process.version,
-      playwright: packageJson.devDependencies.playwright,
-      pixelmatch: packageJson.devDependencies.pixelmatch,
-      chromium: captures[0]?.browserVersion ?? null
-    },
-    policy: {
-      viewportCount: policy.viewports.length,
-      routeCount: policy.routes.length,
-      expectedCaptureCount: 30,
-      budgets: policy.budgets,
-      comparisonPolicy: policy.comparison,
-      captureConditions: policy.capture,
-      exceptionCandidates: policy.routes.filter(item => item.exceptionCandidates?.length).map(item => ({ routeId: item.id, candidates: item.exceptionCandidates }))
-    },
-    comparisonPolicy: policy.comparison,
-    counts: {
-      captures: captures.length,
-      screenshots: captures.filter(item => item.screenshotSha256).length,
-      failedCaptures: failedCaptures.length,
-      environmentVerificationFailures: verificationFailures.length,
-      firstPartyRequestFailures: captures.reduce((sum, item) => sum + item.captureQuality.firstPartyRequestFailureCount, 0),
-      thirdPartyFailures: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyFailureCount, 0),
-      thirdPartyPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyPageErrorCount, 0),
-      unclassifiedPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.unclassifiedPageErrorCount, 0)
-    },
-    captures
-  };
-  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
-  await writeFile(resolve(runOutput, 'manifest.json'), manifestBytes);
-  await writeFile(resolve(runOutput, 'manifest.sha256'), `${sha256(manifestBytes)}  manifest.json\n`);
-  const receipt = {
-    status: manifest.status,
-    comparisonStatus: screenshotEnabled ? 'PENDING_BASELINE_APPROVAL' : 'NOT_APPLICABLE_MEASUREMENT_ONLY',
-    sourceSHA: manifest.sourceSHA,
-    siteSourceSHA: manifest.siteSourceSHA,
-    captureToolSHA: manifest.captureToolSHA,
-    checkoutSHA: manifest.checkoutSHA,
-    environment,
-    liveDeployment: manifest.liveDeployment?.verification ?? null,
-    captureCount: captures.length,
-    screenshotCount: manifest.counts.screenshots,
-    transferAndDomBudgetEnforcement: 'OBSERVATION_ONLY_UNTIL_BASELINE_APPROVED',
-    baseline: null
-  };
-  await writeFile(resolve(runOutput, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
-  process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
-  const expectedStatus = screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY';
-  if (manifest.status !== expectedStatus) process.exitCode = 1;
 }
 
 async function runCompare(options) {

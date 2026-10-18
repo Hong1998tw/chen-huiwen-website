@@ -29,7 +29,7 @@ PNG_1X1 = base64.b64decode(
 class VisualQaBaselineArchiveTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='a05-baseline-archive-')
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.policy_path = ROOT / 'tests/donation/visual-qa-policy.json'
         policy = json.loads(self.policy_path.read_text(encoding='utf-8'))
         source_sha = 'a' * 40
@@ -108,6 +108,28 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
         self.assertEqual(result['status'], 'VERIFIED')
         self.assertEqual((result['captureCount'], result['pngCount'], result['metadataCount']), (30, 30, 30))
         self.assertEqual(len(list((self.root / 'unpacked').iterdir())), 62)
+
+    def test_output_and_parent_symlink_escapes_are_rejected_before_extraction(self):
+        archive = self.archive('symlink-output.zip')
+        external_output = self.root / 'external-output'
+        external_output.mkdir()
+        output_link = self.root / 'requested-output'
+        output_link.symlink_to(external_output, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'BASELINE_OUTPUT_PATH_SYMLINK'):
+            self.verify(archive, 'requested-output')
+        self.assertEqual(list(external_output.iterdir()), [])
+
+        external_parent = self.root / 'external-parent'
+        external_parent.mkdir()
+        parent_link = self.root / 'requested-parent'
+        parent_link.symlink_to(external_parent, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'BASELINE_OUTPUT_PATH_SYMLINK'):
+            archive_module.verify_and_extract(
+                archive,
+                parent_link / 'nested-output',
+                policy_path=self.policy_path,
+            )
+        self.assertEqual(list(external_parent.iterdir()), [])
 
     def test_cli_parses_and_verifies_archive_on_supported_python(self):
         archive = self.archive('cli-approved.zip')

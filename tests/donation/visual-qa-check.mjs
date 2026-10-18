@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,8 +18,15 @@ import {
   sha256,
   validateBaselineExceptions
 } from './visual-qa-lib.mjs';
-import { assertAllowedOptions, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
+import {
+  combineCaptureAndSourceIntegrityErrors,
+  createMetadataPathRegistry,
+  invalidateSourceMetadata,
+  prepareCaptureOutput,
+  writeCaptureMetadata,
+} from './visual-qa-source-integrity.mjs';
 
 function png(width, height, color) {
   const image = new PNG({ width, height });
@@ -61,6 +68,24 @@ function approvedManifest(overrides = {}) {
     captures,
     ...overrides
   };
+}
+
+function gitAtFixture(repositoryRoot, args) {
+  const result = spawnSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+async function initRepositoryFixture(repositoryRoot) {
+  await mkdir(repositoryRoot, { recursive: true });
+  gitAtFixture(repositoryRoot, ['init', '-q']);
+  gitAtFixture(repositoryRoot, ['config', 'user.name', 'A05 fixture']);
+  gitAtFixture(repositoryRoot, ['config', 'user.email', 'a05-fixture@example.invalid']);
+}
+
+function commitFixtureRepository(repositoryRoot) {
+  gitAtFixture(repositoryRoot, ['add', '.']);
+  gitAtFixture(repositoryRoot, ['commit', '-q', '-m', 'fixture checkout']);
 }
 
 async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40), captureToolSHA = sourceSHA) {
@@ -320,6 +345,294 @@ test('A-05 resolves site and capture-tool Git identities separately and rejects 
     await writeFile(join(runnerRoot, 'runner.mjs'), 'export const runnerFixture = false;\n');
     await assert.rejects(resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: join(directory, 'dirty-tool-output'), defaultOutput }), /Capture tool worktree must be clean/);
     assert.throws(() => assertAllowedOptions('capture', { environment: 'local-http-uncompressed', 'source-sha': siteSha }), /Unsupported capture option/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('A-05 default output rejects a committed symlink escape and the PR base source is guarded and rechecked', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-default-output-and-readonly-base-'));
+  const gitAt = (repositoryRoot, args) => {
+    const result = spawnSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const initRepository = async repositoryRoot => {
+    await mkdir(repositoryRoot, { recursive: true });
+    gitAt(repositoryRoot, ['init', '-q']);
+    gitAt(repositoryRoot, ['config', 'user.name', 'A05 fixture']);
+    gitAt(repositoryRoot, ['config', 'user.email', 'a05-fixture@example.invalid']);
+  };
+  const commitAll = repositoryRoot => {
+    gitAt(repositoryRoot, ['add', '.']);
+    gitAt(repositoryRoot, ['commit', '-q', '-m', 'fixture checkout']);
+  };
+  const escapedRunner = join(directory, 'escaped-runner');
+  const externalOutput = join(directory, 'external-output');
+  const escapedDefault = join(escapedRunner, 'tests', 'donation', 'results', 'visual-qa');
+  await initRepository(escapedRunner);
+  await mkdir(join(escapedRunner, 'tests', 'donation', 'results'), { recursive: true });
+  await mkdir(externalOutput);
+  await writeFile(join(escapedRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  await symlink(externalOutput, escapedDefault, 'dir');
+  commitAll(escapedRunner);
+  await assert.rejects(
+    resolveCaptureRoots({ runnerRoot: escapedRunner, defaultOutput: escapedDefault }),
+    /Default capture output directory (?:must resolve within|symlink resolves outside) the capture tool checkout/
+  );
+  const explicitOutput = join(directory, 'explicit-output');
+  const explicitIdentity = await resolveCaptureRoots({ runnerRoot: escapedRunner, outputDir: explicitOutput, defaultOutput: escapedDefault });
+  assert.equal(explicitIdentity.outputRoot, join(await realpath(directory), 'explicit-output'));
+
+  const escapedParentRunner = join(directory, 'escaped-parent-runner');
+  const externalParent = join(directory, 'external-parent');
+  const escapedResultsParent = join(escapedParentRunner, 'tests', 'donation', 'results');
+  await initRepository(escapedParentRunner);
+  await mkdir(join(escapedParentRunner, 'tests', 'donation'), { recursive: true });
+  await mkdir(externalParent);
+  await writeFile(join(escapedParentRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  await symlink(externalParent, escapedResultsParent, 'dir');
+  commitAll(escapedParentRunner);
+  await assert.rejects(
+    resolveCaptureRoots({
+      runnerRoot: escapedParentRunner,
+      defaultOutput: join(escapedResultsParent, 'visual-qa'),
+    }),
+    /symlink resolves outside the capture tool checkout/
+  );
+
+  const safeRunner = join(directory, 'safe-runner');
+  await initRepository(safeRunner);
+  await writeFile(join(safeRunner, '.gitignore'), 'tests/donation/results/\n');
+  await writeFile(join(safeRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  commitAll(safeRunner);
+  const safeDefault = join(safeRunner, 'tests', 'donation', 'results', 'visual-qa');
+  await mkdir(safeDefault, { recursive: true });
+  const defaultIdentity = await resolveCaptureRoots({ runnerRoot: safeRunner, defaultOutput: safeDefault });
+  assert.equal(defaultIdentity.outputRoot, await realpath(safeRunner).then(path => join(path, 'tests', 'donation', 'results', 'visual-qa')));
+
+  const sourceRepository = join(directory, 'source-repository');
+  const runnerTemp = join(directory, 'runner-temp');
+  const baseRoot = join(runnerTemp, 'a05-main-reference');
+  const externalSourceTarget = join(directory, 'external-source-target.txt');
+  await initRepository(sourceRepository);
+  await mkdir(join(sourceRepository, 'pages'), { recursive: true });
+  await writeFile(join(sourceRepository, 'pages', 'index.html'), '<main>reviewed source</main>\n');
+  await writeFile(externalSourceTarget, 'outside the base worktree\n');
+  await symlink(externalSourceTarget, join(sourceRepository, 'external-link'), 'file');
+  commitAll(sourceRepository);
+  await mkdir(runnerTemp, { recursive: true });
+  gitAt(sourceRepository, ['worktree', 'add', '--detach', baseRoot, 'HEAD']);
+  const sourcePath = join(baseRoot, 'pages', 'index.html');
+  const sourceRepositoryPath = join(sourceRepository, 'pages', 'index.html');
+  const commonGitDir = join(sourceRepository, gitAt(sourceRepository, ['rev-parse', '--git-common-dir']));
+  const originalFileMode = (await lstat(sourcePath)).mode & 0o777;
+  const originalDirectoryMode = (await lstat(join(baseRoot, 'pages'))).mode & 0o777;
+  const originalRepositoryMode = (await lstat(sourceRepositoryPath)).mode & 0o777;
+  const originalCommonGitDirMode = (await lstat(commonGitDir)).mode & 0o777;
+  const originalExternalTargetMode = (await lstat(externalSourceTarget)).mode & 0o777;
+
+  const guard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+  assert.equal(guard.initialState.headSha, gitAt(baseRoot, ['rev-parse', 'HEAD']));
+  assert.equal((await lstat(sourcePath)).mode & 0o222, 0);
+  assert.equal((await lstat(join(baseRoot, 'pages'))).mode & 0o222, 0);
+  assert.equal(guard.modeRecord.skippedSymlinkCount, 1);
+  assert.notEqual((await lstat(sourceRepositoryPath)).mode & 0o222, 0);
+  assert.equal((await lstat(commonGitDir)).mode & 0o777, originalCommonGitDirMode);
+  assert.equal((await lstat(externalSourceTarget)).mode & 0o777, originalExternalTargetMode);
+  const integrity = await guard.verifyAndRestore();
+  assert.equal(integrity.cleanAfterCapture, true);
+  assert.equal(integrity.trackedContentSha256After, integrity.trackedContentSha256Before);
+  assert.notEqual(integrity.readOnlyMode.sha256, '');
+  assert.match(integrity.readOnlyMode.expectedProtectedDigest, /^[a-f0-9]{64}$/);
+  assert.equal(integrity.readOnlyMode.postCaptureModeDigest, integrity.readOnlyMode.expectedProtectedDigest);
+  assert.equal((await lstat(sourcePath)).mode & 0o777, originalFileMode);
+  assert.equal((await lstat(join(baseRoot, 'pages'))).mode & 0o777, originalDirectoryMode);
+  assert.equal((await lstat(sourceRepositoryPath)).mode & 0o777, originalRepositoryMode);
+  assert.equal((await lstat(commonGitDir)).mode & 0o777, originalCommonGitDirMode);
+  assert.equal((await lstat(externalSourceTarget)).mode & 0o777, originalExternalTargetMode);
+
+  const changedSourceGuard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+  await chmod(sourcePath, originalFileMode);
+  await writeFile(sourcePath, '<main>changed during capture</main>\n');
+  await assert.rejects(changedSourceGuard.verifyAndRestore(), /tracked content changed/);
+  assert.equal(await readFile(sourcePath, 'utf8'), '<main>changed during capture</main>\n');
+  assert.equal((await lstat(sourcePath)).mode & 0o777, originalFileMode);
+});
+
+test('A-05 post-capture mode digest rejects same-byte file and directory mode changes and restores exact base modes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-post-mode-digest-'));
+  const sourceRepository = join(directory, 'source-repository');
+  const runnerTemp = join(directory, 'runner-temp');
+  const baseRoot = join(runnerTemp, 'a05-main-reference');
+  try {
+    await initRepositoryFixture(sourceRepository);
+    await writeFile(join(sourceRepository, 'index.html'), '<main>same bytes</main>\n');
+    await chmod(join(sourceRepository, 'index.html'), 0o644);
+    await mkdir(join(sourceRepository, 'nested'), { recursive: true });
+    await writeFile(join(sourceRepository, 'nested', 'item.txt'), 'same nested bytes\n');
+    await chmod(join(sourceRepository, 'nested'), 0o755);
+    await mkdir(runnerTemp, { recursive: true });
+    commitFixtureRepository(sourceRepository);
+    gitAtFixture(sourceRepository, ['worktree', 'add', '--detach', baseRoot, 'HEAD']);
+
+    const filePath = join(baseRoot, 'index.html');
+    const originalFileBytes = await readFile(filePath);
+    const originalFileMode = (await lstat(filePath)).mode & 0o7777;
+    assert.equal(originalFileMode, 0o644);
+    const fileGuard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+    assert.equal((await lstat(filePath)).mode & 0o222, 0);
+    await chmod(filePath, 0o644);
+    assert.deepEqual(await readFile(filePath), originalFileBytes);
+    assert.equal(gitAtFixture(baseRoot, ['status', '--porcelain=v1', '-uall']), '');
+    await assert.rejects(fileGuard.verifyAndRestore(), error => {
+      assert(error instanceof AggregateError);
+      assert(error.errors.some(item => /protected mode digest changed/.test(item.message)));
+      assert(error.errors.some(item => /became writable during capture/.test(item.message)));
+      return true;
+    });
+    assert.equal(fileGuard.completed, true);
+    assert.deepEqual(await readFile(filePath), originalFileBytes);
+    assert.equal((await lstat(filePath)).mode & 0o7777, originalFileMode);
+
+    const directoryPath = join(baseRoot, 'nested');
+    const originalDirectoryMode = (await lstat(directoryPath)).mode & 0o7777;
+    const directoryGuard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+    await chmod(directoryPath, 0o500);
+    assert.equal(gitAtFixture(baseRoot, ['status', '--porcelain=v1', '-uall']), '');
+    await assert.rejects(directoryGuard.verifyAndRestore(), /protected mode digest changed/);
+    assert.equal((await lstat(directoryPath)).mode & 0o7777, originalDirectoryMode);
+    assert.deepEqual(await readFile(filePath), originalFileBytes);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('source integrity invalidates every registered on-disk metadata file outside captures and preserves both failures', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-metadata-invalidation-'));
+  const canonicalRoot = await realpath(directory);
+  const outputRoot = join(canonicalRoot, 'artifacts');
+  const runOutput = join(outputRoot, 'local-http-uncompressed');
+  const registry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const claimedSourceSHA = 'a'.repeat(40);
+  const returnedCapture = {
+    id: 'home-390',
+    metadataPath: 'home-390.json',
+    sourceSHA: claimedSourceSHA,
+    siteSourceSHA: claimedSourceSHA,
+    metrics: { domElementCount: 100 },
+  };
+  const failedBeforeReturn = {
+    id: 'about-390',
+    metadataPath: 'about-390.json',
+    sourceSHA: claimedSourceSHA,
+    siteSourceSHA: claimedSourceSHA,
+    screenshotSha256: null,
+    screenshotError: 'synthetic PNG finalization failure',
+  };
+  try {
+    returnedCapture.metadataSha256 = await writeCaptureMetadata({
+      registry,
+      id: returnedCapture.id,
+      metadataPath: returnedCapture.metadataPath,
+      record: returnedCapture,
+    });
+    assert.equal(returnedCapture.metadataSha256, sha256(await readFile(join(runOutput, returnedCapture.metadataPath))));
+    await writeCaptureMetadata({
+      registry,
+      id: failedBeforeReturn.id,
+      metadataPath: failedBeforeReturn.metadataPath,
+      record: failedBeforeReturn,
+    });
+
+    const originalCaptureError = new Error('PNG finalization failed after metadata was written');
+    const sourceIntegrityError = new Error('A-05 source mode digest changed');
+    const reportErrors = await invalidateSourceMetadata({
+      registry,
+      captures: [returnedCapture],
+      expectedHeadSha: claimedSourceSHA,
+      claimedSourceSHAAtStart: claimedSourceSHA,
+      reason: sourceIntegrityError,
+      captureError: originalCaptureError,
+    });
+    assert.deepEqual(reportErrors, []);
+
+    const combined = combineCaptureAndSourceIntegrityErrors(originalCaptureError, sourceIntegrityError, reportErrors);
+    assert(combined instanceof AggregateError);
+    assert.equal(combined.errors[0], originalCaptureError);
+    assert.equal(combined.errors[1], sourceIntegrityError);
+
+    for (const id of ['home-390', 'about-390']) {
+      const metadata = JSON.parse(await readFile(join(runOutput, `${id}.json`), 'utf8'));
+      assert.equal(metadata.sourceSHA, null);
+      assert.equal(metadata.siteSourceSHA, null);
+      assert.equal(metadata.claimedSourceSHAAtStart, claimedSourceSHA);
+      assert.equal(metadata.siteSourceIntegrityStatus, 'FAILED');
+      assert.equal(metadata.sourceIntegrity.status, 'FAILED');
+      assert.equal(metadata.sourceIntegrity.sourceSHA, null);
+      assert.equal(metadata.sourceIntegrity.siteSourceSHA, null);
+      assert.equal(metadata.sourceIntegrity.reason, sourceIntegrityError.message);
+    }
+    const partialReport = JSON.parse(await readFile(join(runOutput, 'site-source-integrity-failure.json'), 'utf8'));
+    assert.equal(partialReport.status, 'FAILED');
+    assert.equal(partialReport.sourceSHA, null);
+    assert.equal(partialReport.siteSourceSHA, null);
+    assert.equal(partialReport.claimedSourceSHAAtStart, claimedSourceSHA);
+    assert.equal(partialReport.captureFailure, originalCaptureError.message);
+    assert.deepEqual(partialReport.metadataPathsAttempted, ['home-390.json', 'about-390.json']);
+    assert.equal(partialReport.invalidatedMetadata.length, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('source metadata invalidation refuses a symlink path and leaves its outside target untouched', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-metadata-symlink-'));
+  const canonicalRoot = await realpath(directory);
+  const outputRoot = join(canonicalRoot, 'artifacts');
+  const runOutput = join(outputRoot, 'local-http-uncompressed');
+  const registry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const outsidePath = join(canonicalRoot, 'outside.json');
+  const outsideBytes = Buffer.from('{"sourceSHA":"must remain"}\n');
+  try {
+    await mkdir(runOutput, { recursive: true });
+    await writeFile(outsidePath, outsideBytes);
+    registry.register('home-390', 'home-390.json');
+    await symlink(outsidePath, join(runOutput, 'home-390.json'));
+    const errors = await invalidateSourceMetadata({
+      registry,
+      captures: [],
+      expectedHeadSha: 'b'.repeat(40),
+      claimedSourceSHAAtStart: 'b'.repeat(40),
+      reason: new Error('synthetic source integrity failure'),
+    });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /unsafe capture metadata file/);
+    assert.deepEqual(await readFile(outsidePath), outsideBytes);
+    const partialReport = JSON.parse(await readFile(join(runOutput, 'site-source-integrity-failure.json'), 'utf8'));
+    assert.equal(partialReport.status, 'FAILED');
+    assert.equal(partialReport.invalidatedMetadata.length, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('capture output preparation rejects an environment directory symlink outside the output root', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-metadata-root-symlink-'));
+  const canonicalRoot = await realpath(directory);
+  const outputRoot = join(canonicalRoot, 'artifacts');
+  const runOutput = join(outputRoot, 'local-http-uncompressed');
+  const outsideDirectory = join(canonicalRoot, 'outside');
+  const outsideFile = join(outsideDirectory, 'keep.json');
+  const outsideBytes = Buffer.from('{"keep":true}\n');
+  const registry = createMetadataPathRegistry({ runOutput, outputRoot });
+  try {
+    await mkdir(outputRoot, { recursive: true });
+    await mkdir(outsideDirectory);
+    await writeFile(outsideFile, outsideBytes);
+    await symlink(outsideDirectory, runOutput, 'dir');
+    await assert.rejects(prepareCaptureOutput(registry), /not a real directory/);
+    assert.deepEqual(await readFile(outsideFile), outsideBytes);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

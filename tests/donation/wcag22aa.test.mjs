@@ -475,3 +475,33 @@ test('A-06 baseline proposal requires a complete native report and remains expli
   const failedBrowser = { ...empty.browserReport, status: 'Failed', failures: ['fixture failure'] };
   assert.throws(() => buildTargetSizeBaselineProposal(empty.report, failedBrowser), /browser report is failed/);
 });
+
+test('A-06 proposal fails closed on invalid Node or Playwright runtime provenance', () => {
+  for (const nodeVersion of ['', ' ', 'unknown', null, 24, 'v24', 'v24.01.0']) {
+    const fixture = targetSizeReportFixture();
+    fixture.report.runtime.node = nodeVersion;
+    assert.throws(
+      () => buildTargetSizeBaselineProposal(fixture.report, fixture.browserReport),
+      /runner tool or runtime provenance is incomplete/,
+      `accepted invalid Node version ${JSON.stringify(nodeVersion)}`,
+    );
+  }
+
+  for (const playwrightVersion of ['', ' ', 'unknown', null, 1.55, '1.55', '01.55.1']) {
+    const fixture = targetSizeReportFixture();
+    fixture.report.runtime.playwrightVersion = playwrightVersion;
+    assert.throws(
+      () => buildTargetSizeBaselineProposal(fixture.report, fixture.browserReport),
+      /runner tool or runtime provenance is incomplete/,
+      `accepted invalid Playwright version ${JSON.stringify(playwrightVersion)}`,
+    );
+  }
+
+  const prerelease = targetSizeReportFixture();
+  prerelease.report.runtime.node = 'v24.0.0-rc.1+build.2';
+  prerelease.report.runtime.playwrightVersion = '1.56.0-beta.1+build.2';
+  const proposal = buildTargetSizeBaselineProposal(prerelease.report, prerelease.browserReport);
+  assert.equal(proposal.status, 'pending-human-review');
+  assert.equal(proposal.knownViolationCount, 0);
+  assert.equal(proposal.approval, null);
+});
