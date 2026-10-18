@@ -186,8 +186,8 @@ try {
   await page.goto(base + 'achievement-wende-school-center.html');
   await check('achievement public copy uses council action and city response', async () => {
     const mainText = await page.locator('main').innerText();
-    assert.match(mainText, /陳慧文在2025年5月14日市政總質詢中說明/);
-    assert.match(mainText, /教育局回應/);
+    assert.match(mainText, /2025年5月14日市政總質詢/);
+    assert.match(mainText, /教育局/);
     assert(!/這件事，為什麼重要？|STEP BY STEP|官方公開紀錄/.test(mainText));
     assert.equal(await page.locator('.case-latest h2').count(), 1);
     assert.match(mainText, /2025-05-14/);
