@@ -16,7 +16,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
   // Without the core fallback the new worker must not activate over a working old version.
   const response=await boundedFetch(OFFLINE);if(!response.ok)throw new Error('Offline fallback unavailable');
   await remember(cache,OFFLINE,response);
-  await Promise.allSettled(SHELL.map(async url=>{const r=await boundedFetch(url);if(r.ok)await remember(cache,url,r);}));
+  await Promise.allSettled(SHELL.filter(url=>url!==OFFLINE).map(async url=>{const r=await boundedFetch(url);if(r.ok)await remember(cache,url,r);}));
   await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
