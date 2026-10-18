@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +18,8 @@ import {
   verifyCaptureMetadata
 } from './visual-qa-lib.mjs';
 import { startStaticServer } from './static-server.mjs';
+import { assertAllowedOptions, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runnerVersion = '1.0.0';
@@ -28,19 +29,18 @@ const defaultCloudflareBase = 'https://www.huiwen.tw/';
 function parseArgs(argv) {
   const [command, ...rest] = argv;
   const options = {};
+  const seen = new Set();
   for (let index = 0; index < rest.length; index++) {
     const value = rest[index];
     if (!value.startsWith('--')) throw new Error(`Unexpected argument: ${value}`);
     const [key, inline] = value.slice(2).split('=', 2);
+    if (!key || seen.has(key)) throw new Error(`Invalid or repeated option: --${key}`);
+    seen.add(key);
     if (inline !== undefined) options[key] = inline;
     else if (rest[index + 1] && !rest[index + 1].startsWith('--')) options[key] = rest[++index];
     else options[key] = true;
   }
   return { command, options };
-}
-
-function sourceSha() {
-  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function cleanHeader(headers, name) {
@@ -102,7 +102,7 @@ function captureId(route, viewport) {
   return `${route.id}-${viewport.width}`;
 }
 
-async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion, checkoutSHA, deploymentAtStart }) {
+async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
   const id = captureId(route, viewport);
   const screenshotEnabled = environment === 'local-http-uncompressed';
   const screenshotPath = screenshotEnabled ? `${id}.png` : null;
@@ -323,8 +323,10 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     environment,
     environmentLabel: encodingEvidence.environmentLabel,
     measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
-    sourceSHA: environment === 'cloudflare-production' ? deploymentAtStart?.receipt?.sourceCommit ?? null : checkoutSHA,
-    checkoutSHA,
+    sourceSHA: environment === 'cloudflare-production' ? deploymentAtStart?.receipt?.sourceCommit ?? null : siteSourceSHA,
+    siteSourceSHA: environment === 'local-http-uncompressed' ? siteSourceSHA : null,
+    captureToolSHA,
+    checkoutSHA: captureToolSHA,
     liveDeployment: environment === 'cloudflare-production'
       ? { sourceCommit: deploymentAtStart?.receipt?.sourceCommit ?? null, publicArtifactDigest: deploymentAtStart?.receipt?.publicArtifactDigest ?? null }
       : null,
@@ -399,18 +401,35 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
 }
 
 async function runCapture(options) {
-  const policy = await readPolicy();
+  if (typeof options.environment !== 'string') throw new Error('capture requires --environment local-http-uncompressed or cloudflare-production');
   const environment = options.environment;
   if (!['local-http-uncompressed', 'cloudflare-production'].includes(environment)) {
     throw new Error('Use --environment local-http-uncompressed or cloudflare-production');
   }
-  const outputRoot = resolve(options.output ?? defaultOutput);
+  if (options['site-root'] !== undefined && (typeof options['site-root'] !== 'string' || !options['site-root'].trim())) {
+    throw new Error('--site-root requires a Git checkout root path.');
+  }
+  if (options['site-root'] !== undefined && environment !== 'local-http-uncompressed') {
+    throw new Error('--site-root is only valid for local-http-uncompressed capture.');
+  }
+  if (options['base-url'] !== undefined && typeof options['base-url'] !== 'string') throw new Error('--base-url requires an HTTPS URL.');
+  if (options['base-url'] !== undefined && environment !== 'cloudflare-production') {
+    throw new Error('--base-url is only valid for cloudflare-production capture.');
+  }
+  const identity = await resolveCaptureRoots({
+    runnerRoot: root,
+    siteRoot: options['site-root'],
+    outputDir: options['output-dir'],
+    defaultOutput,
+  });
+  const policy = await readPolicy();
+  const outputRoot = identity.outputRoot;
   const runOutput = resolve(outputRoot, environment);
   await mkdir(runOutput, { recursive: true });
   let server = null;
   let baseUrl;
   if (environment === 'local-http-uncompressed') {
-    server = await startStaticServer({ root, compression: 'none', port: 0 });
+    server = await startStaticServer({ root: identity.siteRoot, compression: 'none', port: 0 });
     baseUrl = server.url;
   } else {
     baseUrl = options['base-url'] ?? process.env.VISUAL_QA_BASE_URL ?? defaultCloudflareBase;
@@ -418,7 +437,8 @@ async function runCapture(options) {
     if (!baseUrl.endsWith('/')) baseUrl += '/';
   }
 
-  const checkoutSHA = sourceSha();
+  const checkoutSHA = identity.captureToolSHA;
+  const siteSourceSHA = identity.siteSourceSHA;
   const deploymentAtStart = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
 
   const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
@@ -437,7 +457,8 @@ async function runCapture(options) {
           environment,
           runOutput,
           playwrightVersion: packageJson.devDependencies.playwright,
-          checkoutSHA,
+          siteSourceSHA,
+          captureToolSHA: identity.captureToolSHA,
           deploymentAtStart
         });
         captures.push(capture);
@@ -456,6 +477,7 @@ async function runCapture(options) {
   if (deploymentWindow) {
     for (const capture of captures) {
       capture.sourceSHA = liveEvidence.sourceSHA;
+      capture.siteSourceSHA = null;
       capture.liveDeployment = liveEvidence.liveDeployment;
       capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
       const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
@@ -472,7 +494,7 @@ async function runCapture(options) {
   const failedCaptures = captures.filter(item => item.captureQuality.status !== 'COMPLETE');
   const deploymentChanged = deploymentWindow?.status === 'MIXED_DEPLOYMENT';
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: deploymentChanged ? 'MIXED_DEPLOYMENT' : captures.length === 30 && !failedCaptures.length && !verificationFailures.length
       ? screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY'
       : 'CAPTURE_INCOMPLETE',
@@ -481,7 +503,9 @@ async function runCapture(options) {
     exceptions: [],
     environment,
     baseUrl: new URL(baseUrl).origin,
-    sourceSHA: liveEvidence ? liveEvidence.sourceSHA : checkoutSHA,
+    sourceSHA: liveEvidence ? liveEvidence.sourceSHA : siteSourceSHA,
+    siteSourceSHA: liveEvidence ? null : siteSourceSHA,
+    captureToolSHA: identity.captureToolSHA,
     checkoutSHA,
     liveDeployment: liveEvidence ? {
       before: deploymentAtStart,
@@ -492,6 +516,7 @@ async function runCapture(options) {
     capturedAt: new Date().toISOString(),
     toolVersions: {
       visualQaRunner: runnerVersion,
+      node: process.version,
       playwright: packageJson.devDependencies.playwright,
       pixelmatch: packageJson.devDependencies.pixelmatch,
       chromium: captures[0]?.browserVersion ?? null
@@ -525,6 +550,8 @@ async function runCapture(options) {
     status: manifest.status,
     comparisonStatus: screenshotEnabled ? 'PENDING_BASELINE_APPROVAL' : 'NOT_APPLICABLE_MEASUREMENT_ONLY',
     sourceSHA: manifest.sourceSHA,
+    siteSourceSHA: manifest.siteSourceSHA,
+    captureToolSHA: manifest.captureToolSHA,
     checkoutSHA: manifest.checkoutSHA,
     environment,
     liveDeployment: manifest.liveDeployment?.verification ?? null,
@@ -591,7 +618,8 @@ async function runCompare(options) {
   if (candidate.status !== 'CAPTURE_ONLY' || candidate.counts?.captures !== 30 || candidate.captures?.length !== 30) {
     throw new Error('Candidate must contain a complete 30-capture CAPTURE_ONLY manifest');
   }
-  if (!candidate.checkoutSHA || (candidate.sourceSHA && candidate.sourceSHA !== candidate.checkoutSHA)) {
+  if (!candidate.checkoutSHA || candidate.sourceSHA !== candidate.checkoutSHA ||
+      candidate.siteSourceSHA !== candidate.sourceSHA || candidate.captureToolSHA !== candidate.checkoutSHA) {
     throw new Error('CANDIDATE_CHECKOUT_SHA_INVALID');
   }
   if (candidate.environment !== approved.environment) throw new Error('BASELINE_ENVIRONMENT_MISMATCH');
@@ -600,6 +628,10 @@ async function runCompare(options) {
   const candidateById = new Map(candidate.captures.map(item => [item.id, item]));
   if (baselineById.size !== 30 || candidateById.size !== 30) throw new Error('BASELINE_OR_CANDIDATE_CAPTURE_IDS_INVALID');
   const incomparable = [...candidateById].flatMap(([id, current]) => {
+    if (current.sourceSHA !== candidate.sourceSHA || current.siteSourceSHA !== candidate.siteSourceSHA ||
+        current.captureToolSHA !== candidate.captureToolSHA || current.checkoutSHA !== candidate.checkoutSHA) {
+      throw new Error(`CANDIDATE_CAPTURE_SOURCE_IDENTITY_INVALID:${id}`);
+    }
     const previous = baselineById.get(id);
     if (!previous) throw new Error(`BASELINE_CAPTURE_MISSING:${id}`);
     const compatibility = compareCaptureConditions(current, previous);
@@ -671,12 +703,40 @@ async function runCompare(options) {
   if (report.status !== 'PASS') process.exitCode = 1;
 }
 
+async function runCrossCompare(options) {
+  if (!options['candidate-manifest'] || !options['reference-manifest'] || !options['output-dir']) {
+    throw new Error('cross-compare requires --reference-manifest, --candidate-manifest, and a new --output-dir.');
+  }
+  const report = await createCrossSourceReview({
+    referenceManifestPath: resolve(options['reference-manifest']),
+    candidateManifestPath: resolve(options['candidate-manifest']),
+    outputDir: resolve(options['output-dir']),
+  });
+  process.stdout.write(`${JSON.stringify({
+    status: report.status,
+    reviewRequired: report.reviewRequired,
+    baselineSelected: report.baselineSelected,
+    summary: report.summary,
+    reportPath: resolve(options['output-dir'], 'cross-source-review.json'),
+  }, null, 2)}\n`);
+}
+
 async function main() {
   const { command, options } = parseArgs(process.argv.slice(2));
-  if (command === 'capture') return runCapture(options);
-  if (command === 'compare') return runCompare(options);
+  if (command === 'capture') {
+    assertAllowedOptions(command, options);
+    return runCapture(options);
+  }
+  if (command === 'compare') {
+    assertAllowedOptions(command, options);
+    return runCompare(options);
+  }
+  if (command === 'cross-compare') {
+    assertAllowedOptions(command, options);
+    return runCrossCompare(options);
+  }
   if (command === 'help' || command === '--help' || !command) {
-    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-selection]\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
+    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed [--site-root GIT_ROOT] [--output-dir NEW_PATH]\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/ [--output-dir NEW_PATH]\n  node visual-qa.mjs cross-compare --reference-manifest PATH --candidate-manifest PATH --output-dir NEW_PATH\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-selection]\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
     return;
   }
   throw new Error(`Unknown command: ${command}`);

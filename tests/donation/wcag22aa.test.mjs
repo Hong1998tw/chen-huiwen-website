@@ -4,19 +4,99 @@ import test from 'node:test';
 import {
   AXE_CORE_VERSION,
   AXE_PLAYWRIGHT_VERSION,
+  CANDIDATE_TARGET_SIZE_SCOPE,
   WCAG22AA_TAGS,
   axeSelectorCandidates,
   collectTargetSizeDiagnostics,
   evaluateTargetSizeGate,
   evaluateTargetSizeBaseline,
-  FULL_SITE_TARGET_SIZE_SCOPE,
+  evaluateTargetSizeCoverage,
+  expectedTargetSizeCoverage,
   nonTargetAxeViolations,
   PRODUCTION_TARGET_SIZE_SCOPE,
   resolveTargetSizeMode,
   targetSizeFingerprint,
 } from './wcag22aa.mjs';
+import { buildTargetSizeBaselineProposal } from './wcag22aa-baseline-proposal.mjs';
 
 const donationDir = new URL('./', import.meta.url);
+
+function targetSizeReportFixture({ violations = [], completed = expectedTargetSizeCoverage() } = {}) {
+  const sourceSha = 'a'.repeat(40);
+  const coverage = evaluateTargetSizeCoverage(completed);
+  const unmeasurable = violations.filter(entry => entry.measurementStatus !== 'measured');
+  const gate = evaluateTargetSizeGate('capture-pending', null, violations, CANDIDATE_TARGET_SIZE_SCOPE, coverage);
+  return {
+    report: {
+      schema: 'wcag22aa-target-size-report/v2',
+      source: {
+        headSha: sourceSha,
+        checkoutSha: sourceSha,
+        eventHeadSha: 'b'.repeat(40),
+        workflowRunId: '39159143917',
+        artifactName: 'full-site-browser-qa',
+        runUrl: 'https://github.com/example/repo/actions/runs/39159143917',
+      },
+      tool: {
+        entrypoint: 'tests/donation/browser.mjs',
+        version: '1.0.0',
+        gitHeadSha: sourceSha,
+        scriptSha256: 'c'.repeat(64),
+      },
+      runtime: {
+        node: 'v24.1.0',
+        platform: 'linux',
+        architecture: 'x64',
+        playwrightVersion: '1.55.1',
+        axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+        axeCoreVersion: AXE_CORE_VERSION,
+        chromiumVersion: '140.0.7339.186',
+      },
+      run: { browserReportStatus: 'Pending', browserFailureCount: 0 },
+      mode: 'capture-pending',
+      scope: CANDIDATE_TARGET_SIZE_SCOPE,
+      axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+      axeCoreVersion: AXE_CORE_VERSION,
+      baseline: {
+        scope: CANDIDATE_TARGET_SIZE_SCOPE,
+        status: 'pending-ci',
+        entries: null,
+        knownViolationCount: null,
+        axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+        axeCoreVersion: AXE_CORE_VERSION,
+      },
+      gate,
+      coverage,
+      counts: {
+        expectedCaseCount: coverage.expected.length,
+        completedCaseCount: coverage.completed.length,
+        axeTargetSizeViolationCount: violations.length,
+        measuredViolationCount: violations.length - unmeasurable.length,
+        unmeasurableViolationCount: unmeasurable.length,
+        measurementErrorCount: unmeasurable.reduce((sum, entry) => sum + (entry.measurementErrors?.length ?? 0), 0),
+      },
+      violations,
+    },
+    browserReport: {
+      status: 'Pending',
+      failures: [],
+      wcag22aaTargetSize: {
+        sourceHeadSha: sourceSha,
+        scope: CANDIDATE_TARGET_SIZE_SCOPE,
+        coverage,
+        gate,
+        counts: {
+          expectedCaseCount: coverage.expected.length,
+          completedCaseCount: coverage.completed.length,
+          axeTargetSizeViolationCount: violations.length,
+          measuredViolationCount: violations.length - unmeasurable.length,
+          unmeasurableViolationCount: unmeasurable.length,
+          measurementErrorCount: unmeasurable.reduce((sum, entry) => sum + (entry.measurementErrors?.length ?? 0), 0),
+        },
+      },
+    },
+  };
+}
 
 test('full-site, readiness, lifecycle, and production runners execute wcag22aa without dropping WCAG 2.0 A/AA', async () => {
   const runnerFiles = ['browser.mjs', 'readiness.mjs', 'lifecycle.mjs', 'production-browser.mjs'];
@@ -40,7 +120,7 @@ test('full-site, readiness, lifecycle, and production runners execute wcag22aa w
 
 test('capture-pending stays pending at zero and compare fails closed without an approved baseline', async () => {
   const baseline = JSON.parse(await readFile(new URL('./wcag22aa-baseline.json', donationDir), 'utf8'));
-  const capture = evaluateTargetSizeGate(undefined, baseline, [], FULL_SITE_TARGET_SIZE_SCOPE);
+  const capture = evaluateTargetSizeGate(undefined, baseline, [], CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(capture.mode, 'capture-pending');
   assert.equal(capture.status, 'capture-pending');
   assert.equal(capture.pass, null);
@@ -55,14 +135,14 @@ test('capture-pending stays pending at zero and compare fails closed without an 
     selectors: ['.unresolved-target'],
     measurementStatus: 'unresolved',
     measurementErrors: ['fixture could not resolve target'],
-  }], FULL_SITE_TARGET_SIZE_SCOPE);
+  }], CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(captureWithFinding.status, 'capture-pending');
   assert.equal(captureWithFinding.pass, null);
   assert.equal(captureWithFinding.currentViolationCount, 1);
   assert.equal(captureWithFinding.measuredEntryCount, 0);
   assert.equal(captureWithFinding.measurementFailures.length, 1);
 
-  const compare = evaluateTargetSizeGate('compare', baseline, [], FULL_SITE_TARGET_SIZE_SCOPE);
+  const compare = evaluateTargetSizeGate('compare', baseline, [], CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(compare.status, 'baseline-pending');
   assert.equal(compare.pass, false);
   assert.equal(compare.comparisonPerformed, true);
@@ -112,7 +192,7 @@ test('capture mode leaves non-target axe findings in the existing strict gate', 
 test('approved baseline rejects new selectors and requires cleared entries to be removed', () => {
   const baseline = {
     schema: 'wcag22aa-target-size-baseline/v1',
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     status: 'approved',
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
@@ -130,15 +210,15 @@ test('approved baseline rejects new selectors and requires cleared entries to be
   const known = { route: 'index.html', viewportWidth: 390, selectors: ['.known-target'], measurementStatus: 'measured' };
   const added = { route: 'index.html', viewportWidth: 390, selectors: ['.new-target'], measurementStatus: 'measured' };
 
-  const stable = evaluateTargetSizeBaseline(baseline, [known], { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE });
+  const stable = evaluateTargetSizeBaseline(baseline, [known], { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE });
   assert.equal(stable.status, 'pass');
   assert.equal(stable.pass, true);
 
-  const regressed = evaluateTargetSizeBaseline(baseline, [known, added], { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE });
+  const regressed = evaluateTargetSizeBaseline(baseline, [known, added], { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE });
   assert.equal(regressed.status, 'new-violations');
   assert.deepEqual(regressed.newViolations, [added]);
 
-  const needsCleanup = evaluateTargetSizeBaseline(baseline, [], { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE });
+  const needsCleanup = evaluateTargetSizeBaseline(baseline, [], { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE });
   assert.equal(needsCleanup.status, 'baseline-cleanup-required');
   assert.deepEqual(needsCleanup.resolvedViolations, baseline.entries);
 
@@ -146,7 +226,7 @@ test('approved baseline rejects new selectors and requires cleared entries to be
     'compare',
     { ...baseline, entries: [] },
     [],
-    FULL_SITE_TARGET_SIZE_SCOPE,
+    CANDIDATE_TARGET_SIZE_SCOPE,
   );
   assert.equal(approvedZero.status, 'pass');
   assert.equal(approvedZero.pass, true);
@@ -155,7 +235,7 @@ test('approved baseline rejects new selectors and requires cleared entries to be
   const wrongScope = evaluateTargetSizeBaseline(
     { ...baseline, scope: PRODUCTION_TARGET_SIZE_SCOPE },
     [known],
-    { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE },
+    { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE },
   );
   assert.equal(wrongScope.status, 'baseline-pending');
   assert.match(wrongScope.reason, /scope must exactly match/);
@@ -163,7 +243,7 @@ test('approved baseline rejects new selectors and requires cleared entries to be
   const wrongVersion = evaluateTargetSizeBaseline(
     { ...baseline, axeCoreVersion: '0.0.0' },
     [known],
-    { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE },
+    { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE },
   );
   assert.equal(wrongVersion.status, 'baseline-pending');
   assert.match(wrongVersion.reason, /axe versions do not match/);
@@ -172,7 +252,7 @@ test('approved baseline rejects new selectors and requires cleared entries to be
 test('baseline cannot be approved while a target-size exception has no human decision', () => {
   const baseline = {
     schema: 'wcag22aa-target-size-baseline/v1',
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     status: 'approved',
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
@@ -184,7 +264,7 @@ test('baseline cannot be approved while a target-size exception has no human dec
     },
     entries: [{ route: 'index.html', viewportWidth: 390, selectors: ['.small-target'] }],
   };
-  const gate = evaluateTargetSizeBaseline(baseline, [], { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE });
+  const gate = evaluateTargetSizeBaseline(baseline, [], { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE });
   assert.equal(gate.status, 'baseline-pending');
   assert.equal(gate.pass, false);
   assert.match(gate.reason, /human-reviewed WCAG 2\.5\.8/);
@@ -193,7 +273,7 @@ test('baseline cannot be approved while a target-size exception has no human dec
 test('unmeasured selectors fail even against an approved baseline', () => {
   const baseline = {
     schema: 'wcag22aa-target-size-baseline/v1',
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     status: 'approved',
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
@@ -212,7 +292,7 @@ test('unmeasured selectors fail even against an approved baseline', () => {
     route: 'service.html', viewportWidth: 390, selectors: ['.small-target'],
     measurementStatus: 'unresolved', measurementErrors: ['fixture cannot resolve selector'],
   }];
-  const gate = evaluateTargetSizeBaseline(baseline, current, { requiredScope: FULL_SITE_TARGET_SIZE_SCOPE });
+  const gate = evaluateTargetSizeBaseline(baseline, current, { requiredScope: CANDIDATE_TARGET_SIZE_SCOPE });
   assert.equal(gate.status, 'measurement-incomplete');
   assert.equal(gate.pass, false);
   assert.equal(gate.measurementFailures.length, 1);
@@ -323,9 +403,75 @@ test('target-size diagnostics contain selector, measured CSS size, minimum, and 
   assert.match(entries[0].exceptionEvidence.manualReview, /WCAG 2\.5\.8/);
   assert.deepEqual(entries[0].exceptionEvidence.checks.any[0].data, { width: 18, height: 20 });
 
-  const capture = evaluateTargetSizeGate('capture-pending', null, entries, FULL_SITE_TARGET_SIZE_SCOPE);
+  const capture = evaluateTargetSizeGate('capture-pending', null, entries, CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(capture.status, 'capture-pending');
   assert.equal(capture.pass, null);
   assert.equal(capture.currentViolationCount, 1);
   assert.equal(capture.measuredEntryCount, 1);
+});
+
+test('candidate A-06 coverage is exactly 15 core routes by two viewports and incomplete coverage fails closed', () => {
+  const expected = expectedTargetSizeCoverage();
+  assert.equal(expected.length, 30);
+  assert.equal(new Set(expected.map(item => item.route)).size, 15);
+  assert.deepEqual(new Set(expected.map(item => item.viewportWidth)), new Set([390, 1440]));
+  assert.equal(expected.every(item => item.scenario === 'core-page-default'), true);
+
+  const complete = evaluateTargetSizeCoverage(expected);
+  assert.equal(complete.complete, true);
+  const missingRoute = evaluateTargetSizeCoverage(expected.slice(1));
+  assert.equal(missingRoute.complete, false);
+  assert.equal(missingRoute.missing.length, 1);
+  const expandedScenario = evaluateTargetSizeCoverage([...expected, {
+    route: 'political-donation.html', viewportWidth: 390, viewportHeight: 844, scenario: 'donation-details-expanded',
+  }]);
+  assert.equal(expandedScenario.complete, false);
+  assert.equal(expandedScenario.unexpected.length, 1);
+
+  const gate = evaluateTargetSizeGate('capture-pending', null, [], CANDIDATE_TARGET_SIZE_SCOPE, missingRoute);
+  assert.equal(gate.status, 'coverage-incomplete');
+  assert.equal(gate.pass, false);
+  assert.equal(gate.comparisonPerformed, false);
+});
+
+test('A-06 baseline proposal requires a complete native report and remains explicitly unapproved', () => {
+  const empty = targetSizeReportFixture();
+  const zeroProposal = buildTargetSizeBaselineProposal(empty.report, empty.browserReport);
+  assert.equal(zeroProposal.status, 'pending-human-review');
+  assert.equal(zeroProposal.knownViolationCount, 0);
+  assert.deepEqual(zeroProposal.entries, []);
+  assert.equal(zeroProposal.approval, null);
+  assert.equal(zeroProposal.source.workflowRunId, '39159143917');
+  assert.equal(zeroProposal.source.artifactName, 'full-site-browser-qa');
+  assert.equal(zeroProposal.source.runUrl, 'https://github.com/example/repo/actions/runs/39159143917');
+
+  const finding = {
+    route: 'index.html',
+    viewportWidth: 390,
+    viewportHeight: 844,
+    scenario: 'core-page-default',
+    selectors: ['.fixture-target'],
+    measurementStatus: 'measured',
+    measuredBoxesCssPx: [{ width: 18, height: 20, x: 0, y: 0 }],
+    exceptionEvidence: { manualReview: 'Review WCAG 2.5.8 context.' },
+  };
+  const withFinding = targetSizeReportFixture({ violations: [finding] });
+  const proposal = buildTargetSizeBaselineProposal(withFinding.report, withFinding.browserReport);
+  assert.equal(proposal.entries.length, 1);
+  assert.equal(proposal.entries[0].selectors[0], '.fixture-target');
+  assert.deepEqual(proposal.entries[0].measuredBoxesCssPx, finding.measuredBoxesCssPx);
+  assert.deepEqual(proposal.entries[0].exceptionReview, { status: 'pending', decision: null, note: null });
+
+  const partial = targetSizeReportFixture();
+  const partialCoverage = evaluateTargetSizeCoverage(expectedTargetSizeCoverage().slice(1));
+  partial.report.coverage = partialCoverage;
+  partial.browserReport.wcag22aaTargetSize.coverage = partialCoverage;
+  assert.throws(() => buildTargetSizeBaselineProposal(partial.report, partial.browserReport), /complete, exact coverage/);
+  const inconsistentGate = targetSizeReportFixture();
+  inconsistentGate.report.gate.measurementFailures = [{ route: 'index.html' }];
+  assert.throws(() => buildTargetSizeBaselineProposal(inconsistentGate.report, inconsistentGate.browserReport), /capture-pending candidate/);
+  const unmeasurable = targetSizeReportFixture({ violations: [{ ...finding, measurementStatus: 'unresolved', measuredBoxesCssPx: [], measurementErrors: ['fixture error'] }] });
+  assert.throws(() => buildTargetSizeBaselineProposal(unmeasurable.report, unmeasurable.browserReport), /unmeasurable or incomplete/);
+  const failedBrowser = { ...empty.browserReport, status: 'Failed', failures: ['fixture failure'] };
+  assert.throws(() => buildTargetSizeBaselineProposal(empty.report, failedBrowser), /browser report is failed/);
 });

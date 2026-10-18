@@ -9,6 +9,14 @@ A-05 compare job 只讀固定的 Git 路徑：`tests/baselines/visual-qa/selecti
 - Git selection 是 workflow 唯一的 approved-baseline 來源。現有 14 天 capture artifact 仍供取證與人工檢視；workflow 不從 artifact 或 `VISUAL_QA_BASELINE_*` repo variables 選基準，也不需修改這些 variables。
 - selection 已存在但無效時不會退回任何其他來源。比較仍要求候選與基準環境及量測條件相容，並保留既有像素、transfer、DOM、deployment receipt、HTTP、gzip 與 1440×900 desktop 規則；A-05 job 維持 25 分鐘。
 
+## PR 的獨立 main 參照
+
+PR 的 A-05 job 以 shallow checkout 起跑，只 fetch 並驗證事件提供的單一 40 位 base commit，接著建立 detached worktree。capture runner、Node、Playwright 與 policy 仍從目前 PR checkout 載入；`--site-root` 只指定要服務及量測的網站檔案。參照輸出放在 `tests/donation/results/visual-qa/main-reference/local-http-uncompressed/`，候選輸出與 live Cloudflare 量測保留在原路徑。兩組 local capture 都成功後，`cross-compare` 會產生 `cross-source-review/cross-source-review.json` 與 30 張逐 capture 像素差異圖；報告列出 source/tool SHA、量測 delta、預算狀態及像素差異，固定標為 `CROSS_SOURCE_REVIEW`，不套用 exception、不宣稱 PASS，也不修改 golden selection。main／非 PR 執行會明確記錄沒有獨立 PR base。
+
+每筆 A-05 metadata、manifest 與 receipt 都分別記錄 `sourceSHA`／`siteSourceSHA` 和 `captureToolSHA`／`checkoutSHA`。前者由 site-root 的 Git `HEAD` 取得，後者由 runner 所在 checkout 的 Git `HEAD` 取得；兩者不接受命令列 SHA 覆寫，且兩個 checkout 都必須乾淨。獨立 site-root 的 capture output 不可與來源 checkout 重疊。approved baseline 的 `selection.json` 綁定網站來源 SHA；manifest、每筆 capture 與 metadata 另核對 capture-tool SHA，允許這兩種身分不同。這組 main capture 是跨來源參照與逐圖審閱材料，**不會自動選為 golden**；沒有核准的固定 `selection.json` 時，A-05 comparison 仍為 `PENDING`。
+
+每筆已核准的 per-capture × metric 預算例外必須有有效的帶時區 `expiresAt`，日期必須真實有效，且不可晚於 `approval.reviewedAt` 起 30 日。比較在 `now >= expiresAt` 時 fail closed；原 300,000 bytes／1,500 DOM、觀測值需等於 baseline、metadata SHA、resolution task、不得新增退步及已解債務需清除等條件照常適用。沒有核准任何本輪例外。
+
 ## 固定目錄格式
 
 核准後提交以下結構。`<sourceSHA>` 必須是產生該組 capture 的 40 位完整 Git SHA。
@@ -40,7 +48,7 @@ tests/baselines/visual-qa/
 ```sh
 set -euo pipefail
 SOURCE_DIR='/absolute/path/to/extracted/local-http-uncompressed'
-SOURCE_SHA="$(jq -er '.checkoutSHA | select(test("^[a-f0-9]{40}$"))' "$SOURCE_DIR/manifest.json")"
+SOURCE_SHA="$(jq -er '.sourceSHA | select(test("^[a-f0-9]{40}$"))' "$SOURCE_DIR/manifest.json")"
 DEST="tests/baselines/visual-qa/$SOURCE_SHA"
 mkdir -p "$DEST"
 
@@ -60,8 +68,10 @@ manifest_bytes = manifest_path.read_bytes()
 manifest = json.loads(manifest_bytes)
 if manifest.get('status') != 'CAPTURE_ONLY':
     raise SystemExit('Expected an unapproved CAPTURE_ONLY source manifest')
-if manifest.get('checkoutSHA') != source_sha or manifest.get('sourceSHA') != source_sha:
+if manifest.get('siteSourceSHA') != source_sha or manifest.get('sourceSHA') != source_sha:
     raise SystemExit('Manifest source SHA does not match the selected directory')
+if manifest.get('captureToolSHA') != manifest.get('checkoutSHA'):
+    raise SystemExit('Manifest capture-tool SHA is missing or inconsistent')
 captures = manifest.get('captures')
 if not isinstance(captures, list) or len(captures) != 30:
     raise SystemExit('Expected exactly 30 captures')
@@ -70,6 +80,8 @@ if any(not isinstance(capture_id, str) for capture_id in capture_ids) or len(set
     raise SystemExit('Capture IDs must be unique')
 for capture in captures:
     capture_id = capture.get('id', '')
+    if capture.get('siteSourceSHA') != source_sha or capture.get('sourceSHA') != source_sha or capture.get('captureToolSHA') != manifest.get('captureToolSHA'):
+        raise SystemExit('Capture source or capture-tool identity does not match the manifest')
     if not re.fullmatch(r'[a-z0-9-]+', capture_id) or capture.get('screenshotPath') != f'{capture_id}.png' or capture.get('metadataPath') != f'{capture_id}.json':
         raise SystemExit('Capture filenames must be adjacent id.png/id.json pairs')
     for key, hash_key in (('screenshotPath', 'screenshotSha256'), ('metadataPath', 'metadataSha256')):

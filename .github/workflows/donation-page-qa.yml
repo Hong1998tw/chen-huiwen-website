@@ -7,6 +7,9 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 18
+    env:
+      A06_ARTIFACT_NAME: full-site-browser-qa
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,6 +54,7 @@ jobs:
       - run: npm run test:visual-qa --prefix tests/donation
       - run: node --check tests/donation/wcag22aa.mjs
       - run: node --check tests/donation/wcag22aa.test.mjs
+      - run: node --check tests/donation/wcag22aa-baseline-proposal.mjs
       - run: node --test tests/donation/wcag22aa.test.mjs
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
@@ -93,7 +97,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+      - name: Fetch and verify only the pull request base commit for A-05 reference capture
+        id: base_reference
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'A-05 independent reference unavailable: PR base SHA is not a full 40-character commit.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fetched_sha="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+          if [[ "$fetched_sha" != "$BASE_SHA" ]]; then
+            echo "Fetched A-05 base SHA mismatch: expected $BASE_SHA, received $fetched_sha" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git worktree add --detach "$BASE_ROOT" "$BASE_SHA"
+          actual_sha="$(git -C "$BASE_ROOT" rev-parse --verify HEAD)"
+          if [[ "$actual_sha" != "$BASE_SHA" ]] || [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 independent reference worktree failed the exact-HEAD or clean-worktree check.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Verified independent A-05 site source: $actual_sha" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -105,6 +136,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_visual_qa_baseline_archive.py'
       - run: node --check tests/donation/visual-qa.mjs
       - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-identity.mjs
       - run: node --check tests/donation/visual-qa-check.mjs
       - run: node --check tests/donation/download-visual-qa-baseline.mjs
       - run: npm run test:visual-qa --prefix tests/donation
@@ -113,30 +145,74 @@ jobs:
       - name: Capture A-05 local screenshots and live Cloudflare measurements
         id: capture
         shell: bash
+        env:
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
         run: |
           set +e
+          reference_status=0
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            if [[ "${{ steps.base_reference.outcome }}" == 'success' && -d "$BASE_ROOT" ]]; then
+              node tests/donation/visual-qa.mjs capture \
+                --environment local-http-uncompressed \
+                --site-root "$BASE_ROOT" \
+                --output-dir tests/donation/results/visual-qa/main-reference
+              reference_status=$?
+            else
+              echo '- A-05 independent base: MISSING; fetch/verification did not succeed.' >> "$GITHUB_STEP_SUMMARY"
+              reference_status=1
+            fi
+          else
+            echo '- A-05 independent base: no pull-request base is available for this run.' >> "$GITHUB_STEP_SUMMARY"
+          fi
           node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
           local_capture_status=$?
           node tests/donation/visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/
           cloudflare_capture_status=$?
           {
             echo '## A-05 visual QA'
+            echo "- Independent base-reference capture exit: ${reference_status}; its site SHA and capture-tool SHA are recorded separately."
             echo "- Local capture exit: ${local_capture_status}"
             echo "- Cloudflare capture exit: ${cloudflare_capture_status}"
             echo '- Cloudflare source is read from deployment.json before and after capture; transfer encoding is recorded as observed.'
             echo '- Pixel comparison uses only the local screenshot set.'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "reference_status=${reference_status}" >> "$GITHUB_OUTPUT"
           echo "local_status=${local_capture_status}" >> "$GITHUB_OUTPUT"
           echo "cloudflare_status=${cloudflare_capture_status}" >> "$GITHUB_OUTPUT"
-          if [[ "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 ]]; then
+          if [[ "$reference_status" -ne 0 || "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 ]]; then
             exit 1
           fi
+      - name: Compare the independent base and candidate captures for human review
+        id: cross_source_review
+        if: always()
+        env:
+          REFERENCE_STATUS: ${{ steps.capture.outputs.reference_status }}
+          LOCAL_STATUS: ${{ steps.capture.outputs.local_status }}
+          REFERENCE_MANIFEST: tests/donation/results/visual-qa/main-reference/local-http-uncompressed/manifest.json
+          CANDIDATE_MANIFEST: tests/donation/results/visual-qa/local-http-uncompressed/manifest.json
+          REVIEW_OUTPUT: tests/donation/results/visual-qa/cross-source-review
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
+            echo '- Cross-source review: NOT_RUN; this event has no independent pull-request base.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$REFERENCE_STATUS" != '0' || "$LOCAL_STATUS" != '0' ]]; then
+            echo '- Cross-source review: NOT_RUN; the independent reference and candidate captures must both complete first.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node tests/donation/visual-qa.mjs cross-compare \
+            --reference-manifest "$REFERENCE_MANIFEST" \
+            --candidate-manifest "$CANDIDATE_MANIFEST" \
+            --output-dir "$REVIEW_OUTPUT"
+          echo '- Cross-source review: CROSS_SOURCE_REVIEW; pixel diffs and per-capture metric changes are attached for human review. This does not select or approve a golden baseline.' >> "$GITHUB_STEP_SUMMARY"
       - name: Compare local captures with the committed Git baseline or record baseline pending
         if: always()
         shell: bash
         run: |
           set +e
-          if [[ "${{ steps.capture.outcome }}" != "success" ]]; then
+          if [[ "${{ steps.capture.outputs.local_status }}" != "0" || "${{ steps.capture.outputs.cloudflare_status }}" != "0" ]]; then
             echo '- Comparison: NOT_RUN because one or both capture commands failed.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi

@@ -1,18 +1,23 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   AXE_CORE_VERSION,
   AXE_PLAYWRIGHT_VERSION,
   collectTargetSizeDiagnostics,
+  CANDIDATE_TARGET_SIZE_SCOPE,
   evaluateTargetSizeGate,
-  FULL_SITE_TARGET_SIZE_SCOPE,
+  evaluateTargetSizeCoverage,
   nonTargetAxeViolations,
   readTargetSizeBaseline,
   resolveTargetSizeMode,
+  TARGET_SIZE_BASELINE_SCENARIO,
+  TARGET_SIZE_CORE_ROUTES,
+  TARGET_SIZE_CORE_VIEWPORTS,
   targetSizeGateMessage,
 } from './wcag22aa.mjs';
 import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
@@ -30,14 +35,34 @@ assertHeaderAnimationContractFixtures();
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
 const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MODE);
+const checkoutHeadSha = (() => {
+  try {
+    const value = execFileSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD^{commit}'], { encoding: 'utf8' }).trim();
+    return /^[a-f0-9]{40}$/i.test(value) ? value.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+})();
+const sourceHeadSha = process.env.GITHUB_SHA ?? checkoutHeadSha;
+const eventHeadSha = process.env.PR_HEAD_SHA && /^[a-f0-9]{40}$/i.test(process.env.PR_HEAD_SHA) ? process.env.PR_HEAD_SHA.toLowerCase() : null;
+const workflowRunId = /^\d+$/.test(process.env.GITHUB_RUN_ID ?? '') ? process.env.GITHUB_RUN_ID : null;
+const artifactName = process.env.A06_ARTIFACT_NAME ?? null;
+const repositorySlug = process.env.GITHUB_REPOSITORY ?? null;
+const serverUrl = process.env.GITHUB_SERVER_URL ?? 'https://github.com';
+const runUrl = workflowRunId && repositorySlug ? `${serverUrl.replace(/\/$/, '')}/${repositorySlug}/actions/runs/${workflowRunId}` : null;
+const runnerScriptBytes = await readFile(new URL('./browser.mjs', import.meta.url));
+const runnerScriptSha256 = createHash('sha256').update(runnerScriptBytes).digest('hex');
+const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
 const report = { scope: 'Full-site candidate QA', checks: [], failures: [], diagnostics: [], interactions: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
 const targetSizeBaseline = await readTargetSizeBaseline();
 const targetSizeEntries = [];
+const targetSizeCompletedCases = [];
 let browser;
 let diagnosticPage;
+let chromiumVersion = null;
 
 async function check(name, fn, { required = false } = {}) {
   const metadata = required ? { required: true } : {};
@@ -300,6 +325,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
+  chromiumVersion = browser.version();
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   await context.addInitScript(() => {
     window.layoutShifts = [];
@@ -709,7 +735,6 @@ try {
       for (const summary of await page.locator('main summary').all()) await summary.click();
       const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
       await writeFile(new URL(`axe-donation-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
-      targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, 'political-donation.html', width, axe.violations, 'donation-details-expanded'));
       // target-size has its own fail-closed baseline gate below; all other axe findings remain strict here.
       assert.deepEqual(nonTargetAxeViolations(axe.violations).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
     });
@@ -752,10 +777,18 @@ try {
           const text = await page.locator('main').innerText();
           assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','offline.html','achievement-wende-school-center.html'];
-        if (core.includes(file)) {
+        if (TARGET_SIZE_CORE_ROUTES.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
-          targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, 'core-page-default'));
+          const targetSizeViewport = TARGET_SIZE_CORE_VIEWPORTS.find(viewport => viewport.width === width);
+          if (targetSizeViewport) {
+            targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, TARGET_SIZE_BASELINE_SCENARIO, targetSizeViewport.height));
+            targetSizeCompletedCases.push({
+              route: file,
+              viewportWidth: targetSizeViewport.width,
+              viewportHeight: targetSizeViewport.height,
+              scenario: TARGET_SIZE_BASELINE_SCENARIO,
+            });
+          }
           const serious = nonTargetAxeViolations(axe.violations, ['serious', 'critical']);
           await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
           // The dedicated baseline check handles target-size; other serious/critical axe findings remain zero-tolerance.
@@ -1142,25 +1175,44 @@ try {
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');
+  const targetSizeCoverage = evaluateTargetSizeCoverage(targetSizeCompletedCases);
+  const unmeasurableViolations = targetSizeEntries.filter(entry => entry.measurementStatus !== 'measured');
+  const targetSizeSummary = {
+    expectedCaseCount: targetSizeCoverage.expected.length,
+    completedCaseCount: targetSizeCoverage.completed.length,
+    axeTargetSizeViolationCount: targetSizeEntries.length,
+    measuredViolationCount: targetSizeEntries.length - unmeasurableViolations.length,
+    unmeasurableViolationCount: unmeasurableViolations.length,
+    measurementErrorCount: targetSizeEntries.reduce((sum, entry) => sum + (entry.measurementErrors?.length ?? 0), 0),
+  };
   const targetSizeGate = evaluateTargetSizeGate(
     targetSizeMode,
     targetSizeBaseline,
     targetSizeEntries,
-    FULL_SITE_TARGET_SIZE_SCOPE,
+    CANDIDATE_TARGET_SIZE_SCOPE,
+    targetSizeCoverage,
   );
+  if (!checkoutHeadSha || sourceHeadSha !== checkoutHeadSha) {
+    report.failures.push('WCAG 2.2 AA target-size source identity');
+  }
   report.wcag22aaTargetSize = {
     mode: targetSizeMode,
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baselineStatus: targetSizeBaseline.status,
     baselineScope: targetSizeBaseline.scope ?? null,
     baselineKnownViolationCount: targetSizeGate.knownBaselineCount,
     baselineBaseHeadSha: targetSizeBaseline.baseHeadSha,
-    sourceHeadSha: process.env.GITHUB_SHA ?? null,
+    sourceHeadSha,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
     gate: targetSizeGate,
   };
-  if (targetSizeMode === 'capture-pending') {
+  if (targetSizeGate.status === 'coverage-incomplete') {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
+    report.failures.push('WCAG 2.2 AA target-size coverage incomplete');
+  } else if (targetSizeMode === 'capture-pending') {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Pending', value: targetSizeGate });
   } else if (!targetSizeGate.pass) {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
@@ -1172,14 +1224,39 @@ try {
   report.requiredCheckGate = requiredCheckGate;
   report.status = report.failures.length ? 'Failed' : report.checks.some(item => item.status === 'Pending') ? 'Pending' : 'Passed';
   await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
-    schema: 'wcag22aa-target-size-report/v1',
-    source: { headSha: process.env.GITHUB_SHA ?? null },
+    schema: 'wcag22aa-target-size-report/v2',
+    source: {
+      headSha: sourceHeadSha,
+      checkoutSha: checkoutHeadSha,
+      eventHeadSha,
+      workflowRunId,
+      artifactName,
+      runUrl,
+    },
+    tool: {
+      entrypoint: 'tests/donation/browser.mjs',
+      version: '1.0.0',
+      gitHeadSha: checkoutHeadSha,
+      scriptSha256: runnerScriptSha256,
+    },
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      playwrightVersion: packageJson.devDependencies.playwright,
+      axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+      axeCoreVersion: AXE_CORE_VERSION,
+      chromiumVersion,
+    },
+    run: { browserReportStatus: report.status, browserFailureCount: report.failures.length },
     mode: targetSizeMode,
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baseline: targetSizeBaseline,
     gate: targetSizeGate,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
     violations: targetSizeEntries,
   }, null, 2));
   await writeFile(new URL('browser-report.json', output), JSON.stringify(report, null, 2));
