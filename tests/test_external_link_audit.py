@@ -47,6 +47,99 @@ class FingerprintAndInventoryTests(unittest.TestCase):
             )
 
 
+class ReportPersistenceTests(unittest.TestCase):
+    url = 'https://example.com/source'
+    inventory = {url: {'fixture.html'}}
+
+    def run_with_first_probe_interrupted(self, output_exists):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'tests') as directory:
+            output = Path(directory) / 'external-links.json'
+            if output_exists:
+                output.write_text(json.dumps({
+                    'reportVersion': 1, 'state': 'complete', 'checkedAt': 'stale',
+                    'finishedAt': 'stale', 'summary': {'PASS': 1}, 'links': [],
+                }), encoding='utf-8')
+            with patch.object(sys, 'argv', ['audit_external_links.py', str(output)]), \
+                    patch.object(audit, 'inventory', return_value=self.inventory), \
+                    patch.object(audit, 'probe', side_effect=KeyboardInterrupt) as probe, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(KeyboardInterrupt):
+                    audit.main()
+            probe.assert_called_once_with(self.url, {'fixture.html'}, 10, 2, 0.5)
+            report = json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual(report['state'], 'running')
+            self.assertEqual(report['links'], [])
+            self.assertNotIn('finishedAt', report)
+            self.assertNotIn('summary', report)
+            self.assertNotEqual(report['checkedAt'], 'stale')
+
+    def test_old_complete_report_is_replaced_before_first_probe(self):
+        self.run_with_first_probe_interrupted(output_exists=True)
+
+    def test_missing_output_gets_running_report_before_first_probe(self):
+        self.run_with_first_probe_interrupted(output_exists=False)
+
+    def test_failed_initial_report_write_prevents_probe(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'tests') as directory:
+            output = Path(directory) / 'external-links.json'
+            with patch.object(sys, 'argv', ['audit_external_links.py', str(output)]), \
+                    patch.object(audit, 'inventory', return_value=self.inventory), \
+                    patch.object(audit, '_write_report', side_effect=OSError('fixture write failure')) as write, \
+                    patch.object(audit, 'probe') as probe, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(OSError):
+                    audit.main()
+            write.assert_called_once()
+            probe.assert_not_called()
+
+    def test_later_probe_interrupt_keeps_partial_report_running(self):
+        first_result = {
+            'url': self.url, 'fingerprint': audit.url_fingerprint(self.url),
+            'files': ['fixture.html'], 'status': 'PASS', 'httpStatus': 200,
+            'final_url': self.url, 'reason': 'reachable_not_fact_verified',
+            'retryClass': 'not_retryable', 'attempts': [],
+        }
+        urls = {
+            'https://example.com/one': {'one.html'},
+            'https://example.com/two': {'two.html'},
+        }
+        with tempfile.TemporaryDirectory(dir=ROOT / 'tests') as directory:
+            output = Path(directory) / 'external-links.json'
+            with patch.object(sys, 'argv', ['audit_external_links.py', str(output)]), \
+                    patch.object(audit, 'inventory', return_value=urls), \
+                    patch.object(audit, 'probe', side_effect=[first_result, KeyboardInterrupt]), \
+                    patch.object(audit.time, 'sleep'), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(KeyboardInterrupt):
+                    audit.main()
+            report = json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual(report['state'], 'running')
+            self.assertEqual(report['links'], [first_result])
+            self.assertNotIn('finishedAt', report)
+            self.assertNotIn('summary', report)
+
+    def test_successful_run_marks_report_complete(self):
+        result = {
+            'url': self.url, 'fingerprint': audit.url_fingerprint(self.url),
+            'files': ['fixture.html'], 'status': 'PASS', 'httpStatus': 200,
+            'final_url': self.url, 'reason': 'reachable_not_fact_verified',
+            'retryClass': 'not_retryable', 'attempts': [],
+        }
+        with tempfile.TemporaryDirectory(dir=ROOT / 'tests') as directory:
+            output = Path(directory) / 'external-links.json'
+            with patch.object(sys, 'argv', ['audit_external_links.py', str(output)]), \
+                    patch.object(audit, 'inventory', return_value=self.inventory), \
+                    patch.object(audit, 'probe', return_value=result), \
+                    patch.object(audit.time, 'sleep'), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                audit.main()
+            report = json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual(report['state'], 'complete')
+            self.assertEqual(report['links'], [result])
+            self.assertEqual(report['summary'], {'PASS': 1})
+            self.assertIn('finishedAt', report)
+
+
 class ClassificationAndRetryTests(unittest.TestCase):
     def test_only_not_found_responses_are_fail(self):
         self.assertEqual(audit.classify(404), ('FAIL', 'not_found'))

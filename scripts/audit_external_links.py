@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from collections import Counter
-import argparse, hashlib, json, socket, ssl, time
+import argparse, hashlib, json, os, socket, ssl, stat, tempfile, time
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TIMEOUT_SECONDS = 30
@@ -148,6 +148,25 @@ def probe(url, files, timeout, attempts, interval):
         'retryClass':retry_class(receipt, status),'attempts':receipt,
     }
 
+def _write_report(output, report):
+    payload = json.dumps(report, ensure_ascii=False, indent=2) + '\n'
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w', encoding='utf-8', dir=output.parent,
+            prefix=f'.{output.name}.', suffix='.tmp', delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if output.exists():
+            os.chmod(temporary, stat.S_IMODE(output.stat().st_mode))
+        os.replace(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('output',type=Path,nargs='?',default=Path('external-links.json'))
@@ -168,14 +187,15 @@ def main():
         'links':[],
     }
     a.output.parent.mkdir(parents=True,exist_ok=True)
+    _write_report(a.output, report)
     for url, files in sorted(urls.items()):
         row={
             'url':url,'fingerprint':url_fingerprint(url),'files':sorted(files),
             'status':'NOT_RUN','reason':'inventory_only','retryClass':'not_run','attempts':[],
         } if a.inventory_only else probe(url,files,a.timeout,a.attempts,a.interval)
         report['links'].append(row)
-        a.output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        _write_report(a.output, report)
         if not a.inventory_only: time.sleep(a.interval)
     report['state']='complete';report['finishedAt']=datetime.now(timezone.utc).isoformat();report['summary']=dict(Counter(r['status'] for r in report['links']))
-    a.output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');print(json.dumps({'total':len(urls),**report['summary']}))
+    _write_report(a.output, report);print(json.dumps({'total':len(urls),**report['summary']}))
 if __name__=='__main__': main()
