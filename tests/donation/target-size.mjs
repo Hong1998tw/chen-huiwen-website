@@ -22,7 +22,7 @@ const report = {
   criteria: {
     minimumTargetPx: 24,
     mobilePrimaryTargetPx: 44,
-    inlineException: 'Only ordinary inline links inside prose or heading text remain exempt; their inline formatting is preserved.',
+    inlineException: 'Only inline links with visible non-target text in prose or heading context remain exempt; their inline formatting is preserved.',
     spacingException: 'A sub-24px target passes only when its centered 24px-diameter circle touches no other target or undersized-target circle.',
     narrowViewport: '320 CSS px reflow width, equivalent to a 400% zoom viewport from 1280 CSS px.',
     textResize: 'At 390 CSS px, root font-size is set to 200% as a text-scaling stress case; browser UI zoom is not emulated.'
@@ -48,6 +48,8 @@ async function evaluateTargets(page) {
   return page.evaluate(({ controlsSelector, primarySelector }) => {
     const min = 24;
     const eps = 0.25;
+    const inlineTextException = window.__g04TargetSize?.isInlineTextException;
+    if (typeof inlineTextException !== 'function') throw new Error('Inline text exception rule 未載入。');
     const round = value => Math.round(value * 100) / 100;
     const describe = element => {
       const rect = element.getBoundingClientRect();
@@ -76,12 +78,7 @@ async function evaluateTargets(page) {
       const rect = element.getBoundingClientRect();
       return element.getClientRects().length > 0 && (rect.width > 0 || rect.height > 0);
     };
-    const isInlineTextException = element => {
-      if (element.localName !== 'a' || getComputedStyle(element).display !== 'inline') return false;
-      if (element.matches('.button,[role="button"]') ||
-          element.closest('nav,.footer,.topline,.news-source-links,.news-article-nav,.news-pagination')) return false;
-      return Boolean(element.closest('p,li,blockquote,dd,figcaption,h1,h2,h3,h4,h5,h6'));
-    };
+    const isInlineTextException = element => inlineTextException(element);
     const measured = [...document.querySelectorAll(controlsSelector)].filter(isPainted).map(describe);
     const undersized = measured.filter(item => item.undersized);
     const inlineExceptions = undersized.filter(item => isInlineTextException(item.element));
@@ -289,6 +286,10 @@ try {
         const response = await page.goto(new URL(route.path, server.url).href, { waitUntil: 'networkidle', timeout: 30000 });
         testCase.responseStatus = response?.status() ?? null;
         if (!response || response.status() !== 200) throw new Error('預期 HTTP 200，實際為 ' + (response?.status() ?? 'no response'));
+        await page.addScriptTag({
+          type: 'module',
+          url: new URL('tests/donation/target-size-inline.mjs', server.url).href
+        });
         await page.waitForFunction(() => [...document.querySelectorAll('[data-progressive-controls]')].every(element => getComputedStyle(element).visibility !== 'hidden'), null, { timeout: 15000 });
         await page.evaluate(() => document.fonts.ready);
         testCase.metrics = await evaluateTargets(page);
