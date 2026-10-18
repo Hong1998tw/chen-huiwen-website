@@ -250,9 +250,17 @@ class Q9FontProducerTests(unittest.TestCase):
         common = set(self.public_closure["commonCodepoints"])
         routes_with_related_stories = [
             route for route in SAMPLE_ROUTES
-            if "RELATED STORIES" in (ROOT / route).read_text(encoding="utf-8").upper()
+            if any(
+                heading.get_text(strip=True) == "相關專題"
+                for heading in BeautifulSoup(
+                    (ROOT / route).read_text(encoding="utf-8"), "html.parser"
+                ).select("h2")
+            )
         ]
-        self.assertTrue(routes_with_related_stories, "real detail page text must include RELATED STORIES")
+        self.assertTrue(routes_with_related_stories, "real detail page text must include 相關專題")
+        for route in routes_with_related_stories:
+            self.assertTrue(set(map(ord, "相關專題")) <= set(self.public_specs[route]["codepoints"]))
+        # Keep the Latin shaping fixture independently of the localized page label.
         self.assertTrue(set(map(ord, "RELATED STORIES")) <= common)
         for pair in ("ST", "TO", "OA", "KO", "CS", "PS", "OT"):
             self.assertTrue(set(map(ord, pair)) <= common)
