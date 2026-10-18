@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "viewports": [
+    { "width": 390, "height": 844 },
+    { "width": 1440, "height": 960 }
+  ],
+  "routes": [
+    { "id": "home", "path": "index.html", "template": "home" },
+    { "id": "achievements", "path": "achievements.html", "template": "achievement-index", "exceptionCandidates": ["domElementCount", "sameOriginTransferSizeBytes"] },
+    { "id": "achievement-metro-green-line", "path": "achievement-metro-green-line.html", "template": "achievement-detail" },
+    { "id": "achievement-wende-school-center", "path": "achievement-wende-school-center.html", "template": "achievement-detail" },
+    { "id": "achievement-special-education-support", "path": "achievement-special-education-support.html", "template": "achievement-detail" },
+    { "id": "news", "path": "news.html", "template": "news-index" },
+    { "id": "news-special-education-nurse", "path": "news-20260915-special-education-nurse.html", "template": "news-detail" },
+    { "id": "activities", "path": "activities.html", "template": "event-index", "exceptionCandidates": ["domElementCount", "sameOriginTransferSizeBytes"] },
+    { "id": "event-campaign-headquarters-opening", "path": "event-campaign-headquarters-opening-2026-10-31.html", "template": "event-detail", "exceptionCandidates": ["domElementCount", "sameOriginTransferSizeBytes"] },
+    { "id": "gallery", "path": "gallery.html", "template": "gallery", "exceptionCandidates": ["domElementCount", "sameOriginTransferSizeBytes"] },
+    { "id": "service", "path": "service.html", "template": "service" },
+    { "id": "petition", "path": "petition.html", "template": "intake" },
+    { "id": "election", "path": "election.html", "template": "election" },
+    { "id": "explore", "path": "explore.html", "template": "exploration" },
+    { "id": "not-found", "path": "404.html", "template": "404" }
+  ],
+  "budgets": {
+    "sameOriginTransferSizeBytes": 300000,
+    "domElementCount": 1500
+  },
+  "capture": {
+    "locale": "zh-TW",
+    "timezoneId": "Asia/Taipei",
+    "colorScheme": "light",
+    "reducedMotion": "reduce",
+    "deviceScaleFactor": 1,
+    "fixedDate": "2026-10-18T00:00:00+08:00",
+    "initialRequest": "Fresh browser context; direct navigation to the listed path; no clicks, scrolling, query parameters, or service-worker state.",
+    "waitUntil": "load",
+    "waitForFonts": true,
+    "animations": "Finish active Web Animations; Playwright disables animations while taking the screenshot; no user input is issued.",
+    "dynamicMasks": []
+  },
+  "comparison": {
+    "pixelThreshold": 0.1,
+    "maxDiffRatio": 0.005
+  }
+}

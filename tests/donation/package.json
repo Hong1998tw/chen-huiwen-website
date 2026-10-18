@@ -4,12 +4,15 @@
   "type": "module",
   "scripts": {
     "test": "node browser.mjs",
+    "test:visual-qa": "node visual-qa-check.mjs",
     "test:readiness": "node readiness.mjs",
     "test:lighthouse": "node readiness-performance.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
     "lighthouse": "13.4.1",
+    "pixelmatch": "6.0.0",
+    "pngjs": "7.0.0",
     "playwright": "1.55.1"
   },
   "engines": {

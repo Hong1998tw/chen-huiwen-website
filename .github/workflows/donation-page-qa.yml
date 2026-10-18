@@ -6,7 +6,7 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,7 +30,11 @@ jobs:
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/election-mode.mjs
+      - run: node --check tests/donation/visual-qa.mjs
+      - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-check.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npm run test:visual-qa --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
       - run: node tests/donation/browser.mjs
@@ -51,6 +55,43 @@ jobs:
         run: node tests/donation/lifecycle.mjs
       - name: Run five-viewport production-readiness regression suite
         run: npm run test:readiness --prefix tests/donation
+      - name: Capture A-05 local and Cloudflare visual evidence; compare only when an approved baseline is supplied
+        shell: bash
+        env:
+          VISUAL_QA_BASELINE_MANIFEST: ${{ vars.VISUAL_QA_BASELINE_MANIFEST }}
+          VISUAL_QA_BASELINE_SHA256: ${{ vars.VISUAL_QA_BASELINE_SHA256 }}
+          VISUAL_QA_BASELINE_SOURCE_SHA: ${{ vars.VISUAL_QA_BASELINE_SOURCE_SHA }}
+        run: |
+          set +e
+          node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
+          local_capture_status=$?
+          node tests/donation/visual-qa.mjs capture --environment cloudflare-production-br --base-url https://www.huiwen.tw/
+          cloudflare_capture_status=$?
+          if [[ -z "$VISUAL_QA_BASELINE_MANIFEST" && -z "$VISUAL_QA_BASELINE_SHA256" && -z "$VISUAL_QA_BASELINE_SOURCE_SHA" ]]; then
+            node tests/donation/visual-qa.mjs compare --candidate-manifest tests/donation/results/visual-qa/local-http-uncompressed/manifest.json
+            local_compare_status=$?
+          elif [[ -z "$VISUAL_QA_BASELINE_MANIFEST" || -z "$VISUAL_QA_BASELINE_SHA256" || -z "$VISUAL_QA_BASELINE_SOURCE_SHA" ]]; then
+            echo 'A-05 baseline configuration is incomplete; expected manifest path, manifest SHA-256 and source SHA.' >&2
+            local_compare_status=1
+          else
+            node tests/donation/visual-qa.mjs compare \
+              --candidate-manifest tests/donation/results/visual-qa/local-http-uncompressed/manifest.json \
+              --baseline-manifest "$VISUAL_QA_BASELINE_MANIFEST" \
+              --baseline-sha256 "$VISUAL_QA_BASELINE_SHA256" \
+              --baseline-source-sha "$VISUAL_QA_BASELINE_SOURCE_SHA"
+            local_compare_status=$?
+          fi
+          {
+            echo '## A-05 visual QA'
+            echo "- Local uncompressed capture exit: ${local_capture_status}"
+            echo "- Cloudflare Brotli capture exit: ${cloudflare_capture_status}"
+            echo "- Local comparison exit: ${local_compare_status} (PENDING without approved baseline is expected)"
+            echo '- Cloudflare run records transfer and DOM measurements only; pixel comparison uses the local screenshot set.'
+            echo '- Capture mode is evidence collection only; baseline approval remains independent.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 || "$local_compare_status" -ne 0 ]]; then
+            exit 1
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
