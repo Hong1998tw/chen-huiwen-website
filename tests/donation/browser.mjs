@@ -27,6 +27,7 @@ import {
   assertHeaderAnimationContractFixtures,
   evaluateMenuAnchor,
   evaluateRequiredCheckGate,
+  installEarlyHeaderAnimationProbe,
   MENU_ANCHOR_TOLERANCE_PX,
 } from './header-animation-contracts.mjs';
 
@@ -326,7 +327,7 @@ try {
   }
   browser = await chromium.launch({ headless: true });
   chromiumVersion = browser.version();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
   await context.addInitScript(() => {
     window.layoutShifts = [];
     new PerformanceObserver(list => window.layoutShifts.push(...list.getEntries().filter(x => !x.hadRecentInput))).observe({ type: 'layout-shift', buffered: true });
@@ -490,17 +491,32 @@ try {
       assert.equal(reduced.transitionDuration, '0s');
       const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
-      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      // Keep the shared page reduced for its existing non-animation checks.
       await page.goto(base + 'political-donation.html');
     });
 
     if (width === 390) {
-      const animationPage = await context.newPage();
-      await animationPage.setViewportSize({ width: 390, height: 844 });
-      diagnosticPage = animationPage;
+      // Keep header motion and early-probe checks in an explicit no-preference context.
+      const headerContext = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        reducedMotion: 'no-preference',
+      });
+      let animationPage;
+      const headerPageErrors = [];
+      const headerLocalFailures = [];
+      const onHeaderPageError = error => headerPageErrors.push(String(error));
+      const onHeaderRequestFailed = request => {
+        if (new URL(request.url()).hostname === '127.0.0.1') headerLocalFailures.push(request.url());
+      };
       try {
+        await headerContext.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+        animationPage = await headerContext.newPage();
+        animationPage.on('pageerror', onHeaderPageError);
+        animationPage.on('requestfailed', onHeaderRequestFailed);
+        diagnosticPage = animationPage;
+
         await check('G06 mobile header animation: live compact and expand frames while menu is open', async () => {
-          await animationPage.emulateMedia({ reducedMotion: 'no-preference' });
           await animationPage.goto(base + 'service.html');
           const initial = await animationPage.evaluate(() => ({
             scrollY: window.scrollY,
@@ -534,94 +550,7 @@ try {
         });
 
         await check('G06 mobile header animation: restored nonzero scroll and programmatic menu before first controller RAF', async () => {
-          await animationPage.addInitScript(() => {
-            const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
-            const probe = {
-              controllerRafQueued: false,
-              controllerRafQueuedAt: null,
-              queuedWhileDocumentLoading: false,
-              domContentLoadedAt: null,
-              releasedAt: null,
-              firstSampleStartedAt: null,
-              firstSampleScrollY: null,
-              firstSampleState: null,
-              inputSource: 'programmatic focus() and HTMLElement.click() in DOMContentLoaded listener; not human input',
-              programmaticFocusInvoked: false,
-              programmaticClickInvoked: false,
-              clickIsTrusted: null,
-              unsupportedReason: null,
-            };
-            let heldControllerCallback = null;
-            window.__earlyHeaderAnimationProbe = probe;
-            window.requestAnimationFrame = callback => {
-              const currentScript = document.currentScript;
-              const fromHeaderController = document.readyState === 'loading' && currentScript?.src &&
-                new URL(currentScript.src).pathname.endsWith('/site.js') && !probe.controllerRafQueued;
-              if (fromHeaderController) {
-                probe.controllerRafQueued = true;
-                probe.controllerRafQueuedAt = performance.now();
-                probe.queuedWhileDocumentLoading = true;
-                heldControllerCallback = callback;
-                return nativeRequestAnimationFrame(() => {});
-              }
-              return nativeRequestAnimationFrame(callback);
-            };
-            document.addEventListener('DOMContentLoaded', () => {
-              probe.domContentLoadedAt = performance.now();
-              if (!heldControllerCallback) {
-                probe.unsupportedReason = 'The deferred site.js header controller did not expose a queued first RAF before DOMContentLoaded.';
-                return;
-              }
-              const toggle = document.querySelector('.menu-toggle');
-              const navigation = document.querySelector('#navigation');
-              const header = document.querySelector('.site-header');
-              if (!toggle || !navigation || !header) {
-                probe.unsupportedReason = 'The existing header, menu toggle, or navigation selector was missing at DOMContentLoaded.';
-                return;
-              }
-
-              window.scrollTo({ top: 600, behavior: 'instant' });
-              probe.scrollYBeforeControllerSample = window.scrollY;
-              toggle.addEventListener('click', event => { probe.clickIsTrusted = event.isTrusted; }, { once: true });
-              toggle.focus({ preventScroll: true });
-              probe.programmaticFocusInvoked = document.activeElement === toggle;
-              toggle.click();
-              probe.programmaticClickInvoked = true;
-              probe.ariaExpandedBeforeControllerSample = toggle.getAttribute('aria-expanded');
-              probe.menuOpenBeforeControllerSample = navigation.classList.contains('is-open');
-
-              const controllerCallback = heldControllerCallback;
-              heldControllerCallback = null;
-              probe.releasedAt = performance.now();
-              nativeRequestAnimationFrame(timestamp => {
-                probe.firstSampleStartedAt = performance.now();
-                probe.firstSampleScrollY = window.scrollY;
-                controllerCallback(timestamp);
-                // site.js dispatches its initial layout-change event synchronously for this nonzero-scroll sample.
-                const headerRect = header.getBoundingClientRect();
-                const navigationRect = navigation.getBoundingClientRect();
-                probe.firstSampleState = {
-                  compact: header.classList.contains('is-compact'),
-                  headerHeight: headerRect.height,
-                  headerBottom: headerRect.bottom,
-                  menuTop: navigationRect.top,
-                  headerBottomForAnchor: headerRect.bottom,
-                  menuTopForAnchor: navigationRect.top,
-                  menuLeft: navigationRect.left,
-                  menuRight: navigationRect.right,
-                  viewportWidth: window.innerWidth,
-                  ariaExpanded: toggle.getAttribute('aria-expanded'),
-                  activeElementInsideMenu: navigation.contains(document.activeElement),
-                  activeElement: document.activeElement ? {
-                    tagName: document.activeElement.tagName,
-                    id: document.activeElement.id || null,
-                    className: typeof document.activeElement.className === 'string' ? document.activeElement.className : null,
-                    href: document.activeElement.getAttribute?.('href') ?? null,
-                  } : null,
-                };
-              });
-            }, { once: true });
-          });
+          await animationPage.addInitScript(installEarlyHeaderAnimationProbe);
 
           await animationPage.goto(base + 'service.html');
           await animationPage.waitForFunction(() => {
@@ -629,7 +558,9 @@ try {
             return Boolean(probe && (probe.unsupportedReason || probe.firstSampleStartedAt !== null));
           }, null, { timeout: 1500 }).catch(() => {});
           const probe = await animationPage.evaluate(() => window.__earlyHeaderAnimationProbe);
-          if (!probe?.controllerRafQueued || !probe?.queuedWhileDocumentLoading || !probe?.domContentLoadedAt || !probe?.firstSampleStartedAt) {
+          if (!probe?.controllerScriptMatched || !probe?.controllerRafQueued || !probe?.queuedBeforeDCL ||
+              !['loading', 'interactive'].includes(probe?.readyStateAtQueued) || !probe?.domContentLoadedSeen ||
+              probe?.domContentLoadedAt === null || probe?.firstSampleStartedAt === null) {
             const pending = {
               name: 'early restored-scroll header/menu sample',
               status: 'not-verified',
@@ -656,8 +587,17 @@ try {
           };
 
           const evidence = {
+            controllerScriptMatched: probe.controllerScriptMatched,
+            controllerScriptURLPath: probe.controllerScriptURLPath,
+            controllerScriptType: probe.controllerScriptType,
+            controllerScriptTypeAttribute: probe.controllerScriptTypeAttribute,
+            controllerScriptDeferred: probe.controllerScriptDeferred,
+            controllerScriptAsync: probe.controllerScriptAsync,
             controllerRafQueued: probe.controllerRafQueued,
             queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
+            readyStateAtQueued: probe.readyStateAtQueued,
+            queuedBeforeDCL: probe.queuedBeforeDCL,
+            domContentLoadedSeen: probe.domContentLoadedSeen,
             controllerRafQueuedAtMs: probe.controllerRafQueuedAt,
             domContentLoadedAtMs: probe.domContentLoadedAt,
             releasedAtMs: probe.releasedAt,
@@ -689,8 +629,17 @@ try {
           assert.equal(evidence.firstSampleState.anchorWithinTolerance, true, JSON.stringify(evidence));
           assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
         }, { required: true });
+
+        await check('G06 mobile header fixture page errors and local requests', async () => {
+          assert.deepEqual(headerPageErrors, []);
+          assert.deepEqual(headerLocalFailures, []);
+        });
       } finally {
-        await animationPage.close();
+        if (animationPage) {
+          animationPage.off('pageerror', onHeaderPageError);
+          animationPage.off('requestfailed', onHeaderRequestFailed);
+        }
+        await headerContext.close();
         diagnosticPage = page;
       }
     }
