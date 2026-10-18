@@ -6,6 +6,11 @@ import {
   resolveCapturePath,
   sha256,
 } from './visual-qa-lib.mjs';
+import {
+  siteSourceKind,
+  validatePublicationManifestRecord,
+  validateSiteSourceKindRecord,
+} from './visual-qa-publication.mjs';
 
 const SHA40 = /^[a-f0-9]{40}$/i;
 const SHA64 = /^[a-f0-9]{64}$/i;
@@ -106,9 +111,17 @@ function expectedCaptureRecords(policy) {
 
 async function verifyCaptureFiles(manifestPath, capture, expected, manifest) {
   const { route, viewport } = expected;
+  const manifestSourceKind = siteSourceKind(manifest);
+  const captureSourceKind = siteSourceKind(capture);
   if (capture.routeId !== route.id || capture.routePath !== route.path || capture.template !== route.template ||
       stableStringify(capture.viewport) !== stableStringify(viewport) || capture.environment !== 'local-http-uncompressed' ||
       capture.sourceSHA !== manifest.sourceSHA || capture.siteSourceSHA !== manifest.siteSourceSHA ||
+      captureSourceKind !== manifestSourceKind ||
+      !validateSiteSourceKindRecord(capture, manifest.sourceSHA) ||
+      (manifestSourceKind === 'publication' && (capture.sourceGitSHA !== manifest.sourceGitSHA ||
+        capture.servedRootRole !== 'publication-artifact' ||
+        stableStringify(capture.publicationArtifact) !== stableStringify(manifest.publicationArtifact) ||
+        stableStringify(capture.publicationPayloads) !== stableStringify(manifest.publicationPayloads))) ||
       capture.captureToolSHA !== manifest.captureToolSHA || capture.checkoutSHA !== manifest.captureToolSHA ||
       capture.screenshotEnabled !== true || capture.screenshotPath !== `${capture.id}.png` ||
       capture.metadataPath !== `${capture.id}.json` || !SHA64.test(capture.screenshotSha256 ?? '') ||
@@ -156,6 +169,20 @@ async function verifyCaptureFiles(manifestPath, capture, expected, manifest) {
 function verifyComparableManifests(reference, candidate) {
   const referenceManifest = reference.manifest;
   const candidateManifest = candidate.manifest;
+  const referenceKind = siteSourceKind(referenceManifest);
+  const candidateKind = siteSourceKind(candidateManifest);
+  if (referenceKind !== candidateKind) {
+    throw new Error('Cross-source review cannot mix Git canonical-root captures with publication-artifact captures.');
+  }
+  if (!['git-canonical-root', 'publication'].includes(referenceKind) ||
+      !validateSiteSourceKindRecord(referenceManifest, referenceManifest.sourceSHA) ||
+      !validateSiteSourceKindRecord(candidateManifest, candidateManifest.sourceSHA)) {
+    throw new Error('Cross-source review contains an unsupported or inconsistent site-source kind.');
+  }
+  if (siteSourceKind(referenceManifest) === 'publication' &&
+      (!validatePublicationManifestRecord(referenceManifest) || !validatePublicationManifestRecord(candidateManifest))) {
+    throw new Error('Publication-artifact capture provenance is incomplete or inconsistent.');
+  }
   if (referenceManifest.sourceSHA === candidateManifest.sourceSHA) {
     throw new Error('Cross-source review requires different site-source SHAs.');
   }
@@ -303,8 +330,22 @@ export async function createCrossSourceReview({ candidateManifestPath, reference
     baselineSelected: false,
     scope: '15-route × 2-viewport A-05 independent source comparison',
     source: {
-      reference: { sourceSHA: reference.manifest.sourceSHA, captureToolSHA: reference.manifest.captureToolSHA },
-      candidate: { sourceSHA: candidate.manifest.sourceSHA, captureToolSHA: candidate.manifest.captureToolSHA },
+      reference: {
+        sourceSHA: reference.manifest.sourceSHA,
+        sourceGitSHA: reference.manifest.sourceGitSHA ?? reference.manifest.sourceSHA,
+        siteSourceKind: siteSourceKind(reference.manifest),
+        servedRootRole: reference.manifest.servedRootRole ?? 'git-canonical-root',
+        captureToolSHA: reference.manifest.captureToolSHA,
+        publicationArtifact: reference.manifest.publicationArtifact ?? null,
+      },
+      candidate: {
+        sourceSHA: candidate.manifest.sourceSHA,
+        sourceGitSHA: candidate.manifest.sourceGitSHA ?? candidate.manifest.sourceSHA,
+        siteSourceKind: siteSourceKind(candidate.manifest),
+        servedRootRole: candidate.manifest.servedRootRole ?? 'git-canonical-root',
+        captureToolSHA: candidate.manifest.captureToolSHA,
+        publicationArtifact: candidate.manifest.publicationArtifact ?? null,
+      },
       toolVersions: candidate.manifest.toolVersions,
       artifactPaths: {
         referenceManifest: reference.manifestPath,

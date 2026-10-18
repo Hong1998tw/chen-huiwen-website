@@ -16,11 +16,11 @@ Final map screenshots show loaded OpenStreetMap tiles, actual village geometry a
 
 The 15 routes are `index.html`, `achievements.html`, `achievement-metro-green-line.html`, `achievement-wende-school-center.html`, `achievement-special-education-support.html`, `news.html`, `news-20260915-special-education-nurse.html`, `activities.html`, `event-campaign-headquarters-opening-2026-10-31.html`, `gallery.html`, `service.html`, `petition.html`, `election.html`, `explore.html` and `404.html`.
 
-CI produces exactly 30 PNG screenshots from the checked-out source in the local capture. A separate Cloudflare run measures the same route/viewport pairs without creating extra screenshots, keeping candidate visual comparisons tied to the current source while retaining production transport evidence.
+CI produces exactly 30 PNG screenshots from each checkout's source-native Cloudflare publication artifact. The clean Git checkout supplies `sourceGitSHA`; `--public-artifact` supplies the only HTTP server root. A separate Cloudflare run measures the same route/viewport pairs without creating extra screenshots, keeping candidate visual comparisons tied to the current publication while retaining production transport evidence.
 
 The two separately labelled runs are:
 
-- `local-http-uncompressed` serves the checked-out source from the existing static runner with compression disabled. Third-party requests are recorded separately and are not included in the same-origin page budget.
+- `local-http-uncompressed` serves a verified publication artifact with compression disabled when `--public-artifact` is supplied; the canonical Git-root mode remains available for reference captures and is labelled `git-canonical-root`. A-05 cross-source and baseline comparisons reject mixed source kinds. Third-party requests are recorded separately and are not included in the same-origin page budget.
 - `cloudflare-production` opens the public site in Chromium and records network/DOM JSON only. It reads the live `/deployment.json` receipt before and after all 30 cases, recording `sourceCommit` and `publicArtifactDigest` separately from the runner's `checkoutSHA`. A changed receipt marks the run `MIXED_DEPLOYMENT`; the live version is never attributed to the checkout. Each document records its actual `Content-Encoding` and encoded bytes. `br`, `gzip`, identity, and other syntactically valid encodings receive their own environment labels; only a `br` response is labelled Brotli. A non-`br` response is valid evidence and does not fail capture. This is a read-only browser request; it does not configure Cloudflare.
 
 Each PNG has a JSON record with its route, viewport, `checkoutSHA`, runner and browser versions, fixed Taiwan timezone/date, fresh-context initial request, font readiness, animation handling, DOM element count, expected and actual HTTP status, first-party page errors, visible image decode results, and request list. `PerformanceResourceTiming.transferSize` is recorded separately from CDP `Network.loadingFinished.encodedDataLength`; encoded and decoded resource sizes are never substituted for each other. Third-party Performance Timing may be zero when the origin does not grant timing access, so the CDP encoded byte count is retained separately. The 300,000-byte measurement uses same-origin `transferSize` (including the document request), with a clearly labelled CDP fallback only if Timing reports zero. The JSON also preserves raw transfer and encoded byte totals by content encoding and third-party totals. First-party HTTP errors, page errors, failed same-origin requests and visible same-origin images that fail decoding make capture incomplete. Third-party and authentication/blocked-request failures remain separately recorded and do not mask or get counted as local product failures.
@@ -40,6 +40,15 @@ npm run test:visual-qa --prefix tests/donation
 node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
 node tests/donation/visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/
 node tests/donation/visual-qa.mjs compare --candidate-manifest tests/donation/results/visual-qa/local-http-uncompressed/manifest.json
+```
+
+For a publication-artifact screenshot capture, first run the source checkout's own publisher to a separate directory, then pass that directory to the capture runner:
+
+```sh
+python scripts/build_cloudflare_public.py --output /tmp/a05-publication
+node tests/donation/visual-qa.mjs capture \
+  --environment local-http-uncompressed \
+  --public-artifact /tmp/a05-publication
 ```
 
 With no approved baseline configured, the compare command writes `PENDING` and exits without claiming a pass. After an independent review, the approved bundle must be uploaded as the same-repository GitHub Actions artifact named `a05-approved-baseline`, with `manifest.json`, `manifest.sha256`, and exactly 30 root-level PNG/JSON pairs. CI reads `VISUAL_QA_BASELINE_ARTIFACT_ID`, `VISUAL_QA_BASELINE_SHA256`, and `VISUAL_QA_BASELINE_SOURCE_SHA`; this change does not configure any repository variables. The visual-QA job uses `GITHUB_REPOSITORY` plus the numeric artifact ID to call the fixed same-repository GitHub artifact API. Its step-scoped `GITHUB_TOKEN` has `actions:read`; it accepts no arbitrary repository or URL. The download fails closed on missing/expired artifacts, ZIP path/size problems, manifest or image hash mismatches, and incomplete capture sets. If all three variables are empty, comparison remains `PENDING`; if only some are set, the job fails. No baseline is created or approved by this workflow.

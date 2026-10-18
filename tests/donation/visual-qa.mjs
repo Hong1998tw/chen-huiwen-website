@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -18,10 +18,24 @@ import {
   verifyCaptureMetadata
 } from './visual-qa-lib.mjs';
 import { startStaticServer } from './static-server.mjs';
-import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import {
+  assertAllowedOptions,
+  protectReadOnlyBaseSource,
+  resolveCaptureRoots,
+  snapshotGitSource,
+  verifyGitSourceSnapshot,
+} from './visual-qa-identity.mjs';
+import {
+  assertSamePublicationArtifact,
+  publicationMetadataIdentity,
+  siteSourceKind,
+  validatePublicationArtifact,
+  validatePublicationManifestRecord,
+  validateSiteSourceKindRecord,
+} from './visual-qa-publication.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 import {
-  combineCaptureAndSourceIntegrityErrors,
+  combineCaptureAndIntegrityErrors,
   createMetadataPathRegistry,
   invalidateSourceMetadata,
   prepareCaptureOutput,
@@ -109,7 +123,25 @@ function captureId(route, viewport) {
   return `${route.id}-${viewport.width}`;
 }
 
-async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, metadataRegistry, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
+async function captureOne({
+  browser,
+  route,
+  viewport,
+  baseUrl,
+  policy,
+  environment,
+  runOutput,
+  metadataRegistry,
+  playwrightVersion,
+  siteSourceSHA,
+  sourceGitSHA,
+  siteSourceKind,
+  servedRootRole,
+  publicationArtifact,
+  publicationPayloads,
+  captureToolSHA,
+  deploymentAtStart,
+}) {
   const id = captureId(route, viewport);
   const screenshotEnabled = environment === 'local-http-uncompressed';
   const screenshotPath = screenshotEnabled ? `${id}.png` : null;
@@ -331,6 +363,13 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
     sourceSHA: environment === 'cloudflare-production' ? deploymentAtStart?.receipt?.sourceCommit ?? null : siteSourceSHA,
     siteSourceSHA: environment === 'local-http-uncompressed' ? siteSourceSHA : null,
+    sourceGitSHA: environment === 'cloudflare-production'
+      ? deploymentAtStart?.receipt?.sourceCommit ?? null
+      : sourceGitSHA,
+    siteSourceKind,
+    servedRootRole,
+    publicationArtifact,
+    ...(publicationPayloads ? { publicationPayloads } : {}),
     captureToolSHA,
     checkoutSHA: captureToolSHA,
     liveDeployment: environment === 'cloudflare-production'
@@ -404,6 +443,30 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
   return record;
 }
 
+async function removeInvalidCaptureSummaries(runOutput) {
+  const outputRoot = dirname(runOutput);
+  const registry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const failures = [];
+  try {
+    await prepareCaptureOutput(registry);
+  } catch (error) {
+    return [error];
+  }
+  for (const name of ['manifest.json', 'manifest.sha256', 'receipt.json']) {
+    const path = resolve(runOutput, name);
+    try {
+      const info = await lstat(path);
+      if (info.isSymbolicLink() || !info.isFile() || info.nlink !== 1) {
+        throw new Error(`Refusing to remove an unsafe A-05 summary file: ${name}`);
+      }
+      await unlink(path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') failures.push(error);
+    }
+  }
+  return failures;
+}
+
 async function runCapture(options) {
   if (typeof options.environment !== 'string') throw new Error('capture requires --environment local-http-uncompressed or cloudflare-production');
   const environment = options.environment;
@@ -416,6 +479,12 @@ async function runCapture(options) {
   if (options['site-root'] !== undefined && environment !== 'local-http-uncompressed') {
     throw new Error('--site-root is only valid for local-http-uncompressed capture.');
   }
+  if (options['public-artifact'] !== undefined && (typeof options['public-artifact'] !== 'string' || !options['public-artifact'].trim())) {
+    throw new Error('--public-artifact requires a built publication directory path.');
+  }
+  if (options['public-artifact'] !== undefined && environment !== 'local-http-uncompressed') {
+    throw new Error('--public-artifact is only valid for local-http-uncompressed capture.');
+  }
   if (options['base-url'] !== undefined && typeof options['base-url'] !== 'string') throw new Error('--base-url requires an HTTPS URL.');
   if (options['base-url'] !== undefined && environment !== 'cloudflare-production') {
     throw new Error('--base-url is only valid for cloudflare-production capture.');
@@ -423,12 +492,21 @@ async function runCapture(options) {
   const identity = await resolveCaptureRoots({
     runnerRoot: root,
     siteRoot: options['site-root'],
+    publicArtifact: options['public-artifact'],
     outputDir: options['output-dir'],
     defaultOutput,
   });
   const outputRoot = identity.outputRoot;
   const runOutput = resolve(outputRoot, environment);
   const metadataRegistry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const sourceSnapshot = await snapshotGitSource(identity.siteRoot, identity.siteSourceSHA);
+  const publicationArtifactAtStart = identity.publicArtifactRoot
+    ? await validatePublicationArtifact({
+      artifactRoot: identity.publicArtifactRoot,
+      sourceRoot: identity.siteRoot,
+      sourceGitSHA: identity.siteSourceSHA,
+    })
+    : null;
   const sourceGuard = identity.independentSiteSource && process.env.BASE_ROOT
     ? await protectReadOnlyBaseSource({
       root: identity.siteRoot,
@@ -441,6 +519,54 @@ async function runCapture(options) {
   }
   const captures = [];
   let captureError = null;
+  let siteSourceIntegrity = null;
+  let captureToolIntegrity = null;
+  let sourceIntegrityChecked = false;
+  let publicationArtifactAtEnd = null;
+  let publicationIntegrityChecked = !publicationArtifactAtStart;
+  let integrityFailureRecorded = false;
+  const finalizeCaptureInputs = async () => {
+    const failures = [];
+    if (!sourceIntegrityChecked) {
+      sourceIntegrityChecked = true;
+      try {
+        siteSourceIntegrity = sourceGuard
+          ? await sourceGuard.verifyAndRestore()
+          : await verifyGitSourceSnapshot(sourceSnapshot);
+      } catch (error) {
+        failures.push({ kind: 'site-source', error });
+      }
+    }
+    if (publicationArtifactAtStart && !publicationIntegrityChecked) {
+      publicationIntegrityChecked = true;
+      try {
+        publicationArtifactAtEnd = await validatePublicationArtifact({
+          artifactRoot: identity.publicArtifactRoot,
+          sourceRoot: identity.siteRoot,
+          sourceGitSHA: identity.siteSourceSHA,
+        });
+        assertSamePublicationArtifact(publicationArtifactAtStart, publicationArtifactAtEnd);
+      } catch (error) {
+        failures.push({ kind: 'publication-artifact', error });
+      }
+    }
+    if (!failures.length) return;
+    const integrityKind = failures.length === 1 ? failures[0].kind : 'capture-integrity';
+    const integrityError = failures.length === 1
+      ? failures[0].error
+      : new AggregateError(failures.map(item => item.error), failures.map(item => item.error.message).join('; '));
+    const reportErrors = await invalidateSourceMetadata({
+      registry: metadataRegistry,
+      captures,
+      expectedHeadSha: identity.siteSourceSHA,
+      claimedSourceSHAAtStart: identity.siteSourceSHA,
+      reason: integrityError,
+      captureError,
+      integrityKind,
+    });
+    integrityFailureRecorded = true;
+    throw combineCaptureAndIntegrityErrors(captureError, integrityError, reportErrors, integrityKind);
+  };
   try {
     if (sourceGuard && sourceGuard.initialState.headSha !== identity.siteSourceSHA) {
       throw new Error(`A-05 PR base changed between identity capture (${identity.siteSourceSHA}) and read-only protection (${sourceGuard.initialState.headSha}).`);
@@ -450,7 +576,11 @@ async function runCapture(options) {
     let server = null;
     let baseUrl;
     if (environment === 'local-http-uncompressed') {
-      server = await startStaticServer({ root: identity.siteRoot, compression: 'none', port: 0 });
+      server = await startStaticServer({
+        root: identity.publicArtifactRoot ?? identity.siteRoot,
+        compression: 'none',
+        port: 0,
+      });
       baseUrl = server.url;
     } else {
       baseUrl = options['base-url'] ?? process.env.VISUAL_QA_BASE_URL ?? defaultCloudflareBase;
@@ -460,6 +590,14 @@ async function runCapture(options) {
 
     const checkoutSHA = identity.captureToolSHA;
     const siteSourceSHA = identity.siteSourceSHA;
+    const siteSourceKind = environment === 'cloudflare-production'
+      ? 'cloudflare-live-deployment'
+      : publicationArtifactAtStart ? 'publication' : 'git-canonical-root';
+    const servedRootRole = environment === 'cloudflare-production'
+      ? 'cloudflare-origin'
+      : publicationArtifactAtStart ? 'publication-artifact' : 'git-canonical-root';
+    const publicationArtifact = publicationMetadataIdentity(publicationArtifactAtStart);
+    const publicationPayloads = publicationArtifactAtStart?.payloads ?? null;
     const deploymentAtStart = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
 
     const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
@@ -479,6 +617,11 @@ async function runCapture(options) {
             metadataRegistry,
             playwrightVersion: packageJson.devDependencies.playwright,
             siteSourceSHA,
+            sourceGitSHA: siteSourceSHA,
+            siteSourceKind,
+            servedRootRole,
+            publicationArtifact,
+            publicationPayloads,
             captureToolSHA: identity.captureToolSHA,
             deploymentAtStart
           });
@@ -499,6 +642,9 @@ async function runCapture(options) {
       for (const capture of captures) {
         capture.sourceSHA = liveEvidence.sourceSHA;
         capture.siteSourceSHA = null;
+        capture.sourceGitSHA = liveEvidence.sourceSHA;
+        capture.siteSourceKind = 'cloudflare-live-deployment';
+        capture.servedRootRole = 'cloudflare-origin';
         capture.liveDeployment = liveEvidence.liveDeployment;
         capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
         const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
@@ -513,20 +659,10 @@ async function runCapture(options) {
         });
       }
     }
-    let siteSourceIntegrity = null;
-    if (sourceGuard) {
-      try {
-        siteSourceIntegrity = await sourceGuard.verifyAndRestore();
-      } catch (sourceIntegrityError) {
-        const reportErrors = await invalidateSourceMetadata({
-          registry: metadataRegistry,
-          captures,
-          expectedHeadSha: identity.siteSourceSHA,
-          claimedSourceSHAAtStart: identity.siteSourceSHA,
-          reason: sourceIntegrityError,
-        });
-        throw combineCaptureAndSourceIntegrityErrors(null, sourceIntegrityError, reportErrors);
-      }
+    await finalizeCaptureInputs();
+    if (environment === 'cloudflare-production') {
+      captureToolIntegrity = siteSourceIntegrity;
+      siteSourceIntegrity = null;
     }
     const verificationFailures = captures.filter(item => item.environmentVerification.status !== 'VERIFIED');
     const screenshotEnabled = environment === 'local-http-uncompressed';
@@ -544,7 +680,13 @@ async function runCapture(options) {
       baseUrl: new URL(baseUrl).origin,
       sourceSHA: liveEvidence ? liveEvidence.sourceSHA : siteSourceSHA,
       siteSourceSHA: liveEvidence ? null : siteSourceSHA,
+      sourceGitSHA: liveEvidence ? liveEvidence.sourceSHA : siteSourceSHA,
+      siteSourceKind: liveEvidence ? 'cloudflare-live-deployment' : siteSourceKind,
+      servedRootRole: liveEvidence ? 'cloudflare-origin' : servedRootRole,
+      publicationArtifact,
+      ...(publicationPayloads ? { publicationPayloads } : {}),
       siteSourceIntegrity,
+      captureToolIntegrity,
       captureToolSHA: identity.captureToolSHA,
       checkoutSHA,
       liveDeployment: liveEvidence ? {
@@ -591,7 +733,12 @@ async function runCapture(options) {
       comparisonStatus: screenshotEnabled ? 'PENDING_BASELINE_APPROVAL' : 'NOT_APPLICABLE_MEASUREMENT_ONLY',
       sourceSHA: manifest.sourceSHA,
       siteSourceSHA: manifest.siteSourceSHA,
+      sourceGitSHA: manifest.sourceGitSHA,
+      siteSourceKind: manifest.siteSourceKind,
+      servedRootRole: manifest.servedRootRole,
+      publicationArtifact: manifest.publicationArtifact,
       siteSourceIntegrity,
+      captureToolIntegrity,
       captureToolSHA: manifest.captureToolSHA,
       checkoutSHA: manifest.checkoutSHA,
       environment,
@@ -609,21 +756,57 @@ async function runCapture(options) {
     captureError = error;
     throw error;
   } finally {
-    if (sourceGuard && !sourceGuard.completed) {
+    let deferredIntegrityError = null;
+    if (!sourceIntegrityChecked || !publicationIntegrityChecked) {
       try {
-        await sourceGuard.verifyAndRestore();
-      } catch (sourceIntegrityError) {
-        const reportErrors = await invalidateSourceMetadata({
-          registry: metadataRegistry,
-          captures,
-          expectedHeadSha: identity.siteSourceSHA,
-          claimedSourceSHAAtStart: identity.siteSourceSHA,
-          reason: sourceIntegrityError,
-          captureError,
-        });
-        throw combineCaptureAndSourceIntegrityErrors(captureError, sourceIntegrityError, reportErrors);
+        await finalizeCaptureInputs();
+      } catch (error) {
+        deferredIntegrityError = error;
+        captureError = error;
       }
     }
+    const finalFailures = [];
+    try {
+      await verifyGitSourceSnapshot(sourceSnapshot);
+    } catch (error) {
+      finalFailures.push({ kind: 'site-source', error });
+    }
+    if (publicationArtifactAtStart) {
+      try {
+        const finalArtifact = await validatePublicationArtifact({
+          artifactRoot: identity.publicArtifactRoot,
+          sourceRoot: identity.siteRoot,
+          sourceGitSHA: identity.siteSourceSHA,
+        });
+        assertSamePublicationArtifact(publicationArtifactAtStart, finalArtifact);
+      } catch (error) {
+        finalFailures.push({ kind: 'publication-artifact', error });
+      }
+    }
+    if (finalFailures.length) {
+      const integrityKind = finalFailures.length === 1 ? finalFailures[0].kind : 'capture-integrity';
+      const integrityError = finalFailures.length === 1
+        ? finalFailures[0].error
+        : new AggregateError(finalFailures.map(item => item.error), finalFailures.map(item => item.error.message).join('; '));
+      const reportErrors = integrityFailureRecorded ? [] : await invalidateSourceMetadata({
+        registry: metadataRegistry,
+        captures,
+        expectedHeadSha: identity.siteSourceSHA,
+        claimedSourceSHAAtStart: identity.siteSourceSHA,
+        reason: integrityError,
+        captureError,
+        integrityKind,
+      });
+      integrityFailureRecorded = true;
+      const cleanupErrors = await removeInvalidCaptureSummaries(runOutput);
+      throw combineCaptureAndIntegrityErrors(
+        captureError,
+        cleanupErrors.length ? new AggregateError([integrityError, ...cleanupErrors], integrityError.message) : integrityError,
+        [...reportErrors, ...cleanupErrors],
+        integrityKind,
+      );
+    }
+    if (deferredIntegrityError) throw deferredIntegrityError;
   }
 }
 
@@ -676,6 +859,19 @@ async function runCompare(options) {
     return;
   }
   const approved = baselineState.manifest;
+  if (siteSourceKind(candidate) !== siteSourceKind(approved)) {
+    throw new Error('BASELINE_SITE_SOURCE_KIND_MISMATCH');
+  }
+  if (!validateSiteSourceKindRecord(candidate, candidate.siteSourceSHA ?? candidate.sourceSHA) ||
+      !candidate.captures?.every(capture => validateSiteSourceKindRecord(capture, candidate.sourceSHA)) ||
+      !validateSiteSourceKindRecord(approved, approved.siteSourceSHA ?? approved.sourceSHA) ||
+      !approved.captures?.every(capture => validateSiteSourceKindRecord(capture, approved.sourceSHA))) {
+    throw new Error('SITE_SOURCE_KIND_PROVENANCE_INVALID');
+  }
+  if (siteSourceKind(candidate) === 'publication' &&
+      (!validatePublicationManifestRecord(candidate) || !validatePublicationManifestRecord(approved))) {
+    throw new Error('PUBLICATION_ARTIFACT_PROVENANCE_INVALID');
+  }
   if (candidate.status !== 'CAPTURE_ONLY' || candidate.counts?.captures !== 30 || candidate.captures?.length !== 30) {
     throw new Error('Candidate must contain a complete 30-capture CAPTURE_ONLY manifest');
   }
@@ -797,7 +993,7 @@ async function main() {
     return runCrossCompare(options);
   }
   if (command === 'help' || command === '--help' || !command) {
-    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed [--site-root GIT_ROOT] [--output-dir NEW_PATH]\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/ [--output-dir NEW_PATH]\n  node visual-qa.mjs cross-compare --reference-manifest PATH --candidate-manifest PATH --output-dir NEW_PATH\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-selection]\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
+    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed [--site-root GIT_ROOT] [--public-artifact BUILT_PUBLIC_ROOT] [--output-dir NEW_PATH]\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/ [--output-dir NEW_PATH]\n  node visual-qa.mjs cross-compare --reference-manifest PATH --candidate-manifest PATH --output-dir NEW_PATH\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-selection]\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
     return;
   }
   throw new Error(`Unknown command: ${command}`);
