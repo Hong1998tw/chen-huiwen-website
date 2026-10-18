@@ -65,6 +65,8 @@ jobs:
       - run: node tests/donation/font-rendering.mjs
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs
+      - name: Verify achievement mobile filters, map layout and no-JavaScript fallback
+        run: node tests/donation/achievement-list-mobile.mjs
       - run: node tests/donation/election-mode.mjs
       - name: Verify lifecycle resilience and negative browser fixtures
         run: node tests/donation/lifecycle.mjs

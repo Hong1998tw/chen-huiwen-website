@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
+import {openCaseFilterDialog,closeCaseFilterDialog} from './achievement-filter-dialog.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=root+'tests/donation/results/';await mkdir(out,{recursive:true});
@@ -94,11 +95,11 @@ try{
   const assertCaseIds=async ids=>assert.deepEqual(sortedIds(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id))),sortedIds(ids));
   const resetOverview=async()=>{
    if(new URL(page.url()).pathname!==new URL('achievements.html',base).pathname)await go('achievements.html');
-   await waitCases();await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);
+   await waitCases();await openCaseFilterDialog(page);await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);await closeCaseFilterDialog(page);
    await page.waitForFunction(()=>new URL(location.href).search==='');
    await showMapAndWaitForLayers();
   };
-  const resetFilters=async()=>{await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);};
+  const resetFilters=async()=>{await openCaseFilterDialog(page);await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);};
 
   await check(`${width}: reviewed Wende funding is readable in list and map without totals across cases`,async()=>{
    await go('achievements.html?q='+encodeURIComponent('文德國小'));await waitCases();
@@ -200,6 +201,7 @@ try{
    await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='dingbao-bridge');
    assert.equal(new URL(page.url()).searchParams.get('case'),'dingbao-bridge');
    assert(await page.locator('.case-card.is-selected').isVisible());
+   await openCaseFilterDialog(page);
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    await page.locator('#category-filter').selectOption('社福與衛環');
    const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await waitCaseIds(expected.map(c=>c.id));
