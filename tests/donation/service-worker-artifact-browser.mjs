@@ -42,6 +42,54 @@ async function waitFor(predicate, message, timeoutMs = 12000) {
   throw new Error('Timed out waiting for ' + message);
 }
 
+async function captureOfflineConnectivity(context, page, label, contextOffline) {
+  const state = {label, contextOffline, pageOnline: null, serviceWorkers: []};
+  try {
+    state.pageOnline = await page.evaluate(() => navigator.onLine);
+  } catch (error) {
+    state.pageError = error?.message || String(error);
+  }
+  try {
+    state.serviceWorkers = await Promise.all(context.serviceWorkers().map(async worker => {
+      try {
+        return {url: worker.url(), ...(await worker.evaluate(() => ({
+          online: navigator.onLine,
+          scope: self.registration.scope,
+        })))};
+      } catch (error) {
+        return {url: worker.url(), error: error?.message || String(error)};
+      }
+    }));
+  } catch (error) {
+    state.serviceWorkersError = error?.message || String(error);
+  }
+  return state;
+}
+
+async function captureServiceWorkerCacheKeys(page, cacheName, keyUrls) {
+  const snapshot = {cacheName, keyUrls: {...keyUrls}, cacheNames: [], entries: {}};
+  if (!cacheName) {
+    snapshot.error = 'derived Service Worker cache name is not available';
+    return snapshot;
+  }
+  try {
+    const result = await page.evaluate(async ({name, urls}) => {
+      const cacheNames = await caches.keys();
+      const cache = cacheNames.includes(name) ? await caches.open(name) : null;
+      const entries = {};
+      for (const [key, url] of Object.entries(urls)) {
+        entries[key] = {url, match: Boolean(cache && await cache.match(url))};
+      }
+      return {cacheNames, entries};
+    }, {name: cacheName, urls: keyUrls});
+    snapshot.cacheNames = result.cacheNames;
+    snapshot.entries = result.entries;
+  } catch (error) {
+    snapshot.error = error?.message || String(error);
+  }
+  return snapshot;
+}
+
 async function listenFixture({workerBytes, failingOffline = false} = {}) {
   const state = {
     workerBytes,
@@ -108,10 +156,71 @@ async function listenFixture({workerBytes, failingOffline = false} = {}) {
 }
 
 async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
+  const experimentalNetworkFlag = 'PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS';
+  const previousExperimentalNetworkFlag = process.env[experimentalNetworkFlag];
+  const state = {context: null, page: null, offline: false, cacheName: null, cacheKeyUrls: {}};
+  const offlineDiagnostics = {
+    controlApi: 'BrowserContext.setOffline',
+    initialContextOffline: false,
+    serviceWorkerNetworkEvents: {
+      flag: experimentalNetworkFlag,
+      enabledForArtifactCheck: true,
+      previousValue: previousExperimentalNetworkFlag ?? null,
+    },
+    httpCache: {
+      contextSetting: 'native default; Network.setCacheDisabled is not called',
+      probeRequestMode: 'fetch uses cache: no-store; separate from Cache Storage',
+    },
+    transitions: [],
+    connectivity: [],
+    probes: {},
+  };
+  // Playwright 1.55.1 gates its Service Worker network manager behind this flag.
+  process.env[experimentalNetworkFlag] = '1';
+  try {
+    return await runArtifactChecksBody(browser, emittedWorker, manifest, deployment, state, offlineDiagnostics);
+  } finally {
+    if (state.context) {
+      if (state.page) {
+        offlineDiagnostics.finallyBeforeRestore = await captureOfflineConnectivity(
+          state.context, state.page, 'finally-before-restore', state.offline);
+        offlineDiagnostics.finallyCacheKeys = await captureServiceWorkerCacheKeys(
+          state.page, state.cacheName, state.cacheKeyUrls);
+      }
+      if (state.offline) {
+        try {
+          await state.context.setOffline(false);
+          state.offline = false;
+          offlineDiagnostics.transitions.push({
+            api: 'BrowserContext.setOffline', offline: false, status: 'restored-in-finally',
+          });
+        } catch (error) {
+          offlineDiagnostics.restoreError = error?.stack || String(error);
+        }
+      }
+      if (state.page) {
+        offlineDiagnostics.finallyAfterRestore = await captureOfflineConnectivity(
+          state.context, state.page, 'finally-after-restore', state.offline);
+      }
+      try {
+        await state.context.close();
+      } catch (error) {
+        offlineDiagnostics.contextCloseError = error?.stack || String(error);
+      }
+    }
+    if (previousExperimentalNetworkFlag === undefined) delete process.env[experimentalNetworkFlag];
+    else process.env[experimentalNetworkFlag] = previousExperimentalNetworkFlag;
+    report.offlineDiagnostics = offlineDiagnostics;
+  }
+}
+
+async function runArtifactChecksBody(browser, emittedWorker, manifest, deployment, state, offlineDiagnostics) {
   const context = await browser.newContext({serviceWorkers: 'allow'});
+  state.context = context;
   context.setDefaultTimeout(12000);
   context.setDefaultNavigationTimeout(15000);
   const page = await context.newPage();
+  state.page = page;
   const serverWorkerBytes = Buffer.from(await readFile(join(ARTIFACT, 'sw.js')));
   const emittedWorkerText = emittedWorker.toString('utf8');
   const expectedWorkerHash = sha256(serverWorkerBytes);
@@ -173,6 +282,7 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
     'the deployment receipt must identify the served publication manifest');
   const cacheName = emittedWorkerText.match(/const CACHE='([^']+)';/)?.[1];
   assert(cacheName, 'emitted worker must define its derived cache name');
+  state.cacheName = cacheName;
   assert.equal(new URL(activeState.activeScript).pathname, '/sw.js');
   assert.equal(activeState.controller, activeState.activeScript, 'active controller and registration must use the emitted worker');
   assert.equal(activeState.controllerIsActive, true, 'the controlling worker must be the active registration worker');
@@ -190,6 +300,17 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
   const queryEntry = shell.find(value => /\.(?:css|js)\?/.test(value));
   assert(queryEntry, 'artifact SHELL must contain a versioned CSS or JavaScript URL');
   const absoluteShellUrl = new URL(queryEntry, new URL('/', BASE_URL)).href;
+  const changedQueryUrl = absoluteShellUrl.replace(/\?.*$/, '?c11-different-query=1');
+  const onlineProbe = new URL('/offline.html', BASE_URL);
+  onlineProbe.searchParams.set('c11-context-offline-probe', 'online');
+  const offlineProbe = new URL('/offline.html', BASE_URL);
+  offlineProbe.searchParams.set('c11-context-offline-probe', 'offline');
+  Object.assign(state.cacheKeyUrls, {
+    exactShell: absoluteShellUrl,
+    changedShellQuery: changedQueryUrl,
+    onlineWorkerProbe: onlineProbe.href,
+    offlineWorkerProbe: offlineProbe.href,
+  });
   const cacheHit = await page.evaluate(async url => {
     const response = await fetch(url, {cache: 'no-store'});
     return {status: response.status, body: await response.text()};
@@ -205,11 +326,40 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
   assert.equal(shellCacheState.exactHit, true, 'the complete public query must be present in Cache Storage');
   assert.equal(shellCacheState.alteredHit, false, 'a changed query must not match the cached key');
 
-  const cdp = await context.newCDPSession(page);
-  await cdp.send('Network.enable');
-  await cdp.send('Network.emulateNetworkConditions', {
-    offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0,
-  });
+  const initialProbeKeys = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.initialProbeCacheKeys = initialProbeKeys;
+  assert.equal(initialProbeKeys.entries.onlineWorkerProbe?.match, false,
+    'the online Service Worker probe URL must start as a Cache Storage miss');
+  const onlineWorkerProbe = await page.evaluate(async url => {
+    try {
+      const response = await fetch(url, {cache: 'no-store'});
+      return {ok: response.ok, status: response.status, bodyPrefix: (await response.text()).slice(0, 80)};
+    } catch (error) {
+      return {ok: false, error: error.name};
+    }
+  }, onlineProbe.href);
+  offlineDiagnostics.probes.onlineWorkerNetwork = {url: onlineProbe.href, ...onlineWorkerProbe};
+  assert.equal(onlineWorkerProbe.ok, true, 'the uncached public offline.html query must reach the network online');
+  assert.equal(onlineWorkerProbe.status, 200, 'the online Service Worker network probe must receive HTTP 200');
+  await waitFor(async () => page.evaluate(async ({name, url}) => {
+    const cache = await caches.open(name);
+    return Boolean(await cache.match(url));
+  }, {name: cacheName, url: onlineProbe.href}), 'the online Service Worker probe cache key');
+  const beforeOfflineKeys = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.beforeOfflineCacheKeys = beforeOfflineKeys;
+  assert.equal(beforeOfflineKeys.entries.offlineWorkerProbe?.match, false,
+    'the offline Service Worker probe URL must start with an empty Cache Storage key');
+
+  const onlineState = await captureOfflineConnectivity(context, page, 'before-context-offline', state.offline);
+  offlineDiagnostics.connectivity.push(onlineState);
+  assert.equal(onlineState.pageOnline, true, 'the browser page must be online before context offline emulation');
+  await context.setOffline(true);
+  state.offline = true;
+  offlineDiagnostics.transitions.push({api: 'BrowserContext.setOffline', offline: true, status: 'accepted'});
+  const offlineState = await captureOfflineConnectivity(context, page, 'after-context-offline', state.offline);
+  offlineDiagnostics.connectivity.push(offlineState);
+  assert.equal(offlineState.pageOnline, false, 'the context page must report offline after setOffline(true)');
+
   const offlineCacheHit = await page.evaluate(async url => {
     try {
       const response = await fetch(url, {cache: 'no-store'});
@@ -221,13 +371,30 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
   assert.equal(offlineCacheHit.ok, true, 'the exact SHELL URL must be a real offline browser cache hit');
   const changedQuery = await page.evaluate(async url => {
     try {
-      const response = await fetch(url.replace(/\?.*$/, '?c11-different-query=1'), {cache: 'no-store'});
+      const response = await fetch(url, {cache: 'no-store'});
       return {ok: response.ok, status: response.status};
     } catch (error) {
       return {ok: false, error: error.name};
     }
-  }, absoluteShellUrl);
+  }, changedQueryUrl);
+  offlineDiagnostics.probes.changedShellQuery = {url: changedQueryUrl, ...changedQuery};
   assert.equal(changedQuery.ok, false, 'a changed query must not reuse the cached response while offline');
+
+  const offlineWorkerProbe = await page.evaluate(async url => {
+    try {
+      const response = await fetch(url, {cache: 'no-store'});
+      return {ok: response.ok, status: response.status};
+    } catch (error) {
+      return {ok: false, error: error.name};
+    }
+  }, offlineProbe.href);
+  offlineDiagnostics.probes.offlineWorkerNetwork = {url: offlineProbe.href, ...offlineWorkerProbe};
+  assert.equal(offlineWorkerProbe.ok, false,
+    'an uncached public Service Worker network request must fail while the context is offline');
+  const offlineProbeKeys = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.offlineProbeCacheKeys = offlineProbeKeys;
+  assert.equal(offlineProbeKeys.entries.offlineWorkerProbe?.match, false,
+    'the offline Service Worker probe URL must not be present in Cache Storage');
 
   await page.goto(new URL('/index.html', BASE_URL).href, {waitUntil: 'domcontentloaded'});
   await page.locator('[data-offline-cache]').waitFor({state: 'attached', timeout: 8000});
@@ -237,13 +404,16 @@ async function runArtifactChecks(browser, emittedWorker, manifest, deployment) {
     {waitUntil: 'domcontentloaded'});
   assert(offlineFallback && offlineFallback.ok(), 'uncached offline navigation must receive the cached fallback');
   assert.match(await page.locator('body').innerText(), /目前離線/);
-  await cdp.send('Network.emulateNetworkConditions', {
-    offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
-  });
-  await context.close();
+  await context.setOffline(false);
+  state.offline = false;
+  offlineDiagnostics.transitions.push({api: 'BrowserContext.setOffline', offline: false, status: 'accepted'});
+  const restoredState = await captureOfflineConnectivity(context, page, 'after-context-online-restore', state.offline);
+  offlineDiagnostics.connectivity.push(restoredState);
+  assert.equal(restoredState.pageOnline, true, 'the context page must report online after setOffline(false)');
   return {
     checks: ['controller and emitted cache identity', 'old cache cleanup', 'unrelated cache preservation',
-      'query-preserving exact cache hit', 'offline query mismatch', 'offline fallback and Taiwan-time banner'],
+      'query-preserving exact cache hit', 'context and Service Worker offline network failure',
+      'offline fallback and Taiwan-time banner'],
     shellEntry: queryEntry,
     activeScript: activeState.activeScript,
     cacheName,
