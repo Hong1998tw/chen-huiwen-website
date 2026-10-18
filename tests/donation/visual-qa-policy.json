@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "viewports": [
     { "width": 390, "height": 844 },
-    { "width": 1440, "height": 960 }
+    { "width": 1440, "height": 900 }
   ],
   "routes": [
     { "id": "home", "path": "index.html", "template": "home" },

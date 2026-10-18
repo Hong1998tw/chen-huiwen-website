@@ -6,9 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import {
   compareMetrics,
+  compareCaptureConditions,
   comparePngBuffers,
+  cloudflareEncodingEvidence,
+  deploymentEvidence,
+  evaluateCaptureQuality,
   readApprovedBaseline,
   sha256,
+  validateDeploymentReceipt,
   verifyCaptureHash,
   verifyCaptureMetadata
 } from './visual-qa-lib.mjs';
@@ -51,6 +56,7 @@ function publicUrl(raw) {
 function safeRequestRecord(record) {
   return {
     url: publicUrl(record.url),
+    originClass: record.originClass ?? 'unknown',
     resourceType: record.resourceType ?? 'Other',
     status: record.status ?? null,
     mimeType: record.mimeType ?? null,
@@ -58,6 +64,29 @@ function safeRequestRecord(record) {
     encodedDataLength: record.encodedDataLength ?? null,
     failed: record.failed ?? null
   };
+}
+
+async function readLiveDeployment(baseUrl) {
+  const url = new URL('deployment.json', baseUrl);
+  url.searchParams.set('visual-qa-receipt', `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: { 'cache-control': 'no-cache' },
+      signal: AbortSignal.timeout(10000)
+    });
+    let receipt = null;
+    try { receipt = await response.json(); } catch {}
+    return {
+      capturedAt: new Date().toISOString(),
+      httpStatus: response.status,
+      receipt: response.status === 200 && validateDeploymentReceipt(receipt) ? receipt : null,
+      valid: response.status === 200 && validateDeploymentReceipt(receipt),
+      error: null
+    };
+  } catch (error) {
+    return { capturedAt: new Date().toISOString(), httpStatus: null, receipt: null, valid: false, error: error?.name ?? 'FETCH_FAILED' };
+  }
 }
 
 async function readPolicy() {
@@ -72,7 +101,7 @@ function captureId(route, viewport) {
   return `${route.id}-${viewport.width}`;
 }
 
-async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion }) {
+async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion, checkoutSHA, deploymentAtStart }) {
   const id = captureId(route, viewport);
   const screenshotEnabled = environment === 'local-http-uncompressed';
   const screenshotPath = screenshotEnabled ? `${id}.png` : null;
@@ -145,13 +174,25 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
   });
 
   const pageErrors = [];
-  page.on('pageerror', error => pageErrors.push(String(error)));
+  const targetOrigin = new URL(baseUrl).origin;
+  page.on('pageerror', error => {
+    const stack = String(error?.stack ?? '');
+    const sourceUrls = [...stack.matchAll(/https?:\/\/[^\s)]+/g)].map(match => {
+      try { return publicUrl(match[0]); } catch { return null; }
+    }).filter(Boolean);
+    const sourceOrigins = [...new Set(sourceUrls.map(source => new URL(source).origin))];
+    pageErrors.push({
+      message: String(error),
+      originClass: sourceOrigins.includes(targetOrigin) ? 'same-origin' : sourceOrigins.length ? 'third-party' : 'unknown',
+      sourceUrls
+    });
+  });
   const captureStartedAt = new Date().toISOString();
   const targetUrl = new URL(route.path, baseUrl).href;
   let navigationError = null;
   let httpStatus = null;
   let fontsReady = false;
-  let imageState = { visibleImageCount: 0, decodedImageCount: 0, failedImageCount: 0 };
+  let imageState = { visibleImageCount: 0, decodedImageCount: 0, failedImageCount: 0, firstPartyFailedImageCount: 0, thirdPartyFailedImageCount: 0, visibleImages: [] };
   let domElementCount = null;
   let performanceData = null;
   let screenshotSha256 = null;
@@ -169,11 +210,25 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
         const rect = image.getBoundingClientRect();
         return rect.bottom > 0 && rect.top < innerHeight && rect.width > 0 && rect.height > 0;
       });
-      const decoded = await Promise.all(visible.map(image => image.decode().then(() => true, () => false)));
+      const results = await Promise.all(visible.map(async image => {
+        let decoded = false;
+        try { await image.decode(); decoded = image.naturalWidth > 0; } catch {}
+        const imageUrl = new URL(image.currentSrc || image.src, location.href);
+        return {
+          url: `${imageUrl.origin}${imageUrl.pathname}`,
+          originClass: imageUrl.origin === location.origin ? 'same-origin' : 'third-party',
+          decoded,
+          naturalWidth: image.naturalWidth,
+          naturalHeight: image.naturalHeight
+        };
+      }));
       return {
         visibleImageCount: visible.length,
-        decodedImageCount: decoded.filter(Boolean).length,
-        failedImageCount: decoded.filter(value => !value).length
+        decodedImageCount: results.filter(item => item.decoded).length,
+        failedImageCount: results.filter(item => !item.decoded).length,
+        firstPartyFailedImageCount: results.filter(item => item.originClass === 'same-origin' && !item.decoded).length,
+        thirdPartyFailedImageCount: results.filter(item => item.originClass === 'third-party' && !item.decoded).length,
+        visibleImages: results
       };
     });
     animationCount = await page.evaluate(() => {
@@ -233,7 +288,6 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     }
   }
 
-  const targetOrigin = new URL(baseUrl).origin;
   const network = [...networkById.values()].filter(item => item.url && /^https?:/.test(item.url));
   const sameOriginNetwork = network.filter(item => new URL(item.url).origin === targetOrigin);
   const thirdPartyNetwork = network.filter(item => new URL(item.url).origin !== targetOrigin);
@@ -243,16 +297,21 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
   const rawThirdPartyTransferSize = sumKnown(performanceData?.thirdPartyResources ?? [], 'transferSize');
   const sameOriginEncodedDataLength = sumKnown(sameOriginNetwork, 'encodedDataLength');
   const thirdPartyEncodedDataLength = sumKnown(thirdPartyNetwork, 'encodedDataLength');
-  const brEncodedDataLength = sumKnown(sameOriginNetwork.filter(item => item.contentEncoding === 'br'), 'encodedDataLength');
   const cdpTransferFallback = rawSameOriginTransferSize === 0 && sameOriginEncodedDataLength > 0;
   const transferBudgetBytes = cdpTransferFallback ? sameOriginEncodedDataLength : rawSameOriginTransferSize;
   const externalHost = new URL(baseUrl).hostname;
   const cfVerified = Boolean(documentResponse?.hasCloudflareRay || documentResponse?.server?.toLowerCase().includes('cloudflare'));
   const documentEncoding = documentResponse?.contentEncoding || 'identity';
-  const environmentVerified = environment === 'cloudflare-production-br'
-    ? cfVerified && documentEncoding === 'br'
-    : documentEncoding === 'identity';
-  const requestRecords = network.map(safeRequestRecord);
+  const encodingEvidence = environment === 'cloudflare-production'
+    ? cloudflareEncodingEvidence(documentEncoding, cfVerified)
+    : { contentEncoding: documentEncoding, environmentLabel: 'local-http-identity', cloudflareVerified: false, encodingValid: documentEncoding === 'identity', verified: documentEncoding === 'identity' };
+  const requestRecords = network.map(item => safeRequestRecord({ ...item, originClass: new URL(item.url).origin === targetOrigin ? 'same-origin' : 'third-party' }));
+  const encodedBytesByContentEncoding = {};
+  for (const item of sameOriginNetwork) {
+    const encoding = item.contentEncoding || 'identity';
+    if (Number.isFinite(item.encodedDataLength)) encodedBytesByContentEncoding[encoding] = (encodedBytesByContentEncoding[encoding] ?? 0) + item.encodedDataLength;
+  }
+  const expectedHttpStatus = route.expectedHttpStatus ?? 200;
   const record = {
     id,
     routeId: route.id,
@@ -261,7 +320,13 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     exceptionCandidates: route.exceptionCandidates ?? [],
     viewport,
     environment,
-    sourceSHA: sourceSha(),
+    environmentLabel: encodingEvidence.environmentLabel,
+    measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
+    sourceSHA: checkoutSHA,
+    checkoutSHA,
+    liveDeployment: environment === 'cloudflare-production'
+      ? { sourceCommit: deploymentAtStart?.receipt?.sourceCommit ?? null, publicArtifactDigest: deploymentAtStart?.receipt?.publicArtifactDigest ?? null }
+      : null,
     targetUrl: publicUrl(targetUrl),
     screenshotPath,
     screenshotEnabled,
@@ -286,16 +351,18 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
       dynamicMasks: policy.capture.dynamicMasks
     },
     httpStatus,
+    expectedHttpStatus,
     pageErrors,
     navigationError,
     screenshotError,
     environmentVerification: {
-      status: environmentVerified ? 'VERIFIED' : 'NOT_VERIFIED',
+      status: encodingEvidence.verified ? 'VERIFIED' : 'NOT_VERIFIED',
       requestedMode: environment,
       originHost: externalHost,
-      cloudflareVerified: cfVerified,
-      documentContentEncoding: documentEncoding,
-      sameOriginBrotliEncodedDataLengthBytes: brEncodedDataLength
+      cloudflareVerified: encodingEvidence.cloudflareVerified,
+      documentContentEncoding: encodingEvidence.contentEncoding,
+      encodingValid: encodingEvidence.encodingValid,
+      deploymentWindowStatus: environment === 'cloudflare-production' ? (deploymentAtStart?.valid ? 'PENDING_FINAL_READ' : 'NOT_VERIFIED') : null
     },
     imageState,
     metrics: {
@@ -304,6 +371,7 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
       sameOriginTransferSizeSource: cdpTransferFallback ? 'CDP.Network.loadingFinished.encodedDataLength fallback; PerformanceResourceTiming returned zero' : 'PerformanceResourceTiming.transferSize including navigation',
       sameOriginPerformanceTransferSizeBytes: rawSameOriginTransferSize,
       sameOriginEncodedDataLengthBytes: sameOriginEncodedDataLength,
+      sameOriginEncodedBytesByContentEncoding: encodedBytesByContentEncoding,
       thirdPartyPerformanceTransferSizeBytes: rawThirdPartyTransferSize,
       thirdPartyEncodedDataLengthBytes: thirdPartyEncodedDataLength,
       sameOriginRequestCount: sameOriginNetwork.length,
@@ -320,6 +388,7 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     },
     network: requestRecords
   };
+  record.captureQuality = evaluateCaptureQuality(record, { expectedHttpStatus, screenshotRequired: screenshotEnabled });
   const metadataBytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
   await writeFile(absoluteMetadataPath, metadataBytes);
   record.metadataSha256 = sha256(metadataBytes);
@@ -331,8 +400,8 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
 async function runCapture(options) {
   const policy = await readPolicy();
   const environment = options.environment;
-  if (!['local-http-uncompressed', 'cloudflare-production-br'].includes(environment)) {
-    throw new Error('Use --environment local-http-uncompressed or cloudflare-production-br');
+  if (!['local-http-uncompressed', 'cloudflare-production'].includes(environment)) {
+    throw new Error('Use --environment local-http-uncompressed or cloudflare-production');
   }
   const outputRoot = resolve(options.output ?? defaultOutput);
   const runOutput = resolve(outputRoot, environment);
@@ -347,6 +416,9 @@ async function runCapture(options) {
     if (!/^https:\/\//.test(baseUrl)) throw new Error('Cloudflare capture requires an HTTPS --base-url');
     if (!baseUrl.endsWith('/')) baseUrl += '/';
   }
+
+  const checkoutSHA = sourceSha();
+  const deploymentAtStart = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
 
   const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
   let browser;
@@ -363,7 +435,9 @@ async function runCapture(options) {
           policy,
           environment,
           runOutput,
-          playwrightVersion: packageJson.devDependencies.playwright
+          playwrightVersion: packageJson.devDependencies.playwright,
+          checkoutSHA,
+          deploymentAtStart
         });
         captures.push(capture);
       }
@@ -373,18 +447,46 @@ async function runCapture(options) {
     if (server) await server.close();
   }
 
+  const deploymentAtEnd = environment === 'cloudflare-production' ? await readLiveDeployment(baseUrl) : null;
+  const liveEvidence = environment === 'cloudflare-production'
+    ? deploymentEvidence(checkoutSHA, deploymentAtStart?.receipt, deploymentAtEnd?.receipt)
+    : null;
+  const deploymentWindow = liveEvidence?.verification ?? null;
+  if (deploymentWindow) {
+    for (const capture of captures) {
+      capture.liveDeployment = liveEvidence.liveDeployment;
+      capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
+      const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
+      capture.environmentVerification.status = responseVerified && deploymentWindow.status === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED';
+      capture.captureQuality = evaluateCaptureQuality(capture, { expectedHttpStatus: capture.expectedHttpStatus, screenshotRequired: false });
+      delete capture.metadataSha256;
+      const metadataBytes = Buffer.from(`${JSON.stringify(capture, null, 2)}\n`);
+      await writeFile(resolve(runOutput, capture.metadataPath), metadataBytes);
+      capture.metadataSha256 = sha256(metadataBytes);
+    }
+  }
   const verificationFailures = captures.filter(item => item.environmentVerification.status !== 'VERIFIED');
   const screenshotEnabled = environment === 'local-http-uncompressed';
-  const failedCaptures = captures.filter(item => (screenshotEnabled && !item.screenshotSha256) || item.navigationError || item.screenshotError || !item.conditions.fontsReady);
+  const failedCaptures = captures.filter(item => item.captureQuality.status !== 'COMPLETE');
+  const deploymentChanged = deploymentWindow?.status === 'MIXED_DEPLOYMENT';
   const manifest = {
-    schemaVersion: 1,
-    status: captures.length === 30 && !failedCaptures.length && !verificationFailures.length
+    schemaVersion: 2,
+    status: deploymentChanged ? 'MIXED_DEPLOYMENT' : captures.length === 30 && !failedCaptures.length && !verificationFailures.length
       ? screenshotEnabled ? 'CAPTURE_ONLY' : 'MEASUREMENT_ONLY'
       : 'CAPTURE_INCOMPLETE',
     baselineApproval: null,
+    approval: null,
+    exceptions: [],
     environment,
     baseUrl: new URL(baseUrl).origin,
-    sourceSHA: sourceSha(),
+    sourceSHA: checkoutSHA,
+    checkoutSHA,
+    liveDeployment: liveEvidence ? {
+      before: deploymentAtStart,
+      after: deploymentAtEnd,
+      verification: deploymentWindow,
+      checkoutSHA: liveEvidence.checkoutSHA
+    } : null,
     capturedAt: new Date().toISOString(),
     toolVersions: {
       visualQaRunner: runnerVersion,
@@ -401,11 +503,16 @@ async function runCapture(options) {
       captureConditions: policy.capture,
       exceptionCandidates: policy.routes.filter(item => item.exceptionCandidates?.length).map(item => ({ routeId: item.id, candidates: item.exceptionCandidates }))
     },
+    comparisonPolicy: policy.comparison,
     counts: {
       captures: captures.length,
       screenshots: captures.filter(item => item.screenshotSha256).length,
       failedCaptures: failedCaptures.length,
-      environmentVerificationFailures: verificationFailures.length
+      environmentVerificationFailures: verificationFailures.length,
+      firstPartyRequestFailures: captures.reduce((sum, item) => sum + item.captureQuality.firstPartyRequestFailureCount, 0),
+      thirdPartyFailures: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyFailureCount, 0),
+      thirdPartyPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.thirdPartyPageErrorCount, 0),
+      unclassifiedPageErrors: captures.reduce((sum, item) => sum + item.captureQuality.unclassifiedPageErrorCount, 0)
     },
     captures
   };
@@ -416,7 +523,9 @@ async function runCapture(options) {
     status: manifest.status,
     comparisonStatus: screenshotEnabled ? 'PENDING_BASELINE_APPROVAL' : 'NOT_APPLICABLE_MEASUREMENT_ONLY',
     sourceSHA: manifest.sourceSHA,
+    checkoutSHA: manifest.checkoutSHA,
     environment,
+    liveDeployment: manifest.liveDeployment?.verification ?? null,
     captureCount: captures.length,
     screenshotCount: manifest.counts.screenshots,
     transferAndDomBudgetEnforcement: 'OBSERVATION_ONLY_UNTIL_BASELINE_APPROVED',
@@ -463,11 +572,35 @@ async function runCompare(options) {
   if (candidate.status !== 'CAPTURE_ONLY' || candidate.counts?.captures !== 30 || candidate.captures?.length !== 30) {
     throw new Error('Candidate must contain a complete 30-capture CAPTURE_ONLY manifest');
   }
+  if (!candidate.checkoutSHA || (candidate.sourceSHA && candidate.sourceSHA !== candidate.checkoutSHA)) {
+    throw new Error('CANDIDATE_CHECKOUT_SHA_INVALID');
+  }
   if (candidate.environment !== approved.environment) throw new Error('BASELINE_ENVIRONMENT_MISMATCH');
   if (candidate.environment !== 'local-http-uncompressed') throw new Error('PIXEL_COMPARISON_REQUIRES_LOCAL_SCREENSHOT_CAPTURE');
   const baselineById = new Map(approved.captures.map(item => [item.id, item]));
   const candidateById = new Map(candidate.captures.map(item => [item.id, item]));
   if (baselineById.size !== 30 || candidateById.size !== 30) throw new Error('BASELINE_OR_CANDIDATE_CAPTURE_IDS_INVALID');
+  const incomparable = [...candidateById].flatMap(([id, current]) => {
+    const previous = baselineById.get(id);
+    if (!previous) throw new Error(`BASELINE_CAPTURE_MISSING:${id}`);
+    const compatibility = compareCaptureConditions(current, previous);
+    return compatibility.comparable ? [] : [{ id, reason: compatibility.reason }];
+  });
+  if (incomparable.length) {
+    const report = {
+      status: 'INCOMPARABLE',
+      comparisonPerformed: false,
+      baseline: { checkoutSHA: approved.checkoutSHA ?? approved.sourceSHA, manifestSha256: baselineState.actualSha256 },
+      candidate: { checkoutSHA: candidate.checkoutSHA, environment: candidate.environment },
+      summary: { captures: 30, incomparable: incomparable.length },
+      captures: incomparable.map(item => ({ ...item, status: 'INCOMPARABLE' }))
+    };
+    await mkdir(dirname(comparisonPath), { recursive: true });
+    await writeFile(comparisonPath, `${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...report, captures: undefined }, null, 2)}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   const diffDir = resolve(dirname(candidateManifestPath), 'diff');
   await mkdir(diffDir, { recursive: true });
@@ -496,13 +629,14 @@ async function runCompare(options) {
   const failed = captures.filter(item => item.status === 'FAIL');
   const report = {
     status: failed.length ? 'FAIL' : stale.length ? 'STALE_BASELINE' : 'PASS',
-    comparisonPerformed: true,
+    comparisonPerformed: captures.length > 0,
     baseline: { sourceSHA: approved.sourceSHA, manifestSha256: baselineState.actualSha256 },
-    candidate: { sourceSHA: candidate.sourceSHA, environment: candidate.environment },
+    candidate: { sourceSHA: candidate.sourceSHA, checkoutSHA: candidate.checkoutSHA, environment: candidate.environment },
     comparisonPolicy: approved.comparisonPolicy,
     summary: { captures: captures.length, failed: failed.length, staleBaseline: stale.length, passed: captures.length - failed.length - stale.length },
     captures
   };
+  await mkdir(dirname(comparisonPath), { recursive: true });
   await writeFile(comparisonPath, `${JSON.stringify(report, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ ...report, captures: undefined }, null, 2)}\n`);
   if (report.status !== 'PASS') process.exitCode = 1;
@@ -513,7 +647,7 @@ async function main() {
   if (command === 'capture') return runCapture(options);
   if (command === 'compare') return runCompare(options);
   if (command === 'help' || command === '--help' || !command) {
-    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed\n  node visual-qa.mjs capture --environment cloudflare-production-br --base-url https://www.huiwen.tw/\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
+    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
     return;
   }
   throw new Error(`Unknown command: ${command}`);

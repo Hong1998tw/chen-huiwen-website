@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import {
   compareMetrics,
+  compareCaptureConditions,
   comparePngBuffers,
+  cloudflareEncodingEvidence,
+  deploymentEvidence,
+  evaluateCaptureQuality,
   readApprovedBaseline,
   sha256,
   validateBaselineExceptions
@@ -26,14 +30,24 @@ function png(width, height, color) {
 }
 
 function approvedManifest(overrides = {}) {
+  const sourceSHA = 'a'.repeat(40);
   const captures = Array.from({ length: 30 }, (_, index) => ({
     id: `capture-${index}`,
-    metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 120 }
+    sourceSHA,
+    checkoutSHA: sourceSHA,
+    screenshotPath: `capture-${index}.png`,
+    metadataPath: `capture-${index}.json`,
+    screenshotSha256: 'b'.repeat(64),
+    metadataSha256: 'c'.repeat(64),
+    environmentLabel: 'local-http-identity',
+    measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
+    metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 120, sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
   }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'APPROVED',
-    sourceSHA: 'a'.repeat(40),
+    sourceSHA,
+    checkoutSHA: sourceSHA,
     approval: { reviewedBy: 'independent-controller', reviewedAt: '2026-10-18T00:00:00+08:00', note: 'Independently inspected baseline.' },
     comparisonPolicy: { pixelThreshold: 0.1, maxDiffRatio: 0.005 },
     exceptions: [],
@@ -45,18 +59,6 @@ function approvedManifest(overrides = {}) {
 test('missing baseline stays PENDING and never reports a comparison pass', async () => {
   const missing = await readApprovedBaseline({ manifestPath: null, expectedSha256: null, expectedSourceSha: null });
   assert.deepEqual(missing, { status: 'PENDING', reason: 'BASELINE_MISSING' });
-  const directory = await mkdtemp(join(tmpdir(), 'a05-missing-baseline-'));
-  try {
-    const absentFile = await readApprovedBaseline({
-      manifestPath: join(directory, 'missing.json'),
-      expectedSha256: '0'.repeat(64),
-      expectedSourceSha: 'a'.repeat(40)
-    });
-    assert.equal(absentFile.status, 'PENDING');
-    assert.equal(absentFile.reason, 'BASELINE_MISSING');
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
 });
 
 test('compare CLI writes PENDING and exits successfully when the baseline has not been approved', async () => {
@@ -80,6 +82,99 @@ test('compare CLI writes PENDING and exits successfully when the baseline has no
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('a configured but missing baseline fails and never falls back to PENDING', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-configured-missing-baseline-'));
+  try {
+    const candidatePath = join(directory, 'candidate.json');
+    const missingPath = join(directory, 'configured-baseline', 'manifest.json');
+    const comparisonPath = join(directory, 'comparison.json');
+    await writeFile(candidatePath, JSON.stringify({ sourceSHA: 'c'.repeat(40) }));
+    const script = fileURLToPath(new URL('./visual-qa.mjs', import.meta.url));
+    const result = spawnSync(process.execPath, [
+      script,
+      'compare',
+      '--candidate-manifest', candidatePath,
+      '--baseline-manifest', missingPath,
+      '--baseline-sha256', '0'.repeat(64),
+      '--baseline-source-sha', 'a'.repeat(40),
+      '--output', comparisonPath
+    ], { encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr);
+    const report = JSON.parse(await readFile(comparisonPath, 'utf8'));
+    assert.equal(report.status, 'REJECTED');
+    assert.equal(report.reason, 'CONFIGURED_BASELINE_MISSING');
+    assert.equal(report.comparisonPerformed, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('live deployment evidence stays separate from checkout SHA and detects a mid-capture change', () => {
+  const checkoutSHA = 'c'.repeat(40);
+  const first = { schemaVersion: 1, provider: 'cloudflare-static-assets', sourceCommit: 'a'.repeat(40), publicArtifactDigest: '1'.repeat(64) };
+  const stable = deploymentEvidence(checkoutSHA, first, { ...first });
+  assert.equal(stable.checkoutSHA, checkoutSHA);
+  assert.equal(stable.liveDeployment.sourceCommitAtStart, first.sourceCommit);
+  assert.equal(stable.verification.status, 'VERIFIED');
+  assert.notEqual(stable.checkoutSHA, stable.liveDeployment.sourceCommitAtStart);
+
+  const changed = deploymentEvidence(checkoutSHA, first, { ...first, sourceCommit: 'b'.repeat(40), publicArtifactDigest: '2'.repeat(64) });
+  assert.equal(changed.verification.status, 'MIXED_DEPLOYMENT');
+  assert.equal(changed.verification.stable, false);
+});
+
+test('identity and gzip Cloudflare negotiation are valid evidence and never mislabeled as Brotli', () => {
+  for (const [encoding, label] of [['identity', 'cloudflare-production-identity'], ['gzip', 'cloudflare-production-gzip'], ['br', 'cloudflare-production-br']]) {
+    const evidence = cloudflareEncodingEvidence(encoding, true);
+    assert.equal(evidence.verified, true);
+    assert.equal(evidence.environmentLabel, label);
+    assert.equal(evidence.contentEncoding, encoding);
+  }
+  const gzip = cloudflareEncodingEvidence('gzip', true);
+  assert.notEqual(gzip.environmentLabel, 'cloudflare-production-br');
+  assert.equal(cloudflareEncodingEvidence('gzip', false).verified, false);
+  assert.equal(cloudflareEncodingEvidence(' GZip ', true).contentEncoding, 'GZip');
+  assert.deepEqual(compareCaptureConditions({
+    environmentLabel: gzip.environmentLabel,
+    measurementScope: 'same-scope',
+    metrics: { sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
+  }, {
+    environmentLabel: 'cloudflare-production-identity',
+    measurementScope: 'same-scope',
+    metrics: { sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
+  }), { comparable: false, reason: 'CAPTURE_ENVIRONMENT_LABEL_MISMATCH' });
+});
+
+test('403, first-party JavaScript errors and missing visible first-party images invalidate capture; third-party auth remains classified', () => {
+  const good = {
+    httpStatus: 200,
+    conditions: { fontsReady: true },
+    pageErrors: [],
+    imageState: { firstPartyFailedImageCount: 0 },
+    network: [{ originClass: 'same-origin', status: 200, failed: null }],
+    screenshotSha256: 'a'.repeat(64)
+  };
+  assert.equal(evaluateCaptureQuality(good).status, 'COMPLETE');
+
+  const forbidden = evaluateCaptureQuality({ ...good, httpStatus: 403 });
+  assert.equal(forbidden.status, 'INCOMPLETE');
+  assert(forbidden.failureReasons.includes('HTTP_STATUS_UNEXPECTED'));
+
+  const jsError = evaluateCaptureQuality({ ...good, pageErrors: ['uncaught first-party error'] });
+  assert(jsError.failureReasons.includes('FIRST_PARTY_PAGE_ERROR'));
+
+  const missingImage = evaluateCaptureQuality({ ...good, imageState: { firstPartyFailedImageCount: 1 } });
+  assert(missingImage.failureReasons.includes('FIRST_PARTY_VISIBLE_IMAGE_FAILED'));
+
+  const externalAuth = evaluateCaptureQuality({ ...good, network: [...good.network, { originClass: 'third-party', status: 403, failed: null }] });
+  assert.equal(externalAuth.status, 'COMPLETE');
+  assert.equal(externalAuth.thirdPartyFailureCount, 1);
+
+  const externalPageError = evaluateCaptureQuality({ ...good, pageErrors: [{ message: 'blocked vendor error', originClass: 'third-party', sourceUrls: [] }] });
+  assert.equal(externalPageError.status, 'COMPLETE');
+  assert.equal(externalPageError.thirdPartyPageErrorCount, 1);
 });
 
 test('tampered manifest bytes and an unapproved manifest are rejected', async () => {
