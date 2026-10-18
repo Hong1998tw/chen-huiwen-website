@@ -30,12 +30,63 @@ SECURITY_HEADERS = (
 PATH_HEADERS = (
     ('/deployment.json', (('Cache-Control', 'no-store'),)),
 )
+IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+GENERATED_FONT_PREFIX = 'assets/fonts/huiwen-site-sans/generated/'
+GENERATED_FONT_NAME = re.compile(r'[a-z0-9][a-z0-9-]*-([a-f0-9]{12})\.woff2\Z')
+CMS_RUNTIME_NAME = re.compile(r'cms-page-editor\.([a-f0-9]{12})\.js\Z')
 
-def render_headers():
-    """Return the `_headers` file text: one catch-all rule plus per-path overrides."""
-    rules = [('/*', SECURITY_HEADERS), *PATH_HEADERS]
-    return ''.join(path + '\n' + ''.join(f'  {name}: {value}\n' for name, value in headers)
+def immutable_asset_records(root, publication):
+    """Return only manifest-listed, locally verified, filename-hashed public assets."""
+    root = Path(root).resolve()
+    files = publication.get('files') if isinstance(publication, dict) else None
+    if not isinstance(files, dict):
+        raise ValueError('Public publication manifest has no files map')
+
+    records = []
+    for relative, declared_hash in sorted(files.items()):
+        if not isinstance(relative, str) or '\\' in relative:
+            continue
+        name = Path(relative).name
+        font_relative = relative.removeprefix(GENERATED_FONT_PREFIX)
+        font_match = (GENERATED_FONT_NAME.fullmatch(name)
+                      if relative.startswith(GENERATED_FONT_PREFIX) and '/' not in font_relative else None)
+        cms_match = CMS_RUNTIME_NAME.fullmatch(name) if '/' not in relative else None
+        match = font_match or cms_match
+        if not match:
+            continue
+        if relative.startswith('/') or '..' in Path(relative).parts:
+            raise ValueError('Unsafe immutable asset path: ' + relative)
+        if not isinstance(declared_hash, str) or not re.fullmatch(r'[a-f0-9]{64}', declared_hash):
+            raise ValueError('Invalid manifest SHA-256 for immutable asset: ' + relative)
+        asset = root / relative
+        if asset.is_symlink() or not asset.is_file() or root not in asset.resolve().parents:
+            raise ValueError('Missing or unsafe immutable asset: ' + relative)
+        actual_hash = hashlib.sha256(asset.read_bytes()).hexdigest()
+        if actual_hash != declared_hash:
+            raise ValueError('Manifest SHA-256 differs from immutable asset bytes: ' + relative)
+        if not actual_hash.startswith(match.group(1)):
+            raise ValueError('Filename hash differs from immutable asset bytes: ' + relative)
+        records.append((relative, actual_hash))
+    if len(records) + 1 + len(PATH_HEADERS) > 100:
+        raise ValueError(f'Cloudflare _headers has {len(records) + 1 + len(PATH_HEADERS)} rules; maximum is 100')
+    return records
+
+def render_headers(root, publication):
+    """Render exact-path cache rules from the current, byte-verified publication."""
+    immutable = immutable_asset_records(root, publication)
+    asset_rules = [('/' + relative, (('Cache-Control', IMMUTABLE_CACHE_CONTROL),))
+                   for relative, _ in immutable]
+    rules = [('/*', SECURITY_HEADERS), *PATH_HEADERS, *asset_rules]
+    if len(rules) > 100:
+        raise ValueError(f'Cloudflare _headers has {len(rules)} rules; maximum is 100')
+    patterns = [path for path, _ in rules]
+    if len(patterns) != len(set(patterns)):
+        raise ValueError('Cloudflare _headers contains duplicate path rules')
+    text = ''.join(path + '\n' + ''.join(f'  {name}: {value}\n' for name, value in headers)
                    for path, headers in rules)
+    if any(len(line) > 2000 for line in text.splitlines()):
+        raise ValueError('Cloudflare _headers contains a line over 2,000 characters')
+    return text
 
 def build(root=ROOT, destination=None, source_commit=None):
     root = Path(root).resolve()
@@ -51,7 +102,7 @@ def build(root=ROOT, destination=None, source_commit=None):
     aliases.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
                    for path in build_public.LEGACY_PAGES)
     (destination / '_redirects').write_text('\n'.join(aliases) + '\n')
-    (destination / '_headers').write_text(render_headers())
+    (destination / '_headers').write_text(render_headers(destination, manifest))
     receipt = {'schemaVersion':1, 'provider':'cloudflare-static-assets',
                'sourceCommit':revision,
                'publicArtifactDigest':hashlib.sha256(publication.read_bytes()).hexdigest(),
