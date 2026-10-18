@@ -156,7 +156,7 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
         offline_row = self.font_contract['routes']['offline.html']
         expected_offline_fonts = ['./' + path for path in offline_row['preloads']]
 
-        self.assertIn('./styles.css?v=bdd336127761', urls)
+        self.assertIn('./styles.css?v=d8417c5e5f02', urls)
         self.assertIn('./styles.css?release=next', urls)
         self.assertIn('./manifest.webmanifest?v=20260912-1', urls)
         self.assertIn('./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-ead400a26308.woff2', urls)
