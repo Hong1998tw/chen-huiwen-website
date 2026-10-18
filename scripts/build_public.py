@@ -414,15 +414,19 @@ def build_page_editor_artifacts(staging, root):
         if loader_count != 1:
             raise ValueError('CMS editor loader is missing from public page: ' + path)
         loader, loader_count = re.subn(
-            r'(<script\b[^>]*data-cms-editor-loader[^>]*>)(.*?)(</script>)',
-            lambda match: match.group(1) + match.group(2).replace(
-                'src="/cms-page-editor.js"', f'src="/{editor_name}"'
-            ) + match.group(3),
+            r'<script\b(?=[^>]*data-cms-editor-loader)[^>]*>',
+            lambda match: re.sub(
+                r'(\bdata-cms-editor-src\s*=\s*)(["\'])/cms-page-editor\.js\2',
+                lambda source: source.group(1) + source.group(2) + f'/{editor_name}' + source.group(2),
+                match.group(0),
+                count=1,
+                flags=re.I,
+            ),
             rendered,
             count=1,
-            flags=re.I | re.S,
+            flags=re.I,
         )
-        if loader_count != 1 or f'src="/{editor_name}"' not in loader:
+        if loader_count != 1 or f'data-cms-editor-src="/{editor_name}"' not in loader:
             raise ValueError('CMS editor runtime URL could not be versioned for page: ' + path)
         target.write_text(loader, encoding='utf-8')
         manifest_path = staging / 'cms-editor-manifests' / manifest_name

@@ -1088,7 +1088,7 @@ function applyCurrentPageEdits() {
   frame.onload = () => {
     frame.contentWindow?.postMessage({ type: "huiwen-cms-init", nonce: pageNonce }, "*");
   };
-  frame.src = `/api/page-preview?path=${encodeURIComponent(path)}&session=${encodeURIComponent(pageNonce)}`;
+  frame.src = `/api/page-preview?path=${encodeURIComponent(path)}&session=${encodeURIComponent(pageNonce)}&cmsEdit=1`;
 }
 async function selectPage(page) {
   if (pageDirty && !confirm("這一頁有尚未儲存的文字，確定切換頁面？")) return;
