@@ -133,9 +133,19 @@ try {
     const page=await context.newPage();
     await page.goto(base);
     assert(await page.locator('#navigation .nav-group summary').first().isVisible());
+    assert.equal(await page.locator('.menu-toggle').isVisible(),false);
+    assert.equal(await page.locator('.topline').evaluate(el=>getComputedStyle(el).display),'none');
+    assert.equal(await page.locator('.topline').evaluate(el=>getComputedStyle(el).position),'static');
+    assert(await page.locator('.header-phone').isVisible());
+    assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
+    assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
+    assert((await page.locator('main').boundingBox()).y<70);
+    await page.goto(base+'service.html');
+    assert.equal(await page.locator('.header-phone').getAttribute('href'),await page.locator('#contact .contact-card .big-phone').getAttribute('href'));
+    await page.goto(base);
     await page.locator('#navigation .nav-group summary').first().click();
     assert(await page.locator('#navigation a').first().isVisible());
-    assert.equal(await page.locator('.site-header').evaluate(el=>getComputedStyle(el).position),'relative');
+    assert.equal(await page.locator('.site-header').evaluate(el=>getComputedStyle(el).position),'sticky');
     await context.close();
   });
 } finally {

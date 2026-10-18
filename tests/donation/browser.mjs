@@ -80,12 +80,20 @@ try {
       await page.keyboard.press('Enter');
     });
 
-    if (width === 1440 || width === 390) await check(`G07 ${width}px: named topline region, single banner, axe region and keyboard`, async () => {
+    if (width === 1440 || width === 390) await check(`G07 ${width}px: topline semantics, single banner, axe region and keyboard`, async () => {
       await page.goto(base + 'political-donation.html');
       const topline = page.locator('section.topline');
       assert.equal(await topline.count(), 1);
       assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
-      assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      if (width === 1440) {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'block');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+        assert.equal(await page.locator('.site-header').evaluate(el => getComputedStyle(el).position), 'sticky');
+        assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      } else {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'none');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+      }
       assert.equal(await page.getByRole('banner').count(), 1);
       await page.screenshot({ path: fileURLToPath(new URL(`political-donation-g07-${width}.png`, output)), fullPage: true });
 
@@ -99,8 +107,102 @@ try {
       assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BODY');
       await page.keyboard.press('Tab');
       assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
+      if (width === 1440) {
+        await page.keyboard.press('Tab');
+        assert(await page.locator('.topline a[href^="tel:"]').evaluate(el => el === document.activeElement));
+      }
+    });
+
+    if (width === 390) await check('G06 mobile header: first-screen position, identity, service phone and keyboard order', async () => {
+      await page.goto(base + 'service.html');
+      const header = page.locator('.site-header');
+      const topline = page.locator('section.topline');
+      const phone = page.locator('.site-header a.header-phone');
+      const brand = page.locator('.site-header a.brand');
+      const toggle = page.locator('.menu-toggle');
+      const canonicalPhone = page.locator('#contact .contact-card a.big-phone');
+      const expectedHref = await canonicalPhone.getAttribute('href');
+      const expectedNumber = await canonicalPhone.locator('.phone-number').innerText();
+      const firstScreen = await page.evaluate(() => ({
+        mainTop: document.querySelector('main').getBoundingClientRect().top,
+        headerHeight: document.querySelector('.site-header').getBoundingClientRect().height,
+        headerPosition: getComputedStyle(document.querySelector('.site-header')).position,
+        toplineDisplay: getComputedStyle(document.querySelector('.topline')).display,
+      }));
+      assert.equal(firstScreen.toplineDisplay, 'none');
+      assert.equal(firstScreen.headerPosition, 'sticky');
+      assert(firstScreen.mainTop < 70, `main starts at ${firstScreen.mainTop}px`);
+      assert.equal(firstScreen.headerHeight, 64);
+      assert.equal(await topline.count(), 1);
+      assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
+      assert.equal(await phone.getAttribute('href'), expectedHref);
+      assert.equal(await phone.getAttribute('aria-label'), `撥打陳慧文服務處電話 ${expectedNumber}`);
+      assert.equal(await phone.locator('svg').count(), 1);
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
+      assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
+      assert(await page.getByRole('banner').count() === 1);
+
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
       await page.keyboard.press('Tab');
-      assert(await page.locator('a[href="tel:+88678212536"]').first().evaluate(el => el === document.activeElement));
+      assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await brand.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await phone.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await toggle.evaluate(el => el === document.activeElement));
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-initial.png', output)), fullPage: false });
+    });
+
+    if (width === 390) await check('G06 mobile header: down 52px, up restore 64px, reduced motion and stable flow', async () => {
+      await page.goto(base + 'service.html');
+      await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'instant' }));
+      await page.waitForFunction(() => document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => document.querySelector('.site-header').getBoundingClientRect().height === 52);
+      const down = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      assert.equal(down.height, 52);
+      assert.equal(down.flowFootprint, 64);
+      assert.equal(down.top, 0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-down.png', output)), fullPage: false });
+
+      await page.evaluate(() => window.scrollTo({ top: 660, behavior: 'instant' }));
+      await page.waitForTimeout(50);
+      await page.evaluate(() => window.scrollTo({ top: 620, behavior: 'instant' }));
+      await page.waitForFunction(() => !document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => document.querySelector('.site-header').getBoundingClientRect().height === 64);
+      const up = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      assert.equal(up.height, 64);
+      assert.equal(up.flowFootprint, 64);
+      assert.equal(up.top, 0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-up.png', output)), fullPage: false });
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const reduced = await page.evaluate(() => ({
+        scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+        transitionDuration: getComputedStyle(document.querySelector('.site-header')).transitionDuration,
+      }));
+      assert.equal(reduced.scrollBehavior, 'auto');
+      assert.equal(reduced.transitionDuration, '0s');
+      const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
+      assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      await page.goto(base + 'political-donation.html');
     });
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
@@ -110,6 +212,8 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
       assert(await page.locator('main').evaluate(el => el.inert));
+      assert(await page.locator('.header-phone').evaluate(el => el.inert));
+      assert(await page.locator('.brand').evaluate(el => el.inert));
       assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
       await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
@@ -121,6 +225,8 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
       assert.equal(await page.locator('main').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.header-phone').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.brand').evaluate(el => el.inert), false);
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
