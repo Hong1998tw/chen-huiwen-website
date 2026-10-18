@@ -1,5 +1,6 @@
 {
   "schema": "wcag22aa-target-size-baseline/v1",
+  "scope": "full-site-candidate-qa",
   "status": "pending-ci",
   "baseHeadSha": "14edfdba29cc7cc1e3650db0611d60761c789648",
   "axePlaywrightVersion": "4.10.2",

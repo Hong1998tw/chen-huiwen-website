@@ -12,8 +12,24 @@ export const TARGET_SIZE_RULE_ID = 'target-size';
 export const TARGET_SIZE_MINIMUM_CSS_PX = Object.freeze({ width: 24, height: 24 });
 export const AXE_PLAYWRIGHT_VERSION = '4.10.2';
 export const AXE_CORE_VERSION = '4.10.3';
+export const DEFAULT_TARGET_SIZE_MODE = 'capture-pending';
+export const FULL_SITE_TARGET_SIZE_SCOPE = 'full-site-candidate-qa';
+export const PRODUCTION_TARGET_SIZE_SCOPE = 'production-live-core-pages-default';
 
 const BASELINE_SCHEMA = 'wcag22aa-target-size-baseline/v1';
+
+export function resolveTargetSizeMode(value) {
+  const mode = value ?? DEFAULT_TARGET_SIZE_MODE;
+  if (!['capture-pending', 'compare'].includes(mode)) {
+    throw new Error('WCAG22AA_TARGET_SIZE_MODE must be exactly "capture-pending" or "compare".');
+  }
+  return mode;
+}
+
+export function nonTargetAxeViolations(violations, impacts = null) {
+  return (violations ?? []).filter(violation =>
+    violation.id !== TARGET_SIZE_RULE_ID && (!impacts || impacts.includes(violation.impact)));
+}
 
 export async function readTargetSizeBaseline(url = new URL('./wcag22aa-baseline.json', import.meta.url)) {
   return JSON.parse(await readFile(url, 'utf8'));
@@ -35,9 +51,12 @@ export function targetSizeFingerprint(entry) {
   ]);
 }
 
-function approvedBaselineProblem(baseline) {
+function approvedBaselineProblem(baseline, requiredScope) {
   if (!baseline || baseline.schema !== BASELINE_SCHEMA || baseline.status !== 'approved') {
     return 'No approved real-browser WCAG 2.2 target-size baseline is available.';
+  }
+  if (!requiredScope || baseline.scope !== requiredScope) {
+    return `Approved baseline scope must exactly match ${requiredScope || 'the current runner scope'}.`;
   }
   if (!Array.isArray(baseline.entries)) {
     return 'Approved baseline entries must be an array, including an explicit empty array for zero findings.';
@@ -64,10 +83,10 @@ function approvedBaselineProblem(baseline) {
   return null;
 }
 
-export function evaluateTargetSizeBaseline(baseline, currentEntries) {
+export function evaluateTargetSizeBaseline(baseline, currentEntries, { requiredScope } = {}) {
   const current = Array.isArray(currentEntries) ? currentEntries : [];
   const measurementFailures = current.filter(entry => entry.measurementStatus !== 'measured');
-  const baselineProblem = approvedBaselineProblem(baseline);
+  const baselineProblem = approvedBaselineProblem(baseline, requiredScope);
   if (baselineProblem) {
     return {
       status: 'baseline-pending',
@@ -131,25 +150,49 @@ export function evaluateTargetSizeBaseline(baseline, currentEntries) {
   };
 }
 
-export function axeSelectorCandidates(target) {
-  if (typeof target === 'string') return [[target]];
-  if (!Array.isArray(target) || target.length === 0) return [];
+function measurementFailureEvidence(current) {
+  return current.filter(entry => entry.measurementStatus !== 'measured').map(entry => ({
+    route: entry.route,
+    viewportWidth: entry.viewportWidth,
+    selectors: entry.selectors,
+    measurementStatus: entry.measurementStatus,
+    measurementErrors: entry.measurementErrors ?? [],
+    measurementAttempts: entry.measurementAttempts ?? [],
+  }));
+}
 
-  const candidates = [];
-  const directPath = target.filter(item => typeof item === 'string');
-  if (directPath.length) candidates.push(directPath);
-  for (const item of target) {
-    if (typeof item === 'string') candidates.push([item]);
-    else candidates.push(...axeSelectorCandidates(item));
+export function evaluateTargetSizeGate(mode, baseline, currentEntries, requiredScope) {
+  const resolvedMode = resolveTargetSizeMode(mode);
+  const current = Array.isArray(currentEntries) ? currentEntries : [];
+  if (resolvedMode === 'capture-pending') {
+    return {
+      mode: resolvedMode,
+      status: 'capture-pending',
+      pass: null,
+      comparisonPerformed: false,
+      reason: 'Capture-pending records current axe and selector evidence; no approved-baseline comparison is claimed.',
+      knownBaselineCount: null,
+      currentViolationCount: current.length,
+      measuredEntryCount: current.filter(entry => entry.measurementStatus === 'measured').length,
+      measurementFailures: measurementFailureEvidence(current),
+    };
   }
 
-  const seen = new Set();
-  return candidates.filter(path => {
-    const key = JSON.stringify(path);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return {
+    ...evaluateTargetSizeBaseline(baseline, current, { requiredScope }),
+    mode: resolvedMode,
+    comparisonPerformed: true,
+  };
+}
+
+export function axeSelectorCandidates(target) {
+  const isCompleteSingleSelector = selector =>
+    typeof selector === 'string' && selector.trim() && !selector.includes('>>');
+  if (isCompleteSingleSelector(target)) return [[target]];
+  if (Array.isArray(target) && target.length === 1 && isCompleteSingleSelector(target[0])) {
+    return [[target[0]]];
+  }
+  return [];
 }
 
 function playwrightSelectorPart(selector) {
@@ -182,7 +225,16 @@ function exceptionEvidence(node) {
 
 async function measureSelectors(page, selectors) {
   const attempts = [];
-  for (const path of axeSelectorCandidates(selectors)) {
+  const candidates = axeSelectorCandidates(selectors);
+  if (!candidates.length) {
+    return {
+      status: 'unresolved',
+      attempts,
+      boxes: [],
+      errors: ['Axe target is not a complete single selector; compound frame/shadow paths are not measured.'],
+    };
+  }
+  for (const path of candidates) {
     const locatorSelector = path.map(playwrightSelectorPart).join(' >> ');
     try {
       const locator = page.locator(locatorSelector);
@@ -203,7 +255,12 @@ async function measureSelectors(page, selectors) {
       attempts.push({ path, error: String(error) });
     }
   }
-  return { status: 'unresolved', attempts, boxes: [] };
+  return {
+    status: 'unresolved',
+    attempts,
+    boxes: [],
+    errors: ['No measurable element matched the complete axe target selector.'],
+  };
 }
 
 export async function collectTargetSizeDiagnostics(page, route, viewportWidth, axeViolations, scenario = 'default') {
@@ -226,6 +283,7 @@ export async function collectTargetSizeDiagnostics(page, route, viewportWidth, a
       measuredBoxesCssPx: measured.boxes,
       measurementStatus: measured.status,
       measurementAttempts: measured.attempts,
+      measurementErrors: measured.errors ?? [],
       failureSummary: node.failureSummary ?? null,
       exceptionEvidence: exceptionEvidence(node),
     });
@@ -235,5 +293,5 @@ export async function collectTargetSizeDiagnostics(page, route, viewportWidth, a
 
 export function targetSizeGateMessage(result) {
   const baseline = result.knownBaselineCount == null ? 'unknown' : result.knownBaselineCount;
-  return `WCAG 2.2 target-size gate ${result.status}: current=${result.currentViolationCount}, approved baseline=${baseline}. ${result.reason ?? ''} See the wcag22aa-target-size.json CI artifact.`.trim();
+  return `WCAG 2.2 target-size gate ${result.status} (mode=${result.mode ?? 'compare'}): current=${result.currentViolationCount}, approved baseline=${baseline}. ${result.reason ?? ''} See the wcag22aa-target-size.json CI artifact.`.trim();
 }

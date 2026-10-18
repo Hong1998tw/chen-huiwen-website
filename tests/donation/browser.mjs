@@ -8,14 +8,17 @@ import {
   AXE_CORE_VERSION,
   AXE_PLAYWRIGHT_VERSION,
   collectTargetSizeDiagnostics,
-  evaluateTargetSizeBaseline,
+  evaluateTargetSizeGate,
+  FULL_SITE_TARGET_SIZE_SCOPE,
+  nonTargetAxeViolations,
   readTargetSizeBaseline,
-  TARGET_SIZE_RULE_ID,
+  resolveTargetSizeMode,
   targetSizeGateMessage,
 } from './wcag22aa.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
+const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MODE);
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
@@ -123,7 +126,7 @@ try {
       await writeFile(new URL(`axe-donation-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
       targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, 'political-donation.html', width, axe.violations, 'donation-details-expanded'));
       // target-size has its own fail-closed baseline gate below; all other axe findings remain strict here.
-      assert.deepEqual(axe.violations.filter(v => v.id !== TARGET_SIZE_RULE_ID).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      assert.deepEqual(nonTargetAxeViolations(axe.violations).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
     });
   }
 
@@ -168,10 +171,10 @@ try {
         if (core.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
           targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, 'core-page-default'));
-          const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
+          const serious = nonTargetAxeViolations(axe.violations, ['serious', 'critical']);
           await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
           // The dedicated baseline check handles target-size; other serious/critical axe findings remain zero-tolerance.
-          assert.deepEqual(serious.filter(v => v.id !== TARGET_SIZE_RULE_ID).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${file}: axe`);
+          assert.deepEqual(serious.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${file}: axe`);
         }
         assert.deepEqual(pageErrors, [], `${file}: page errors`);
         assert.deepEqual(localFailures, [], `${file}: local request failures`);
@@ -496,25 +499,38 @@ try {
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');
-  const targetSizeGate = evaluateTargetSizeBaseline(targetSizeBaseline, targetSizeEntries);
+  const targetSizeGate = evaluateTargetSizeGate(
+    targetSizeMode,
+    targetSizeBaseline,
+    targetSizeEntries,
+    FULL_SITE_TARGET_SIZE_SCOPE,
+  );
   report.wcag22aaTargetSize = {
+    mode: targetSizeMode,
+    scope: FULL_SITE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baselineStatus: targetSizeBaseline.status,
-    baselineKnownViolationCount: targetSizeBaseline.status === 'approved' ? targetSizeBaseline.entries.length : null,
+    baselineScope: targetSizeBaseline.scope ?? null,
+    baselineKnownViolationCount: targetSizeGate.knownBaselineCount,
     baselineBaseHeadSha: targetSizeBaseline.baseHeadSha,
     sourceHeadSha: process.env.GITHUB_SHA ?? null,
     gate: targetSizeGate,
   };
-  if (!targetSizeGate.pass) {
+  if (targetSizeMode === 'capture-pending') {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Pending', value: targetSizeGate });
+  } else if (!targetSizeGate.pass) {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
     report.failures.push('WCAG 2.2 AA target-size baseline');
   } else {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
   }
+  report.status = report.failures.length ? 'Failed' : targetSizeMode === 'capture-pending' ? 'Pending' : 'Passed';
   await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
     schema: 'wcag22aa-target-size-report/v1',
     source: { headSha: process.env.GITHUB_SHA ?? null },
+    mode: targetSizeMode,
+    scope: FULL_SITE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baseline: targetSizeBaseline,
