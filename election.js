@@ -87,10 +87,10 @@
     let refreshQueued=false;
     const queueRefresh=()=>{
       if(refreshQueued)return;refreshQueued=true;clearTimeout(loadFallback);
-      if('requestIdleCallback' in window)window.requestIdleCallback(refresh,{timeout:1000});
-      else setTimeout(refresh,200);
+      if('requestIdleCallback' in window)setTimeout(()=>window.requestIdleCallback(refresh,{timeout:2000}),1500);
+      else setTimeout(refresh,1500);
     };
-    const loadFallback=setTimeout(queueRefresh,2000);
+    const loadFallback=setTimeout(queueRefresh,2500);
     if(document.readyState==='complete')queueRefresh();else window.addEventListener('load',queueRefresh,{once:true});
     window.HuiwenElection=Object.freeze({filter,ready:true});
   }
