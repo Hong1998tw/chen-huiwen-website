@@ -13,8 +13,73 @@ export const TARGET_SIZE_MINIMUM_CSS_PX = Object.freeze({ width: 24, height: 24 
 export const AXE_PLAYWRIGHT_VERSION = '4.10.2';
 export const AXE_CORE_VERSION = '4.10.3';
 export const DEFAULT_TARGET_SIZE_MODE = 'capture-pending';
-export const FULL_SITE_TARGET_SIZE_SCOPE = 'full-site-candidate-qa';
+export const CANDIDATE_TARGET_SIZE_SCOPE = 'candidate-core-pages-15x2';
 export const PRODUCTION_TARGET_SIZE_SCOPE = 'production-live-core-pages-default';
+export const TARGET_SIZE_BASELINE_SCENARIO = 'core-page-default';
+export const TARGET_SIZE_CORE_ROUTES = Object.freeze([
+  'index.html',
+  'about.html',
+  'achievements.html',
+  'vision.html',
+  'news.html',
+  'press.html',
+  'activities.html',
+  'gallery.html',
+  'service.html',
+  'petition.html',
+  'political-donation.html',
+  'election.html',
+  '404.html',
+  'offline.html',
+  'achievement-wende-school-center.html',
+]);
+export const TARGET_SIZE_CORE_VIEWPORTS = Object.freeze([
+  Object.freeze({ width: 390, height: 844 }),
+  Object.freeze({ width: 1440, height: 960 }),
+]);
+
+export function expectedTargetSizeCoverage() {
+  return TARGET_SIZE_CORE_ROUTES.flatMap(route => TARGET_SIZE_CORE_VIEWPORTS.map(viewport => ({
+    route,
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+    scenario: TARGET_SIZE_BASELINE_SCENARIO,
+  })));
+}
+
+function targetSizeCoverageKey(item) {
+  return JSON.stringify([item?.route, item?.viewportWidth, item?.viewportHeight, item?.scenario]);
+}
+
+export function evaluateTargetSizeCoverage(completedCases) {
+  const expected = expectedTargetSizeCoverage();
+  const completed = Array.isArray(completedCases) ? completedCases.map(item => ({
+    route: item?.route,
+    viewportWidth: item?.viewportWidth,
+    viewportHeight: item?.viewportHeight,
+    scenario: item?.scenario,
+  })) : [];
+  const expectedKeys = new Set(expected.map(targetSizeCoverageKey));
+  const completedCounts = new Map();
+  for (const item of completed) {
+    const key = targetSizeCoverageKey(item);
+    completedCounts.set(key, (completedCounts.get(key) ?? 0) + 1);
+  }
+  const completedKeys = new Set(completedCounts.keys());
+  const duplicates = completed.filter(item => completedCounts.get(targetSizeCoverageKey(item)) > 1);
+  const missing = expected.filter(item => !completedKeys.has(targetSizeCoverageKey(item)));
+  const unexpected = completed.filter(item => !expectedKeys.has(targetSizeCoverageKey(item)));
+  const complete = completed.length === expected.length && missing.length === 0 && unexpected.length === 0 && duplicates.length === 0;
+  return {
+    status: complete ? 'complete' : 'incomplete',
+    complete,
+    expected,
+    completed,
+    missing,
+    unexpected,
+    duplicates,
+  };
+}
 
 const BASELINE_SCHEMA = 'wcag22aa-target-size-baseline/v1';
 
@@ -161,9 +226,22 @@ function measurementFailureEvidence(current) {
   }));
 }
 
-export function evaluateTargetSizeGate(mode, baseline, currentEntries, requiredScope) {
+export function evaluateTargetSizeGate(mode, baseline, currentEntries, requiredScope, coverage = null) {
   const resolvedMode = resolveTargetSizeMode(mode);
   const current = Array.isArray(currentEntries) ? currentEntries : [];
+  if (coverage && coverage.complete !== true) {
+    return {
+      mode: resolvedMode,
+      status: 'coverage-incomplete',
+      pass: false,
+      comparisonPerformed: false,
+      reason: 'The expected route, viewport, and scenario matrix was not completed exactly.',
+      knownBaselineCount: null,
+      currentViolationCount: current.length,
+      measuredEntryCount: current.filter(entry => entry.measurementStatus === 'measured').length,
+      measurementFailures: measurementFailureEvidence(current),
+    };
+  }
   if (resolvedMode === 'capture-pending') {
     return {
       mode: resolvedMode,
@@ -263,7 +341,7 @@ async function measureSelectors(page, selectors) {
   };
 }
 
-export async function collectTargetSizeDiagnostics(page, route, viewportWidth, axeViolations, scenario = 'default') {
+export async function collectTargetSizeDiagnostics(page, route, viewportWidth, axeViolations, scenario = 'default', viewportHeight = null) {
   const rule = (axeViolations ?? []).find(violation => violation.id === TARGET_SIZE_RULE_ID);
   if (!rule) return [];
 
@@ -273,6 +351,7 @@ export async function collectTargetSizeDiagnostics(page, route, viewportWidth, a
     entries.push({
       route,
       viewportWidth,
+      ...(Number.isInteger(viewportHeight) ? { viewportHeight } : {}),
       scenario,
       selectors: node.target ?? null,
       selectorCandidates: axeSelectorCandidates(node.target),

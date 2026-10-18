@@ -1,42 +1,80 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   AXE_CORE_VERSION,
   AXE_PLAYWRIGHT_VERSION,
   collectTargetSizeDiagnostics,
+  CANDIDATE_TARGET_SIZE_SCOPE,
   evaluateTargetSizeGate,
-  FULL_SITE_TARGET_SIZE_SCOPE,
+  evaluateTargetSizeCoverage,
   nonTargetAxeViolations,
   readTargetSizeBaseline,
   resolveTargetSizeMode,
+  TARGET_SIZE_BASELINE_SCENARIO,
+  TARGET_SIZE_CORE_ROUTES,
+  TARGET_SIZE_CORE_VIEWPORTS,
   targetSizeGateMessage,
 } from './wcag22aa.mjs';
 import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
 import { assertNoHorizontalOverflow, captureLayoutDiagnostics, findVisibleClickPoint } from './layout-diagnostics.mjs';
 import { openCaseFilterDialog, closeCaseFilterDialog } from './achievement-filter-dialog.mjs';
+import {
+  assertHeaderAnimationContractFixtures,
+  evaluateMenuAnchor,
+  evaluateRequiredCheckGate,
+  MENU_ANCHOR_TOLERANCE_PX,
+} from './header-animation-contracts.mjs';
+
+assertHeaderAnimationContractFixtures();
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
 const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MODE);
+const checkoutHeadSha = (() => {
+  try {
+    const value = execFileSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD^{commit}'], { encoding: 'utf8' }).trim();
+    return /^[a-f0-9]{40}$/i.test(value) ? value.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+})();
+const sourceHeadSha = process.env.GITHUB_SHA ?? checkoutHeadSha;
+const eventHeadSha = process.env.PR_HEAD_SHA && /^[a-f0-9]{40}$/i.test(process.env.PR_HEAD_SHA) ? process.env.PR_HEAD_SHA.toLowerCase() : null;
+const workflowRunId = /^\d+$/.test(process.env.GITHUB_RUN_ID ?? '') ? process.env.GITHUB_RUN_ID : null;
+const artifactName = process.env.A06_ARTIFACT_NAME ?? null;
+const repositorySlug = process.env.GITHUB_REPOSITORY ?? null;
+const serverUrl = process.env.GITHUB_SERVER_URL ?? 'https://github.com';
+const runUrl = workflowRunId && repositorySlug ? `${serverUrl.replace(/\/$/, '')}/${repositorySlug}/actions/runs/${workflowRunId}` : null;
+const runnerScriptBytes = await readFile(new URL('./browser.mjs', import.meta.url));
+const runnerScriptSha256 = createHash('sha256').update(runnerScriptBytes).digest('hex');
+const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
 const report = { scope: 'Full-site candidate QA', checks: [], failures: [], diagnostics: [], interactions: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
 const targetSizeBaseline = await readTargetSizeBaseline();
 const targetSizeEntries = [];
+const targetSizeCompletedCases = [];
 let browser;
 let diagnosticPage;
+let chromiumVersion = null;
 
-async function check(name, fn) {
+async function check(name, fn, { required = false } = {}) {
+  const metadata = required ? { required: true } : {};
   try {
     const value = await fn();
-    report.checks.push({ name, status: 'Passed', ...(value === undefined ? {} : { value }) });
+    if (value?.__checkStatus === 'Pending') {
+      report.checks.push({ name, ...metadata, status: 'Pending', value: value.value });
+      return;
+    }
+    report.checks.push({ name, ...metadata, status: 'Passed', ...(value === undefined ? {} : { value }) });
   } catch (error) {
-    report.checks.push({ name, status: 'Failed', error: String(error) });
+    report.checks.push({ name, ...metadata, status: 'Failed', error: String(error) });
     report.failures.push(name);
     if (diagnosticPage && /horizontal overflow|navigation, layout|G06 mobile header|mobile menu|no JavaScript|CLS/i.test(name) && !String(error).includes('horizontal overflow')) {
       try {
@@ -54,6 +92,219 @@ async function assertWithinHalfPixel(page, label, actual, expected) {
     await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label,error:`${label}: ${actual}px differs from ${expected}px`});
   }
   assert(Math.abs(actual - expected) <= 0.5, `${label}: ${actual}px differs from ${expected}px by more than 0.5px`);
+}
+
+async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, compact }) {
+  const evidence = await page.evaluate(async ({ label, targetScrollY, compact }) => {
+    const header = document.querySelector('.site-header');
+    const navigation = document.querySelector('#navigation');
+    const toggle = document.querySelector('.menu-toggle');
+    const round = value => Math.round(value * 10) / 10;
+    const activeElement = () => {
+      const element = document.activeElement;
+      return element ? {
+        tagName: element.tagName,
+        id: element.id || null,
+        className: typeof element.className === 'string' ? element.className : null,
+        href: element.getAttribute?.('href') ?? null,
+        text: (element.textContent || '').trim().slice(0, 64),
+      } : null;
+    };
+    if (!header || !navigation || !toggle) {
+      return { label, supported: false, unsupportedReason: 'Required header, navigation, or menu toggle selector is missing.' };
+    }
+
+    const media = {
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+    };
+    const initialStyle = getComputedStyle(header);
+    const properties = initialStyle.transitionProperty.split(',').map(value => value.trim());
+    const durations = initialStyle.transitionDuration.split(',').map(value => value.trim());
+    const delays = initialStyle.transitionDelay.split(',').map(value => value.trim());
+    const parseTime = value => {
+      const number = Number.parseFloat(value);
+      if (!Number.isFinite(number)) return 0;
+      return value.endsWith('ms') ? number : number * 1000;
+    };
+    const transitionIndex = properties.findIndex(value => value === 'min-height' || value === 'all');
+    const minHeightTransitionMs = transitionIndex < 0 ? 0 : parseTime(durations[transitionIndex % durations.length] || '0s');
+    const minHeightDelayMs = transitionIndex < 0 ? 0 : parseTime(delays[transitionIndex % delays.length] || '0s');
+    const targetHeight = compact ? 52 : 64;
+    const startedAt = performance.now();
+    const samples = [];
+    const transitionEvents = [];
+    let transitionRunAt = null;
+    let transitionEndAt = null;
+    let transitionCancelAt = null;
+    let pendingFrameId = 0;
+
+    const sample = frame => {
+      const headerRect = header.getBoundingClientRect();
+      const navigationRect = navigation.getBoundingClientRect();
+      return {
+        frame,
+        elapsedMs: round(performance.now() - startedAt),
+        scrollY: round(window.scrollY),
+        headerHeight: round(headerRect.height),
+        headerBottom: round(headerRect.bottom),
+        menuTop: round(navigationRect.top),
+        headerBottomForAnchor: headerRect.bottom,
+        menuTopForAnchor: navigationRect.top,
+        menuLeft: round(navigationRect.left),
+        menuRight: round(navigationRect.right),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        compact: header.classList.contains('is-compact'),
+        ariaExpanded: toggle.getAttribute('aria-expanded'),
+        activeElement: activeElement(),
+        focusInsideMenu: navigation.contains(document.activeElement),
+        menuVisible: getComputedStyle(navigation).display !== 'none',
+      };
+    };
+    const onTransition = event => {
+      if (event.target !== header || event.propertyName !== 'min-height') return;
+      const atMs = round(performance.now() - startedAt);
+      transitionEvents.push({ type: event.type, atMs, propertyName: event.propertyName });
+      if (event.type === 'transitionrun' && transitionRunAt === null) transitionRunAt = atMs;
+      if (event.type === 'transitionend' && transitionEndAt === null) transitionEndAt = atMs;
+      if (event.type === 'transitioncancel' && transitionCancelAt === null) transitionCancelAt = atMs;
+    };
+    header.addEventListener('transitionrun', onTransition);
+    header.addEventListener('transitionstart', onTransition);
+    header.addEventListener('transitionend', onTransition);
+    header.addEventListener('transitioncancel', onTransition);
+
+    const initial = sample('before-trigger');
+    samples.push(initial);
+    window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+    const timeoutMs = Math.min(1500, Math.max(600, minHeightTransitionMs + minHeightDelayMs + 500));
+    const deadline = startedAt + timeoutMs;
+    let timeoutId;
+    const timeoutPromise = new Promise(resolve => { timeoutId = window.setTimeout(() => resolve(false), timeoutMs); });
+    let terminalReachedAt = null;
+    let terminalFramesWithoutRun = 0;
+    let timedOut = false;
+    try {
+      while (performance.now() < deadline) {
+        const hasFrame = await Promise.race([
+          new Promise(resolve => { pendingFrameId = requestAnimationFrame(() => { pendingFrameId = 0; resolve(true); }); }),
+          timeoutPromise,
+        ]);
+        if (!hasFrame) {
+          timedOut = true;
+          break;
+        }
+        const current = sample(samples.length);
+        samples.push(current);
+        const expectedCompact = current.compact === compact;
+        const atEndpoint = Math.abs(current.headerHeight - targetHeight) <= 0.75;
+        if (expectedCompact && atEndpoint && terminalReachedAt === null) terminalReachedAt = current.elapsedMs;
+        if (expectedCompact && atEndpoint && transitionRunAt !== null &&
+            current.elapsedMs - transitionRunAt >= minHeightTransitionMs + minHeightDelayMs) break;
+        if (expectedCompact && atEndpoint && transitionRunAt === null) {
+          terminalFramesWithoutRun++;
+          if (terminalFramesWithoutRun >= 3) break;
+        }
+      }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (pendingFrameId) cancelAnimationFrame(pendingFrameId);
+      header.removeEventListener('transitionrun', onTransition);
+      header.removeEventListener('transitionstart', onTransition);
+      header.removeEventListener('transitionend', onTransition);
+      header.removeEventListener('transitioncancel', onTransition);
+    }
+
+    const final = samples.at(-1);
+    const low = Math.min(initial.headerHeight, targetHeight);
+    const high = Math.max(initial.headerHeight, targetHeight);
+    const intermediateSamples = samples.filter(item => item.headerHeight > low + 0.75 && item.headerHeight < high - 0.75);
+    samples.forEach(item => { item.isIntermediate = intermediateSamples.includes(item); });
+    const overlappingSamples = samples.filter(item => item.menuTop < item.headerBottom - 0.5);
+    const rightOverflowSamples = samples.filter(item => item.menuLeft < -0.5 || item.menuRight > item.viewportWidth + 0.5);
+    const expectedScrollReached = targetScrollY > 8 ? final.scrollY > 8 : final.scrollY <= 8;
+    const terminalReached = final.compact === compact && Math.abs(final.headerHeight - targetHeight) <= 0.75;
+    const transitionEndpoint = transitionEndAt !== null ? 'transitionend' : terminalReached ? 'raf-endpoint-fallback' : 'timeout';
+    const unsupportedReasons = [];
+    if (!media.noPreference || media.reducedMotion) unsupportedReasons.push('The browser does not report prefers-reduced-motion: no-preference.');
+    if (!properties.some(value => value === 'min-height' || value === 'all') || minHeightTransitionMs <= 0) unsupportedReasons.push('Computed CSS has no positive min-height transition duration.');
+    if (!expectedScrollReached) unsupportedReasons.push(`Programmatic scroll did not reach the requested ${targetScrollY}px transition trigger; final scrollY=${final.scrollY}px.`);
+    if (transitionRunAt === null) unsupportedReasons.push('No native min-height transitionrun event was observed.');
+    if (transitionCancelAt !== null) unsupportedReasons.push('The native min-height transition was canceled.');
+    if (!terminalReached) unsupportedReasons.push(`The ${compact ? 'compact' : 'expanded'} terminal height was not observed before the bounded ${timeoutMs}ms wait ended.`);
+    if (intermediateSamples.length === 0) unsupportedReasons.push('No intermediate requestAnimationFrame sample fell between the start and terminal heights.');
+    if (samples.length < 4) unsupportedReasons.push(`Only ${samples.length} requestAnimationFrame samples were captured; at least 4 are required.`);
+    if (overlappingSamples.length) unsupportedReasons.push(`${overlappingSamples.length} sampled frame(s) placed the menu over the header.`);
+    if (rightOverflowSamples.length) unsupportedReasons.push(`${rightOverflowSamples.length} sampled frame(s) placed the menu outside the viewport width.`);
+    if (samples.some(item => item.ariaExpanded !== 'true' || !item.menuVisible || !item.focusInsideMenu)) unsupportedReasons.push('The open menu lost visible/ARIA/focus state during the transition.');
+
+    return {
+      label,
+      supported: unsupportedReasons.length === 0,
+      unsupportedReasons,
+      viewport: { width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio },
+      motion: { requested: 'no-preference', ...media },
+      css: {
+        transitionProperty: properties,
+        transitionDuration: durations,
+        transitionDelay: delays,
+        minHeightTransitionMs: round(minHeightTransitionMs),
+        minHeightDelayMs: round(minHeightDelayMs),
+      },
+      target: { scrollY: targetScrollY, compact, height: targetHeight },
+      terminalWait: { timeoutMs, timedOut, endpoint: transitionEndpoint, terminalReachedAtMs: terminalReachedAt },
+      transition: {
+        runAtMs: transitionRunAt,
+        endAtMs: transitionEndAt,
+        cancelAtMs: transitionCancelAt,
+        actualDurationMs: transitionRunAt !== null && transitionEndAt !== null ? round(transitionEndAt - transitionRunAt) : null,
+        observedDurationMs: transitionRunAt !== null && terminalReachedAt !== null ? round(terminalReachedAt - transitionRunAt) : null,
+        events: transitionEvents,
+      },
+      sampleCount: samples.length,
+      intermediateSampleCount: intermediateSamples.length,
+      overlappingFrameCount: overlappingSamples.length,
+      rightOverflowFrameCount: rightOverflowSamples.length,
+      anchorFormula: 'Math.ceil(header.bottom + 12px)',
+      initial,
+      final,
+      samples,
+    };
+  }, { label, targetScrollY, compact });
+
+  for (const [index, sample] of evidence.samples.entries()) {
+    const anchor = evaluateMenuAnchor(sample.headerBottomForAnchor, sample.menuTopForAnchor);
+    sample.expectedMenuTop = anchor.expectedMenuTop;
+    sample.anchorDelta = anchor.anchorDelta;
+    if (index === 0 || index === evidence.samples.length - 1) sample.anchorWithinTolerance = anchor.withinTolerance;
+    delete sample.headerBottomForAnchor;
+    delete sample.menuTopForAnchor;
+  }
+  evidence.initial = evidence.samples[0];
+  evidence.final = evidence.samples.at(-1);
+  const intermediateSamples = evidence.samples.filter(sample => sample.isIntermediate);
+  const maxAbsoluteAnchorDelta = Math.max(0, ...evidence.samples.map(sample => Math.abs(sample.anchorDelta)));
+  const intermediateMaxAbsoluteAnchorDelta = Math.max(0, ...intermediateSamples.map(sample => Math.abs(sample.anchorDelta)));
+  evidence.anchorAudit = {
+    tolerancePx: MENU_ANCHOR_TOLERANCE_PX,
+    startWithinTolerance: evidence.initial.anchorWithinTolerance,
+    endWithinTolerance: evidence.final.anchorWithinTolerance,
+    maxAbsoluteAnchorDelta,
+    intermediateMaxAbsoluteAnchorDelta,
+  };
+  if (!evidence.anchorAudit.startWithinTolerance) {
+    evidence.unsupportedReasons.push(`The start sample missed the ${evidence.anchorFormula} anchor by ${evidence.initial.anchorDelta}px.`);
+  }
+  if (!evidence.anchorAudit.endWithinTolerance) {
+    evidence.unsupportedReasons.push(`The end sample missed the ${evidence.anchorFormula} anchor by ${evidence.final.anchorDelta}px.`);
+  }
+  evidence.supported = evidence.unsupportedReasons.length === 0;
+
+  report.interactions.push({ name: `live header transition: ${label}`, ...evidence });
+  assert(evidence.supported, `${label} did not demonstrate a valid native header transition: ${JSON.stringify(evidence.unsupportedReasons)}`);
+  assert(evidence.terminalWait.endpoint === 'transitionend' || evidence.terminalWait.endpoint === 'raf-endpoint-fallback', `${label} did not reach an observed animation endpoint`);
+  return evidence;
 }
 
 function largestCls(shifts) {
@@ -74,7 +325,8 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
+  chromiumVersion = browser.version();
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   await context.addInitScript(() => {
     window.layoutShifts = [];
     new PerformanceObserver(list => window.layoutShifts.push(...list.getEntries().filter(x => !x.hadRecentInput))).observe({ type: 'layout-shift', buffered: true });
@@ -238,8 +490,210 @@ try {
       assert.equal(reduced.transitionDuration, '0s');
       const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       await page.goto(base + 'political-donation.html');
     });
+
+    if (width === 390) {
+      const animationPage = await context.newPage();
+      await animationPage.setViewportSize({ width: 390, height: 844 });
+      diagnosticPage = animationPage;
+      try {
+        await check('G06 mobile header animation: live compact and expand frames while menu is open', async () => {
+          await animationPage.emulateMedia({ reducedMotion: 'no-preference' });
+          await animationPage.goto(base + 'service.html');
+          const initial = await animationPage.evaluate(() => ({
+            scrollY: window.scrollY,
+            compact: document.querySelector('.site-header').classList.contains('is-compact'),
+            height: document.querySelector('.site-header').getBoundingClientRect().height,
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+            noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+          }));
+          assert.equal(initial.scrollY, 0, JSON.stringify(initial));
+          assert.equal(initial.compact, false, JSON.stringify(initial));
+          assert(Math.abs(initial.height - 64) <= 0.75, JSON.stringify(initial));
+          assert.equal(initial.reducedMotion, false, JSON.stringify(initial));
+          assert.equal(initial.noPreference, true, JSON.stringify(initial));
+
+          const toggle = animationPage.locator('.menu-toggle');
+          await toggle.focus();
+          await animationPage.keyboard.press('Enter');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open compact 64px to 52px', targetScrollY: 600, compact: true });
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open expand 52px to 64px', targetScrollY: 0, compact: false });
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await animationPage.keyboard.press('Escape');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+          assert(await toggle.evaluate(el => el === document.activeElement));
+        });
+
+        await check('G06 mobile header animation: restored nonzero scroll and programmatic menu before first controller RAF', async () => {
+          await animationPage.addInitScript(() => {
+            const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+            const probe = {
+              controllerRafQueued: false,
+              controllerRafQueuedAt: null,
+              queuedWhileDocumentLoading: false,
+              domContentLoadedAt: null,
+              releasedAt: null,
+              firstSampleStartedAt: null,
+              firstSampleScrollY: null,
+              firstSampleState: null,
+              inputSource: 'programmatic focus() and HTMLElement.click() in DOMContentLoaded listener; not human input',
+              programmaticFocusInvoked: false,
+              programmaticClickInvoked: false,
+              clickIsTrusted: null,
+              unsupportedReason: null,
+            };
+            let heldControllerCallback = null;
+            window.__earlyHeaderAnimationProbe = probe;
+            window.requestAnimationFrame = callback => {
+              const currentScript = document.currentScript;
+              const fromHeaderController = document.readyState === 'loading' && currentScript?.src &&
+                new URL(currentScript.src).pathname.endsWith('/site.js') && !probe.controllerRafQueued;
+              if (fromHeaderController) {
+                probe.controllerRafQueued = true;
+                probe.controllerRafQueuedAt = performance.now();
+                probe.queuedWhileDocumentLoading = true;
+                heldControllerCallback = callback;
+                return nativeRequestAnimationFrame(() => {});
+              }
+              return nativeRequestAnimationFrame(callback);
+            };
+            document.addEventListener('DOMContentLoaded', () => {
+              probe.domContentLoadedAt = performance.now();
+              if (!heldControllerCallback) {
+                probe.unsupportedReason = 'The deferred site.js header controller did not expose a queued first RAF before DOMContentLoaded.';
+                return;
+              }
+              const toggle = document.querySelector('.menu-toggle');
+              const navigation = document.querySelector('#navigation');
+              const header = document.querySelector('.site-header');
+              if (!toggle || !navigation || !header) {
+                probe.unsupportedReason = 'The existing header, menu toggle, or navigation selector was missing at DOMContentLoaded.';
+                return;
+              }
+
+              window.scrollTo({ top: 600, behavior: 'instant' });
+              probe.scrollYBeforeControllerSample = window.scrollY;
+              toggle.addEventListener('click', event => { probe.clickIsTrusted = event.isTrusted; }, { once: true });
+              toggle.focus({ preventScroll: true });
+              probe.programmaticFocusInvoked = document.activeElement === toggle;
+              toggle.click();
+              probe.programmaticClickInvoked = true;
+              probe.ariaExpandedBeforeControllerSample = toggle.getAttribute('aria-expanded');
+              probe.menuOpenBeforeControllerSample = navigation.classList.contains('is-open');
+
+              const controllerCallback = heldControllerCallback;
+              heldControllerCallback = null;
+              probe.releasedAt = performance.now();
+              nativeRequestAnimationFrame(timestamp => {
+                probe.firstSampleStartedAt = performance.now();
+                probe.firstSampleScrollY = window.scrollY;
+                controllerCallback(timestamp);
+                // site.js dispatches its initial layout-change event synchronously for this nonzero-scroll sample.
+                const headerRect = header.getBoundingClientRect();
+                const navigationRect = navigation.getBoundingClientRect();
+                probe.firstSampleState = {
+                  compact: header.classList.contains('is-compact'),
+                  headerHeight: headerRect.height,
+                  headerBottom: headerRect.bottom,
+                  menuTop: navigationRect.top,
+                  headerBottomForAnchor: headerRect.bottom,
+                  menuTopForAnchor: navigationRect.top,
+                  menuLeft: navigationRect.left,
+                  menuRight: navigationRect.right,
+                  viewportWidth: window.innerWidth,
+                  ariaExpanded: toggle.getAttribute('aria-expanded'),
+                  activeElementInsideMenu: navigation.contains(document.activeElement),
+                  activeElement: document.activeElement ? {
+                    tagName: document.activeElement.tagName,
+                    id: document.activeElement.id || null,
+                    className: typeof document.activeElement.className === 'string' ? document.activeElement.className : null,
+                    href: document.activeElement.getAttribute?.('href') ?? null,
+                  } : null,
+                };
+              });
+            }, { once: true });
+          });
+
+          await animationPage.goto(base + 'service.html');
+          await animationPage.waitForFunction(() => {
+            const probe = window.__earlyHeaderAnimationProbe;
+            return Boolean(probe && (probe.unsupportedReason || probe.firstSampleStartedAt !== null));
+          }, null, { timeout: 1500 }).catch(() => {});
+          const probe = await animationPage.evaluate(() => window.__earlyHeaderAnimationProbe);
+          if (!probe?.controllerRafQueued || !probe?.queuedWhileDocumentLoading || !probe?.domContentLoadedAt || !probe?.firstSampleStartedAt) {
+            const pending = {
+              name: 'early restored-scroll header/menu sample',
+              status: 'not-verified',
+              reason: probe?.unsupportedReason || 'The test hook could not verify that the controller first sample ran after DOMContentLoaded.',
+              evidence: probe ?? null,
+              inputSource: probe?.inputSource ?? 'programmatic focus()/click(); not human input',
+              nodeVmEvidence: 'The previously recorded site-header-controller VM covers the early menu case; it is not browser animation evidence.',
+            };
+            report.interactions.push(pending);
+            return { __checkStatus: 'Pending', value: pending };
+          }
+
+          const {
+            headerBottomForAnchor,
+            menuTopForAnchor,
+            ...firstSampleGeometry
+          } = probe.firstSampleState;
+          const firstSampleAnchor = evaluateMenuAnchor(headerBottomForAnchor, menuTopForAnchor);
+          const firstSampleState = {
+            ...firstSampleGeometry,
+            expectedMenuTop: firstSampleAnchor.expectedMenuTop,
+            anchorDelta: firstSampleAnchor.anchorDelta,
+            anchorWithinTolerance: firstSampleAnchor.withinTolerance,
+          };
+
+          const evidence = {
+            controllerRafQueued: probe.controllerRafQueued,
+            queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
+            controllerRafQueuedAtMs: probe.controllerRafQueuedAt,
+            domContentLoadedAtMs: probe.domContentLoadedAt,
+            releasedAtMs: probe.releasedAt,
+            firstSampleStartedAtMs: probe.firstSampleStartedAt,
+            firstSampleObservedAfterDOMContentLoaded: probe.firstSampleStartedAt > probe.domContentLoadedAt,
+            humanInput: false,
+            inputSource: probe.inputSource,
+            programmaticFocusInvoked: probe.programmaticFocusInvoked,
+            programmaticClickInvoked: probe.programmaticClickInvoked,
+            clickIsTrusted: probe.clickIsTrusted,
+            scrollYBeforeControllerSample: probe.scrollYBeforeControllerSample,
+            firstSampleScrollY: probe.firstSampleScrollY,
+            ariaExpandedBeforeControllerSample: probe.ariaExpandedBeforeControllerSample,
+            menuOpenBeforeControllerSample: probe.menuOpenBeforeControllerSample,
+            firstSampleState,
+          };
+          report.interactions.push({ name: 'early restored-scroll header/menu sample', status: 'observed', ...evidence });
+          assert(evidence.firstSampleObservedAfterDOMContentLoaded, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticFocusInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticClickInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.clickIsTrusted, false, JSON.stringify(evidence));
+          assert(evidence.scrollYBeforeControllerSample >= 500, JSON.stringify(evidence));
+          assert(evidence.firstSampleScrollY >= 500, JSON.stringify(evidence));
+          assert.equal(evidence.ariaExpandedBeforeControllerSample, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.menuOpenBeforeControllerSample, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.compact, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.ariaExpanded, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.activeElementInsideMenu, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.anchorWithinTolerance, true, JSON.stringify(evidence));
+          assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
+        }, { required: true });
+      } finally {
+        await animationPage.close();
+        diagnosticPage = page;
+      }
+    }
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
       const toggle = page.locator('.menu-toggle');
@@ -281,7 +735,6 @@ try {
       for (const summary of await page.locator('main summary').all()) await summary.click();
       const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
       await writeFile(new URL(`axe-donation-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
-      targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, 'political-donation.html', width, axe.violations, 'donation-details-expanded'));
       // target-size has its own fail-closed baseline gate below; all other axe findings remain strict here.
       assert.deepEqual(nonTargetAxeViolations(axe.violations).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
     });
@@ -324,10 +777,18 @@ try {
           const text = await page.locator('main').innerText();
           assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','offline.html','achievement-wende-school-center.html'];
-        if (core.includes(file)) {
+        if (TARGET_SIZE_CORE_ROUTES.includes(file)) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
-          targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, 'core-page-default'));
+          const targetSizeViewport = TARGET_SIZE_CORE_VIEWPORTS.find(viewport => viewport.width === width);
+          if (targetSizeViewport) {
+            targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, TARGET_SIZE_BASELINE_SCENARIO, targetSizeViewport.height));
+            targetSizeCompletedCases.push({
+              route: file,
+              viewportWidth: targetSizeViewport.width,
+              viewportHeight: targetSizeViewport.height,
+              scenario: TARGET_SIZE_BASELINE_SCENARIO,
+            });
+          }
           const serious = nonTargetAxeViolations(axe.violations, ['serious', 'critical']);
           await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
           // The dedicated baseline check handles target-size; other serious/critical axe findings remain zero-tolerance.
@@ -714,25 +1175,44 @@ try {
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');
+  const targetSizeCoverage = evaluateTargetSizeCoverage(targetSizeCompletedCases);
+  const unmeasurableViolations = targetSizeEntries.filter(entry => entry.measurementStatus !== 'measured');
+  const targetSizeSummary = {
+    expectedCaseCount: targetSizeCoverage.expected.length,
+    completedCaseCount: targetSizeCoverage.completed.length,
+    axeTargetSizeViolationCount: targetSizeEntries.length,
+    measuredViolationCount: targetSizeEntries.length - unmeasurableViolations.length,
+    unmeasurableViolationCount: unmeasurableViolations.length,
+    measurementErrorCount: targetSizeEntries.reduce((sum, entry) => sum + (entry.measurementErrors?.length ?? 0), 0),
+  };
   const targetSizeGate = evaluateTargetSizeGate(
     targetSizeMode,
     targetSizeBaseline,
     targetSizeEntries,
-    FULL_SITE_TARGET_SIZE_SCOPE,
+    CANDIDATE_TARGET_SIZE_SCOPE,
+    targetSizeCoverage,
   );
+  if (!checkoutHeadSha || sourceHeadSha !== checkoutHeadSha) {
+    report.failures.push('WCAG 2.2 AA target-size source identity');
+  }
   report.wcag22aaTargetSize = {
     mode: targetSizeMode,
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baselineStatus: targetSizeBaseline.status,
     baselineScope: targetSizeBaseline.scope ?? null,
     baselineKnownViolationCount: targetSizeGate.knownBaselineCount,
     baselineBaseHeadSha: targetSizeBaseline.baseHeadSha,
-    sourceHeadSha: process.env.GITHUB_SHA ?? null,
+    sourceHeadSha,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
     gate: targetSizeGate,
   };
-  if (targetSizeMode === 'capture-pending') {
+  if (targetSizeGate.status === 'coverage-incomplete') {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
+    report.failures.push('WCAG 2.2 AA target-size coverage incomplete');
+  } else if (targetSizeMode === 'capture-pending') {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Pending', value: targetSizeGate });
   } else if (!targetSizeGate.pass) {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
@@ -740,19 +1220,46 @@ try {
   } else {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
   }
-  report.status = report.failures.length ? 'Failed' : targetSizeMode === 'capture-pending' ? 'Pending' : 'Passed';
+  const requiredCheckGate = evaluateRequiredCheckGate(report.checks);
+  report.requiredCheckGate = requiredCheckGate;
+  report.status = report.failures.length ? 'Failed' : report.checks.some(item => item.status === 'Pending') ? 'Pending' : 'Passed';
   await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
-    schema: 'wcag22aa-target-size-report/v1',
-    source: { headSha: process.env.GITHUB_SHA ?? null },
+    schema: 'wcag22aa-target-size-report/v2',
+    source: {
+      headSha: sourceHeadSha,
+      checkoutSha: checkoutHeadSha,
+      eventHeadSha,
+      workflowRunId,
+      artifactName,
+      runUrl,
+    },
+    tool: {
+      entrypoint: 'tests/donation/browser.mjs',
+      version: '1.0.0',
+      gitHeadSha: checkoutHeadSha,
+      scriptSha256: runnerScriptSha256,
+    },
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      playwrightVersion: packageJson.devDependencies.playwright,
+      axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+      axeCoreVersion: AXE_CORE_VERSION,
+      chromiumVersion,
+    },
+    run: { browserReportStatus: report.status, browserFailureCount: report.failures.length },
     mode: targetSizeMode,
-    scope: FULL_SITE_TARGET_SIZE_SCOPE,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
     axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
     axeCoreVersion: AXE_CORE_VERSION,
     baseline: targetSizeBaseline,
     gate: targetSizeGate,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
     violations: targetSizeEntries,
   }, null, 2));
   await writeFile(new URL('browser-report.json', output), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
-  if (report.failures.length) process.exitCode = 1;
+  if (report.failures.length || requiredCheckGate.shouldExitNonZero) process.exitCode = 1;
 }

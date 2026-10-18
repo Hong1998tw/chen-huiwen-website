@@ -153,9 +153,14 @@ async function captureDetailedServiceWorkerCacheState(page, cacheName, keyUrls) 
           url: offlineRequest.url,
           requestUrl: offlineUrl,
           cacheKeyUrl: offlineRequest.url,
+          requestMethod: offlineRequest.method,
+          requestMode: offlineRequest.mode,
+          requestDestination: offlineRequest.destination,
           match: true,
           responseUrl: offlineResponse.url,
           status: offlineResponse.status,
+          responseType: offlineResponse.type,
+          responseRedirected: offlineResponse.redirected,
           headers: Object.fromEntries(offlineResponse.headers.entries()),
           bodyBytes: Array.from(new Uint8Array(await offlineResponse.arrayBuffer())),
         };
@@ -319,6 +324,41 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   context.setDefaultNavigationTimeout(15000);
   const page = await context.newPage();
   state.page = page;
+  const workerNetworkEvents = {requests: [], responses: [], failures: []};
+  const describeWorkerRequest = request => {
+    const worker = request.serviceWorker();
+    return worker ? {
+      url: request.url(),
+      workerScriptUrl: worker.url(),
+      method: request.method(),
+      resourceType: request.resourceType(),
+    } : null;
+  };
+  const workerEventsFor = url => ({
+    requests: workerNetworkEvents.requests.filter(event => event.url === url),
+    responses: workerNetworkEvents.responses.filter(event => event.url === url),
+    failures: workerNetworkEvents.failures.filter(event => event.url === url),
+  });
+  context.on('request', request => {
+    const event = describeWorkerRequest(request);
+    if (event) workerNetworkEvents.requests.push(event);
+  });
+  context.on('response', response => {
+    const request = response.request();
+    const event = describeWorkerRequest(request);
+    if (event) workerNetworkEvents.responses.push({
+      ...event,
+      status: response.status(),
+      fromServiceWorker: response.fromServiceWorker(),
+    });
+  });
+  context.on('requestfailed', request => {
+    const event = describeWorkerRequest(request);
+    if (event) workerNetworkEvents.failures.push({
+      ...event,
+      failure: request.failure()?.errorText || null,
+    });
+  });
   const serverWorkerBytes = Buffer.from(await readFile(join(ARTIFACT, 'sw.js')));
   const emittedWorkerText = emittedWorker.toString('utf8');
   const expectedWorkerHash = sha256(serverWorkerBytes);
@@ -565,13 +605,37 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
       return {ok: false, error: error?.stack || String(error)};
     }
   }, offlineProbe.href);
-  offlineDiagnostics.probes.offlineWorkerNetwork = {url: offlineProbe.href, ...offlineWorkerProbe};
-  assert.equal(offlineWorkerProbe.ok, false,
-    'an uncached public Service Worker network request must fail while the context is offline');
+  const offlineWorkerProbeEvents = workerEventsFor(offlineProbe.href);
+  const offlineProbeCacheable = offlineWorkerProbe.ok
+    && !/\b(?:private|no-store)\b/i.test(offlineWorkerProbe.headers?.['cache-control'] || '');
+  if (offlineProbeCacheable) {
+    await waitFor(async () => page.evaluate(async ({name, url}) => {
+      const cache = await caches.open(name);
+      return Boolean(await cache.match(url));
+    }, {name: cacheName, url: offlineProbe.href}), 'the native offline worker probe cache key');
+  }
+  offlineDiagnostics.probes.offlineWorkerNetwork = {
+    url: offlineProbe.href,
+    ...offlineWorkerProbe,
+    workerNetworkEvents: offlineWorkerProbeEvents,
+  };
   const offlineProbeKeys = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
   offlineDiagnostics.offlineProbeCacheKeys = offlineProbeKeys;
-  assert.equal(offlineProbeKeys.entries.offlineWorkerProbe?.match, false,
-    'the offline Service Worker probe URL must not be present in Cache Storage');
+  assert.equal(offlineProbeKeys.entries.offlineWorkerProbe?.match, offlineProbeCacheable,
+    offlineWorkerProbe.ok
+      ? 'a successful public worker fetch while the context reports offline must be cached unless its response forbids storage'
+      : 'a failed same-origin worker fetch while the context reports offline must not create a Cache Storage entry');
+  offlineDiagnostics.contextOfflineEffect = {
+    pageReportedOffline: offlineState.pageOnline === false,
+    workerProbeSucceeded: offlineWorkerProbe.ok,
+    workerProbeFailureEvents: offlineWorkerProbeEvents.failures,
+    workerProbeResponseEvents: offlineWorkerProbeEvents.responses,
+    interpretation: offlineWorkerProbe.ok
+      ? 'BrowserContext.setOffline did not prevent this Service Worker-owned same-origin request.'
+      : offlineWorkerProbeEvents.failures.length
+        ? 'The uncached Service Worker-owned probe failed under BrowserContext.setOffline.'
+        : 'The page fetch failed, but no matching Service Worker-owned transport failure was observed.',
+  };
 
   await page.goto(new URL('/index.html', BASE_URL).href, {waitUntil: 'domcontentloaded'});
   await page.locator('[data-offline-cache]').waitFor({state: 'attached', timeout: 8000});
@@ -579,6 +643,8 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert.match(banner, /儲存時間：.+（台灣時間）/);
 
   const aboutUrl = new URL('/about.html', BASE_URL).href;
+  const nativeAboutProbeUrl = new URL(aboutUrl);
+  nativeAboutProbeUrl.searchParams.set('c11-context-offline-navigation-probe', 'native');
   const unknownUrl = new URL('/c11-never-cached-route.html', BASE_URL).href;
   const offlineUrl = new URL('/offline.html', BASE_URL).href;
   const shellPaths = new Set(shell.map(value => new URL(value, BASE_URL).pathname));
@@ -586,16 +652,139 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   const aboutNotInShell = !shellPaths.has('/about.html');
   Object.assign(state.cacheKeyUrls, {
     manifestAbout: aboutUrl,
+    manifestAboutNativeProbe: nativeAboutProbeUrl.href,
     unknownNavigation: unknownUrl,
     offlineFallback: offlineUrl,
   });
 
+  assert(aboutInManifest, 'the positive offline route must exist in the publication manifest');
+  assert(aboutNotInShell, 'the positive offline route must not be in the install SHELL');
+  const initialAboutCache = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+  const initialAboutDetailed = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.probes.manifestAboutInitialCache = summarizeDetailedCacheState(initialAboutDetailed);
+  const expectedOffline = initialAboutDetailed.offlineKey || {};
+  const expectedOfflineSha256 = expectedOffline.bodyBytes
+    ? sha256(Buffer.from(expectedOffline.bodyBytes)) : null;
+  assert.equal(initialAboutCache.entries.manifestAbout?.match, false,
+    'manifest-backed about.html must be a real Cache Storage miss before its offline probe');
+  assert.equal(initialAboutCache.entries.manifestAboutNativeProbe?.match, false,
+    'the manifest-backed native network probe must start as a real Cache Storage miss');
+
+  let nativeAboutProbeResponse = null;
+  let nativeAboutProbeNavigationError = null;
+  try {
+    nativeAboutProbeResponse = await page.goto(nativeAboutProbeUrl.href, {waitUntil: 'domcontentloaded'});
+  } catch (error) {
+    nativeAboutProbeNavigationError = error?.stack || String(error);
+  }
+  const nativeAboutProbeBody = nativeAboutProbeResponse
+    ? await nativeAboutProbeResponse.body().catch(() => Buffer.alloc(0)) : Buffer.alloc(0);
+  const nativeAboutProbeWorkerEvents = workerEventsFor(nativeAboutProbeUrl.href);
+  const nativeAboutProbeFromServiceWorker = nativeAboutProbeResponse?.fromServiceWorker() ?? false;
+  const nativeAboutProbeSameOrigin = nativeAboutProbeResponse
+    ? new URL(nativeAboutProbeResponse.url()).origin === new URL(nativeAboutProbeUrl.href).origin : false;
+  const nativeAboutProbeIsOfflineFallback = Boolean(nativeAboutProbeFromServiceWorker
+    && nativeAboutProbeSameOrigin
+    && nativeAboutProbeResponse?.status() === expectedOffline.status
+    && nativeAboutProbeBody.equals(Buffer.from(expectedOffline.bodyBytes || [])));
+  offlineDiagnostics.probes.manifestAboutNativeNetwork = {
+    url: nativeAboutProbeUrl.href,
+    navigationError: nativeAboutProbeNavigationError,
+    status: nativeAboutProbeResponse?.status() ?? null,
+    responseUrl: nativeAboutProbeResponse?.url() ?? null,
+    fromServiceWorker: nativeAboutProbeFromServiceWorker,
+    sameOriginAsRequest: nativeAboutProbeResponse ? nativeAboutProbeSameOrigin : null,
+    bodyByteLength: nativeAboutProbeBody.length,
+    bodySha256: sha256(nativeAboutProbeBody),
+    fallbackAssetBodySha256: expectedOfflineSha256,
+    matchesExactCachedOfflineFallback: nativeAboutProbeIsOfflineFallback,
+    workerNetworkEvents: nativeAboutProbeWorkerEvents,
+  };
+
+  const workerNetworkDenials = [];
+  const nativeWorkerFetchWasNotBlocked = offlineWorkerProbe.ok
+    || !offlineWorkerProbeEvents.failures.some(event => event.workerScriptUrl === activeState.activeScript);
+  const needsWorkerRouteDenial = nativeWorkerFetchWasNotBlocked || !nativeAboutProbeIsOfflineFallback;
+  if (needsWorkerRouteDenial) {
+    const baseOrigin = new URL(BASE_URL).origin;
+    await context.route('**/*', async route => {
+      const request = route.request();
+      const worker = request.serviceWorker();
+      const requestUrl = new URL(request.url());
+      if (worker && worker.url() === activeState.activeScript && requestUrl.origin === baseOrigin) {
+        workerNetworkDenials.push({
+          url: request.url(),
+          workerScriptUrl: worker.url(),
+          method: request.method(),
+          resourceType: request.resourceType(),
+          action: 'abort',
+        });
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+    offlineDiagnostics.serviceWorkerNetworkEvents.controlledRoute = {
+      method: 'BrowserContext.route',
+      sameOrigin: baseOrigin,
+      activeWorkerUrl: activeState.activeScript,
+      reason: offlineWorkerProbe.ok
+        ? 'The native setOffline probe completed successfully for an uncached worker request.'
+        : 'The native worker probe did not provide a matching active-worker transport failure, or the manifest-route navigation was not the exact cached fallback.',
+      aborts: workerNetworkDenials,
+    };
+
+    const controlledProbeUrl = new URL('/offline.html', BASE_URL);
+    controlledProbeUrl.searchParams.set('c11-context-offline-probe', 'worker-route-denied');
+    state.cacheKeyUrls.offlineWorkerRouteProbe = controlledProbeUrl.href;
+    const controlledProbeBefore = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+    assert.equal(controlledProbeBefore.entries.offlineWorkerRouteProbe?.match, false,
+      'the controlled worker-route probe must start as a Cache Storage miss');
+    const controlledProbe = await page.evaluate(async url => {
+      try {
+        const response = await fetch(url, {cache: 'no-store'});
+        return {ok: response.ok, status: response.status, url: response.url};
+      } catch (error) {
+        return {ok: false, error: error?.stack || String(error)};
+      }
+    }, controlledProbeUrl.href);
+    const controlledProbeAbort = await waitFor(
+      () => workerNetworkDenials.find(event => event.url === controlledProbeUrl.href),
+      'the emitted Service Worker-owned same-origin probe request to be aborted');
+    const controlledProbeFailure = await waitFor(
+      () => workerEventsFor(controlledProbeUrl.href).failures.find(
+        event => event.workerScriptUrl === activeState.activeScript && event.failure),
+      'the emitted Service Worker-owned probe request failure after route.abort');
+    assert.equal(controlledProbe.ok, false,
+      'a new uncached worker request must fail after the same-origin Service Worker transport route aborts it');
+    assert.equal(controlledProbeAbort.workerScriptUrl, activeState.activeScript,
+      'the aborted request must belong to the exact active emitted Service Worker');
+    assert(controlledProbeFailure.failure, 'the route-aborted worker request must emit requestfailed evidence');
+    const controlledProbeAfter = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+    assert.equal(controlledProbeAfter.entries.offlineWorkerRouteProbe?.match, false,
+      'the route-aborted worker probe must remain absent from Cache Storage');
+    offlineDiagnostics.probes.controlledWorkerNetworkDenial = {
+      url: controlledProbeUrl.href,
+      fetch: controlledProbe,
+      cacheBefore: controlledProbeBefore.entries.offlineWorkerRouteProbe,
+      cacheAfter: controlledProbeAfter.entries.offlineWorkerRouteProbe,
+      routeAbort: controlledProbeAbort,
+      requestFailed: controlledProbeFailure,
+    };
+  } else {
+    offlineDiagnostics.serviceWorkerNetworkEvents.controlledRoute = {
+      method: null,
+      installed: false,
+      reason: 'BrowserContext.setOffline produced a worker-owned transport failure and the manifest navigation returned the exact cached fallback.',
+    };
+  }
+
   const aboutBefore = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
   const aboutBeforeDetailed = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
   offlineDiagnostics.probes.manifestAboutBeforeNavigation = summarizeDetailedCacheState(aboutBeforeDetailed);
-  const expectedOffline = aboutBeforeDetailed.offlineKey || {};
-  const expectedOfflineSha256 = expectedOffline.bodyBytes
-    ? sha256(Buffer.from(expectedOffline.bodyBytes)) : null;
+  offlineDiagnostics.probes.manifestAboutNativeNetwork.cacheAfterProbe = aboutBefore.entries.manifestAboutNativeProbe;
+  assert.equal(aboutBefore.entries.manifestAbout?.match, false,
+    'manifest-backed about.html must remain a real Cache Storage miss before its offline navigation');
 
   let aboutResponse = null;
   let aboutNavigationError = null;
@@ -607,6 +796,33 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   const aboutResponseBody = aboutResponse ? await aboutResponse.body().catch(() => Buffer.alloc(0)) : Buffer.alloc(0);
   const aboutBodyText = await page.locator('body').innerText().catch(() => '');
   const aboutAfter = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  const aboutResponseHeaders = aboutResponse?.headers() ?? {};
+  const aboutResponseAllHeaders = aboutResponse ? await aboutResponse.allHeaders() : {};
+  const aboutResponseHeadersArray = aboutResponse ? await aboutResponse.headersArray() : [];
+  const aboutResponseHeaderNames = ['content-type', 'cache-control', 'x-huiwen-cached-at'];
+  const aboutResponseDiagnosticHeaderNames = new Set([
+    ...aboutResponseHeaderNames,
+    'access-control-allow-credentials',
+    'access-control-allow-origin',
+    'access-control-expose-headers',
+    'content-encoding',
+    'content-length',
+    'transfer-encoding',
+  ]);
+  const aboutResponseHeaderValues = aboutResponse
+    ? Object.fromEntries(await Promise.all(aboutResponseHeaderNames.map(async name =>
+      [name, await aboutResponse.headerValue(name)])))
+    : {};
+  const aboutCachedAtHeaderValueCanonical = aboutResponse
+    ? await aboutResponse.headerValue('X-Huiwen-Cached-At') : null;
+  const normalizedAboutResponseAllHeaders = Object.fromEntries(Object.entries(aboutResponseAllHeaders)
+    .map(([name, value]) => [name.toLowerCase(), value]));
+  const aboutResponseHeaderDiagnostics = Object.fromEntries([...aboutResponseDiagnosticHeaderNames]
+    .map(name => [name, aboutResponseHeaders[name] ?? null]));
+  const normalizedAboutResponseAllHeaderDiagnostics = Object.fromEntries([...aboutResponseDiagnosticHeaderNames]
+    .map(name => [name, normalizedAboutResponseAllHeaders[name] ?? null]));
+  const aboutResponseHeadersArrayDiagnostics = aboutResponseHeadersArray
+    .filter(({name}) => aboutResponseDiagnosticHeaderNames.has(name.toLowerCase()));
   offlineDiagnostics.probes.manifestAboutNavigation = {
     url: aboutUrl,
     manifestContainsRoute: aboutInManifest,
@@ -615,7 +831,23 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     navigationError: aboutNavigationError,
     status: aboutResponse?.status() ?? null,
     responseUrl: aboutResponse?.url() ?? null,
-    headers: aboutResponse?.headers() ?? {},
+    workerNetworkEvents: workerEventsFor(aboutUrl),
+    workerRouteDenials: workerNetworkDenials.filter(event => event.url === aboutUrl),
+    playwrightResponse: aboutResponse ? {
+      api: 'page.goto navigation Response',
+      fromServiceWorker: aboutResponse.fromServiceWorker(),
+      request: {
+        isNavigationRequest: aboutResponse.request().isNavigationRequest(),
+        resourceType: aboutResponse.request().resourceType(),
+      },
+      sameOriginAsRequest: new URL(aboutResponse.url()).origin === new URL(aboutUrl).origin,
+      headers: aboutResponseHeaderDiagnostics,
+      allHeaders: normalizedAboutResponseAllHeaderDiagnostics,
+      headersArray: aboutResponseHeadersArrayDiagnostics,
+      headerValues: aboutResponseHeaderValues,
+      cachedAtHeaderValueCanonical: aboutCachedAtHeaderValueCanonical,
+      accessControlExposeHeaders: normalizedAboutResponseAllHeaders['access-control-expose-headers'] ?? null,
+    } : null,
     bodyByteLength: aboutResponseBody.length,
     bodySha256: sha256(aboutResponseBody),
     bodyPrefix: aboutBodyText.slice(0, 240),
@@ -652,6 +884,8 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     bodyByteLength: unknownResponseBody.length,
     bodySha256: sha256(unknownResponseBody),
     bodyPrefix: unknownBodyText.slice(0, 240),
+    workerNetworkEvents: workerEventsFor(unknownUrl),
+    workerRouteDenials: workerNetworkDenials.filter(event => event.url === unknownUrl),
     controller: unknownBefore.controller || null,
     cacheBeforeNavigation: summarizeDetailedCacheState(unknownBefore),
     cacheAfterNavigation: summarizeDetailedCacheState(unknownAfter),
@@ -676,10 +910,34 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert.equal(expectedOfflineSha256, manifest.files?.['offline.html'],
     'the exact cached offline body must match the publication manifest SHA-256');
   assert(aboutResponse, 'manifest-backed offline navigation must return a Service Worker fallback response');
+  assert.equal(aboutResponse.fromServiceWorker(), true,
+    'manifest-backed offline navigation must be handled by the actual emitted Service Worker');
+  assert.equal(new URL(aboutResponse.url()).origin, new URL(aboutUrl).origin,
+    'manifest-backed offline navigation must remain same-origin');
   assert.equal(aboutResponse.status(), expectedOffline.status,
     'manifest-backed navigation fallback must preserve the cached fallback status');
+  assert.equal(aboutAfter.entries.manifestAbout?.match, false,
+    'the network-failed manifest route must remain absent from Cache Storage');
+  if (needsWorkerRouteDenial) {
+    const aboutRouteAbort = workerNetworkDenials.find(event => event.url === aboutUrl);
+    const aboutWorkerFailure = workerEventsFor(aboutUrl).failures.find(
+      event => event.workerScriptUrl === activeState.activeScript && event.failure);
+    assert(aboutRouteAbort, 'the actual manifest route request must be aborted at the Service Worker-owned network layer');
+    assert.equal(aboutRouteAbort.workerScriptUrl, activeState.activeScript,
+      'the manifest route abort must belong to the exact active emitted Service Worker');
+    assert(aboutWorkerFailure?.failure,
+      'the manifest route abort must emit a Service Worker-owned requestfailed event');
+  }
   for (const header of ['content-type', 'cache-control', 'x-huiwen-cached-at']) {
-    assert.equal(aboutResponse.headers()[header], expectedOffline.headers?.[header],
+    assert.equal(normalizedAboutResponseAllHeaders[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation allHeaders must preserve the cached offline ${header} header`);
+    assert.equal(aboutResponseHeaderValues[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation headerValue must preserve the cached offline ${header} header`);
+  }
+  assert.equal(aboutCachedAtHeaderValueCanonical, expectedOffline.headers?.['x-huiwen-cached-at'],
+    'manifest-backed navigation headerValue must match the cached timestamp with canonical header casing');
+  for (const header of ['content-type', 'cache-control']) {
+    assert.equal(aboutResponseHeaders[header], expectedOffline.headers?.[header],
       `manifest-backed navigation must preserve the cached offline ${header} header`);
   }
   assert.deepEqual(aboutResponseBody, Buffer.from(expectedOffline.bodyBytes || []),
@@ -692,8 +950,24 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert.equal(unknownBefore.entries.unknownNavigation?.match, false,
     'the original synthetic unknown route must also begin as a Cache Storage miss');
   assert(unknownResponse, 'the original synthetic unknown route must produce a response or recorded navigation error');
+  assert.equal(unknownResponse.fromServiceWorker(), true,
+    'unknown navigation fallback must be handled by the actual emitted Service Worker');
+  assert.equal(new URL(unknownResponse.url()).origin, new URL(unknownUrl).origin,
+    'unknown navigation fallback must remain same-origin');
   assert.equal(unknownResponse.status(), unknownExpected.status,
     'unknown navigation must be checked against the cached offline response, not a live 404');
+  assert.equal(unknownAfter.entries.unknownNavigation?.match, false,
+    'the uncached unknown route must remain absent from Cache Storage');
+  if (needsWorkerRouteDenial) {
+    const unknownRouteAbort = workerNetworkDenials.find(event => event.url === unknownUrl);
+    const unknownWorkerFailure = workerEventsFor(unknownUrl).failures.find(
+      event => event.workerScriptUrl === activeState.activeScript && event.failure);
+    assert(unknownRouteAbort, 'the unknown navigation request must be aborted at the Service Worker-owned network layer');
+    assert.equal(unknownRouteAbort.workerScriptUrl, activeState.activeScript,
+      'the unknown navigation abort must belong to the exact active emitted Service Worker');
+    assert(unknownWorkerFailure?.failure,
+      'the unknown navigation abort must emit a Service Worker-owned requestfailed event');
+  }
   assert.deepEqual(unknownResponseBody, Buffer.from(unknownExpected.bodyBytes || []),
     'unknown navigation must return the cached offline response bytes');
   assert.match(unknownBodyText, /目前離線/);

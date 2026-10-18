@@ -77,7 +77,7 @@ try{
    assert.equal(url.searchParams.get('status'),status);
   }
   const heroSources=await page.locator('.hero-portrait picture source').evaluateAll(nodes=>nodes.map(node=>node.type));
-  assert.deepEqual(heroSources,['image/avif','image/webp']);
+  assert.deepEqual(heroSources,['image/webp']);
   assert.equal(await page.locator('main img[fetchpriority=high]').count(),1,'only the actual hero image has high fetch priority');
   assert.equal(await page.locator('[data-home-event] img[fetchpriority=high]').count(),0);
   const eventImage=page.locator('[data-home-event] img');
@@ -88,7 +88,17 @@ try{
 
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   await page.evaluate(()=>scrollTo(0,0));
-  const portraitAlpha=await page.locator('.hero-portrait img').evaluate(img=>{const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;const context=canvas.getContext('2d',{willReadFrequently:true});const corners=[[0,0],[img.naturalWidth-1,0],[0,img.naturalHeight-1],[img.naturalWidth-1,img.naturalHeight-1]];const cornerAlpha=corners.map(([x,y])=>{context.clearRect(0,0,1,1);context.drawImage(img,x,y,1,1,0,0,1,1);return context.getImageData(0,0,1,1).data[3];});return{currentSrc:new URL(img.currentSrc,location.href).pathname,sameOrigin:new URL(img.currentSrc,location.href).origin===location.origin,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,cornerAlpha};});
+  const portraitAlpha=await page.locator('.hero-portrait img').evaluate(img=>{
+   const canvas=document.createElement('canvas');
+   canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
+   const context=canvas.getContext('2d',{willReadFrequently:true});
+   // Draw the whole image so density-corrected naturalWidth is never used as a source crop coordinate.
+   context.drawImage(img,0,0,canvas.width,canvas.height);
+   const corners=[[0,0],[canvas.width-1,0],[0,canvas.height-1],[canvas.width-1,canvas.height-1]];
+   const cornerAlpha=corners.map(([x,y])=>context.getImageData(x,y,1,1).data[3]);
+   const currentSrc=new URL(img.currentSrc,location.href);
+   return{currentSrc:currentSrc.pathname,sameOrigin:currentSrc.origin===location.origin,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,canvasWidth:canvas.width,canvasHeight:canvas.height,cornerAlpha};
+  });
   assert(portraitAlpha.sameOrigin,JSON.stringify(portraitAlpha));
   assert(portraitAlpha.currentSrc.endsWith('.webp'),JSON.stringify(portraitAlpha));
   assert.deepEqual(portraitAlpha.cornerAlpha,[0,0,0,0],JSON.stringify(portraitAlpha));

@@ -33,6 +33,7 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
         self.policy_path = ROOT / 'tests/donation/visual-qa-policy.json'
         policy = json.loads(self.policy_path.read_text(encoding='utf-8'))
         source_sha = 'a' * 40
+        tool_sha = 'b' * 40
         captures = []
         files = {}
         for route in policy['routes']:
@@ -42,8 +43,10 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
                 png_sha = hashlib.sha256(png_bytes).hexdigest()
                 metadata = {
                     'id': capture_id,
-                    'checkoutSHA': source_sha,
                     'sourceSHA': source_sha,
+                    'siteSourceSHA': source_sha,
+                    'captureToolSHA': tool_sha,
+                    'checkoutSHA': tool_sha,
                     'screenshotSha256': png_sha,
                     'environmentLabel': 'local-http-identity',
                     'measurementScope': 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot'
@@ -55,18 +58,22 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
                     'metadataPath': f'{capture_id}.json',
                     'screenshotSha256': png_sha,
                     'metadataSha256': hashlib.sha256(metadata_bytes).hexdigest(),
-                    'checkoutSHA': source_sha,
                     'sourceSHA': source_sha,
+                    'siteSourceSHA': source_sha,
+                    'captureToolSHA': tool_sha,
+                    'checkoutSHA': tool_sha,
                     'environmentLabel': metadata['environmentLabel'],
                     'measurementScope': metadata['measurementScope']
                 })
                 files[f'{capture_id}.png'] = png_bytes
                 files[f'{capture_id}.json'] = metadata_bytes
         manifest = {
-            'schemaVersion': 2,
+            'schemaVersion': 3,
             'status': 'APPROVED',
             'sourceSHA': source_sha,
-            'checkoutSHA': source_sha,
+            'siteSourceSHA': source_sha,
+            'captureToolSHA': tool_sha,
+            'checkoutSHA': tool_sha,
             'approval': {'reviewedBy': 'independent-reviewer', 'reviewedAt': '2026-10-18T00:00:00+08:00', 'note': 'reviewed'},
             'comparisonPolicy': {'pixelThreshold': 0.1, 'maxDiffRatio': 0.005},
             'exceptions': [],
@@ -167,6 +174,18 @@ class VisualQaBaselineArchiveTests(unittest.TestCase):
         files['manifest.json'] += b' '
         with self.assertRaisesRegex(ValueError, 'BASELINE_ARCHIVE_MANIFEST_HASH_MISMATCH'):
             self.verify(self.archive('manifest-tamper.zip', files))
+
+    def test_capture_tool_sha_must_match_the_manifest_without_being_the_site_source_sha(self):
+        files = dict(self.files)
+        manifest = json.loads(files['manifest.json'])
+        self.assertNotEqual(manifest['sourceSHA'], manifest['captureToolSHA'])
+        manifest['captures'][0]['captureToolSHA'] = 'c' * 40
+        manifest['captures'][0]['checkoutSHA'] = 'c' * 40
+        manifest_bytes = (json.dumps(manifest, sort_keys=True) + '\n').encode()
+        files['manifest.json'] = manifest_bytes
+        files['manifest.sha256'] = f"{hashlib.sha256(manifest_bytes).hexdigest()}  manifest.json\n".encode()
+        with self.assertRaisesRegex(ValueError, 'BASELINE_ARCHIVE_CAPTURE_SOURCE_SHA_MISMATCH'):
+            self.verify(self.archive('capture-tool-sha-mismatch.zip', files))
 
     def test_each_png_must_match_the_manifest_hash(self):
         files = dict(self.files)

@@ -97,13 +97,17 @@ def verify_and_extract(archive_path: Path, output_dir: Path, *, policy_path: Pat
         manifest = json.loads(manifest_bytes)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError('BASELINE_ARCHIVE_MANIFEST_INVALID') from error
-    if (not isinstance(manifest, dict) or manifest.get('schemaVersion') != 2 or
+    if (not isinstance(manifest, dict) or manifest.get('schemaVersion') != 3 or
             manifest.get('status') != 'APPROVED' or
             not isinstance(manifest.get('approval'), dict) or
             not all(str(manifest['approval'].get(key, '')).strip() for key in ('reviewedBy', 'reviewedAt', 'note'))):
         raise ValueError('BASELINE_ARCHIVE_NOT_APPROVED')
-    source_sha = manifest.get('checkoutSHA') or manifest.get('sourceSHA')
-    if not isinstance(source_sha, str) or not SHA40.fullmatch(source_sha):
+    source_sha = manifest.get('sourceSHA')
+    tool_sha = manifest.get('captureToolSHA')
+    if (not isinstance(source_sha, str) or not SHA40.fullmatch(source_sha) or
+            manifest.get('siteSourceSHA') != source_sha or
+            not isinstance(tool_sha, str) or not SHA40.fullmatch(tool_sha) or
+            manifest.get('checkoutSHA') != tool_sha):
         raise ValueError('BASELINE_ARCHIVE_SOURCE_SHA_INVALID')
     captures = manifest.get('captures')
     if not isinstance(captures, list) or len(captures) != CAPTURE_COUNT:
@@ -117,8 +121,8 @@ def verify_and_extract(archive_path: Path, output_dir: Path, *, policy_path: Pat
         capture_id = capture.get('id')
         if not isinstance(capture_id, str) or not re.fullmatch(r'[a-z0-9-]+', capture_id) or capture_id in ids:
             raise ValueError('BASELINE_ARCHIVE_CAPTURE_ID_INVALID')
-        capture_source = capture.get('checkoutSHA') or capture.get('sourceSHA')
-        if capture_source != source_sha:
+        if (capture.get('sourceSHA') != source_sha or capture.get('siteSourceSHA') != source_sha or
+                capture.get('captureToolSHA') != tool_sha or capture.get('checkoutSHA') != tool_sha):
             raise ValueError('BASELINE_ARCHIVE_CAPTURE_SOURCE_SHA_MISMATCH')
         ids.add(capture_id)
         png_path, metadata_path = f'{capture_id}.png', f'{capture_id}.json'
@@ -143,8 +147,9 @@ def verify_and_extract(archive_path: Path, output_dir: Path, *, policy_path: Pat
             raise ValueError('BASELINE_ARCHIVE_CAPTURE_METADATA_INVALID') from error
         if not isinstance(metadata, dict):
             raise ValueError('BASELINE_ARCHIVE_CAPTURE_METADATA_INVALID')
-        metadata_source = metadata.get('checkoutSHA') or metadata.get('sourceSHA')
-        if (metadata.get('id') != capture_id or metadata_source != source_sha or
+        if (metadata.get('id') != capture_id or metadata.get('sourceSHA') != source_sha or
+                metadata.get('siteSourceSHA') != source_sha or metadata.get('captureToolSHA') != tool_sha or
+                metadata.get('checkoutSHA') != tool_sha or
                 metadata.get('screenshotSha256') != png_sha or
                 metadata.get('environmentLabel') != capture.get('environmentLabel') or
                 metadata.get('measurementScope') != capture.get('measurementScope')):

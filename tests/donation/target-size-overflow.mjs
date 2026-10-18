@@ -4,6 +4,7 @@ const COMPUTED_PROPERTIES = [
   'display', 'white-space', 'word-break', 'overflow-wrap', 'line-break', 'text-wrap',
   'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch', 'font-variant',
   'font-feature-settings', 'font-kerning', 'letter-spacing', 'word-spacing', 'line-height',
+  'text-spacing-trim', 'text-autospace', 'hanging-punctuation',
   'width', 'max-width', 'min-width', 'inline-size', 'max-inline-size', 'min-inline-size',
   'box-sizing', 'text-indent', 'text-transform', 'direction', 'unicode-bidi', 'writing-mode',
   'hyphens', 'overflow-x', 'text-overflow'
@@ -13,7 +14,12 @@ const PROBE_OVERRIDES = [
   { property: 'overflow-wrap', value: 'anywhere' },
   { property: 'word-break', value: 'break-all' },
   { property: 'line-break', value: 'anywhere' },
-  { property: 'text-wrap', value: 'wrap' }
+  { property: 'text-wrap', value: 'wrap' },
+  { property: 'letter-spacing', value: '0' },
+  { property: 'letter-spacing', value: 'normal' },
+  { property: 'text-spacing-trim', value: 'space-all' },
+  { property: 'font-kerning', value: 'none' },
+  { property: 'line-break', value: 'strict' }
 ];
 
 const MAX_TEXT_NODES = 80;
@@ -165,9 +171,10 @@ function textSnippet(points, codePointOffset, radius = 10) {
     .map(point => point.character).join('').replace(/\s+/g, ' ');
 }
 
-function scanHeadingRanges(heading, headingRect) {
+function scanHeadingRanges(heading, headingRect, selectedCodepointOffsets = null) {
   const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
   const fragments = [];
+  const codepointRanges = [];
   let textNodeCount = 0;
   let codePointCount = 0;
   let truncated = false;
@@ -187,18 +194,34 @@ function scanHeadingRanges(heading, headingRect) {
     const nodeFragments = [];
     for (const point of offsets) {
       codePointCount += 1;
+      const headingCodePointStart = headingCodePointBase + point.codePointOffset;
       const range = document.createRange();
       range.setStart(textNode, point.utf16Start);
       range.setEnd(textNode, point.utf16End);
       const rects = [...range.getClientRects()].filter(rect => rect.width > 0 || rect.height > 0);
-      const classifiedRects = rects.map(rect => ({
+      const classifiedRangeRects = rects.map(rect => ({
         rect: rectSnapshot(rect),
         flags: classifyOverflowRect(rect, {
           viewportWidth: innerWidth,
           headingLeft: headingRect.left,
           headingRight: headingRect.right
         })
-      })).filter(item => Object.values(item.flags).some(Boolean));
+      }));
+      if (selectedCodepointOffsets === null || selectedCodepointOffsets.has(headingCodePointStart)) {
+        codepointRanges.push({
+          nodeIndex,
+          codePointStart: point.codePointOffset,
+          codePointEnd: point.codePointOffset + 1,
+          headingCodePointStart,
+          headingCodePointEnd: headingCodePointStart + 1,
+          utf16Start: point.utf16Start,
+          utf16End: point.utf16End,
+          textFragment: point.character,
+          codePoint: point.codePoint,
+          rects: classifiedRangeRects
+        });
+      }
+      const classifiedRects = classifiedRangeRects.filter(item => Object.values(item.flags).some(Boolean));
       if (!classifiedRects.length) continue;
       nodeFragments.push({
         nodeIndex,
@@ -241,9 +264,82 @@ function scanHeadingRanges(heading, headingRect) {
     codePointCount,
     truncated,
     inspectedCodepointOffsetUnit: 'Unicode code points; utf16Start/End are supplied for DOM Range.',
+    codepointRanges,
     fragments: groups.slice(0, MAX_RANGE_FRAGMENTS),
     fragmentsTruncated: groups.length > MAX_RANGE_FRAGMENTS
   };
+}
+
+function selectBaselineCodepointRangeEvidence(rangeScan) {
+  const overflowingOffsets = new Set();
+  const overflowingLineTops = new Set();
+  for (const fragment of rangeScan.fragments) {
+    for (let offset = fragment.headingCodePointStart; offset < fragment.headingCodePointEnd; offset += 1) {
+      overflowingOffsets.add(offset);
+    }
+    for (const item of fragment.rects) overflowingLineTops.add(item.rect.top);
+  }
+
+  let selectedCodepointRanges = rangeScan.codepointRanges.filter(item =>
+    item.rects.some(({ rect }) => [...overflowingLineTops].some(top => Math.abs(rect.top - top) <= 2))
+  );
+  let selectionBasis = 'all-sampled-codepoints-sharing-a-baseline-overflow-line';
+
+  if (!selectedCodepointRanges.length && rangeScan.codepointRanges.length) {
+    const furthestRight = rangeScan.codepointRanges
+      .flatMap(item => item.rects.map(({ rect }) => ({ item, rect })))
+      .sort((left, right) => right.rect.right - left.rect.right)[0];
+    if (furthestRight) {
+      const lineTop = furthestRight.rect.top;
+      selectedCodepointRanges = rangeScan.codepointRanges.filter(item =>
+        item.rects.some(({ rect }) => Math.abs(rect.top - lineTop) <= 2)
+      );
+      selectionBasis = 'furthest-right-sampled-codepoint-line-because-no-overflow-range-was-classified';
+    }
+  }
+
+  for (const item of rangeScan.codepointRanges) {
+    if (overflowingOffsets.has(item.headingCodePointStart) &&
+        !selectedCodepointRanges.some(selected => selected.headingCodePointStart === item.headingCodePointStart)) {
+      selectedCodepointRanges.push(item);
+    }
+  }
+  selectedCodepointRanges.sort((left, right) => left.headingCodePointStart - right.headingCodePointStart);
+
+  return {
+    selectionBasis,
+    offsetUnit: 'Unicode code points across heading text nodes; UTF-16 offsets are included per DOM Range.',
+    baselineOverflowCodepointOffsets: [...overflowingOffsets].sort((left, right) => left - right),
+    baselineOverflowLineTops: [...overflowingLineTops].sort((left, right) => left - right),
+    truncated: rangeScan.truncated,
+    codepointRanges: selectedCodepointRanges
+  };
+}
+
+function captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets) {
+  const headingRect = heading.getBoundingClientRect();
+  const rangeScan = scanHeadingRanges(heading, headingRect, selectedCodepointOffsets);
+  return {
+    textNodeCount: rangeScan.textNodeCount,
+    codePointCount: rangeScan.codePointCount,
+    truncated: rangeScan.truncated,
+    inspectedCodepointOffsetUnit: rangeScan.inspectedCodepointOffsetUnit,
+    headingSelector,
+    codepointRanges: rangeScan.codepointRanges,
+    overflowFragments: rangeScan.fragments,
+    overflowFragmentsTruncated: rangeScan.fragmentsTruncated
+  };
+}
+
+function cssValueSupport(property, value) {
+  if (typeof globalThis.CSS?.supports !== 'function') {
+    return { supported: null, method: 'CSS.supports-unavailable', error: null };
+  }
+  try {
+    return { supported: globalThis.CSS.supports(property, value), method: 'CSS.supports', error: null };
+  } catch (error) {
+    return { supported: null, method: 'CSS.supports', error: String(error).slice(0, 240) };
+  }
 }
 
 function stylesheetMediaState(mediaText, disabled = false) {
@@ -409,6 +505,8 @@ function runNewsArticleOverflowProbe() {
   const headingSelector = selectorLabel(heading);
   const headingRect = heading.getBoundingClientRect();
   const rangeScan = scanHeadingRanges(heading, headingRect);
+  const baselineRangeEvidence = selectBaselineCodepointRangeEvidence(rangeScan);
+  const { codepointRanges: _baselineCodepointRanges, ...baselineRangeScan } = rangeScan;
   const rangeOverflowCount = rangeScan.fragments.reduce((count, fragment) => count + fragment.codePoints.length, 0);
   const baseline = captureState(heading, headingSelector);
   const eligibility = isActualOverflowingHeading({
@@ -425,9 +523,17 @@ function runNewsArticleOverflowProbe() {
     eligibility: { ...eligibility, viewportWidth: baseline.viewport.width, rootFontSize: baseline.rootFontSize },
     baseline: {
       ...baseline,
-      rangeScan: eligibility.eligible ? rangeScan : { inspected: false, reason: 'Only report text fragments for an actually overflowing news h1.' }
+      rangeScan: eligibility.eligible ? baselineRangeScan : { inspected: false, reason: 'Only report text fragments for an actually overflowing news h1.' },
+      rangeEvidence: eligibility.eligible ? baselineRangeEvidence : { inspected: false, reason: 'Only inspect codepoint ranges for an actually overflowing news h1.' }
     },
     overrideProbes: [],
+    evidenceContext: {
+      sources: [
+        'https://www.w3.org/International/articles/styling/inline-space',
+        'https://www.w3.org/TR/css-text-3/'
+      ],
+      interpretationLimit: 'W3C typography and line-breaking behavior only frame controlled hypotheses; they do not establish the cause of this observed overflow.'
+    },
     exploratoryOnly: true,
     changesOriginalOverflowCriterion: false,
     claimsFix: false
@@ -444,42 +550,100 @@ function runNewsArticleOverflowProbe() {
   base.sourceCandidates = collectAuthorRuleCandidates(elements);
   const originalStyleAttribute = captureInlineStyleAttribute(heading);
   const originalState = captureState(heading, headingSelector);
+  const baselineCodepointOffsets = baselineRangeEvidence.codepointRanges.map(item => item.headingCodePointStart);
+  const selectedCodepointOffsets = new Set(baselineCodepointOffsets);
   const perProbeRestoration = [];
 
   try {
     for (const candidate of PROBE_OVERRIDES) {
+      const support = cssValueSupport(candidate.property, candidate.value);
       const result = {
         ...candidate,
         priority: 'important',
-        supported: typeof globalThis.CSS?.supports === 'function'
-          ? globalThis.CSS.supports(candidate.property, candidate.value) : null,
+        supported: support.supported,
+        supportCheck: support.method,
+        supportCheckError: support.error,
+        supportGate: candidate.property === 'text-spacing-trim'
+          ? 'require-CSS.supports-true'
+          : 'skip-when-CSS.supports-is-false',
+        attempted: false,
+        applied: false,
+        skipReason: null,
+        baselineCodepointOffsets,
         before: null,
         after: null,
+        beforeRangeEvidence: null,
+        beforeBaselineRangeMatches: null,
+        afterRangeEvidence: null,
+        afterCapturePhase: null,
         delta: null,
         inlineValueAfterSet: null,
         inlinePriorityAfterSet: null,
         computedValueAfter: null,
+        restoration: null,
         error: null
       };
       try {
         restoreInlineStyleAttribute(heading, originalStyleAttribute);
         result.before = captureState(heading, headingSelector);
-        heading.style.setProperty(candidate.property, candidate.value, 'important');
-        result.inlineValueAfterSet = heading.style.getPropertyValue(candidate.property);
-        result.inlinePriorityAfterSet = heading.style.getPropertyPriority(candidate.property);
+        result.beforeRangeEvidence = captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets);
+        result.beforeBaselineRangeMatches = JSON.stringify(result.beforeRangeEvidence.codepointRanges) ===
+          JSON.stringify(baselineRangeEvidence.codepointRanges);
+        if (support.supported === false ||
+            (candidate.property === 'text-spacing-trim' && support.supported !== true)) {
+          result.skipReason = support.supported === false
+            ? 'unsupported-by-CSS.supports'
+            : 'CSS.supports-did-not-confirm-support';
+        } else {
+          result.attempted = true;
+          heading.style.setProperty(candidate.property, candidate.value, 'important');
+          result.inlineValueAfterSet = heading.style.getPropertyValue(candidate.property);
+          result.inlinePriorityAfterSet = heading.style.getPropertyPriority(candidate.property);
+          result.applied = result.inlineValueAfterSet !== '' && result.inlinePriorityAfterSet === 'important';
+        }
         result.after = captureState(heading, headingSelector);
+        result.afterRangeEvidence = captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets);
+        result.afterCapturePhase = 'probe';
         result.computedValueAfter = getComputedStyle(heading).getPropertyValue(candidate.property);
         result.delta = deltaState(result.before, result.after);
       } catch (error) {
         result.error = String(error).slice(0, 400);
       } finally {
-        restoreInlineStyleAttribute(heading, originalStyleAttribute);
-        const restored = captureState(heading, headingSelector);
-        perProbeRestoration.push({
+        let restorationError = null;
+        let restored = null;
+        let restoredRangeEvidence = null;
+        try {
+          restoreInlineStyleAttribute(heading, originalStyleAttribute);
+          restored = captureState(heading, headingSelector);
+          restoredRangeEvidence = captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets);
+        } catch (error) {
+          restorationError = String(error).slice(0, 400);
+        } finally {
+          try {
+            restoreInlineStyleAttribute(heading, originalStyleAttribute);
+          } catch (error) {
+            restorationError = restorationError || String(error).slice(0, 400);
+          }
+        }
+        const restoration = {
           property: candidate.property,
           styleAttributeRestoredExactly: inlineStyleAttributeMatches(heading, originalStyleAttribute),
-          geometryAndComputedRestoredExactly: JSON.stringify(restored) === JSON.stringify(originalState)
-        });
+          geometryAndComputedRestoredExactly: restored !== null && JSON.stringify(restored) === JSON.stringify(originalState),
+          baselineRangeRestoredExactly: restoredRangeEvidence !== null &&
+            JSON.stringify(restoredRangeEvidence.codepointRanges) === JSON.stringify(baselineRangeEvidence.codepointRanges),
+          restoredRangeEvidence,
+          restorationError
+        };
+        result.restoration = restoration;
+        if (result.after === null) {
+          result.after = restored;
+          result.afterRangeEvidence = restoredRangeEvidence;
+          result.afterCapturePhase = 'finally-after-restoration-fallback';
+        }
+        if (result.computedValueAfter === null && restored) {
+          result.computedValueAfter = restored.heading.computed[0]?.values[candidate.property] ?? null;
+        }
+        perProbeRestoration.push(restoration);
       }
       base.overrideProbes.push(result);
     }
@@ -488,16 +652,20 @@ function runNewsArticleOverflowProbe() {
   }
 
   const finalState = captureState(heading, headingSelector);
+  const finalRangeEvidence = captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets);
   base.restoration = {
     required: true,
     originalStyleAttributePresent: originalStyleAttribute !== null,
     originalStyleAttributeLength: originalStyleAttribute?.length ?? 0,
     styleAttributeRestoredExactly: inlineStyleAttributeMatches(heading, originalStyleAttribute),
     geometryAndComputedRestoredExactly: JSON.stringify(finalState) === JSON.stringify(originalState),
+    baselineRangeRestoredExactly: JSON.stringify(finalRangeEvidence.codepointRanges) ===
+      JSON.stringify(baselineRangeEvidence.codepointRanges),
     allPerProbeRestorationsExact: perProbeRestoration.length === PROBE_OVERRIDES.length &&
-      perProbeRestoration.every(item => item.styleAttributeRestoredExactly && item.geometryAndComputedRestoredExactly),
+      perProbeRestoration.every(item => item.styleAttributeRestoredExactly && item.geometryAndComputedRestoredExactly && item.baselineRangeRestoredExactly),
     perProbe: perProbeRestoration,
-    finalState
+    finalState,
+    finalRangeEvidence
   };
   return base;
 }
