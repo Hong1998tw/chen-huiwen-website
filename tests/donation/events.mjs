@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertNoHorizontalOverflow} from './layout-diagnostics.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=fileURLToPath(new URL('./results/events/',import.meta.url));
@@ -21,7 +22,8 @@ assert(opening && opening.end===null);
 const detail=event=>'event-'+event.id+'.html';
 const stamp=date=>date.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
 const assertLayout=async page=>{
- assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ const pageName=new URL(page.url()).pathname.split('/').filter(Boolean).at(-1)||'home';
+ await assertNoHorizontalOverflow(page,{directory:out+'/diagnostics/',label:`${pageName}-${page.viewportSize().width}-layout`});
  const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
  assert.deepEqual(a11y.violations.map(x=>({id:x.id,targets:x.nodes.map(n=>n.target)})),[]);
 };
@@ -94,7 +96,7 @@ try{
   await assertLayout(page);
   await page.screenshot({path:out+'/event-opening-'+width+'.png',fullPage:true});
   await page.addStyleTag({content:'html{font-size:200% !important}'});
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await assertNoHorizontalOverflow(page,{directory:out+'/diagnostics/',label:`event-opening-${width}-text-200-layout`});
   await article.locator('.event-back-link').click();
   assert.equal(new URL(page.url()).hash,'#event-'+opening.id);
   await page.goBack();

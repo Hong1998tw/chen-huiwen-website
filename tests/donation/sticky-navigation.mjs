@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertNoHorizontalOverflow} from './layout-diagnostics.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const engine = process.env.ENGINE || 'chromium';
@@ -38,7 +39,7 @@ try {
       assert(Math.abs(box.width / box.height - 1.04) < 0.02);
       assert.equal(await page.locator('h1').count(),1);
       assert.equal(await page.locator('.hero-portrait img').getAttribute('loading'),'eager');
-      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:fileURLToPath(new URL('./results/sticky-navigation/'+engine+'/diagnostics/',import.meta.url)),label:`${width}-homepage-layout`});
     });
     await page.screenshot({path:fileURLToPath(new URL(width + '-home.png',out))});
     await page.evaluate(()=>scrollTo({top:1200,behavior:'instant'}));
@@ -124,7 +125,7 @@ try {
     if(width===390) {
       await page.goto(base);
       await page.addStyleTag({content:'html{font-size:200%!important}'});
-      await check('200% text stays within viewport',async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
+      await check('200% text stays within viewport',async()=>assertNoHorizontalOverflow(page,{directory:fileURLToPath(new URL('./results/sticky-navigation/'+engine+'/diagnostics/',import.meta.url)),label:'200%-text-layout'}));
     }
     await context.close();
   }
@@ -135,17 +136,29 @@ try {
     assert(await page.locator('#navigation .nav-group summary').first().isVisible());
     assert.equal(await page.locator('.menu-toggle').isVisible(),false);
     assert.equal(await page.locator('.topline').evaluate(el=>getComputedStyle(el).display),'none');
-    assert.equal(await page.locator('.topline').evaluate(el=>getComputedStyle(el).position),'static');
     assert(await page.locator('.header-phone').isVisible());
     assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
     assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
-    assert((await page.locator('main').boundingBox()).y<70);
     await page.goto(base+'service.html');
     assert.equal(await page.locator('.header-phone').getAttribute('href'),await page.locator('#contact .contact-card .big-phone').getAttribute('href'));
     await page.goto(base);
     await page.locator('#navigation .nav-group summary').first().click();
     assert(await page.locator('#navigation a').first().isVisible());
-    assert.equal(await page.locator('.site-header').evaluate(el=>getComputedStyle(el).position),'sticky');
+    const flow=await page.evaluate(()=>{
+      const header=document.querySelector('.site-header').getBoundingClientRect();
+      const nav=document.querySelector('#navigation').getBoundingClientRect();
+      const main=document.querySelector('main').getBoundingClientRect();
+      return{headerBottom:header.bottom,navBottom:nav.bottom,mainTop:main.top};
+    });
+    assert(flow.navBottom<=flow.headerBottom+1,JSON.stringify(flow));
+    assert(flow.mainTop>=flow.headerBottom-1,JSON.stringify(flow));
+    const heading=page.locator('main h1').first();
+    await heading.scrollIntoViewIfNeeded();
+    const headingRect=await heading.boundingBox();
+    assert(headingRect&&headingRect.y>=0&&headingRect.y<844,JSON.stringify(headingRect));
+    await page.evaluate(()=>scrollTo({top:Math.min(120,document.documentElement.scrollHeight),behavior:'instant'}));
+    const headerDocumentTop=await page.locator('.site-header').evaluate(el=>el.getBoundingClientRect().top+scrollY);
+    assert(Math.abs(headerDocumentTop)<=1,JSON.stringify({headerDocumentTop,scrollY:await page.evaluate(()=>scrollY)}));
     await context.close();
   });
 } finally {

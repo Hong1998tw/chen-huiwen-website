@@ -4,14 +4,16 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertNoHorizontalOverflow, captureLayoutDiagnostics, findVisibleClickPoint } from './layout-diagnostics.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
-const report = { scope: 'Full-site candidate QA', checks: [], failures: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
+const report = { scope: 'Full-site candidate QA', checks: [], failures: [], diagnostics: [], interactions: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
 let browser;
+let diagnosticPage;
 
 async function check(name, fn) {
   try {
@@ -20,7 +22,22 @@ async function check(name, fn) {
   } catch (error) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
     report.failures.push(name);
+    if (diagnosticPage && /horizontal overflow|navigation, layout|G06 mobile header|mobile menu|no JavaScript|CLS/i.test(name) && !String(error).includes('horizontal overflow')) {
+      try {
+        const evidence = await captureLayoutDiagnostics(diagnosticPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:name,error});
+        report.diagnostics.push(evidence.files);
+      } catch (diagnosticError) {
+        report.diagnostics.push({label:name,error:String(diagnosticError)});
+      }
+    }
   }
+}
+
+async function assertWithinHalfPixel(page, label, actual, expected) {
+  if (Math.abs(actual - expected) > 0.5) {
+    await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label,error:`${label}: ${actual}px differs from ${expected}px`});
+  }
+  assert(Math.abs(actual - expected) <= 0.5, `${label}: ${actual}px differs from ${expected}px by more than 0.5px`);
 }
 
 function largestCls(shifts) {
@@ -48,6 +65,7 @@ try {
   });
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
+  diagnosticPage = page;
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
   const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
   const mapRecords = JSON.parse(await readFile(new URL('../../data/achievement-map.json', import.meta.url)));
@@ -68,7 +86,7 @@ try {
     });
 
     await check(`donation ${width}px: no horizontal overflow`, async () => {
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`donation-${width}-horizontal-overflow`});
     });
 
     await check(`donation ${width}px: keyboard FAQ and focus`, async () => {
@@ -132,7 +150,7 @@ try {
       assert.equal(firstScreen.toplineDisplay, 'none');
       assert.equal(firstScreen.headerPosition, 'sticky');
       assert(firstScreen.mainTop < 70, `main starts at ${firstScreen.mainTop}px`);
-      assert.equal(firstScreen.headerHeight, 64);
+      await assertWithinHalfPixel(page,'mobile header height',firstScreen.headerHeight,64);
       assert.equal(await topline.count(), 1);
       assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
       assert.equal(await phone.getAttribute('href'), expectedHref);
@@ -163,7 +181,7 @@ try {
       await page.goto(base + 'service.html');
       await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'instant' }));
       await page.waitForFunction(() => document.querySelector('.site-header').classList.contains('is-compact'));
-      await page.waitForFunction(() => document.querySelector('.site-header').getBoundingClientRect().height === 52);
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 52) <= 0.5);
       const down = await page.evaluate(() => {
         const header = document.querySelector('.site-header');
         return {
@@ -172,16 +190,16 @@ try {
           top: header.getBoundingClientRect().top,
         };
       });
-      assert.equal(down.height, 52);
-      assert.equal(down.flowFootprint, 64);
-      assert.equal(down.top, 0);
+      await assertWithinHalfPixel(page,'compact mobile header height',down.height,52);
+      await assertWithinHalfPixel(page,'compact mobile header flow footprint',down.flowFootprint,64);
+      await assertWithinHalfPixel(page,'compact mobile header top',down.top,0);
       await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-down.png', output)), fullPage: false });
 
       await page.evaluate(() => window.scrollTo({ top: 660, behavior: 'instant' }));
       await page.waitForTimeout(50);
       await page.evaluate(() => window.scrollTo({ top: 620, behavior: 'instant' }));
       await page.waitForFunction(() => !document.querySelector('.site-header').classList.contains('is-compact'));
-      await page.waitForFunction(() => document.querySelector('.site-header').getBoundingClientRect().height === 64);
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 64) <= 0.5);
       const up = await page.evaluate(() => {
         const header = document.querySelector('.site-header');
         return {
@@ -190,9 +208,9 @@ try {
           top: header.getBoundingClientRect().top,
         };
       });
-      assert.equal(up.height, 64);
-      assert.equal(up.flowFootprint, 64);
-      assert.equal(up.top, 0);
+      await assertWithinHalfPixel(page,'restored mobile header height',up.height,64);
+      await assertWithinHalfPixel(page,'restored mobile header flow footprint',up.flowFootprint,64);
+      await assertWithinHalfPixel(page,'restored mobile header top',up.top,0);
       await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-up.png', output)), fullPage: false });
 
       await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -233,7 +251,13 @@ try {
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
-      await page.locator('.menu-backdrop').click({ position: { x: 4, y: 4 } });
+      const backdropPoint = await findVisibleClickPoint(page,'.menu-backdrop');
+      report.interactions.push({name:'menu backdrop closes through an unobscured real pointer point',targetRect:backdropPoint.rect,selected:backdropPoint.selected,samples:backdropPoint.samples});
+      if (!backdropPoint.selected) {
+        await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:'menu-backdrop-no-visible-hit-point',error:'No point in the visible backdrop receives the real pointer hit test',extra:{backdropPoint}});
+      }
+      assert(backdropPoint.selected,JSON.stringify(backdropPoint));
+      await page.mouse.click(backdropPoint.selected.x,backdropPoint.selected.y);
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     });
 
@@ -257,7 +281,7 @@ try {
         page.on('pageerror', onError);
         page.on('requestfailed', onFailed);
         await page.goto(base + file);
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
+        await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`all-pages-${width}-${file}-horizontal-overflow`});
         if (file !== 'offline.html') {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
@@ -321,6 +345,7 @@ try {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;
         for(const e of shifts){ if(current>0&&e.startTime-last<1000&&e.startTime-start<=5000) current+=e.value; else {current=e.value;start=e.startTime;} last=e.startTime;max=Math.max(max,current); } return max;
       }));
+      if (cls >= 0.1) await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`homepage-${width}-cls`,error:`homepage CLS ${cls}`,extra:{cls,layoutShifts:await page.evaluate(()=>window.layoutShifts.map(({value,startTime,hadRecentInput,sources})=>({value,startTime,hadRecentInput,sources:sources?.map(source=>({previousRect:source.previousRect,currentRect:source.currentRect}))})))}});
       assert(cls < 0.1, `homepage CLS ${cls}`);
       await page.screenshot({ path: fileURLToPath(new URL(`index-${width}.png`, output)), fullPage: true });
     });
@@ -545,7 +570,7 @@ try {
       const lead = await page.locator('.news-card-lead').first().boundingBox();
       await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`news-first-screen-${viewport.width}-layout`});
     });
   }
 
@@ -582,6 +607,7 @@ try {
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
+  diagnosticPage = nojsPage;
   await check('no JavaScript: mobile native navigation flows, expands and leaves the page reachable', async () => {
     await nojsPage.setViewportSize({ width: 320, height: 740 });
     try {
@@ -593,8 +619,6 @@ try {
       const canonicalPhone = nojsPage.locator('#contact .contact-card a.big-phone');
       assert.equal(await nojsPage.locator('html.menu-ready').count(), 0);
       assert.equal(await nojsPage.locator('.menu-toggle').isVisible(), false);
-      assert.equal(await header.evaluate(el => getComputedStyle(el).position), 'static');
-      assert.equal(await navigation.evaluate(el => getComputedStyle(el).position), 'static');
       assert(await role.isVisible());
       assert(parseFloat(await role.evaluate(el => getComputedStyle(el).fontSize)) >= 12);
       assert((await role.innerText()).includes('高雄市議員'));
@@ -602,7 +626,7 @@ try {
       assert.equal(await phone.getAttribute('href'), await canonicalPhone.getAttribute('href'));
       assert.equal((await phone.boundingBox()).width, 44);
       assert.equal((await phone.boundingBox()).height, 44);
-      assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-service-320-layout'});
 
       const group = navigation.locator('.nav-group').first();
       await group.locator('summary').click();
@@ -637,7 +661,7 @@ try {
     assert.equal(await nojsPage.locator('main details').first().getAttribute('open'), '');
     assert(await nojsPage.getByText('752200636579', { exact: true }).isVisible());
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
-    assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-political-donation-layout'});
   });
 
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {

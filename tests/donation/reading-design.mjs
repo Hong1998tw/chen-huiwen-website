@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertNoHorizontalOverflow} from './layout-diagnostics.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const publicStatuses=new Set(['持續追蹤','爭取規劃','已完成','政策實施']);
 const publicIds=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).filter(row=>publicStatuses.has(row.status)).map(row=>row.id).sort();
@@ -24,14 +25,14 @@ try{
   for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','council-records.html','about.html','service.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html','election.html']){
    await page.goto(base+file);await page.waitForTimeout(120);
    if(['achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html'].includes(file))await page.locator('.case-background > summary').click();
-   await check(width+' '+file+' reflow',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(await page.locator('h1').count(),1);});
+   await check(width+' '+file+' reflow',async()=>{await assertNoHorizontalOverflow(page,{directory:out+'/diagnostics/',label:width+' '+file+' reflow'});assert.equal(await page.locator('h1').count(),1);});
    if([390,1180].includes(width))await check(width+' '+file+' automated accessibility',async()=>{const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();assert.deepEqual(a.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);});
    await page.screenshot({path:out+'/'+file.replace('.html','')+'-'+width+'.png',fullPage:file==='achievement-wende-school-center.html'});
   }
   if(width===320){
    for(const file of ['index.html','achievements.html','explore.html','achievement-boai-card-rehab-bus-points.html','news.html','vision.html','service-print.html','achievement-fengshan-columbarium-capacity.html','achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html']){
     await page.goto(base+file);if(['achievement-wende-school-center.html','achievement-fengshan-sports-park-parking-integration.html'].includes(file))await page.locator('.case-background > summary').click();await page.addStyleTag({content:'html{font-size:200%!important}'});
-    await check('200% text '+file,async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)));
+    await check('200% text '+file,async()=>assertNoHorizontalOverflow(page,{directory:out+'/diagnostics/',label:'200% text '+file}));
     await page.screenshot({path:out+'/'+file.replace('.html','')+'-text-200.png'});
    }
   }

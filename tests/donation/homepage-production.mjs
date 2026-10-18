@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertNoHorizontalOverflow,captureLayoutDiagnostics} from './layout-diagnostics.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url)),out=root+'tests/donation/results/homepage-production/';
 await mkdir(out,{recursive:true});
 const live=process.env.HOME_LIVE_URL;
@@ -23,7 +24,7 @@ try{
   const page=await ctx.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
   await page.goto(base);await page.evaluate(()=>document.fonts.ready);
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-layout`});
   assert.equal(await page.locator('h1').count(),1);
   const portraitBox=await page.locator('.hero-portrait').boundingBox(),heroBox=await page.locator('.hero').boundingBox();
   assert(portraitBox.width>=heroBox.width*(width>=768?.36:.95),'Approved portrait must fill its responsive column');
@@ -54,8 +55,9 @@ try{
   await Promise.all([page.waitForURL(url=>url.pathname.endsWith('/service.html')&&url.hash==='#monthly-heading'),page.keyboard.press('Enter')]);
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   await page.goto(base);await page.addStyleTag({content:'html{font-size:200%!important}'});
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-layout`});
   const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{left:r.left,right:r.right,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
+  if(legalLayout.height<44||legalLayout.left<0||legalLayout.right>width||legalLayout.scrollWidth>legalLayout.clientWidth||legalLayout.scrollHeight>legalLayout.clientHeight||legalLayout.whiteSpace!=='normal')await captureLayoutDiagnostics(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-legal-layout`,error:'legal shortcut 200% reflow assertion failed',extra:{legalLayout}});
   assert(legalLayout.height>=44,JSON.stringify(legalLayout));
   assert(legalLayout.left>=0&&legalLayout.right<=width,JSON.stringify(legalLayout));
   assert(legalLayout.scrollWidth<=legalLayout.clientWidth,JSON.stringify(legalLayout));
