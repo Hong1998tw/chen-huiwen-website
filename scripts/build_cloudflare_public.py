@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import build_public
+from page_font_contract import page_font_namespace_records, validate_artifact_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,7 @@ SECURITY_HEADERS = (
 )
 PATH_HEADERS = (
     ('/deployment.json', (('Cache-Control', 'no-store'),)),
+    ('/page-font-manifest.json', (('Cache-Control', 'public, max-age=0, must-revalidate'),)),
 )
 IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 GENERATED_FONT_PREFIX = 'assets/fonts/huiwen-site-sans/generated/'
@@ -67,8 +69,8 @@ def immutable_asset_records(root, publication):
         if not actual_hash.startswith(match.group(1)):
             raise ValueError('Filename hash differs from immutable asset bytes: ' + relative)
         records.append((relative, actual_hash))
-    if len(records) + 1 + len(PATH_HEADERS) > 100:
-        raise ValueError(f'Cloudflare _headers has {len(records) + 1 + len(PATH_HEADERS)} rules; maximum is 100')
+    if len(records) + 1 + len(PATH_HEADERS) + 2 > 100:
+        raise ValueError(f'Cloudflare _headers has {len(records) + 1 + len(PATH_HEADERS) + 2} rules; maximum is 100')
     return records
 
 def render_headers(root, publication):
@@ -76,7 +78,10 @@ def render_headers(root, publication):
     immutable = immutable_asset_records(root, publication)
     asset_rules = [('/' + relative, (('Cache-Control', IMMUTABLE_CACHE_CONTROL),))
                    for relative, _ in immutable]
-    rules = [('/*', SECURITY_HEADERS), *PATH_HEADERS, *asset_rules]
+    namespaces = page_font_namespace_records(root, publication)
+    namespace_rules = [(f'/{prefix.rstrip("/")}/*', (('Cache-Control', IMMUTABLE_CACHE_CONTROL),))
+                       for prefix in namespaces]
+    rules = [('/*', SECURITY_HEADERS), *PATH_HEADERS, *asset_rules, *namespace_rules]
     if len(rules) > 100:
         raise ValueError(f'Cloudflare _headers has {len(rules)} rules; maximum is 100')
     patterns = [path for path, _ in rules]
@@ -97,6 +102,9 @@ def build(root=ROOT, destination=None, source_commit=None):
     result = build_public.build(root, destination)
     publication = destination / 'publication-manifest.json'
     manifest = json.loads(publication.read_text())
+    # Confirm the publication binds every page-font byte and current public route
+    # before either closed namespace receives a year-long cache policy.
+    validate_artifact_contract(destination, root)
     # Explicit internal rewrites preserve the existing index and directory URLs.
     aliases = ['/ /index.html 200']
     aliases.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'

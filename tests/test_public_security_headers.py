@@ -6,6 +6,7 @@ Cloudflare Static Assets does (every matching rule applies; repeated names combi
 import hashlib
 from http.client import HTTPMessage
 import json
+import os
 import re
 import shutil
 import sys
@@ -17,6 +18,7 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_cloudflare_public as cloudflare
+import build_artifact_page_fonts as producer
 import verify_security_headers as verifier
 
 FEATURES_DENIED = {'camera', 'microphone', 'geolocation', 'payment'}
@@ -59,9 +61,14 @@ def http_message(headers):
 class SecurityHeaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory()
-        cls.site = Path(cls.temp.name)
-        cloudflare.build(ROOT, cls.site, 'a' * 40)
+        artifact_root = os.environ.get('PAGE_FONT_ARTIFACT_ROOT')
+        cls.temp = None
+        if artifact_root:
+            cls.site = Path(artifact_root).resolve()
+        else:
+            cls.temp = tempfile.TemporaryDirectory()
+            cls.site = Path(cls.temp.name)
+            cloudflare.build(ROOT, cls.site, 'a' * 40)
         cls.text = (cls.site / '_headers').read_text()
         cls.rules = parse_headers(cls.text)
         cls.publication = json.loads((cls.site / 'publication-manifest.json').read_text())
@@ -72,7 +79,8 @@ class SecurityHeaderTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.temp.cleanup()
+        if cls.temp:
+            cls.temp.cleanup()
 
     def test_catch_all_rule_matches_every_delivery_path(self):
         expected = {name.lower(): value for name, value in cloudflare.SECURITY_HEADERS}
@@ -89,26 +97,39 @@ class SecurityHeaderTests(unittest.TestCase):
 
     def test_receipt_stays_no_store_and_only_hash_assets_get_immutable_cache_control(self):
         immutable = {'/' + path for path, _ in cloudflare.immutable_asset_records(self.site, self.publication)}
+        namespaces = cloudflare.page_font_namespace_records(self.site, self.publication)
+        immutable.update('/' + path for group in namespaces.values() for path, _ in group)
         for path in self.paths:
             cache = response_headers(self.rules, path).get('cache-control')
             expected = ('no-store' if path == '/deployment.json' else
+                        'public, max-age=0, must-revalidate' if path == '/page-font-manifest.json' else
                         cloudflare.IMMUTABLE_CACHE_CONTROL if path in immutable else None)
             self.assertEqual(cache, expected, path)
 
     def test_immutable_rules_are_exact_and_merge_without_cache_conflicts(self):
-        expected = {'/' + path for path, _ in cloudflare.immutable_asset_records(self.site, self.publication)}
+        exact = {'/' + path for path, _ in cloudflare.immutable_asset_records(self.site, self.publication)}
+        prefixes = {'/' + prefix + '/*' for prefix in cloudflare.page_font_namespace_records(self.site, self.publication)}
         actual = {pattern for pattern, headers in self.rules
                   if any(name.lower() == 'cache-control' and value == cloudflare.IMMUTABLE_CACHE_CONTROL
                          for name, value in headers)}
-        self.assertTrue(expected)
-        self.assertEqual(actual, expected)
+        self.assertTrue(exact)
+        self.assertEqual(actual, exact | prefixes)
+        self.assertEqual(prefixes, {
+            '/assets/fonts/huiwen-site-sans/page-core/*',
+            '/assets/fonts/huiwen-site-sans/page-delta/*',
+        })
+        for pattern in prefixes:
+            sibling = pattern[:-2] + '-sidecar/font.woff2'
+            self.assertFalse(re.fullmatch(re.escape(pattern).replace(r'\*', '.*'), sibling), sibling)
         for path in self.paths:
             values = [value for pattern, headers in self.rules
                       if re.fullmatch(re.escape(pattern).replace(r'\*', '.*'), path)
                       for name, value in headers if name.lower() == 'cache-control']
             if path == '/deployment.json':
                 self.assertEqual(values, ['no-store'], path)
-            elif path in expected:
+            elif path == '/page-font-manifest.json':
+                self.assertEqual(values, ['public, max-age=0, must-revalidate'], path)
+            elif path in exact or any(path.startswith(prefix[:-1]) for prefix in prefixes):
                 self.assertEqual(values, [cloudflare.IMMUTABLE_CACHE_CONTROL], path)
             else:
                 self.assertEqual(values, [], path)
@@ -140,9 +161,8 @@ class SecurityHeaderTests(unittest.TestCase):
             publication = {'files': files}
             self.assertEqual(cloudflare.immutable_asset_records(root, publication), [])
             self.assertEqual(cloudflare.immutable_asset_records(root, {'files': {0: '0' * 64}}), [])
-            text = cloudflare.render_headers(root, publication)
-            self.assertNotIn(cloudflare.IMMUTABLE_CACHE_CONTROL, text)
-            self.assertEqual(len(parse_headers(text)), 2)
+            with self.assertRaisesRegex(ValueError, 'PAGE_FONT_MANIFEST_MISSING_OR_UNSAFE'):
+                cloudflare.render_headers(root, publication)
 
     def test_wrong_filename_hash_and_tampered_bytes_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -168,12 +188,9 @@ class SecurityHeaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Manifest SHA-256'):
                 cloudflare.immutable_asset_records(root, publication)
 
-    def test_repeat_build_policy_and_hash_filename_rotation(self):
-        with tempfile.TemporaryDirectory() as directory:
-            second = Path(directory) / 'second'
-            cloudflare.build(ROOT, second, 'a' * 40)
-            self.assertEqual((second / '_headers').read_bytes(), (self.site / '_headers').read_bytes())
-
+    def test_header_policy_is_stable_and_hash_filename_rotation(self):
+        self.assertEqual(cloudflare.render_headers(self.site, self.publication).encode(),
+                         (self.site / '_headers').read_bytes())
         assets = cloudflare.immutable_asset_records(self.site, self.publication)
         relative, _ = assets[0]
         original = (self.site / relative).read_bytes()
@@ -260,18 +277,25 @@ class SecurityHeaderTests(unittest.TestCase):
 class PostDeployCheckTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory()
-        cls.site = Path(cls.temp.name)
-        cloudflare.build(ROOT, cls.site, 'b' * 40)
+        artifact_root = os.environ.get('PAGE_FONT_ARTIFACT_ROOT')
+        cls.temp = None
+        if artifact_root:
+            cls.site = Path(artifact_root).resolve()
+        else:
+            cls.temp = tempfile.TemporaryDirectory()
+            cls.site = Path(cls.temp.name)
+            cloudflare.build(ROOT, cls.site, 'b' * 40)
         cls.publication = json.loads((cls.site / 'publication-manifest.json').read_text())
+        cls.immutable = {'/' + path: (cls.site / path).read_bytes()
+                         for path, _ in verifier.immutable_policy_records(cls.site, cls.publication)}
 
     @classmethod
     def tearDownClass(cls):
-        cls.temp.cleanup()
+        if cls.temp:
+            cls.temp.cleanup()
 
     def fake(self, mutate=None, status=200):
-        immutable = {'/' + path: (self.site / path).read_bytes()
-                     for path, _ in cloudflare.immutable_asset_records(self.site, self.publication)}
+        immutable = self.immutable
         def getter(url):
             path = url.split('://', 1)[1].partition('/')[2]
             path = '/' + path
@@ -293,6 +317,16 @@ class PostDeployCheckTests(unittest.TestCase):
                 headers = http_message(headers)
             return code, url, headers, body
         return getter
+
+    def small_verified_records(self):
+        exact = cloudflare.immutable_asset_records(self.site, self.publication)
+        namespaces = cloudflare.page_font_namespace_records(self.site, self.publication)
+        return [*exact, *namespaces[producer.CORE_DIR][0:1]]
+
+    def verify_small(self, getter):
+        records = self.small_verified_records()
+        with patch.object(verifier, 'immutable_policy_records', return_value=records):
+            return verifier.verify('https://example.test', getter=getter, artifact_root=self.site)
 
     def test_fetch_keeps_raw_duplicate_http_message_fields(self):
         url = 'https://example.test/asset.woff2'
@@ -316,25 +350,25 @@ class PostDeployCheckTests(unittest.TestCase):
         )
 
     def test_passes_when_every_path_carries_the_reviewed_headers(self):
-        report = verifier.verify('https://example.test', getter=self.fake(), artifact_root=self.site)
+        report = self.verify_small(self.fake())
         self.assertEqual(report['status'], 'PASS')
         self.assertEqual(len(report['results']), len(verifier.PATHS) + 1)
         self.assertEqual(report['results'][-1]['status'], 404)
         self.assertEqual(report['immutableAssets']['status'], 'PASS')
-        self.assertEqual(len(report['immutableAssets']['results']), 20)
+        self.assertEqual(len(report['immutableAssets']['results']),
+                         len(self.small_verified_records()))
 
     def test_mutable_public_paths_reject_immutable_cache_control(self):
         mutable_paths = ('/', '/index.html', '/about.html', '/site.js', '/styles.css',
                          '/data/search-index.json', '/sw.js', '/manifest.webmanifest',
-                         '/publication-manifest.json', '/deployment.json')
+                         '/page-font-manifest.json', '/publication-manifest.json', '/deployment.json')
 
         def make_mutable_immutable(path, code, url, headers):
             if path in mutable_paths:
                 headers['cache-control'] = cloudflare.IMMUTABLE_CACHE_CONTROL
             return code, url, headers
 
-        report = verifier.verify('https://example.test', getter=self.fake(make_mutable_immutable),
-                                 artifact_root=self.site)
+        report = self.verify_small(self.fake(make_mutable_immutable))
         self.assertEqual(report['status'], 'FAIL')
         for path in mutable_paths:
             result = next(item for item in report['results'] if item['url'].endswith(path))
@@ -352,8 +386,7 @@ class PostDeployCheckTests(unittest.TestCase):
                 return code, url, message, b''
             return code, url, headers
 
-        report = verifier.verify('https://example.test', getter=self.fake(duplicate_cache_control),
-                                 artifact_root=self.site)
+        report = self.verify_small(self.fake(duplicate_cache_control))
         self.assertEqual(report['status'], 'FAIL')
         asset_result = next(item for item in report['immutableAssets']['results']
                             if item['url'].endswith(immutable_path))
@@ -372,8 +405,7 @@ class PostDeployCheckTests(unittest.TestCase):
                 return code, url, message
             return code, url, headers
 
-        report = verifier.verify('https://example.test', getter=self.fake(duplicate_security_headers),
-                                 artifact_root=self.site)
+        report = self.verify_small(self.fake(duplicate_security_headers))
         self.assertEqual(report['status'], 'FAIL')
         root_result = next(item for item in report['results'] if item['url'] == 'https://example.test/')
         for name, _ in cloudflare.SECURITY_HEADERS:
@@ -403,17 +435,17 @@ class PostDeployCheckTests(unittest.TestCase):
             return code, url, headers
         for mutate in (drop_nosniff, weaken_frame, redirect, cache_receipt, not_found_as_ok,
                        bad_immutable_policy, bad_immutable_bytes):
-            report = verifier.verify('https://example.test', getter=self.fake(mutate), artifact_root=self.site)
+            report = self.verify_small(self.fake(mutate))
             self.assertEqual(report['status'], 'FAIL', mutate.__name__)
-        report = verifier.verify('https://example.test', getter=self.fake(bad_immutable_policy), artifact_root=self.site)
+        report = self.verify_small(self.fake(bad_immutable_policy))
         self.assertEqual(report['immutableAssets']['status'], 'FAIL')
-        report = verifier.verify('https://example.test', getter=self.fake(bad_immutable_bytes), artifact_root=self.site)
+        report = self.verify_small(self.fake(bad_immutable_bytes))
         self.assertEqual(report['immutableAssets']['status'], 'FAIL')
 
     def test_network_error_is_reported_as_failure_not_crash(self):
         def broken(url):
             raise OSError('connection reset')
-        report = verifier.verify('https://example.test', getter=broken, artifact_root=self.site)
+        report = self.verify_small(broken)
         self.assertEqual(report['status'], 'FAIL')
         self.assertIn('connection reset', report['results'][0]['failures'][0])
 
@@ -423,7 +455,7 @@ class PostDeployCheckTests(unittest.TestCase):
             (root / 'publication-manifest.json').write_text(json.dumps({'files': {'0': '0' * 64}}))
             report = verifier.verify_immutable_assets('https://example.test', root, getter=lambda url: None)
             self.assertEqual(report['status'], 'FAIL')
-            self.assertIn('no verified immutable assets', report['results'][0]['failures'][0])
+            self.assertIn('PAGE_FONT_MANIFEST_MISSING_OR_UNSAFE', report['results'][0]['failures'][0])
 
 
 if __name__ == '__main__':

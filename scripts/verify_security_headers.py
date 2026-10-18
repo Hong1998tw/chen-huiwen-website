@@ -18,11 +18,12 @@ from urllib.request import urlopen
 from build_cloudflare_public import (
     IMMUTABLE_CACHE_CONTROL, PATH_HEADERS, SECURITY_HEADERS, immutable_asset_records,
 )
+from page_font_contract import is_page_font_path, page_font_namespace_records, validate_font_bytes
 from verify_cloudflare_assets import public_request
 
 PATHS = ('/', '/index.html', '/about.html', '/site.js', '/styles.css',
          '/data/search-index.json', '/assets/chen-huiwen-480.webp',
-         '/sw.js', '/manifest.webmanifest', '/publication-manifest.json',
+         '/sw.js', '/manifest.webmanifest', '/page-font-manifest.json', '/publication-manifest.json',
          '/mktexp26/', '/deployment.json')
 NOT_FOUND_PROBE = '/__security-header-probe__'
 REPORTED = ('content-type', 'cache-control', 'cf-cache-status',
@@ -98,7 +99,7 @@ def verify_immutable_assets(base, artifact_root, getter=fetch, records=None):
     if records is None:
         try:
             publication = json.loads((root / 'publication-manifest.json').read_text(encoding='utf-8'))
-            records = immutable_asset_records(root, publication)
+            records = immutable_policy_records(root, publication)
         except (OSError, ValueError, TypeError) as error:
             return {'status': 'FAIL', 'results': [{
                 'failures': [type(error).__name__ + ': ' + str(error)],
@@ -110,6 +111,14 @@ def verify_immutable_assets(base, artifact_root, getter=fetch, records=None):
 
     base = base.rstrip('/')
     results = []
+    try:
+        font_rows = _page_font_rows(root)
+    except (OSError, ValueError, TypeError, KeyError):
+        font_rows = {}
+        if any(is_page_font_path(path) for path, _ in records):
+            return {'status': 'FAIL', 'results': [{
+                'failures': ['page-font manifest missing or invalid for immutable namespace assets'],
+            }]}
     for relative, expected_hash in records:
         url = base + '/' + relative
         started = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -130,6 +139,11 @@ def verify_immutable_assets(base, artifact_root, getter=fetch, records=None):
                 failures.append(f'cache-control: {observed_cache!r} != {IMMUTABLE_CACHE_CONTROL!r}')
             if observed_hash != expected_hash:
                 failures.append(f'sha256: {observed_hash} != {expected_hash}')
+            if relative in font_rows and not failures:
+                try:
+                    validate_font_bytes(relative, body, font_rows[relative])
+                except ValueError as error:
+                    failures.append(str(error))
             results.append({
                 'url': url, 'time': started, 'status': status, 'finalUrl': final_url,
                 'expectedSha256': expected_hash, 'observedSha256': observed_hash,
@@ -142,12 +156,30 @@ def verify_immutable_assets(base, artifact_root, getter=fetch, records=None):
             'results': results}
 
 
+def _page_font_rows(root):
+    manifest_path = Path(root) / 'page-font-manifest.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError('page-font manifest missing or unsafe')
+    return json.loads(manifest_path.read_text(encoding='utf-8'))['fonts']
+
+
+def immutable_policy_records(root, publication):
+    """All immutable response bytes: legacy exact assets and closed page-font namespaces."""
+    exact = immutable_asset_records(root, publication)
+    namespaces = page_font_namespace_records(root, publication)
+    rows = _page_font_rows(root)
+    fonts = [(path, digest) for group in namespaces.values() for path, digest in group]
+    if {path for path, _ in fonts} != set(rows):
+        raise ValueError('page-font namespace and manifest rows differ')
+    return sorted([*exact, *fonts])
+
+
 def verify(base, paths=PATHS, getter=fetch, artifact_root='_site'):
     base = base.rstrip('/')
     root = Path(artifact_root)
     try:
         publication = json.loads((root / 'publication-manifest.json').read_text(encoding='utf-8'))
-        records = immutable_asset_records(root, publication)
+        records = immutable_policy_records(root, publication)
         immutable_paths = {'/' + relative for relative, _ in records}
     except (OSError, ValueError, TypeError):
         records = None
