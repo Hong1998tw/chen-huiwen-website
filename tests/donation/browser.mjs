@@ -208,8 +208,8 @@ try {
         assert(frame.x >= 0 && frame.x + frame.width <= width);
       });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
-      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');
+      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
+      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
       assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
