@@ -475,13 +475,30 @@ def linked_css(root: Path, route: str, soup) -> tuple[list[str], str]:
     return sorted(paths), "\n".join(pieces)
 
 
-def dynamic_ui_text(route: str, soup) -> str:
+def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
     script_names = set()
     for tag in soup.find_all("script", src=True):
         parsed = urlsplit(str(tag["src"]))
         if not parsed.scheme and not parsed.netloc:
             script_names.add(PurePosixPath(unquote(parsed.path)).name)
     pieces = [SCRIPT_DYNAMIC_TEXT]
+    if "press.js" in script_names:
+        grid = soup.select_one("[data-press-grid]")
+        script_path = root / "press.js"
+        if grid is None or not script_path.is_file() or script_path.is_symlink():
+            raise ValueError("FONT_PRESS_PAGINATION_SOURCE_MISSING_OR_UNSAFE")
+        script = script_path.read_text(encoding="utf-8")
+        page_size_match = re.search(r"\bconst\s+PAGE_SIZE\s*=\s*(\d+)\s*;", script)
+        if not page_size_match:
+            raise ValueError("FONT_PRESS_PAGE_SIZE_NOT_FOUND")
+        page_size = int(page_size_match.group(1))
+        if page_size < 1:
+            raise ValueError("FONT_PRESS_PAGE_SIZE_INVALID")
+        total = len(grid.select("[data-news-categories]"))
+        pages = max(1, (total + page_size - 1) // page_size)
+        pieces.append(f"全部 · {total} 筆 · 第 1/{pages} 頁")
+        if total > page_size:
+            pieces.extend(("上一頁 1 下一頁", "新聞發稿第 1 頁"))
     if "digital.js" in script_names and PurePosixPath(route).name.startswith("achievement-"):
         pieces.append(CASE_DYNAMIC_TEXT)
     if "news.js" in script_names:
@@ -598,7 +615,7 @@ def _page_spec_from_bytes(
         if node.name == "input" and str(node.get("type", "")).lower() != "hidden" and node.get("value"):
             text_parts.append(str(node["value"]))
     stylesheet_paths, css_text = linked_css(root, route, soup)
-    visible_text = "\n".join(text_parts + [css_text, dynamic_ui_text(route, soup)])
+    visible_text = "\n".join(text_parts + [css_text, dynamic_ui_text(route, soup, root)])
     characters = {ord(char) for char in visible_text}
     tc_glyphs = tuple(sorted(characters.intersection(tc_cmap)))
     if not tc_glyphs:

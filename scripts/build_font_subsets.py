@@ -127,6 +127,32 @@ def cmap(path: Path) -> dict[int, str]:
     return font.getBestCmap() or {}
 
 
+def unicode_range_for_codepoints(codepoints) -> str:
+    """Encode an exact Unicode cmap as compact CSS ranges."""
+    values = sorted(set(codepoints))
+    if not values or any(
+        type(codepoint) is not int
+        or not 0 <= codepoint <= 0x10FFFF
+        or 0xD800 <= codepoint <= 0xDFFF
+        for codepoint in values
+    ):
+        raise ValueError("FONT_CSS_UNICODE_RANGE_CODEPOINTS_INVALID")
+
+    ranges = []
+    start = end = values[0]
+    for codepoint in values[1:]:
+        if codepoint == end + 1:
+            end = codepoint
+            continue
+        ranges.append((start, end))
+        start = end = codepoint
+    ranges.append((start, end))
+    return ",".join(
+        f"U+{start:X}" if start == end else f"U+{start:X}-{end:X}"
+        for start, end in ranges
+    )
+
+
 def validate_corpus(codepoints: set[int], tc_cmap: dict, jp_cmap: dict) -> list[int]:
     unresolved = sorted(
         cp for cp in codepoints
@@ -341,10 +367,24 @@ def face(
     )
 
 
-def build_css(root: Path, routes: dict, jp_filename: str | None, jp_fallback: list[int]) -> None:
+def build_css(
+    root: Path,
+    routes: dict,
+    jp_filename: str | None,
+    jp_fallback: list[int],
+    tc_cmap: dict[int, str],
+) -> None:
     lines = [
         STYLE_START,
-        face("Huiwen Sans TC", "huiwen-site-sans-tc-20261007.woff2", generated=False, display="swap"),
+        # Keep the full fallback for every real TC glyph, while allowing
+        # unmapped symbols to continue to JP/system fallback without fetching it.
+        face(
+            "Huiwen Sans TC",
+            "huiwen-site-sans-tc-20261007.woff2",
+            generated=False,
+            display="swap",
+            unicode_range=unicode_range_for_codepoints(tc_cmap),
+        ),
     ]
     if jp_filename:
         support_coverage = ",".join(f"U+{codepoint:04X}" for codepoint in jp_fallback)
@@ -537,7 +577,7 @@ def build(root: Path = ROOT) -> None:
             core_file,
         )
 
-    build_css(root, page_routes, jp_filename, jp_fallback)
+    build_css(root, page_routes, jp_filename, jp_fallback, tc_cmap)
     sw_path = root / "sw.js"
     sw_source = sw_path.read_text(encoding="utf-8")
     sw_source = sw_source.replace(

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
+import { verifyPageFontPreloadEvidence } from './page-font-preload-contract.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const artifact = resolve(root, '_site');
@@ -290,14 +291,17 @@ try {
     let routeContext;
     let routePage;
     let cdpSession;
+    let fixedClock = false;
     const routeNetwork = { phase: 'initial', fullTcRequests: [], pageFontRequests: [],
       navigationRequests: [], criticalRequestFailures: [], tracked: new Map(), mainFrameId: null };
     const fullTcResponses = [];
     try {
       routeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
       routePage = await routeContext.newPage();
-      if (route === 'service.html')
+      if (route === 'service.html') {
         await routePage.clock.setFixedTime(new Date('2026-10-19T08:00:00+08:00'));
+        fixedClock = true;
+      }
       routePage.on('pageerror', (error) => routeRecord.runtimeErrors.push(errorRecord(error)));
       routePage.on('response', (response) => {
         if (urlPath(response.url()) === `/${fullTcPath}`)
@@ -373,11 +377,26 @@ try {
           routeRecord.visibleFontDiagnostics = await collectVisibleFontDiagnostics(routePage, route, routeRow);
           routeRecord.preloads.declared = routeRecord.visibleFontDiagnostics.declaredPreloads;
           routeRecord.preloads.observed = routeRecord.visibleFontDiagnostics.observedPreloads;
-          if (JSON.stringify(routeRecord.preloads.observed) !== JSON.stringify(routeRecord.preloads.expected)) {
-            results.initialFontNetwork.preloadViolations.push({ route,
-              expected: routeRecord.preloads.expected, declared: routeRecord.preloads.declared,
-              observed: routeRecord.preloads.observed });
-          }
+          const evidence = verifyPageFontPreloadEvidence({
+            route,
+            expected: routeRecord.preloads.expected,
+            declared: routeRecord.preloads.declared,
+            observed: routeRecord.preloads.observed,
+            cdpRequests: routeNetwork.pageFontRequests,
+            fixedClock,
+          });
+          routeRecord.preloads.verification = evidence.verification;
+          routeRecord.preloads.cdpObserved = evidence.cdpObserved;
+          routeRecord.preloads.domMatchesExpected = evidence.domMatchesExpected;
+          routeRecord.preloads.cdpMatchesExpected = evidence.cdpMatchesExpected;
+          if (!evidence.valid) results.initialFontNetwork.preloadViolations.push({
+            route,
+            expected: routeRecord.preloads.expected,
+            declared: routeRecord.preloads.declared,
+            observed: routeRecord.preloads.observed,
+            cdpObserved: evidence.cdpObserved,
+            verification: evidence.verification,
+          });
         } catch (error) {
           routeRecord.observationErrors.push({ kind: 'font-dom-diagnostic', ...errorRecord(error) });
         }
