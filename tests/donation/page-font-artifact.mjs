@@ -12,6 +12,7 @@ import {
   buildVisualCaptureRecord,
   selectVisualRoutes,
   validateArtifactIdentity,
+  validateVisualTypography,
   visualPngMatchesHash,
   visualPngPath,
 } from './page-font-artifact-visual.mjs';
@@ -201,6 +202,83 @@ async function collectVisibleFontDiagnostics(page, route, row) {
     expectedPreloads: row.preloads.map((path) => `/${path}`).sort(),
     expectedFonts,
   });
+}
+
+function expectedVisualFonts(routeRow) {
+  return [
+    { role: 'common', path: routeRow.commonFont },
+    { role: 'delta', path: routeRow.deltaFont },
+  ].map(({ role, path }) => {
+    const face = fontManifest.fonts[path];
+    assert.ok(face, `schema-2 ${role} face is missing from the parsed font manifest: ${path}`);
+    return { role, path, family: face.family, weight: face.wght,
+      sha256: face.sha256, codepoints: face.codepoints };
+  });
+}
+
+async function collectVisualTypography(page, route, expectedFonts, visibleCodepoints) {
+  return page.evaluate(async ({ routeName, faces, visibleTextCodepoints }) => {
+    const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
+    const fontChecks = await Promise.all(faces.map(async (face) => {
+      const probeCodepoint = face.probeCodepoint;
+      if (!Number.isInteger(probeCodepoint)) return {
+        role: face.role, family: face.family, probeCodepoint: null,
+        checkResult: false, loadedFaces: [],
+      };
+      const probeText = String.fromCodePoint(probeCodepoint);
+      const familySyntax = `"${face.family.replace(/["\\]/g, '\\$&')}"`;
+      const fontSpec = `${face.weight} 16px ${familySyntax}`;
+      const loadedFaces = await document.fonts.load(fontSpec, probeText);
+      return {
+        role: face.role,
+        family: face.family,
+        probeCodepoint,
+        checkResult: document.fonts.check(fontSpec, probeText),
+        loadedFaces: loadedFaces.map((fontFace) => ({
+          family: fontFace.family, weight: fontFace.weight, status: fontFace.status,
+        })),
+      };
+    }));
+    await document.fonts.ready;
+    return {
+      route: routeName,
+      artifactRoute: document.documentElement.dataset.huiwenFontArtifactRoute || null,
+      documentFontsStatus: document.fonts.status,
+      bodyFontFamily: getComputedStyle(document.body).fontFamily,
+      headingFontFamily: getComputedStyle(heading).fontFamily,
+      visibleCodepoints: visibleTextCodepoints,
+      fontFaces: [...document.fonts]
+        .filter((fontFace) => faces.some((expected) => expected.family === fontFace.family))
+        .map((fontFace) => ({
+          family: fontFace.family, weight: fontFace.weight, style: fontFace.style, status: fontFace.status,
+        })),
+      fontChecks,
+    };
+  }, {
+    routeName: route,
+    faces: expectedFonts.map((font) => ({
+      role: font.role, family: font.family, weight: font.weight,
+      probeCodepoint: font.probeCodepoint,
+    })),
+    visibleTextCodepoints: visibleCodepoints,
+  });
+}
+
+function captureNetworkRequest(record) {
+  return {
+    path: record.path,
+    phase: record.phase,
+    requestType: record.requestType,
+    isMainFrame: record.isMainFrame,
+    initiator: record.initiator,
+    status: record.response?.status ?? null,
+    encodedDataLength: record.encodedDataLength ?? null,
+    failure: record.failure ? {
+      category: browserMessageCategory(record.failure.errorText),
+      blockedReason: record.failure.blockedReason || null,
+      canceled: Boolean(record.failure.canceled),
+    } : null,
+  };
 }
 
 const samples = [
@@ -479,7 +557,8 @@ try {
         if (record.isMainFrame && type === 'Font' && path?.startsWith('/assets/fonts/huiwen-site-sans/page-'))
           routeNetwork.pageFontRequests.push(record);
         if (record.isMainFrame && type === 'Document') routeNetwork.navigationRequests.push(record);
-        if (record.isMainFrame && ['Document', 'Font', 'Stylesheet', 'Script'].includes(type))
+        if ((record.isMainFrame && ['Document', 'Font', 'Stylesheet', 'Script'].includes(type))
+          || path === `/${fullTcPath}`)
           routeNetwork.tracked.set(event.requestId, record);
       });
       cdpSession.on('Network.responseReceived', (event) => {
@@ -499,6 +578,17 @@ try {
         record.failure = { errorText: event.errorText, canceled: Boolean(event.canceled),
           blockedReason: event.blockedReason || null };
         routeNetwork.criticalRequestFailures.push({ ...record, kind: 'request-failed' });
+      });
+      cdpSession.on('Network.loadingFinished', (event) => {
+        const record = routeNetwork.tracked.get(event.requestId);
+        if (!record) return;
+        record.encodedDataLength = event.encodedDataLength ?? null;
+        if (record.requestType === 'Font'
+          && (!Number.isFinite(record.encodedDataLength) || record.encodedDataLength <= 0)) {
+          record.failure = { errorText: 'CDP reported a zero-byte or missing font response body',
+            canceled: false, blockedReason: null };
+          routeNetwork.criticalRequestFailures.push({ ...record, kind: 'zero-byte-font-response' });
+        }
       });
 
       let response;
@@ -563,30 +653,45 @@ try {
       if (visualRouteSet.has(route)) {
         routeRecord.visualCapture = { status: 'running' };
         routeNetwork.phase = 'visual-capture';
+        const captureEvidence = { fontReadiness: { beforeCapture: null, afterCapture: null }, network: null };
+        const captureNetworkForRoute = () => {
+          const initialFullTc = routeNetwork.fullTcRequests.filter((item) => item.phase === 'initial');
+          const visualFullTc = routeNetwork.fullTcRequests.filter((item) => item.phase === 'visual-capture');
+          return {
+            route,
+            phase: 'visual-capture',
+            preOnDemandPhases: ['initial', 'visual-capture'],
+            phaseCounts: {
+              initial: {
+                fullTc: initialFullTc.length,
+                pageFont: routeNetwork.pageFontRequests.filter((item) => item.phase === 'initial').length,
+              },
+              'visual-capture': {
+                fullTc: visualFullTc.length,
+                pageFont: routeNetwork.pageFontRequests.filter((item) => item.phase === 'visual-capture').length,
+              },
+            },
+            initialFullTcRequestsBeforeCapture: initialFullTc.length,
+            fullTcRequests: visualFullTc.map(captureNetworkRequest),
+            preOnDemandFullTcRequests: routeNetwork.fullTcRequests
+              .filter((item) => item.phase !== 'service-card').map(captureNetworkRequest),
+            pageFontRequests: routeNetwork.pageFontRequests.map(captureNetworkRequest),
+          };
+        };
         try {
           assert.ok(response && response.status() === 200,
             `${route}: selected visual route did not return a successful page`);
-          await routePage.evaluate(() => document.fonts.ready.then(() => true));
-          const fontState = await routePage.evaluate(({ commonFamily, deltaFamily }) => {
-            const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
-            const headingText = (heading?.textContent || '').trim();
-            const relevantFaces = [...document.fonts]
-              .filter((face) => [commonFamily, deltaFamily].includes(face.family))
-              .map((face) => ({ family: face.family, weight: face.weight, style: face.style, status: face.status }));
-            return {
-              documentFontsStatus: document.fonts.status,
-              bodyFontFamily: getComputedStyle(document.body).fontFamily,
-              headingFontFamily: getComputedStyle(heading).fontFamily,
-              fontFaces: relevantFaces,
-              fontLoaded: {
-                common: document.fonts.check(`16px "${commonFamily}"`, headingText),
-                delta: document.fonts.check(`16px "${deltaFamily}"`, headingText),
-              },
-            };
-          }, {
-            commonFamily: fontManifest.fonts[routeRow.commonFont].family,
-            deltaFamily: fontManifest.fonts[routeRow.deltaFont].family,
-          });
+          const visibleCodepoints = await routePage.evaluate(() =>
+            [...new Set([...(document.body?.innerText || '')].map((character) => character.codePointAt(0)))].sort((a, b) => a - b));
+          const visibleCodepointSet = new Set(visibleCodepoints);
+          const expectedFonts = expectedVisualFonts(routeRow).map((font) => ({
+            ...font,
+            probeCodepoint: font.codepoints.find((codepoint) => visibleCodepointSet.has(codepoint)) ?? null,
+          }));
+          const fontStateBefore = await collectVisualTypography(routePage, route, expectedFonts, visibleCodepoints);
+          captureEvidence.fontReadiness.beforeCapture = fontStateBefore;
+          validateVisualTypography({ route, routeCodepoints: routeRow.codepoints,
+            expectedFonts, typography: fontStateBefore, stage: 'before screenshot' });
           const viewport = routePage.viewportSize();
           assert.deepEqual(viewport, results.visualCaptures.viewport,
             `${route}: visual capture viewport changed during the font-only route sweep`);
@@ -594,40 +699,19 @@ try {
           await routePage.evaluate(() => document.fonts.ready.then(() => true));
           await routePage.evaluate(() => new Promise((resolveFrame) =>
             requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
-          const file = visualPngPath(visualOutput, route);
-          await writeFile(file.path, pngBytes);
-          const storedPng = await readFile(file.path);
-          const captureNetwork = {
-            phase: 'visual-capture',
-            postCaptureFontLoadState: await routePage.evaluate(() => ({
-              status: document.fonts.status,
-              faces: [...document.fonts]
-                .filter((face) => /Huiwen Sans TC Page (Common|Delta)/.test(face.family))
-                .map((face) => ({ family: face.family, weight: face.weight, status: face.status })),
-            })),
-            initialFullTcRequestsBeforeCapture: routeNetwork.fullTcRequests
-              .filter((item) => item.phase === 'initial').length,
-            fullTcRequests: routeNetwork.fullTcRequests
-              .filter((item) => item.phase === 'visual-capture')
-              .map(({ path, requestType, initiator, response: fontResponse, failure }) => ({
-                path, requestType, initiator, status: fontResponse?.status ?? null,
-                failure: failure ? { category: browserMessageCategory(failure.errorText),
-                  blockedReason: failure.blockedReason || null } : null,
-              })),
-            pageFontRequests: routeNetwork.pageFontRequests
-              .filter((item) => item.phase === 'visual-capture')
-              .map(({ path, requestType, initiator, response: fontResponse, failure }) => ({
-                path, requestType, initiator, status: fontResponse?.status ?? null,
-                failure: failure ? { category: browserMessageCategory(failure.errorText),
-                  blockedReason: failure.blockedReason || null } : null,
-              })),
-          };
+          const fontStateAfter = await collectVisualTypography(routePage, route, expectedFonts, visibleCodepoints);
+          captureEvidence.fontReadiness.afterCapture = fontStateAfter;
+          const captureNetwork = captureNetworkForRoute();
+          captureEvidence.network = captureNetwork;
+          const typography = { beforeCapture: fontStateBefore, afterCapture: fontStateAfter };
           const record = buildVisualCaptureRecord({
             route,
             pngBytes,
             artifactIdentity,
             viewport,
-            typography: fontState,
+            routeCodepoints: routeRow.codepoints,
+            expectedFonts,
+            typography,
             preloads: {
               expected: routeRecord.preloads.expected,
               declared: routeRecord.preloads.declared,
@@ -635,6 +719,9 @@ try {
             },
             captureNetwork,
           });
+          const file = visualPngPath(visualOutput, route);
+          await writeFile(file.path, pngBytes);
+          const storedPng = await readFile(file.path);
           record.file = `visual/${file.fileName}`;
           assert.ok(visualPngMatchesHash(storedPng, record.png.sha256),
             `${route}: stored screenshot bytes do not match their recorded SHA-256`);
@@ -642,19 +729,24 @@ try {
           routeRecord.visualCapture = {
             status: 'captured', file: record.file, pngSha256: record.png.sha256,
             capturePhase: captureNetwork.phase,
+            initialFullTcRequestsBeforeCapture: captureNetwork.initialFullTcRequestsBeforeCapture,
             fullTcRequestsDuringCapture: captureNetwork.fullTcRequests.length,
-            pageFontRequestsDuringCapture: captureNetwork.pageFontRequests.length,
+            preOnDemandFullTcRequests: captureNetwork.preOnDemandFullTcRequests.length,
+            pageFontRequestsDuringCapture: captureNetwork.phaseCounts['visual-capture'].pageFont,
+            pageFontRequestsBeforeOnDemand: captureNetwork.pageFontRequests.length,
           };
         } catch (error) {
-          const failure = { route, ...errorRecord(error) };
+          if (!captureEvidence.network) captureEvidence.network = captureNetworkForRoute();
+          const failure = { route, ...errorRecord(error), evidence: captureEvidence };
           results.visualCaptures.errors.push(failure);
-          routeRecord.visualCapture = { status: 'failed', error: errorRecord(error) };
+          routeRecord.visualCapture = { status: 'failed', error: errorRecord(error), evidence: captureEvidence };
           throw error;
         }
       }
 
       if (route === 'service.html' && response) {
-        const initialFullTcRequests = routeNetwork.fullTcRequests.filter((item) => item.phase === 'initial').length;
+        const initialFullTcRequests = routeNetwork.fullTcRequests
+          .filter((item) => item.phase !== 'service-card').length;
         const card = { status: 'running', route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
           initialFullTcRequests, cardFullTcRequests: 0, totalFullTcRequests: 0,
           cardFullTcBytes: null, cardFullTcSha256: null, responsePhase: null,
@@ -709,7 +801,7 @@ try {
         .filter((item) => item.response && item.response.status !== 200)
         .map((item) => ({ kind: 'document-response', ...item })));
       routeRecord.criticalRequestFailures = routeNetwork.criticalRequestFailures;
-      const initialRequests = routeNetwork.fullTcRequests.filter((item) => item.phase === 'initial');
+      const initialRequests = routeNetwork.fullTcRequests.filter((item) => item.phase !== 'service-card');
       if (initialRequests.length) fullTcInitialViolations.push({ route, requests: initialRequests });
       if (cdpSession) {
         try { await cdpSession.detach(); } catch (error) {
@@ -746,7 +838,7 @@ try {
   results.visualCaptures.visualReview = 'not-performed';
   try {
     assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
-    assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
+    assert.deepEqual(fullTcInitialViolations, [], 'a route requested full TC before explicit user on-demand activation');
     assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
     assert.deepEqual(results.initialFontNetwork.navigationErrors, [], 'at least one route had a navigation error');
     assert.deepEqual(results.initialFontNetwork.criticalRequestFailures, [], 'at least one route had a critical request failure');
@@ -1055,12 +1147,48 @@ try {
     });
     const negativePage = await negativeContext.newPage();
     const negativeProxyNavigation = waitForCmsPreviewNavigation(negativePage);
-    await negativePage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
+    const negativeProxyResponseWait = observePendingResult(negativePage.waitForResponse(
+      (response) => isCmsProxyUrl(response.url()), { timeout: 15000 }));
+    const negativeHostResponse = await negativePage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
     const negativeNavigation = await negativeProxyNavigation;
     if (negativeNavigation.error) throw negativeNavigation.error;
     const negativeFrame = negativeNavigation.frame;
     await negativePage.frameLocator('#preview').locator('html').waitFor({ state: 'attached', timeout: 15000 });
-    await negativeFrame.waitForLoadState('domcontentloaded');
+    const negativeFrameLoadWait = observePendingResult(
+      negativeFrame.waitForLoadState('domcontentloaded', { timeout: 15000 }));
+    const [negativeProxyResponseOutcome, negativeFrameLoadOutcome] = await Promise.all([
+      negativeProxyResponseWait,
+      negativeFrameLoadWait,
+    ]);
+    const negativeProxyResponse = requireObservedValue(negativeProxyResponseOutcome);
+    const expectedFrameStatus = mode === 'unauthorized-message' ? 200 : 401;
+    const expectedFramePath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
+    const expectedCmsEdit = mode === 'wrong-cms-edit' ? '0' : '1';
+    const frameUrl = new URL(negativeFrame.url());
+    const responseUrl = new URL(negativeProxyResponse.url());
+    const frameEvidence = {
+      hostStatus: negativeHostResponse?.status() ?? null,
+      frameUrl: safeUrlSummary(negativeFrame.url()),
+      responseUrl: safeUrlSummary(negativeProxyResponse.url()),
+      frameStatus: negativeProxyResponse.status(),
+      expectedFrameStatus,
+    };
+    results.negativeGuards[mode] = frameEvidence;
+    assert.equal(negativeHostResponse?.status(), 200, `${mode}: CMS host fixture did not return HTTP 200`);
+    assert.equal(frameUrl.origin, 'https://admin.huiwen.tw', `${mode}: CMS iframe used an unexpected host`);
+    assert.equal(frameUrl.pathname, '/api/page-preview', `${mode}: CMS iframe used an unexpected handler path`);
+    assert.equal(frameUrl.searchParams.get('path'), expectedFramePath,
+      `${mode}: CMS iframe route did not match the negative fixture`);
+    assert.equal(frameUrl.searchParams.get('session'), session, `${mode}: CMS iframe session changed`);
+    assert.equal(frameUrl.searchParams.get('cmsEdit'), expectedCmsEdit,
+      `${mode}: CMS iframe edit capability did not match the fixture`);
+    assert.equal(responseUrl.origin, frameUrl.origin, `${mode}: observed response came from the host page, not its iframe`);
+    assert.equal(responseUrl.pathname, frameUrl.pathname, `${mode}: observed response did not match the iframe handler`);
+    assert.equal(responseUrl.search, frameUrl.search, `${mode}: observed response did not match the iframe capability request`);
+    assert.equal(negativeProxyResponse.request().method(), 'GET', `${mode}: CMS proxy iframe used an unexpected request method`);
+    assert.equal(negativeProxyResponse.status(), expectedFrameStatus,
+      `${mode}: CMS iframe returned an unexpected HTTP status`);
+    requireObservedValue(negativeFrameLoadOutcome);
     if (mode === 'unauthorized-message') {
       await negativeFrame.waitForFunction(() => Boolean(document.querySelector('script[data-cms-editor-runtime]')),
         null, { timeout: 15000 });
@@ -1071,6 +1199,7 @@ try {
       unauthorizedDraft: document.body.innerText.includes('UNAUTHORIZED DRAFT'),
       editorRuntime: Boolean(document.querySelector('script[data-cms-editor-runtime]')),
     }));
+    results.negativeGuards[mode] = { ...frameEvidence, ...state };
     if (mode === 'unauthenticated') {
       assert.equal(state.marker, null, 'an unauthenticated request unexpectedly enabled preview font mode');
       assert.equal(state.editorRuntime, false, 'an unauthenticated request loaded the CMS runtime');
@@ -1085,7 +1214,6 @@ try {
       assert.equal(state.marker, '1', 'cmsEdit=1 in the authenticated iframe did not set the preview marker');
       assert.equal(state.editorRuntime, true, 'the iframe did not load its guarded CMS runtime');
     }
-    results.negativeGuards[mode] = state;
     if (mode === 'wrong-path') {
       const unknownRouteResponse = await negativePage.goto('https://admin.huiwen.tw/__g02/unrecognized');
       assert.equal(unknownRouteResponse?.status(), 404, 'unrecognized CMS handler path did not fail closed');
@@ -1121,7 +1249,7 @@ try {
       'the visual capture set contains duplicate routes');
     assert.deepEqual(results.visualCaptures.errors, [], 'at least one selected visual page could not be captured');
     assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
-    assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
+    assert.deepEqual(fullTcInitialViolations, [], 'a route requested full TC before explicit user on-demand activation');
     assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
     assert.deepEqual(results.initialFontNetwork.navigationErrors, [], 'at least one route had a navigation error');
     assert.deepEqual(results.initialFontNetwork.criticalRequestFailures, [], 'at least one route had a critical request failure');
