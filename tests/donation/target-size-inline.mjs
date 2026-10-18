@@ -23,6 +23,7 @@ export function isInlineTextException(element) {
         const style = getStyle(current);
         if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' ||
             style.contentVisibility === 'hidden' || Number(style.opacity) === 0 ||
+            /\bopacity\(\s*(?:0(?:\.0*)?|\.0+)%?\s*\)/i.test(style.filter || '') ||
             (style.clip && style.clip !== 'auto' && style.clip !== 'none') ||
             (style.clipPath && style.clipPath !== 'none')) return false;
         if (current === context) break;

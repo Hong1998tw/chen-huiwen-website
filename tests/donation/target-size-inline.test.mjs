@@ -134,6 +134,15 @@ test('target 自身巢狀包裹的文字仍不視為非 target 上下文', () =>
   assert.equal(isInlineTextException(target), false);
 });
 
+test('保留幾何但經零 opacity filter 隱藏的文字不構成上下文', () => {
+  for (const filter of ['opacity(0)', 'opacity(0%)', 'brightness(1) opacity(0.0)']) {
+    const { target } = fixture(link => new FakeElement('p').append(
+      link, new FakeElement('span', { style: { filter } }).append(new FakeText('透明文字'))
+    ));
+    assert.equal(isInlineTextException(target), false, filter);
+  }
+});
+
 test('沒有可見幾何的文字不能豁免', () => {
   const { target } = fixture(link => new FakeElement('p').append(link, new FakeText('裁切文字', false)));
   assert.equal(isInlineTextException(target), false);
