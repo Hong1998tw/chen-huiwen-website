@@ -390,6 +390,84 @@ class Q9FontProducerTests(unittest.TestCase):
         self.assertIn(ord("第"), spec["codepoints"])
         self.assertIn(ord("頁"), spec["codepoints"])
 
+    def test_cms_public_projection_replay_carries_the_real_press_runtime(self):
+        route = "press.html"
+        with tempfile.TemporaryDirectory(prefix="press-cms-projection-") as name:
+            published = Path(name) / "published"
+            published.mkdir()
+            page = BeautifulSoup((ROOT / route).read_bytes(), "html5lib")
+            stylesheet_paths, _css = fonts.linked_css(ROOT, route, page)
+            css = (ROOT / "styles.css").read_text(encoding="utf-8")
+            jp_face = re.search(
+                r'@font-face\s*\{[^}]*font-family\s*:\s*["\']Huiwen Sans JP Support["\'][^}]*\}',
+                css,
+                re.I,
+            )
+            self.assertIsNotNone(jp_face)
+            jp_src = re.search(r'src\s*:\s*url\(\s*(["\']?)([^"\')]+)\1\s*\)', jp_face.group(0), re.I)
+            self.assertIsNotNone(jp_src)
+            jp_path = fonts._safe_artifact_path(ROOT, jp_src.group(2)).relative_to(ROOT).as_posix()
+            inputs = {route, *stylesheet_paths, "press.js", fonts.TC_REL, jp_path, fonts.LICENSE_REL}
+            for relative in inputs:
+                source = ROOT / relative
+                target = published / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+
+            # Use the publication builder's real saved-edit projection, including
+            # its versioned CMS runtime URL and per-page edit manifest.
+            self.assertEqual(build_public.build_page_editor_artifacts(published, ROOT), 1)
+            projected_bytes = (published / route).read_bytes()
+            projected = BeautifulSoup(projected_bytes, "html5lib")
+            loader = projected.select_one("script[data-cms-editor-loader]")
+            self.assertIsNotNone(loader)
+            self.assertRegex(loader.get("data-cms-editor-src", ""), r"^/cms-page-editor\.[a-f0-9]{12}\.js$")
+            self.assertIsNotNone(projected.select_one("[data-press-index] [data-press-grid]"))
+            self.assertEqual(len(projected.select("[data-press-grid] [data-news-categories]")), 17)
+
+            projected_spec = fonts.extract_page_spec(
+                published, route, self.tc_cmap, self.jp_allowed, self.jp_cmap,
+            )
+            warm = Path(name) / "warm-replay"
+            warm.mkdir()
+            fonts._copy_warm_inputs(published, warm, [projected_spec])
+            self.assertEqual((warm / "press.js").read_bytes(), (published / "press.js").read_bytes())
+            warm_spec = fonts.extract_page_spec(
+                warm, route, self.tc_cmap, self.jp_allowed, self.jp_cmap,
+            )
+            self.assertEqual(warm_spec["codepoints"], projected_spec["codepoints"])
+            self.assertIn(ord("第"), warm_spec["codepoints"])
+
+    def test_press_runtime_guard_without_a_grid_needs_no_source_or_pager_copy(self):
+        with tempfile.TemporaryDirectory(prefix="press-no-grid-") as name:
+            root = Path(name)
+            soup = BeautifulSoup(
+                '<!doctype html><html><head><script src="/press.js?v=0123456789ab"></script>'
+                '</head><body><main><section data-press-index><p>靜態內容</p></section>'
+                '</main></body></html>',
+                "html5lib",
+            )
+            dynamic_text = fonts.dynamic_ui_text("press.html", soup, root)
+            self.assertNotIn("全部 ·", dynamic_text)
+            self.assertNotIn("新聞發稿第", dynamic_text)
+
+    def test_press_runtime_with_grid_reports_missing_and_unsafe_sources_separately(self):
+        active = BeautifulSoup(
+            '<!doctype html><html><head><script src="/press.js"></script></head><body>'
+            '<section data-press-index><div data-press-grid><article data-news-categories="public">甲</article>'
+            '</div><p data-press-count></p><nav data-press-pagination></nav></section>'
+            '</body></html>',
+            "html5lib",
+        )
+        with tempfile.TemporaryDirectory(prefix="press-missing-source-") as name:
+            with self.assertRaisesRegex(ValueError, "FONT_PRESS_PAGINATION_SOURCE_MISSING"):
+                fonts.dynamic_ui_text("press.html", active, Path(name))
+
+        unsafe = BeautifulSoup(str(active).replace('src="/press.js"', 'src="/scripts/press.js"'), "html5lib")
+        with tempfile.TemporaryDirectory(prefix="press-unsafe-source-") as name:
+            with self.assertRaisesRegex(ValueError, "FONT_PRESS_PAGINATION_SCRIPT_PATH_UNSAFE"):
+                fonts.dynamic_ui_text("press.html", unsafe, Path(name))
+
     def test_process_cache_key_and_fake_payload_fail_closed(self):
         cache = fonts.ProcessFontCompiler()
         codepoints = tuple(sorted(ord(char) for char in "陳慧文"))

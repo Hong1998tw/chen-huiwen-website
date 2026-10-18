@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import sys
+import tempfile
 import unittest
 
 from bs4 import BeautifulSoup
@@ -12,6 +13,20 @@ import build_font_subsets as fonts
 
 
 class FontSubsetContractTests(unittest.TestCase):
+    def test_generated_cleanup_matches_only_owned_content_addressed_assets(self):
+        self.assertTrue(fonts.is_owned_generated_font("huiwen-about-core-0123456789ab.woff2"))
+        self.assertTrue(fonts.is_owned_generated_font("huiwen-cjk-support-0123456789ab.woff2"))
+        self.assertFalse(fonts.is_owned_generated_font("huiwen-about-core-0123456789ab 2.woff2"))
+        self.assertFalse(fonts.is_owned_generated_font("third-party-0123456789ab.woff2"))
+
+    def test_full_corpus_contains_its_generated_upgrade_markup_before_injection(self):
+        with tempfile.TemporaryDirectory(prefix="font-upgrade-corpus-") as name:
+            root = Path(name)
+            (root / "about.html").write_text("<!doctype html><html><body>公開頁</body></html>", encoding="utf-8")
+            full_text = fonts.page_text(root, "about.html")
+        self.assertIn(fonts.font_upgrade_markup(), full_text)
+        self.assertIn("document.fonts.load('400 16px", full_text)
+
     def test_global_full_tc_face_uses_the_exact_source_cmap(self):
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
         css = (ROOT / "styles.css").read_text(encoding="utf-8")
@@ -139,6 +154,27 @@ class FontSubsetContractTests(unittest.TestCase):
                 full_actual = {codepoint for codepoint in fonts.cmap(paths["Full"]) if fonts.is_cjk(codepoint)}
                 self.assertEqual(core_actual, core_expected)
                 self.assertEqual(full_actual, full_delta_expected)
+
+    def test_all_legacy_face_glyphsets_match_the_generated_source_text(self):
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        source_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
+        for route, (slug, selectors) in fonts.ROUTES.items():
+            core_text = fonts.page_text(ROOT, route, selectors)
+            full_text = fonts.page_text(ROOT, route)
+            expected = {
+                "Core": {ord(char) for char in core_text}.intersection(source_cmap),
+                "Full": ({ord(char) for char in full_text} - {ord(char) for char in core_text}).intersection(source_cmap),
+            }
+            for role in ("Core", "Full"):
+                with self.subTest(route=route, role=role):
+                    match = re.search(
+                        rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} {role}";'
+                        rf'src:url\("([^\"]+)"\)',
+                        css,
+                    )
+                    self.assertIsNotNone(match)
+                    asset = ROOT / match.group(1).lstrip("/")
+                    self.assertEqual(set(fonts.cmap(asset)), expected[role])
 
     def test_dynamic_search_and_map_surfaces_use_the_full_site_face(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")

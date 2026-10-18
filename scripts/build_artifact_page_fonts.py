@@ -475,6 +475,51 @@ def linked_css(root: Path, route: str, soup) -> tuple[list[str], str]:
     return sorted(paths), "\n".join(pieces)
 
 
+def _press_script_references(soup):
+    references = []
+    for tag in soup.find_all("script", src=True):
+        raw = str(tag["src"])
+        parsed = urlsplit(raw)
+        decoded_path = unquote(parsed.path).replace("\\", "/")
+        if PurePosixPath(decoded_path).name == "press.js":
+            references.append((tag, parsed, decoded_path))
+    return references
+
+
+def _active_press_runtime(soup):
+    """Return the referenced press runtime and its grid only when it can render."""
+    references = _press_script_references(soup)
+    section = soup.select_one("[data-press-index]")
+    grid = section.select_one("[data-press-grid]") if section is not None else None
+    # press.js exits before reading PAGE_SIZE or changing text when this DOM is
+    # absent. A mere script reference is therefore not a pagination surface.
+    if not references or section is None or grid is None:
+        return None
+    if len(references) != 1:
+        raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_AMBIGUOUS")
+    return references[0], grid
+
+
+def _press_script_source(root: Path, reference) -> Path:
+    _tag, parsed, decoded_path = reference
+    if (
+        parsed.scheme or parsed.netloc or parsed.fragment
+        or decoded_path not in {"press.js", "/press.js"}
+    ):
+        raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_PATH_UNSAFE")
+    root = Path(root).resolve()
+    path = root / "press.js"
+    if path.is_symlink() or root not in path.resolve().parents:
+        raise ValueError("FONT_PRESS_PAGINATION_SOURCE_UNSAFE")
+    if not path.is_file():
+        raise ValueError("FONT_PRESS_PAGINATION_SOURCE_MISSING")
+    if parsed.query:
+        match = re.fullmatch(r"v=([a-f0-9]{12})", parsed.query)
+        if not match or not sha256_file(path).startswith(match.group(1)):
+            raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_VERSION_MISMATCH")
+    return path
+
+
 def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
     script_names = set()
     for tag in soup.find_all("script", src=True):
@@ -482,23 +527,28 @@ def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
         if not parsed.scheme and not parsed.netloc:
             script_names.add(PurePosixPath(unquote(parsed.path)).name)
     pieces = [SCRIPT_DYNAMIC_TEXT]
-    if "press.js" in script_names:
-        grid = soup.select_one("[data-press-grid]")
-        script_path = root / "press.js"
-        if grid is None or not script_path.is_file() or script_path.is_symlink():
-            raise ValueError("FONT_PRESS_PAGINATION_SOURCE_MISSING_OR_UNSAFE")
+    press_runtime = _active_press_runtime(soup)
+    if press_runtime is not None:
+        reference, grid = press_runtime
+        script_path = _press_script_source(root, reference)
         script = script_path.read_text(encoding="utf-8")
-        page_size_match = re.search(r"\bconst\s+PAGE_SIZE\s*=\s*(\d+)\s*;", script)
-        if not page_size_match:
+        page_sizes = re.findall(r"\bconst\s+PAGE_SIZE\s*=\s*(\d+)\s*;", script)
+        if not page_sizes:
             raise ValueError("FONT_PRESS_PAGE_SIZE_NOT_FOUND")
-        page_size = int(page_size_match.group(1))
+        if len(page_sizes) != 1:
+            raise ValueError("FONT_PRESS_PAGE_SIZE_AMBIGUOUS")
+        page_size_match = page_sizes[0]
+        page_size = int(page_size_match)
         if page_size < 1:
             raise ValueError("FONT_PRESS_PAGE_SIZE_INVALID")
         total = len(grid.select("[data-news-categories]"))
         pages = max(1, (total + page_size - 1) // page_size)
-        pieces.append(f"全部 · {total} 筆 · 第 1/{pages} 頁")
-        if total > page_size:
-            pieces.extend(("上一頁 1 下一頁", "新聞發稿第 1 頁"))
+        if soup.select_one("[data-press-index] [data-press-count]") is not None:
+            pieces.append(f"全部 · {total} 筆 · 第 1/{pages} 頁" if total else "全部 · 0 筆")
+        if total > page_size and soup.select_one("[data-press-index] [data-press-pagination]") is not None:
+            pieces.extend(("上一頁", "下一頁"))
+            pieces.extend(str(page) for page in range(1, pages + 1))
+            pieces.extend(f"新聞發稿第 {page} 頁" for page in range(1, pages + 1))
     if "digital.js" in script_names and PurePosixPath(route).name.startswith("achievement-"):
         pieces.append(CASE_DYNAMIC_TEXT)
     if "news.js" in script_names:
@@ -1536,6 +1586,13 @@ def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[di
         for relative in spec["stylesheetPaths"]:
             source = source_artifact / relative
             target = warm_artifact / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+        soup = BeautifulSoup(spec["html"], "html5lib")
+        press_runtime = _active_press_runtime(soup)
+        if press_runtime is not None:
+            source = _press_script_source(source_artifact, press_runtime[0])
+            target = warm_artifact / "press.js"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(source.read_bytes())
     for route in (*skipped_routes, *(row["route"] for row in excluded_routes)):

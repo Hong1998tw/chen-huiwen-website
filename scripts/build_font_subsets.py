@@ -211,15 +211,54 @@ def write_generated(name: str, payload: bytes) -> tuple[str, int]:
     return filename, len(payload)
 
 
+def is_owned_generated_font(name: str) -> bool:
+    """Match only this builder's hash-addressed outputs before stale cleanup."""
+    prefixes = {"huiwen-cjk-support"}
+    prefixes.update(
+        f"huiwen-{slug}-{face}"
+        for slug, _selectors in ROUTES.values()
+        for face in ("core", "full")
+    )
+    return any(
+        re.fullmatch(re.escape(prefix) + r"-[a-f0-9]{12}\.woff2", name)
+        for prefix in prefixes
+    )
+
+
+def font_upgrade_markup() -> str:
+    """Return the exact generated runtime so the Full corpus is complete on pass one."""
+    return (
+        f"{UPGRADE_START}<script data-huiwen-font-upgrade>"
+        "(function(){"
+        "var root=document.documentElement,requested=false;"
+        "async function upgrade(){"
+        "if(requested||!root.dataset.huiwenFontFullFamily)return;"
+        "requested=true;"
+        "try{"
+        "var loaded=await document.fonts.load('400 16px \"'+root.dataset.huiwenFontFullFamily+'\"',document.body.innerText||' ');"
+        "if(loaded.length)root.dataset.huiwenFontFull='1';else requested=false;"
+        "}catch(error){requested=false;}"
+        "}"
+        "window.addEventListener('scroll',upgrade,{passive:true});"
+        "window.addEventListener('pointerdown',upgrade,{passive:true});"
+        "window.addEventListener('focusin',upgrade);"
+        "})();</script>"
+        f"{UPGRADE_END}"
+    )
 def page_text(root: Path, route: str, selectors: tuple[str, ...] | None = None) -> str:
     path = root / route
     if not path.is_file():
         raise ValueError(f"FONT_ROUTE_MISSING: {route}")
     source = path.read_text(encoding="utf-8")
     if selectors is None:
+        pieces = [source]
+        if route in ROUTES:
+            # build_font_subsets injects this exact markup below. Include it
+            # before collecting Full glyphs so a first canonical build is fixed.
+            pieces.append(font_upgrade_markup())
         if route == "explore.html":
-            return source + "\n" + explore_dynamic_text(root, core=False)
-        return source
+            pieces.append(explore_dynamic_text(root, core=False))
+        return "\n".join(pieces)
     soup = BeautifulSoup(source, "html.parser")
     pieces = []
     header = soup.select_one(".topline")
@@ -485,24 +524,7 @@ def write_page_metadata(root: Path, route: str, slug: str, full_family: str, cor
             raise ValueError(f"FONT_STYLESHEET_NOT_FOUND: {route}")
         html = html[:first_stylesheet.start()] + preload + "\n" + html[first_stylesheet.start():]
 
-    upgrade_script = (
-        f"{UPGRADE_START}<script data-huiwen-font-upgrade>"
-        "(function(){"
-        "var root=document.documentElement,requested=false;"
-        "async function upgrade(){"
-        "if(requested||!root.dataset.huiwenFontFullFamily)return;"
-        "requested=true;"
-        "try{"
-        "var loaded=await document.fonts.load('400 16px \"'+root.dataset.huiwenFontFullFamily+'\"',document.body.innerText||' ');"
-        "if(loaded.length)root.dataset.huiwenFontFull='1';else requested=false;"
-        "}catch(error){requested=false;}"
-        "}"
-        "window.addEventListener('scroll',upgrade,{passive:true});"
-        "window.addEventListener('pointerdown',upgrade,{passive:true});"
-        "window.addEventListener('focusin',upgrade);"
-        "})();</script>"
-        f"{UPGRADE_END}"
-    )
+    upgrade_script = font_upgrade_markup()
     if UPGRADE_START in html:
         html = re.sub(
             re.escape(UPGRADE_START) + r".*?" + re.escape(UPGRADE_END),
@@ -527,7 +549,8 @@ def build(root: Path = ROOT) -> None:
 
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     for old in GENERATED_DIR.glob("*.woff2"):
-        old.unlink()
+        if is_owned_generated_font(old.name):
+            old.unlink()
 
     jp_filename = None
     if jp_fallback:
