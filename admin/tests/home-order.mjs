@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, consoleScript, style, dateTimeScript, editorRuntime] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript, editorRuntime, editorLoader] = await Promise.all([
   readFile(new URL("index.html", root)), readFile(new URL("app.js", root)),
   readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)), readFile(new URL("date-time.js", root)),
   readFile(new URL("../../cms-page-editor.js", import.meta.url)),
+  readFile(new URL("../../scripts/cms_editor_loader.js", import.meta.url), "utf8"),
 ]);
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "摘要 A", b: "摘要 B", c: "摘要 C", d: "摘要 D" } };
 const cases = ["a", "b", "c", "d", "e"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], updated: "2026-09-27", images: [] }));
@@ -23,7 +24,7 @@ const server = createServer(async (req, res) => {
   if (path === "/style.css") return send(res, style, "text/css");
   if (path === "/date-time.js") return send(res, dateTimeScript, "application/javascript");
   if (path === "/api/page-preview") return send(res,
-    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"><title>陳慧文｜測試首頁</title><meta name="description" content="測試首頁說明"><meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png"><meta property="og:image:alt" content="陳慧文・測試首頁"></head><body><main><div class="civic-story-grid"></div></main><script src="https://www.huiwen.tw/cms-page-editor.js" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json"></script></body></html>`, "text/html; charset=utf-8");
+    `<!doctype html><html><head><base href="https://www.huiwen.tw/index.html"><title>陳慧文｜測試首頁</title><meta name="description" content="測試首頁說明"><meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png"><meta property="og:image:alt" content="陳慧文・測試首頁"><script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js" data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${server.address().port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json">${editorLoader}</script></head><body><main><div class="civic-story-grid"></div></main></body></html>`, "text/html; charset=utf-8");
   if (path === "/api/session") return send(res, JSON.stringify({ login: "owner@example.test", csrf: "test" }));
   if (path === "/api/documents") return send(res, JSON.stringify({ documents: [] }));
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));

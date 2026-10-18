@@ -6,6 +6,7 @@ from html import unescape
 import json,re,subprocess,xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import html5lib
+from audit_external_links import forbidden_image_source_host
 R=Path(__file__).resolve().parents[1];errors=[]
 def require(ok,label):
  if not ok:errors.append(label)
@@ -58,7 +59,10 @@ for name,doc in pages.items():
   except ValueError:require(False,f'{name}: structured JSON')
  for image in doc.select('img'):
   require(image.has_attr('alt'),f'{name}: image alt')
-  if image.get('src'):require(image.get('width') and image.get('height'),f'{name}: image dimensions')
+  if image.get('src'):
+   require(image.get('width') and image.get('height'),f'{name}: image dimensions')
+   blocked_host=forbidden_image_source_host(image['src'])
+   require(not blocked_host,f'{name}: blocked external image source {blocked_host}')
  for el in doc.select('[href],[src]'):
   raw=el.get('href',el.get('src'));u=urlsplit(raw)
   if u.scheme or u.netloc:continue

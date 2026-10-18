@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import publish_from_cms as cms
 import publish_from_notion as engine
-from page_copy import digest as page_digest, render as render_page_copy, render_with_manifest
+from page_copy import cms_editor_loader, digest as page_digest, render as render_page_copy, render_with_manifest
 from case_media import classify as classify_media, render as render_media
 
 class StandaloneCMS(unittest.TestCase):
@@ -132,17 +132,23 @@ class StandaloneCMS(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source changed'):
             render_page_copy(changed, 'fixture.html', fields)
 
-    def test_editor_runtime_loads_only_in_admin_iframe(self):
+    def test_editor_runtime_loader_is_only_enabled_in_cms_iframes(self):
         source = '<html><head><script src="/cms-page-editor.js" defer></script></head><body><main><p>Copy</p></main></body></html>'
         marked, count = render_page_copy(source, 'fixture.html')
         self.assertEqual(count, 1)
         self.assertIn('data-cms-editor-loader', marked)
-        self.assertIn("new URLSearchParams(location.search).get('cmsEdit')==='1'", marked)
-        self.assertIn('window.self!==window.top', marked)
-        self.assertIn("</scr'+'ipt>", marked)
+        self.assertIn('data-cms-editor-src="/cms-page-editor.js"', marked)
+        self.assertIn('params.get("cmsEdit") !== "1"', marked)
+        self.assertIn('window.self === window.top', marked)
+        self.assertIn('document.createElement("script")', marked)
+        self.assertIn('script.async = false', marked)
+        self.assertNotIn('document.write', marked)
         self.assertNotIn('<script src="/cms-page-editor.js" defer></script>', marked)
         self.assertNotIn('data-cms-edit-id', marked)
+        self.assertEqual(marked.count(cms_editor_loader()), 1)
         self.assertEqual(render_page_copy(marked, 'fixture.html')[0], marked)
+        with self.assertRaisesRegex(ValueError, 'runtime path'):
+            cms_editor_loader('https://example.invalid/cms-page-editor.js')
 
     def test_editor_manifest_retains_original_hash_from_legacy_instrumentation(self):
         source = f'<html><head></head><body><main><p data-cms-edit-id="main&gt;p:nth-of-type(1)" data-cms-source-hash="{"a" * 64}" data-cms-value-hash="{page_digest("Copy")}">Copy</p></main></body></html>'

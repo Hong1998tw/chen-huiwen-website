@@ -36,6 +36,23 @@ def canonical_url(raw):
 def url_fingerprint(url):
     return 'sha256:' + hashlib.sha256(url.encode('utf-8')).hexdigest()
 
+FORBIDDEN_IMAGE_SOURCE_DOMAINS = (
+    'fbcdn.net', 'instagram.com', 'cdninstagram.com', 'googleusercontent.com',
+)
+
+def forbidden_image_source_host(raw):
+    """Return a disallowed remote image host, without restricting ordinary source links."""
+    try:
+        parsed = urlsplit(raw)
+        host = (parsed.hostname or '').lower().rstrip('.')
+    except (TypeError, ValueError):
+        return None
+    is_remote = parsed.scheme in ('http', 'https') or (not parsed.scheme and bool(parsed.netloc))
+    if not is_remote or not host:
+        return None
+    return next((domain for domain in FORBIDDEN_IMAGE_SOURCE_DOMAINS
+                 if host == domain or host.endswith('.' + domain)), None)
+
 def inventory(root):
     urls = {}
     def add(raw, source):

@@ -37,7 +37,7 @@
 .map-panel{position:sticky;top:140px;background:#fff;padding:14px;border-radius:28px}
 #achievement-map{height:580px;border-radius:20px;background:#e3ebe3;z-index:0}
 .map-startup{padding:30px}.map-message{font-size:13px;margin:14px 3px 8px}
-.map-source{font-size:11px;line-height:1.7;color:#63776b;margin:10px 3px}.map-source a{text-decoration:underline}
+.map-source{font-size:12px;line-height:1.7;color:#63776b;margin:10px 3px}.map-source a{text-decoration:underline}
 .map-fit{padding:9px 14px;font-size:12px}
 .results-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:16px}
 .results-heading h2{font-size:22px}.results-heading p{font-size:12px;color:#617366}
@@ -48,24 +48,24 @@
 .case-tag-group{min-width:0}
 .case-tags,.case-subtags{display:flex;gap:6px;flex-wrap:wrap;margin:0}
 .case-subtags{margin-top:6px}
-.case-tags span{padding:4px 9px;background:#eef3e9;color:#41604c;border-radius:20px;font-size:10px}
-.case-subtags span{padding:3px 8px;border:1px solid #d7e1da;background:#fff;color:#5b6f66;border-radius:20px;font-size:10px}
+.case-tags span{padding:4px 9px;background:#eef3e9;color:#41604c;border-radius:20px;font-size:12px}
+.case-subtags span{padding:3px 8px;border:1px solid #d7e1da;background:#fff;color:#5b6f66;border-radius:20px;font-size:12px}
 .case-card h3{font-size:21px;line-height:1.45;margin:15px 0 0}
 .case-card h3 a:hover{text-decoration:underline;text-underline-offset:4px}
 .case-summary{font-size:13.5px;line-height:1.8;color:#5a6c62;margin:10px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.case-status{display:inline-flex;align-items:center;min-height:27px;font-size:10px;letter-spacing:.04em;color:#805329;background:#fff6ea;border:1px solid #ead7bf;border-radius:999px;padding:3px 8px;white-space:nowrap}
+.case-status{display:inline-flex;align-items:center;min-height:27px;font-size:12px;letter-spacing:.04em;color:#805329;background:#fff6ea;border:1px solid #ead7bf;border-radius:999px;padding:3px 8px;white-space:nowrap}
 .case-card-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:17px;padding-top:13px;border-top:1px solid #edf1ee}
-.case-place{color:#65776f;font-size:11px;line-height:1.5;max-width:42%}
+.case-place{color:#65776f;font-size:12px;line-height:1.5;max-width:42%}
 .case-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;flex-wrap:wrap}
 .case-primary-link{font-weight:800;color:#244e3d}
 .case-actions button{border:1px solid #cfdccd;border-radius:20px;font:inherit;background:#fff;padding:7px 10px;cursor:pointer;color:#375a4b}
-.location-unmapped{color:#52615b;font-size:11px}
+.location-unmapped{color:#52615b;font-size:12px}
 .case-marker{display:grid;place-items:center}.case-marker span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#1e503c;color:white;box-shadow:0 2px 8px #24483455;font-size:13px;font-weight:800}
 .map-popup strong{font-size:14px}.map-popup a{display:block;margin:12px 0;font-size:13px}
 .map-popup-case.is-selected{padding:8px 10px;border-inline-start:3px solid #315d48;background:#edf6df}
 .map-popup-case.is-selected a{color:#254c3e}
 .map-popup-selected{margin:0 0 4px;color:#315d48;font-size:.76rem;font-weight:700}
-.leaflet-container{font-family:inherit}.leaflet-popup-content{max-height:280px;overflow:auto}.leaflet-control-attribution{font-size:10px!important}.leaflet-container a{color:#254c3e}
+.leaflet-container{font-family:inherit}.leaflet-popup-content{max-height:280px;overflow:auto}.leaflet-control-attribution{font-size:12px!important}.leaflet-container a{color:#254c3e}
 [data-case][hidden]{display:none}
 #case-empty{background:#fff;border-radius:20px;padding:30px}#case-empty p{margin:16px 0}
 
@@ -91,7 +91,7 @@
 @media(max-width:440px){
  .map-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
  .map-controls>div:first-child{grid-column:1/-1}
- .map-controls label{font-size:11px}
+ .map-controls label{font-size:12px}
  .map-controls input,.map-controls select{font-size:15px}
  .map-controls button{width:100%}
  .case-card-footer{display:block}.case-place{display:block;max-width:none;margin-bottom:9px}.case-actions{justify-content:flex-start}
@@ -115,9 +115,9 @@
 }
 @media(max-width:440px){
  .map-controls{padding:10px;gap:5px 8px}
- .map-controls label{font-size:11px;line-height:1.2;margin-bottom:3px}
+ .map-controls label{font-size:12px;line-height:1.2;margin-bottom:3px}
  .map-controls input,.map-controls select{min-height:44px;padding:7px 9px}
- .map-controls .case-live-summary{font-size:11px;line-height:1.25;padding-top:0}
+ .map-controls .case-live-summary{font-size:12px;line-height:1.25;padding-top:0}
 }
 
 /* Keep the confirmed total visible while the source and breakdown stay one tap away. */
