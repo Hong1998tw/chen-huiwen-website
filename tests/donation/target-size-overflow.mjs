@@ -614,14 +614,16 @@ function runNewsArticleOverflowProbe() {
         let restoredRangeEvidence = null;
         try {
           restoreInlineStyleAttribute(heading, originalStyleAttribute);
-        } catch (error) {
-          restorationError = String(error).slice(0, 400);
-        }
-        try {
           restored = captureState(heading, headingSelector);
           restoredRangeEvidence = captureSelectedCodepointRanges(heading, headingSelector, selectedCodepointOffsets);
         } catch (error) {
-          restorationError = restorationError || String(error).slice(0, 400);
+          restorationError = String(error).slice(0, 400);
+        } finally {
+          try {
+            restoreInlineStyleAttribute(heading, originalStyleAttribute);
+          } catch (error) {
+            restorationError = restorationError || String(error).slice(0, 400);
+          }
         }
         const restoration = {
           property: candidate.property,
