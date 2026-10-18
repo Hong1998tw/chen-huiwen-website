@@ -12,7 +12,7 @@
 .home-redesign header{border-bottom:1px solid var(--line)}
 .home-redesign .masthead{display:flex;align-items:center;justify-content:space-between;min-height:92px;gap:24px}
 .home-redesign .brand{font:600 34px var(--serif);white-space:nowrap}
-.home-redesign .brand small{display:block;font:11px var(--sans);letter-spacing:.24em;padding-top:6px}
+.home-redesign .brand small{display:block;font:12px var(--sans);letter-spacing:.24em;padding-top:6px}
 .home-redesign .nav{display:flex;gap:30px;font-size:15px}
 .home-redesign .phone{font-size:14px;font-weight:700;border-bottom:1px solid;padding:8px 0}
 .home-redesign .menu{display:none}
@@ -104,10 +104,10 @@
 }
 @media(max-width:620px){.home-redesign{font-size:16px}
 .home-redesign .wrap{width:calc(100% - 40px)}
-.home-redesign .preview{font-size:11px;padding:8px 20px}
+.home-redesign .preview{font-size:12px;padding:8px 20px}
 .home-redesign .masthead{min-height:76px}
 .home-redesign .brand{font-size:28px}
-.home-redesign .brand small{font-size:9px}
+.home-redesign .brand small{font-size:12px}
 .home-redesign .menu{display:block;border:1px solid var(--line);background:transparent;min-height:44px;min-width:58px;color:var(--ink)}
 .home-redesign .nav{display:none}
 .home-redesign .nav.open{display:flex;position:absolute;z-index:4;background:var(--paper);top:110px;left:0;right:0;flex-direction:column;padding:25px}
