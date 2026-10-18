@@ -16,9 +16,9 @@
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest?v=20260912-1">
 <!-- HUIWEN_FONT_PRELOAD:start --><link rel="preload" href="/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-ead400a26308.woff2" as="font" type="font/woff2" crossorigin="anonymous"><!-- HUIWEN_FONT_PRELOAD:end -->
-<link rel="stylesheet" href="styles.css?v=09d1e4449f77">
-<link rel="stylesheet" href="digital.css?v=df71afb64c5c" data-digital-civic="20260912-p0-v2">
-<script src="site.js?v=9a075fcc7f89" defer></script>
+<link rel="stylesheet" href="styles.css?v=594b0c8846b1">
+<link rel="stylesheet" href="digital.css?v=ce930dd462b4" data-digital-civic="20260912-p0-v2">
+<script src="site.js?v=39080b4ef4e7" defer></script>
 <script src="digital.js?v=d1575ba776f3" defer data-digital-civic="20260912-p0-v2"></script>
 <meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png">
 <meta property="og:image:secure_url" content="https://www.huiwen.tw/assets/site-share-20260909.png">
@@ -32,19 +32,42 @@
 <meta name="twitter:image" content="https://www.huiwen.tw/assets/site-share-20260909.png">
 <meta name="twitter:image:alt" content="陳慧文・高雄市議員・鳳山區">
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://www.huiwen.tw/#website","url":"https://www.huiwen.tw/","name":"陳慧文官網","inLanguage":"zh-Hant-TW"},{"@type":"Person","@id":"https://www.huiwen.tw/#person","name":"陳慧文","jobTitle":"高雄市議員","url":"https://www.huiwen.tw/about.html","image":"https://www.huiwen.tw/assets/legal/portrait.webp","areaServed":"鳳山區","sameAs":["https://www.kcc.gov.tw/MemberInfo_New.aspx?msn=2215&n=39&sms=9028","https://www.facebook.com/hwcfs/","https://www.instagram.com/huiwen.ifs/","https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ","https://www.threads.com/@huiwen.ifs"]},{"@type":"Organization","@id":"https://www.huiwen.tw/#organization","name":"陳慧文服務處","url":"https://www.huiwen.tw/","telephone":"+886-7-821-2536","address":{"@type":"PostalAddress","streetAddress":"錦田路231號","addressLocality":"鳳山區","addressRegion":"高雄市","addressCountry":"TW"},"sameAs":["https://www.facebook.com/hwcfs/","https://www.instagram.com/huiwen.ifs/","https://www.youtube.com/channel/UCJPIvufDGcdD8PgYUi_YyDQ"]}]}</script>
-<link rel="stylesheet" href="mobile.css?v=91153f11c819">
+<link rel="stylesheet" href="mobile.css?v=3c9b3fedbc36">
 <link rel="stylesheet" href="layout.css?v=28f06ae496e8">
-<link rel="stylesheet" href="civic.css?v=bd612ed6cee3">
+<link rel="stylesheet" href="civic.css?v=d968a1363772">
 <script src="civic.js?v=2d27d9000a60" defer></script>
-<script data-cms-editor-loader>if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))document.write('<scr'+'ipt defer src="/cms-page-editor.js?v=78cbab7cfa45"></scr'+'ipt>');</script>
-<link rel="stylesheet" href="home.css?v=2ad5e5581d6f">
+<script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js?v=2671ebb87087">(() => {
+  const loader = document.currentScript;
+  const params = new URLSearchParams(window.location.search);
+  if (!loader || window.self === window.top || params.get("cmsEdit") !== "1") return;
+
+  const source = loader.dataset.cmsEditorSrc;
+  if (!source || document.querySelector("script[data-cms-editor-runtime]")) return;
+
+  const loadEditor = () => {
+    if (document.querySelector("script[data-cms-editor-runtime]")) return;
+    const script = document.createElement("script");
+    script.src = source;
+    // Dynamic classic scripts do not honor defer; disable async execution instead.
+    script.async = false;
+    script.dataset.cmsEditorRuntime = "true";
+    (document.head || document.documentElement).append(script);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadEditor, { once: true });
+  } else {
+    loadEditor();
+  }
+})();</script>
+<link rel="stylesheet" href="home.css?v=06bab03ca3e4">
 <script src="home.js?v=fed20647636d" defer></script>
 <script src="small-q.js?v=a0c9c418aeca" defer></script>
 </head>
 <body class="homepage-v2">
 <a class="skip-link" href="#main">跳到主要內容</a>
 <!-- shared-header:start -->
-<div class="topline"><div class="wrap">高雄市議員 · 鳳山區<span>服務專線 <a href="tel:+88678212536">07-821-2536</a></span></div></div>
+<section class="topline" aria-label="議員與服務資訊"><div class="wrap">高雄市議員 · 鳳山區<span>服務專線 <a href="tel:+88678212536">07-821-2536</a></span></div></section>
 <header class="site-header"><div class="wrap nav-wrap"><a href="./" class="brand"><span class="brand-mark" aria-hidden="true">文<span>✳</span></span><span class="brand-name">陳慧文</span><span class="brand-role">高雄市議員<br>CHEN HUI-WEN</span></a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="navigation">選單 <span aria-hidden="true">☰</span></button><nav id="navigation" aria-label="主要導覽"><details class="nav-group"><summary>地方與議題</summary><div class="nav-group-links"><a href="achievements.html">查地方與進度</a><a href="explore.html">依主題延伸閱讀</a></div></details><details class="nav-group"><summary>慧文的工作</summary><div class="nav-group-links"><a href="council-records.html">議會公開紀錄</a><a href="news.html">媒體報導</a><a href="press.html">服務處新聞稿</a><a href="activities.html">公開行程與活動</a><a href="updates.html">網站更新摘要</a></div></details><details class="nav-group"><summary>關於慧文</summary><div class="nav-group-links"><a href="about.html">認識慧文</a><a href="political-donation.html">政治獻金</a></div></details><details class="nav-group"><summary>服務處</summary><div class="nav-group-links"><a href="service.html">聯絡與服務時間</a><a href="service.html#monthly-heading">公益律師時間表</a><a href="service-guides.html">洽詢準備指南</a><a href="petition.html">案件表單</a></div></details><details class="nav-group"><summary>2026 選舉</summary><div class="nav-group-links"><a href="election.html">2026 選舉資訊</a><a href="vision.html">政見原文與追蹤</a></div></details></nav></div></header>
 <!-- shared-header:end -->
 <main id="main" class="home-redesign"><section class="wrap hero hero-grid" aria-labelledby="hero-title"><div class="hero-copy"><p class="kicker">與鳳山，一起向前</p><h1 id="hero-title"><span>慧文會武</span><span>會做事</span></h1><p class="hero-intro">從生活大小事，到城市的下一步。<br>民眾服務、議會問政，與你一起關心鳳山。</p><div class="hero-actions"><a class="primary" href="service.html#contact">聯絡服務處</a><a class="outline" href="https://line.me/R/ti/p/@yve2766q" target="_blank" rel="noopener noreferrer">LINE 官方帳號 ↗</a></div><nav class="hero-task-links" aria-label="首頁任務入口"><a href="service.html#contact">服務協助</a><a href="achievements.html#case-results">地方進度</a><a href="council-records.html">問政紀錄</a></nav></div><figure class="portrait hero-portrait"><div class="portrait-frame"><img src="assets/legal/portrait.webp" srcset="assets/home-portrait-384.webp 384w, assets/home-portrait-480.webp 480w, assets/home-portrait-640.webp 640w, assets/legal/portrait.webp 1004w" sizes="(max-width:620px) calc(92vw - 36.8px), (max-width:900px) 44vw, 490px" fetchpriority="high" loading="eager" alt="陳慧文穿淺藍襯衫，雙手舉起蜜柑玩偶的半身照片" width="1004" height="1506"></div><figcaption>陳慧文　高雄市議員・鳳山區</figcaption></figure></section>

@@ -29,11 +29,14 @@ jobs:
       - run: node --check tests/donation/digital-civic.mjs
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
+      - run: node --check tests/donation/min-font.mjs
       - run: node --check tests/donation/election-mode.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
       - run: node tests/donation/browser.mjs
+      - name: Check computed text font sizes and horizontal overflow across representative pages
+        run: node tests/donation/min-font.mjs
       - run: node tests/donation/sticky-navigation.mjs
       - run: node tests/donation/small-q.mjs
       - run: node tests/donation/public-service-audit.mjs

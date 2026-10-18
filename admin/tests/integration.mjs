@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { createHash } from "node:crypto";
+import { readCmsEditorLoaderSource } from "./cms-editor-loader-source.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const dir = mkdtempSync(`${tmpdir()}/huiwen-cms-test-`);
 const port = 18794,
@@ -340,7 +341,8 @@ try {
       page.on('requestfailed',request=>console.error(`CMS_BROWSER requestfailed: ${request.url()} · ${request.failure()?.errorText||'unknown'}`));
       let editorRuntimeRequests=0, editorManifestRequests=0;
       const manifestPath = "/cms-editor-manifests/index.html.a1b2c3d4e5f6.json";
-      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cfasync="false" data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">if(window.self!==window.top&&document.currentScript?.dataset.cmsEditorEnabled==='true')document.write('<scr'+'ipt defer src="/cms-page-editor.0123456789ab.js"></scr'+'ipt>');</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
+      const editorLoader = readCmsEditorLoaderSource();
+      const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cfasync="false" data-cms-editor-loader data-cms-editor-src="/cms-page-editor.0123456789ab.js" data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">${editorLoader}</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
       const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
       const editorRuntime = readFileSync(root + "../cms-page-editor.js", "utf8");
       const axeScript = readFileSync(root + "../tests/donation/node_modules/axe-core/axe.min.js", "utf8");
@@ -350,8 +352,8 @@ try {
         cases:[{id:"a",title:"專題 A",summary:"首頁主題",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]},
           {id:"b",title:"專題 B",summary:"延伸閱讀",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]}]
       })}));
-      page.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
-      await page.route("https://www.huiwen.tw/**", route => {
+      context.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
+      await context.route("https://www.huiwen.tw/**", route => {
         const path = new URL(route.request().url()).pathname;
         if (/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path)) return route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime});
         if (path === manifestPath) return route.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:editorManifest});
@@ -367,6 +369,10 @@ try {
       assert.equal(editorRuntimeRequests,0,'ordinary public visits must not download the CMS editor runtime');
       assert.equal(editorManifestRequests,0,'ordinary public visits must not download editor manifests');
       assert.equal(await publicVisitor.locator('[data-cms-edit-id]').count(),0,'public HTML must not carry editor selectors');
+      await publicVisitor.setContent('<!doctype html><iframe src="https://www.huiwen.tw/index.html"></iframe>');
+      await publicVisitor.frameLocator('iframe').locator('h1').waitFor();
+      assert.equal(editorRuntimeRequests,0,'an iframe without cmsEdit=1 must not download the CMS editor runtime');
+      assert.equal(editorManifestRequests,0,'an iframe without cmsEdit=1 must not download editor manifests');
       await publicVisitor.close();
       const screenshotDir=process.env.CMS_SCREENSHOTS;
       if(screenshotDir)mkdirSync(screenshotDir,{recursive:true});
@@ -415,11 +421,20 @@ try {
         await page.locator('#tab-versions').click();
         await page.locator('#tab-content').click();
         await page.waitForFunction(()=>document.querySelector('#page-frame')?.getAttribute('src')?.startsWith('/api/page-preview?'));
-        assert.equal(new URL(await page.locator('#page-frame').getAttribute('src'),origin).pathname,'/api/page-preview');
+        const previewUrl = new URL(await page.locator('#page-frame').getAttribute('src'),origin);
+        assert.equal(previewUrl.pathname,'/api/page-preview');
+        assert.equal(previewUrl.searchParams.get('cmsEdit'),'1','the authenticated CMS iframe must opt into editor loading explicitly');
         assert.equal((await page.locator('#page-frame').getAttribute('sandbox')).includes('allow-same-origin'),false,
           'published page scripts must not share the authenticated admin origin');
         const frame=page.frameLocator('#page-frame');
         await frame.locator('h1[contenteditable="true"]').waitFor();
+        await frame.locator('script[data-cms-editor-loader]').evaluate(loader=>{
+          const duplicate=document.createElement('script');
+          for(const attribute of loader.attributes)duplicate.setAttribute(attribute.name,attribute.value);
+          duplicate.textContent=loader.textContent;
+          loader.after(duplicate);
+        });
+        await page.waitForTimeout(100);
         if(width===390)await capture('mobile-content-390');
         if(width===1440)await capture('desktop-content');
         if(width===390 || width===1440){
