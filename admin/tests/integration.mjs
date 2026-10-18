@@ -352,8 +352,8 @@ try {
         cases:[{id:"a",title:"專題 A",summary:"首頁主題",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]},
           {id:"b",title:"專題 B",summary:"延伸閱讀",status:"持續追蹤",categories:["地方專題"],updated:"2026-09-27",images:[]}]
       })}));
-      page.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
-      await page.route("https://www.huiwen.tw/**", route => {
+      context.on('request',request=>{const path=new URL(request.url()).pathname;if(/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path))editorRuntimeRequests++;if(path===manifestPath)editorManifestRequests++;});
+      await context.route("https://www.huiwen.tw/**", route => {
         const path = new URL(route.request().url()).pathname;
         if (/^\/cms-page-editor\.[a-f0-9]{12}\.js$/.test(path)) return route.fulfill({status:200,contentType:"application/javascript",body:editorRuntime});
         if (path === manifestPath) return route.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:editorManifest});
