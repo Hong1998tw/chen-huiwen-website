@@ -79,6 +79,16 @@ test('restoring an absent style attribute removes the temporary attribute', () =
   assert.equal(inlineStyleAttributeMatches(element, original), true);
 });
 
+test('restoring an empty but present style attribute preserves its presence and empty value', () => {
+  const element = new FakeElement('');
+  const original = captureInlineStyleAttribute(element);
+  element.setAttribute('style', 'letter-spacing: 0 !important');
+  restoreInlineStyleAttribute(element, original);
+  assert.equal(element.attributes.has('style'), true);
+  assert.equal(element.getAttribute('style'), '');
+  assert.equal(inlineStyleAttributeMatches(element, original), true);
+});
+
 test('restoring a present style attribute preserves every original inline declaration exactly', () => {
   const original = 'color: rgb(1, 2, 3); --keep: a b; overflow-wrap: break-word !important;';
   const element = new FakeElement(original);

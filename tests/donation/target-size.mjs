@@ -376,7 +376,12 @@ try {
               return probe.run();
             });
             const restoration = testCase.zoomOverflowDiagnostics.headingProbe.restoration;
-            if (restoration?.required && (!restoration.styleAttributeRestoredExactly || !restoration.geometryAndComputedRestoredExactly)) {
+            if (restoration?.required && (
+              !restoration.styleAttributeRestoredExactly ||
+              !restoration.geometryAndComputedRestoredExactly ||
+              !restoration.baselineRangeRestoredExactly ||
+              !restoration.allPerProbeRestorationsExact
+            )) {
               addFailure('overflow-diagnostic-restore:' + route.id, restoration);
             }
             report.diagnostics.push({
