@@ -28,7 +28,8 @@ const legacyRoutes = [
   ['political-donation.html', 'political-donation'], ['election.html', 'election'],
   ['explore.html', 'explore'],
 ];
-const results = { samples: [], legacyRoutes: [], cmsPreview: {}, negativeGuards: {} };
+const schemaRoutes = ['offline.html', 'renwu-anju-social-housing/index.html'];
+const results = { samples: [], schemaRoutes: [], legacyRoutes: [], cmsPreview: {}, negativeGuards: {} };
 const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1365, height: 950 } });
@@ -102,6 +103,42 @@ try {
     await page.locator('html').evaluate((html) => { html.style.removeProperty('font-size'); });
     await page.setViewportSize({ width: 1365, height: 950 });
     results.samples.push({ route, preloads: state.preloads, footerGlyphs: footerCodepoints.length, zoom });
+  }
+
+  for (const route of schemaRoutes) {
+    const routeRow = fontManifest.routes[route];
+    assert.ok(routeRow, `missing schema-2 route: ${route}`);
+    const response = await page.goto(new URL(route, base).href, { waitUntil: 'domcontentloaded' });
+    assert.equal(response.status(), 200, route);
+    await page.evaluate(() => document.fonts.ready.then(() => true));
+    const state = await page.evaluate(() => {
+      const heading = document.querySelector('main h1');
+      return {
+        preloads: performance.getEntriesByType('resource')
+          .map((entry) => new URL(entry.name).pathname)
+          .filter((path) => path.startsWith('/assets/fonts/huiwen-site-sans/page-'))
+          .sort(),
+        rootFamily: getComputedStyle(document.documentElement).getPropertyValue('--huiwen-font-family'),
+        bodyFamily: getComputedStyle(document.body).fontFamily,
+        headingFamily: heading ? getComputedStyle(heading).fontFamily : '',
+        headingPresent: Boolean(heading),
+        artifactRoute: document.documentElement.dataset.huiwenFontArtifactRoute || null,
+      };
+    });
+    const expected = routeRow.preloads.map((path) => `/${path}`).sort();
+    assert.deepEqual(state.preloads, expected, `${route}: schema-2 first-view preload closure`);
+    assert.equal(state.artifactRoute, route);
+    assert.ok(state.headingPresent, `${route}: missing page heading`);
+    assert.match(state.rootFamily, /Huiwen Sans TC Page Common/);
+    assert.match(state.headingFamily, /Huiwen Sans TC Page Delta/);
+    if (route === 'offline.html') {
+      assert.match(state.bodyFamily, /Huiwen Sans TC Page Delta/,
+        'offline direct Huiwen Sans TC body family was not overridden by the artifact faces');
+      assert.match(state.bodyFamily, /Huiwen Sans TC Page Common/,
+        'offline body family did not retain the common fallback face');
+    }
+    results.schemaRoutes.push({ route, preloads: state.preloads, rootFamily: state.rootFamily,
+      bodyFamily: state.bodyFamily, headingFamily: state.headingFamily });
   }
   assert.deepEqual(observedFullTc, [], 'initial representative page visits downloaded the 783,820-byte full TC font');
 
@@ -326,7 +363,8 @@ try {
   const output = resolve(root, 'tests/donation/results/page-font-artifact');
   await mkdir(output, { recursive: true });
   await writeFile(resolve(output, 'report.json'), JSON.stringify(results, null, 2) + '\n');
-  console.log(JSON.stringify({ samples: results.samples.length, legacyRoutes: results.legacyRoutes.length,
+  console.log(JSON.stringify({ samples: results.samples.length, schemaRoutes: results.schemaRoutes.length,
+    legacyRoutes: results.legacyRoutes.length,
     cmsFontBytes: results.cmsPreview.fontBytes, negativeGuards: Object.keys(results.negativeGuards) }));
 } finally {
   await browser.close();

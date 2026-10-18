@@ -57,9 +57,26 @@ class PageFontArtifactContractTests(unittest.TestCase):
     def test_manifest_and_asset_namespaces_are_publication_bound(self):
         self.assertEqual(hashlib.sha256(self.manifest_bytes).hexdigest(),
                          self.publication["files"][contract.FONT_MANIFEST])
+        self.assertEqual(self.manifest["schemaVersion"], 2)
+        self.assertEqual(len(self.routes), 464)
+        inventory = self.manifest["routeInventory"]
+        original_markers = {
+            "about.html", "achievements.html", "election.html", "explore.html", "index.html",
+            "news-20260915-special-education-nurse.html", "news.html", "political-donation.html",
+            "vision.html",
+        }
+        self.assertEqual(set(inventory["skippedExistingFontRoutes"]), original_markers)
+        for route in original_markers:
+            self.assertEqual((self.artifact / route).read_bytes(), (ROOT / route).read_bytes(), route)
+        self.assertEqual(len(inventory["excludedRoutes"]), 5)
+        self.assertTrue(all(row["reason"] == producer.LEGACY_REDIRECT_REASON
+                            for row in inventory["excludedRoutes"]))
+        self.assertIn("offline.html", self.routes)
+        self.assertIn("renwu-anju-social-housing/index.html", self.routes)
         self.assertEqual(set(self.fonts), {
             path for path in self.publication["files"] if contract.is_page_font_path(path)
         })
+        self.assertEqual(len(self.fonts), 465)
         self.assertTrue(all(Path(path).name == self.fonts[path]["sha256"] + ".woff2" for path in self.fonts))
 
     def test_ordinary_pages_and_legacy_fonts_are_not_page_font_manifest_assets(self):
@@ -69,9 +86,10 @@ class PageFontArtifactContractTests(unittest.TestCase):
             self.assertFalse(contract.is_page_font_path(path), path)
         self.assertTrue(contract.is_page_font_path(next(iter(self.fonts))))
 
-    def test_three_sample_glyphsets_and_footer_text_are_in_downloadable_faces(self):
+    def test_route_glyphsets_footer_text_and_schema_two_source_closure(self):
         tc_path = ROOT / producer.TC_REL
-        tc_cmap, _ = producer.source_glyphs(tc_path.read_bytes())
+        source_bytes = tc_path.read_bytes()
+        tc_cmap, _ = producer.source_glyphs(source_bytes)
         for route in SAMPLE_ROUTES:
             with self.subTest(route=route):
                 row = self.routes[route]
@@ -90,6 +108,35 @@ class PageFontArtifactContractTests(unittest.TestCase):
         draft_char = ord("黑")
         self.assertIn(draft_char, tc_cmap)
         self.assertNotIn(draft_char, parking["codepoints"])
+
+        route_sets = [set(self.routes[route]["codepoints"]) for route in sorted(self.routes)]
+        expected_closure = producer.build_common_closure(source_bytes, route_sets)
+        self.assertEqual(self.manifest["routeClosure"], expected_closure)
+        self.assertEqual(len(expected_closure["routeIntersectionCodepoints"]), 92)
+        self.assertEqual(len(expected_closure["sourceSeedCodepoints"]), 98)
+        self.assertEqual(len(expected_closure["commonCodepoints"]), 175)
+        self.assertEqual(expected_closure["kernEvidence"]["encodedPairCount"], 1059)
+        contract.validate_source_kern_shard_closure(source_bytes, self.manifest)
+
+        common_path = next(path for path in self.fonts if path.startswith(producer.CORE_DIR + "/"))
+        common = set(self.fonts[common_path]["codepoints"])
+        for route, row in self.routes.items():
+            required = set(row["codepoints"])
+            delta = set(self.fonts[row["deltaFont"]]["codepoints"])
+            with self.subTest(route=route):
+                self.assertTrue(required.issubset(common | delta))
+                self.assertEqual(delta, required - common)
+
+        required_union = set().union(*(set(row["codepoints"]) for row in self.routes.values()))
+        forged = deepcopy(self.manifest)
+        unlicensed = next(cp for cp in tc_cmap if cp not in required_union and cp not in common)
+        forged_common = sorted((*forged["routeClosure"]["commonCodepoints"], unlicensed))
+        forged["routeClosure"]["commonCodepoints"] = forged_common
+        forged["routeClosure"]["commonGlyphsetSha256"] = producer.glyphset_sha256(forged_common)
+        candidates, inactive = producer.candidate_routes(ROOT, self.artifact, build_public.public_paths(ROOT))
+        _, public_ids = producer._inactive_and_public_ids(ROOT)
+        with self.assertRaisesRegex(ValueError, "FONT_MANIFEST_ROUTE_CLOSURE_INVALID"):
+            producer.validate_manifest(self.artifact, forged, candidates, inactive, public_ids)
 
     def test_build_report_proves_pinned_q9_and_has_ci_cold_budget(self):
         report_path = Path(os.environ.get(
@@ -185,6 +232,21 @@ class PageFontArtifactContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ROUTE_NOT_PUBLISHED"):
             contract.validate_route_publication(self.artifact, unpublished, [SAMPLE_ROUTES[0]])
 
+        def add_candidate(route):
+            manifest = deepcopy(self.manifest)
+            manifest["routes"][route] = deepcopy(next(iter(self.routes.values())))
+            expanded = sorted([*candidates, route])
+            manifest["routeInventory"]["candidateRoutes"] = expanded
+            return manifest, expanded
+
+        private, private_candidates = add_candidate("scripts/build_all.py")
+        with self.assertRaisesRegex(ValueError, "FONT_MANIFEST_ROUTE_INVENTORY_PATH_INVALID"):
+            producer.validate_manifest(self.artifact, private, private_candidates, inactive, public_ids)
+
+        stale_sitemap, stale_candidates = add_candidate("achievement-stale-sitemap.html")
+        with self.assertRaisesRegex(ValueError, "FONT_MANIFEST_ACHIEVEMENT_NOT_PROJECTED"):
+            producer.validate_manifest(self.artifact, stale_sitemap, stale_candidates, inactive, public_ids)
+
     def test_route_style_and_preload_regression_is_rejected(self):
         route = SAMPLE_ROUTES[0]
         payload = (self.artifact / route).read_bytes()
@@ -193,6 +255,10 @@ class PageFontArtifactContractTests(unittest.TestCase):
         soup.find("link", attrs={producer.PRELOAD_MARKER: "delta"}).decompose()
         with self.assertRaisesRegex(ValueError, "PRELOAD_CLOSURE_INVALID"):
             contract.validate_route_html(route, soup.encode("utf-8"), self.routes[route])
+
+        for route in ("offline.html", "renwu-anju-social-housing/index.html"):
+            with self.subTest(route=route):
+                contract.validate_route_html(route, (self.artifact / route).read_bytes(), self.routes[route])
 
 
 class PrivatePathHttpTests(unittest.TestCase):

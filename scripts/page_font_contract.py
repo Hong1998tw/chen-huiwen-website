@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FONT_MANIFEST = producer.MANIFEST_NAME
 FONT_PREFIXES = (producer.CORE_DIR + "/", producer.DELTA_DIR + "/")
 FONT_NAME = re.compile(r"[a-f0-9]{64}\.woff2\Z")
+EXPECTED_SOURCE_KERN_PAIR_COUNT = 1059
 
 
 def sha256(payload: bytes) -> str:
@@ -208,6 +210,46 @@ def validate_route_publication(artifact_root: Path, publication: dict, routes) -
             raise ValueError("PAGE_FONT_ROUTE_PUBLICATION_BYTES_MISMATCH: " + route)
 
 
+def validate_source_kern_shard_closure(source_bytes: bytes, manifest: dict) -> None:
+    """Prove every route keeps active source PairPos edges within one loaded face."""
+    font = producer.TTFont(BytesIO(source_bytes), recalcBBoxes=False, recalcTimestamp=False)
+    try:
+        evidence = producer.source_default_kern_evidence(font)
+    finally:
+        font.close()
+    if (evidence["featureIndices"] != [1] or evidence["lookupIndices"] != [1]
+            or {row["format"] for row in evidence["subtables"]} != {1, 2}
+            or len(evidence["encodedPairEdges"]) != EXPECTED_SOURCE_KERN_PAIR_COUNT
+            or not evidence["encodedBaseEdges"] or not evidence["encodedVariationEdges"]
+            or not evidence["encodedClassZeroEdges"]):
+        raise ValueError("PAGE_FONT_SOURCE_KERN_EVIDENCE_INVALID")
+
+    fonts = manifest.get("fonts")
+    routes = manifest.get("routes")
+    closure = manifest.get("routeClosure")
+    if not isinstance(fonts, dict) or not isinstance(routes, dict) or not isinstance(closure, dict):
+        raise ValueError("PAGE_FONT_SOURCE_KERN_MANIFEST_INVALID")
+    common_paths = [path for path in fonts if path.startswith(producer.CORE_DIR + "/")]
+    if len(common_paths) != 1:
+        raise ValueError("PAGE_FONT_SOURCE_KERN_COMMON_ASSET_INVALID")
+    common = set(fonts[common_paths[0]].get("codepoints", ()))
+    kern_manifest = closure.get("kernEvidence")
+    if (not isinstance(kern_manifest, dict)
+            or kern_manifest.get("encodedPairCount") != EXPECTED_SOURCE_KERN_PAIR_COUNT):
+        raise ValueError("PAGE_FONT_SOURCE_KERN_MANIFEST_EVIDENCE_INVALID")
+
+    active_edges = evidence["encodedPairEdges"]
+    for route, row in routes.items():
+        required = set(row.get("codepoints", ()))
+        split = next((edge for edge in active_edges
+                      if edge[0] in required and edge[1] in required
+                      and ((edge[0] in common) != (edge[1] in common))), None)
+        if split is not None:
+            raise ValueError(
+                f"PAGE_FONT_SOURCE_KERN_CROSSES_COMMON_DELTA: {route} U+{split[0]:04X}/U+{split[1]:04X}"
+            )
+
+
 def validate_artifact_contract(artifact_root: Path, source_root: Path = ROOT) -> dict:
     """Validate producer closure against current public projection and publication hashes."""
     root, source = Path(artifact_root).resolve(), Path(source_root).resolve()
@@ -222,6 +264,7 @@ def validate_artifact_contract(artifact_root: Path, source_root: Path = ROOT) ->
     validate_route_publication(root, publication, candidate_routes)
     _, public_ids = producer._inactive_and_public_ids(source)
     producer.validate_manifest(root, manifest, candidate_routes, inactive_routes, public_ids)
+    validate_source_kern_shard_closure((root / producer.TC_REL).read_bytes(), manifest)
     return {"publication": publication, "manifest": manifest, "manifestBytes": manifest_bytes,
             "fonts": manifest["fonts"], "routes": manifest["routes"],
             "fontRoutes": sorted(manifest["routes"]), "fontAssets": sorted(manifest["fonts"])}
