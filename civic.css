@@ -134,6 +134,7 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
  .civic-service-routes{grid-template-columns:1fr}.civic-service-routes a{border-right:0;border-bottom:1px solid var(--civic-line);padding:18px 0}.civic-service-routes a:last-child{border:0}
  .civic-article-nav{gap:4px 20px}.civic-article-nav span{width:100%;margin-left:0;padding-bottom:6px}.civic-list-only #case-list{grid-template-columns:1fr}
  body .page-head{padding:24px 0 16px}body .case-card{padding:20px}body .case-body>p{font-size:1rem}
+ @supports (text-spacing-trim: space-all){html[data-huiwen-font-page="news-detail"] body .page-head h1{text-spacing-trim:space-all}}
 }
 @media(max-width:780px) and (scripting:none){body .site-header{position:relative;top:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}

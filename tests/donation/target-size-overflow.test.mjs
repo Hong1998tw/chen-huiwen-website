@@ -70,11 +70,13 @@ test('diagnostic eligibility requires document overflow attributable to the head
   }).eligible, false);
 });
 
-test('restoring an absent style attribute removes the temporary attribute', () => {
+test('restoring an absent style attribute removes the empty attribute left after clearing a probe declaration', () => {
   const element = new FakeElement();
   const original = captureInlineStyleAttribute(element);
   element.setAttribute('style', 'overflow-wrap: anywhere !important');
+  element.setAttribute('style', '');
   restoreInlineStyleAttribute(element, original);
+  assert.equal(element.attributes.has('style'), false);
   assert.equal(element.getAttribute('style'), null);
   assert.equal(inlineStyleAttributeMatches(element, original), true);
 });
@@ -87,6 +89,22 @@ test('restoring an empty but present style attribute preserves its presence and 
   assert.equal(element.attributes.has('style'), true);
   assert.equal(element.getAttribute('style'), '');
   assert.equal(inlineStyleAttributeMatches(element, original), true);
+});
+
+test('a new probe starts from the original inline style snapshot after a prior probe', () => {
+  const original = 'color: rgb(1, 2, 3); --keep: a b;';
+  const element = new FakeElement(original);
+  const snapshot = captureInlineStyleAttribute(element);
+
+  element.setAttribute('style', `${original} overflow-wrap: anywhere !important`);
+  restoreInlineStyleAttribute(element, snapshot);
+
+  element.setAttribute('style', `${original} line-break: anywhere !important`);
+  restoreInlineStyleAttribute(element, snapshot);
+  const nextProbeBefore = captureInlineStyleAttribute(element);
+
+  assert.equal(nextProbeBefore, original);
+  assert.equal(inlineStyleAttributeMatches(element, snapshot), true);
 });
 
 test('restoring a present style attribute preserves every original inline declaration exactly', () => {
