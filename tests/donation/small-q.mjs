@@ -77,8 +77,15 @@ try{
   await menu.click();await p.locator('#navigation.is-open').waitFor();
   const search=p.locator('.global-search-trigger').first();
   await search.click();await p.locator('#global-search-dialog[open]').waitFor();
+  assert(await search.isHidden(),'the mobile search trigger is hidden after its menu closes for the modal');
   await p.keyboard.press('Escape');await p.locator('#global-search-dialog').waitFor({state:'hidden'});
-  assert.equal(await search.evaluate(el=>el===document.activeElement),true,'search Escape returns focus to its trigger');
+  await p.waitForFunction(()=>{
+   const dialog=document.querySelector('#global-search-dialog'),toggle=document.querySelector('.menu-toggle');
+   return Boolean(dialog&&!dialog.open&&!document.body.classList.contains('search-open')&&
+    toggle?.getAttribute('aria-expanded')==='false'&&document.activeElement===toggle);
+  },null,{timeout:8000});
+  assert.equal(await menu.getAttribute('aria-expanded'),'false');
+  assert.equal(await menu.evaluate(el=>el===document.activeElement),true,'search Escape returns focus to the visible menu toggle after its menu closes');
   assert.equal(await qToggle.getAttribute('aria-expanded'),'true');
   assert(await panel.isVisible(),'search Escape does not close or refocus Small Q');
   await c.close();
