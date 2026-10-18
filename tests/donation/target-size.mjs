@@ -366,6 +366,19 @@ try {
           testCase.zoomMetrics = await evaluateTargets(page);
           if (route.id === 'news-article') {
             testCase.zoomOverflowDiagnostics = await captureHorizontalOffenders(page);
+            await page.addScriptTag({
+              type: 'module',
+              url: new URL('tests/donation/target-size-overflow.mjs', server.url).href
+            });
+            testCase.zoomOverflowDiagnostics.headingProbe = await page.evaluate(() => {
+              const probe = window.__g04NewsArticleOverflowProbe;
+              if (typeof probe?.run !== 'function') throw new Error('新聞標題溢位診斷模組未載入。');
+              return probe.run();
+            });
+            const restoration = testCase.zoomOverflowDiagnostics.headingProbe.restoration;
+            if (restoration?.required && (!restoration.styleAttributeRestoredExactly || !restoration.geometryAndComputedRestoredExactly)) {
+              addFailure('overflow-diagnostic-restore:' + route.id, restoration);
+            }
             report.diagnostics.push({
               route: route.id,
               viewport: viewport.id,
