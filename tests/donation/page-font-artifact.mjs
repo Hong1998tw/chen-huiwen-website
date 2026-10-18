@@ -171,6 +171,7 @@ try {
       assert.deepEqual(fullTcRequests, [], `${route}: first view requested the 783,820-byte full TC font`);
 
       if (route === 'service.html') {
+        const initialFullTcRequests = fullTcRequests.length;
         const cardFontResponsePromise = routePage.waitForResponse((item) =>
           new URL(item.url()).pathname === `/${fullTcPath}` && item.status() === 200);
         await routePage.locator('[data-legal-view="card"]').click();
@@ -181,7 +182,8 @@ try {
           'legal-card request differs from the published full TC font');
         await routePage.locator('.legal-card-preview canvas').waitFor();
         results.serviceInitial = { route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
-          initialFullTcRequests: fullTcRequests.length, cardFullTcBytes: cardFontBytes.byteLength,
+          initialFullTcRequests, cardFullTcRequests: fullTcRequests.length - initialFullTcRequests,
+          totalFullTcRequests: fullTcRequests.length, cardFullTcBytes: cardFontBytes.byteLength,
           cardFullTcSha256: fullTcSha };
       }
     } finally {
