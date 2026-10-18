@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 import time
 from html.parser import HTMLParser
 from pathlib import Path
@@ -284,6 +285,17 @@ def canonical_bytes(local_path):
     if local_path in PUBLIC_DATA_PROJECTIONS:
         return encoded(project_public_data(ROOT)[local_path])
 
+    if local_path == 'sw.js':
+        # The deployment worker is an artifact-only derivative. Rebuild the
+        # same reviewed projection to obtain its expected bytes; never trust a
+        # remote or arbitrary publication manifest to certify the worker.
+        from build_public import build
+
+        with tempfile.TemporaryDirectory(prefix='.verify-sw-', dir=ROOT) as temporary:
+            artifact = Path(temporary) / 'public'
+            build(ROOT, artifact)
+            return (artifact / 'sw.js').read_bytes()
+
     # The legacy public JSON URL serves sanitized achievement data after the
     # artifact cutover. Never compare it to, or snapshot it from, raw source.
     path = ROOT / ('data/achievements-public.json' if local_path == 'data/achievements.json' else local_path)
@@ -302,6 +314,19 @@ def is_binary_path(path: str) -> bool:
 def digest(data: bytes, *, binary: bool = False) -> str:
     canonical = data if binary else normalize_text_bytes(data)
     return hashlib.sha256(canonical).hexdigest()
+
+
+def source_parity(local_path: str, local: bytes, remote: bytes, *, binary: bool = False) -> bool:
+    """Keep exact SHA-256 equality for the derived worker and binary assets."""
+    if local_path == 'sw.js':
+        return hashlib.sha256(local).digest() == hashlib.sha256(remote).digest()
+    return digest(local, binary=binary) == digest(remote, binary=binary)
+
+
+def source_sha256(local_path: str, data: bytes, *, binary: bool = False) -> str:
+    if local_path == 'sw.js':
+        return hashlib.sha256(data).hexdigest()
+    return digest(data, binary=binary)
 
 
 def visible_text_coverage(local: PageParser, remote: PageParser) -> float:
@@ -373,7 +398,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
             continue
 
         same_host = urlsplit(final_url).hostname == base_host
-        raw_parity = digest(local, binary=binary) == digest(remote, binary=binary)
+        raw_parity = source_parity(local_path, local, remote, binary=binary)
         if status == 200 and same_host:
             save_snapshot(local_path, remote)
 
@@ -423,8 +448,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                     "visibleTextCoverage": round(coverage, 4),
                     "expectedAssetsPresent": not missing_assets,
                     "criticalFactsMatch": not critical,
-                    "localSha256": digest(local, binary=binary),
-                    "remoteSha256": digest(remote, binary=binary),
+                    "localSha256": source_sha256(local_path, local, binary=binary),
+                    "remoteSha256": source_sha256(local_path, remote, binary=binary),
                 }
             )
             failures.extend(f"{local_path}: {failure}" for failure in page_failures)
@@ -438,8 +463,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int, s
                 "http": status,
                 "sameHost": same_host,
                 "sourceParity": parity,
-                "localSha256": digest(local, binary=binary),
-                "remoteSha256": digest(remote, binary=binary),
+                "localSha256": source_sha256(local_path, local, binary=binary),
+                "remoteSha256": source_sha256(local_path, remote, binary=binary),
             }
         )
         if status != 200:

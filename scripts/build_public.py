@@ -460,6 +460,10 @@ def build(root=ROOT, destination=None):
         (staging / 'data/achievements.json').write_bytes(encoded(records))
         editor_manifests = build_page_editor_artifacts(staging, root)
         validate_artifact_links(staging, root)
+        # Derive deployment CACHE/SHELL only after the reviewed public and CMS
+        # projections are complete, and before the manifest records sw.js.
+        from service_worker_artifact import render_service_worker
+        (staging / 'sw.js').write_bytes(render_service_worker(staging, (root / 'sw.js').read_bytes()))
         manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
         (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
         # This gate deliberately runs after the CMS has rendered saved edits.
