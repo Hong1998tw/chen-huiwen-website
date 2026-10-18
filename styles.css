@@ -10,11 +10,11 @@
 :root[data-huiwen-font-page="about"]{--huiwen-font-family:"Huiwen Sans TC about Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="about"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC about Core","Huiwen Sans TC about Full","Huiwen Sans JP Support",sans-serif}
 @font-face{font-family:"Huiwen Sans TC achievements Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-achievements-core-e2ab7dc010a1.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
-@font-face{font-family:"Huiwen Sans TC achievements Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-achievements-full-17e10d5242cd.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+@font-face{font-family:"Huiwen Sans TC achievements Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-achievements-full-17789c913c82.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="achievements"]{--huiwen-font-family:"Huiwen Sans TC achievements Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="achievements"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC achievements Core","Huiwen Sans TC achievements Full","Huiwen Sans JP Support",sans-serif}
 @font-face{font-family:"Huiwen Sans TC vision Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-vision-core-001711bdc743.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
-@font-face{font-family:"Huiwen Sans TC vision Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-vision-full-1eef2498d5a4.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
+@font-face{font-family:"Huiwen Sans TC vision Full";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-vision-full-992353685e97.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:optional}
 :root[data-huiwen-font-page="vision"]{--huiwen-font-family:"Huiwen Sans TC vision Core","Huiwen Sans JP Support",sans-serif}
 :root[data-huiwen-font-page="vision"][data-huiwen-font-full="1"]{--huiwen-font-family:"Huiwen Sans TC vision Core","Huiwen Sans TC vision Full","Huiwen Sans JP Support",sans-serif}
 @font-face{font-family:"Huiwen Sans TC news Core";src:url("/assets/fonts/huiwen-site-sans/generated/huiwen-news-core-433bff474a3e.woff2") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}
