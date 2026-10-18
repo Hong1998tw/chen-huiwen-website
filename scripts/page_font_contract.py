@@ -258,12 +258,20 @@ def validate_artifact_contract(artifact_root: Path, source_root: Path = ROOT) ->
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
     validate_publication_binding(root, publication, manifest, manifest_bytes)
-    candidate_routes, inactive_routes = producer.candidate_routes(
+    candidate_routes, skipped_routes, excluded_routes = producer.public_html_route_inventory(
         source, root, build_public.public_paths(source),
     )
     validate_route_publication(root, publication, candidate_routes)
-    _, public_ids = producer._inactive_and_public_ids(source)
-    producer.validate_manifest(root, manifest, candidate_routes, inactive_routes, public_ids)
+    inactive_routes, public_ids = producer._inactive_and_public_ids(source)
+    source_route_inventory = {
+        "candidateRoutes": candidate_routes,
+        "skippedExistingFontRoutes": skipped_routes,
+        "excludedRoutes": excluded_routes,
+    }
+    producer.validate_manifest(
+        root, manifest, candidate_routes, inactive_routes, public_ids,
+        route_inventory=source_route_inventory,
+    )
     validate_source_kern_shard_closure((root / producer.TC_REL).read_bytes(), manifest)
     return {"publication": publication, "manifest": manifest, "manifestBytes": manifest_bytes,
             "fonts": manifest["fonts"], "routes": manifest["routes"],
