@@ -30,9 +30,18 @@ jobs:
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/min-font.mjs
+      - run: node --check tests/donation/target-size.mjs
+      - run: node --check tests/donation/target-size-lifecycle.mjs
+      - run: node --check tests/donation/target-size-lifecycle.test.mjs
+      - run: node --check tests/donation/target-size-inline.mjs
+      - run: node --check tests/donation/target-size-inline.test.mjs
       - run: node --check tests/donation/election-mode.mjs
       - run: node --check tests/donation/petition-preservation.mjs
       - run: node tests/donation/petition-preservation.test.mjs
+      - name: Verify inline-link target-size exception predicate with pure fixtures
+        run: node tests/donation/target-size-inline.test.mjs
+      - name: Verify target-size cleanup and report persistence failures
+        run: node tests/donation/target-size-lifecycle.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: node --check tests/donation/wcag22aa.mjs
       - run: node --check tests/donation/wcag22aa.test.mjs
@@ -42,6 +51,8 @@ jobs:
       - run: node tests/donation/browser.mjs
       - name: Check computed text font sizes and horizontal overflow across representative pages
         run: node tests/donation/min-font.mjs
+      - name: Check target sizes, WCAG spacing exceptions, keyboard use and narrow reflow on news routes
+        run: node tests/donation/target-size.mjs
       - run: node tests/donation/sticky-navigation.mjs
       - run: node tests/donation/small-q.mjs
       - run: node tests/donation/public-service-audit.mjs
