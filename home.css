@@ -153,7 +153,7 @@
   margin: -38px 0 0;
   font-size: 14px;
 }
-.home-redesign .home-lawyer-link a { min-height: 44px; padding: 8px 0; font-weight: 700; text-underline-offset: 4px; }
+.home-redesign .home-lawyer-link a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 0; font-weight: 700; text-underline-offset: 4px; }
 
 .home-redesign .section { padding-block: calc(var(--space-section) / 2); }
 .home-redesign .home-recent-heading { max-width: 680px; margin-bottom: 26px; }

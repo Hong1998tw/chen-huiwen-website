@@ -56,15 +56,44 @@ try{
      page.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.searchParams.get('village')==='v:文德里'&&url.hash==='#case-results'),
      page.locator('.home-village-submit').click(),
     ]);
-    await page.locator('#village-filter').waitFor();
     await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:文德里'&&window.HuiwenCases.getState().visible.length>0);
+    const trigger=page.locator('#case-filter-open');
+    const dialog=page.locator('#case-filter-dialog');
+    assert.equal(await trigger.count(),1,'the mobile filter trigger must be unique');
+    assert.equal(await dialog.count(),1,'the achievement filter dialog must be unique');
+    await trigger.waitFor({state:'visible'});
+    assert.equal(await dialog.evaluate(element=>element.open),false,'the mobile filter dialog starts closed');
+    await trigger.click();
+    await dialog.waitFor({state:'visible'});
+    assert.equal(await dialog.evaluate(element=>element.open),true,'the actual mobile trigger opens the filter dialog');
+    assert.equal(await trigger.getAttribute('aria-expanded'),'true');
+    const filterVillage=dialog.locator('#village-filter');
+    await filterVillage.waitFor({state:'visible'});
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:文德里'&&window.HuiwenCases.getState().visible.length>0);
+    assert.equal(await filterVillage.inputValue(),'v:文德里');
+    assert.equal(new URL(page.url()).searchParams.get('village'),'v:文德里');
+    const firstResult=await page.evaluate(()=>window.HuiwenCases.getState().visible.map(row=>row.villages));
+    assert(firstResult.length>0);
+    assert(firstResult.every(villages=>villages.includes('文德里')),JSON.stringify(firstResult));
+    await page.getByRole('button',{name:'移除篩選：文德里',exact:true}).waitFor({state:'visible'});
+    await filterVillage.selectOption('v:曹公里');
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:曹公里'&&window.HuiwenCases.getState().visible.length>0&&new URL(location.href).searchParams.get('village')==='v:曹公里');
     const result=await page.evaluate(()=>window.HuiwenCases.getState().visible.map(row=>row.villages));
     assert(result.length>0);
-    assert(result.every(villages=>villages.includes('文德里')),JSON.stringify(result));
+    assert(result.every(villages=>villages.includes('曹公里')),JSON.stringify(result));
+    await page.getByRole('button',{name:'移除篩選：曹公里',exact:true}).waitFor({state:'visible'});
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({state:'hidden'});
+    assert.equal(await dialog.evaluate(element=>element.open),false,'Escape closes the filter dialog');
+    assert.equal(await trigger.getAttribute('aria-expanded'),'false');
+    assert.equal(await trigger.evaluate(element=>element===document.activeElement),true,'closing the filter dialog restores focus to its opener');
    });
    await check('Global search, Escape and focus restoration',async()=>{
     await page.goto(base);
-    await page.locator('.menu-toggle').click();
+    const menuToggle=page.locator('.menu-toggle');await menuToggle.waitFor({state:'visible'});
+    const menuLabel=await menuToggle.evaluate(button=>{const node=Array.from(button.childNodes).find(child=>child.nodeType===3&&child.textContent.includes('選單'));if(!node)return{text:null,rects:[]};const range=document.createRange();range.selectNodeContents(node);return{text:node.textContent.trim(),rects:Array.from(range.getClientRects(),rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom}))};});
+    assert.equal(menuLabel.text,'選單');assert.equal(menuLabel.rects.length,1,JSON.stringify(menuLabel));
+    await menuToggle.click();
     const trigger=page.locator('#navigation .global-search-trigger');
     await trigger.click();
     const dialog=page.locator('#global-search-dialog');

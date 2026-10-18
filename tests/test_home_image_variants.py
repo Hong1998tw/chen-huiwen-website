@@ -1,4 +1,4 @@
-"""Homepage event variants are emitted only as a complete verified asset closure."""
+"""Homepage event and portrait variants preserve complete, verified image closures."""
 import copy
 import json
 from pathlib import Path
@@ -101,6 +101,54 @@ class HomeImageVariantTests(unittest.TestCase):
                 soup = BeautifulSoup(_responsive_event_picture(event_source()["images"][0], root), "html.parser")
                 self.assertEqual(references(soup), {SOURCE})
                 self.assertFalse(soup.select("source, img[srcset]"))
+
+    def test_home_portrait_uses_only_the_verified_webp_srcset_and_fallback(self):
+        template = BeautifulSoup((ROOT / "templates/home-main.html").read_text(encoding="utf-8"), "html.parser")
+        built = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
+        expected_paths = {
+            "assets/home-portrait-384.webp",
+            "assets/home-portrait-480.webp",
+            "assets/home-portrait-640.webp",
+            "assets/legal/portrait.webp",
+        }
+        for document in (template, built):
+            picture = document.select_one(".hero-portrait picture")
+            image = picture.select_one("img")
+            sources = picture.select("source")
+            self.assertEqual([source["type"] for source in sources], ["image/webp"])
+            self.assertEqual(references(BeautifulSoup(str(picture), "html.parser")), expected_paths)
+            self.assertEqual(image["src"], "assets/legal/portrait.webp")
+            self.assertEqual(image["width"], "1004")
+            self.assertEqual(image["height"], "1506")
+            self.assertEqual(image["fetchpriority"], "high")
+            for path in expected_paths:
+                with self.subTest(path=path):
+                    self.assertTrue((ROOT / path).is_file())
+
+    def test_home_portrait_webp_riff_headers_advertise_alpha_channels(self):
+        paths = (
+            "assets/home-portrait-384.webp",
+            "assets/home-portrait-480.webp",
+            "assets/home-portrait-640.webp",
+            "assets/legal/portrait.webp",
+        )
+        for relative in paths:
+            with self.subTest(path=relative):
+                data = (ROOT / relative).read_bytes()
+                self.assertEqual(data[:4], b"RIFF")
+                self.assertEqual(data[8:12], b"WEBP")
+                position = 12
+                alpha_flags = []
+                while position + 8 <= len(data):
+                    chunk_type = data[position:position + 4]
+                    chunk_size = int.from_bytes(data[position + 4:position + 8], "little")
+                    chunk_start = position + 8
+                    chunk_end = chunk_start + chunk_size
+                    self.assertLessEqual(chunk_end, len(data))
+                    if chunk_type == b"VP8X":
+                        alpha_flags.append(data[chunk_start] & 0x10)
+                    position = chunk_end + (chunk_size & 1)
+                self.assertTrue(alpha_flags and any(alpha_flags), "WebP container must advertise its alpha channel")
 
 
 if __name__ == "__main__":

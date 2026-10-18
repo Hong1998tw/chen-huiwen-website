@@ -88,6 +88,10 @@ try{
 
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
   await page.evaluate(()=>scrollTo(0,0));
+  const portraitAlpha=await page.locator('.hero-portrait img').evaluate(img=>{const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;const context=canvas.getContext('2d',{willReadFrequently:true});const corners=[[0,0],[img.naturalWidth-1,0],[0,img.naturalHeight-1],[img.naturalWidth-1,img.naturalHeight-1]];const cornerAlpha=corners.map(([x,y])=>{context.clearRect(0,0,1,1);context.drawImage(img,x,y,1,1,0,0,1,1);return context.getImageData(0,0,1,1).data[3];});return{currentSrc:new URL(img.currentSrc,location.href).pathname,sameOrigin:new URL(img.currentSrc,location.href).origin===location.origin,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,cornerAlpha};});
+  assert(portraitAlpha.sameOrigin,JSON.stringify(portraitAlpha));
+  assert(portraitAlpha.currentSrc.endsWith('.webp'),JSON.stringify(portraitAlpha));
+  assert.deepEqual(portraitAlpha.cornerAlpha,[0,0,0,0],JSON.stringify(portraitAlpha));
   const pageHeight=await page.evaluate(()=>document.documentElement.scrollHeight);
   await assertWithHomeDiagnostics(page,out,width,'page-height',async()=>{
    const localLayout=await page.locator('.home-local-layout').evaluate(el=>({display:getComputedStyle(el).display,columns:getComputedStyle(el).gridTemplateColumns.split(' ').map(parseFloat)}));
@@ -122,16 +126,29 @@ try{
   const controls=await page.locator('#home-village').evaluate(el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width,clientWidth:el.clientWidth,scrollWidth:el.scrollWidth};});
   assert(controls.left>=0&&controls.right<=width,JSON.stringify(controls));
   assert(controls.scrollWidth<=controls.clientWidth,JSON.stringify(controls));
+  if(width<=780){
+   const menuLayout=await page.locator('.menu-toggle').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el),node=Array.from(el.childNodes).find(child=>child.nodeType===3&&child.textContent.includes('選單')),range=document.createRange();if(node)range.selectNodeContents(node);return{headerHeight:document.querySelector('.site-header').getBoundingClientRect().height,label:node?.textContent.trim()||null,labelRects:node?Array.from(range.getClientRects(),x=>({left:x.left,right:x.right,top:x.top,bottom:x.bottom})):[],left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
+   assert.equal(menuLayout.label,'選單',JSON.stringify(menuLayout));assert.equal(menuLayout.labelRects.length,1,JSON.stringify(menuLayout));
+   assert(menuLayout.headerHeight>=64,JSON.stringify(menuLayout));assert(menuLayout.height>=44,JSON.stringify(menuLayout));
+   assert(menuLayout.scrollWidth<=menuLayout.clientWidth&&menuLayout.scrollHeight<=menuLayout.clientHeight,JSON.stringify(menuLayout));
+   assert.equal(menuLayout.whiteSpace,'nowrap');
+   assert(menuLayout.labelRects.every(rect=>rect.left>=menuLayout.left&&rect.right<=menuLayout.right&&rect.top>=menuLayout.top&&rect.bottom<=menuLayout.bottom),JSON.stringify(menuLayout));
+  }
   await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-layout`});
-  const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{left:r.left,right:r.right,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
-  if(legalLayout.height<44||legalLayout.left<0||legalLayout.right>width||legalLayout.scrollWidth>legalLayout.clientWidth||legalLayout.scrollHeight>legalLayout.clientHeight||legalLayout.whiteSpace!=='normal')await captureLayoutDiagnostics(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-legal-layout`,error:'legal shortcut 200% reflow assertion failed',extra:{legalLayout}});
+  const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el),range=document.createRange();range.selectNodeContents(el);return{tagName:el.tagName.toLowerCase(),display:s.display,left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace,overflowX:s.overflowX,overflowY:s.overflowY,text:el.innerText,textRects:Array.from(range.getClientRects(),x=>({left:x.left,right:x.right,top:x.top,bottom:x.bottom,width:x.width,height:x.height}))};});
+  if(legalLayout.height<44||legalLayout.left<0||legalLayout.right>width||legalLayout.scrollWidth>legalLayout.clientWidth||legalLayout.scrollHeight>legalLayout.clientHeight||legalLayout.whiteSpace!=='normal'||!legalLayout.textRects.length)await captureLayoutDiagnostics(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-legal-layout`,error:'legal shortcut 200% reflow assertion failed',extra:{legalLayout}});
+  assert.equal(legalLayout.tagName,'a','the 44px target measurement must use the actual clickable link');
+  assert.equal(legalLayout.display,'inline-flex');
   assert(legalLayout.height>=44,JSON.stringify(legalLayout));
   assert(legalLayout.left>=0&&legalLayout.right<=width,JSON.stringify(legalLayout));
   assert(legalLayout.scrollWidth<=legalLayout.clientWidth,JSON.stringify(legalLayout));
   assert(legalLayout.scrollHeight<=legalLayout.clientHeight,JSON.stringify(legalLayout));
   assert.equal(legalLayout.whiteSpace,'normal');
+  assert(legalLayout.textRects.length>0,JSON.stringify(legalLayout));
+  assert(legalLayout.textRects.every(rect=>rect.left>=legalLayout.left&&rect.right<=legalLayout.right&&rect.top>=legalLayout.top&&rect.bottom<=legalLayout.bottom),JSON.stringify(legalLayout));
+  assert(!['hidden','clip'].includes(legalLayout.overflowX)&&!['hidden','clip'].includes(legalLayout.overflowY),JSON.stringify(legalLayout));
   await page.screenshot({path:out+`home-${width}-text-200-top.png`});
-  report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp});
+  report.checks.push({width,sourceParity:'PASS',portraitAlpha:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp});
   await ctx.close();
  }
 
