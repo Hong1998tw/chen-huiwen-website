@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {openCaseFilterDialog,closeCaseFilterDialog} from './achievement-filter-dialog.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
 const platformEvidenceCount=Object.values(platforms.itemsById).filter(item=>item.year===2026&&item.relatedRecordIds?.length).length;
@@ -80,8 +81,9 @@ try{
    assert(await page.locator('.map-panel').isHidden());assert.equal(await page.locator('.advanced-filters').getAttribute('open'),null);
    const cards=page.locator('#case-list [data-case]:visible');assert.equal(await cards.count(),10);
    const station=await cards.evaluateAll(xs=>xs.filter(x=>/station|rail-greenway|metro-green-line/.test(x.dataset.case)).length);assert(station<=1);
+   await openCaseFilterDialog(page);
    await page.locator('.advanced-filters > summary').click();await page.locator('#status-filter').selectOption('已完成');assert((await cards.count())>0);
-   await page.locator('#reset-map-filters').click();await page.getByRole('button',{name:'地圖與列表',exact:true}).click();assert(await page.locator('.map-panel').isVisible());
+   await page.locator('#reset-map-filters').click();await closeCaseFilterDialog(page);await page.getByRole('button',{name:'地圖與列表',exact:true}).click();assert(await page.locator('.map-panel').isVisible());
   });
   await page.goto(base+'achievement-metro-green-line.html');
   await page.screenshot({path:fileURLToPath(new URL('detail-'+width+'.png',out))});

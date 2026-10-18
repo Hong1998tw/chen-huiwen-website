@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { openCaseFilterDialog, closeCaseFilterDialog } from './achievement-filter-dialog.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
@@ -202,6 +203,7 @@ try {
       assert.equal(await visible(), Math.min(10, items.length));
       await page.locator('#case-search').fill('文龍');
       assert((await visible()) > 0);
+      await openCaseFilterDialog(page);
       await page.locator('#reset-map-filters').click();
       const village = items.find(item => item.villages.length).villages[0];
       await page.locator('#village-filter').selectOption('v:' + village);
@@ -211,11 +213,12 @@ try {
       await page.locator('#subcategory-filter').selectOption({ label: '寵物' });
       assert((await visible()) > 0);
       await page.locator('#reset-map-filters').click();
+      if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
+      await closeCaseFilterDialog(page);
       if (items.length > 10) {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
       }
-      if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
       await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({state:'visible'});
@@ -224,7 +227,7 @@ try {
         const controls = await page.locator('.map-controls').boundingBox();
         const map = await page.locator('#achievement-map').boundingBox();
         assert(controls && controls.height < 350, `mobile map filters too tall: ${controls?.height}`);
-        assert(map && map.height >= 520, `mobile map too short: ${map?.height}`);
+        assert(map && Math.abs(map.height - 0.45 * 844) < 2, `mobile map should be 45vh: ${map?.height}`);
       }
     });
 
@@ -396,6 +399,7 @@ try {
       await requestStarted;
       await p.locator('#case-search').fill('文德國小');
       await p.locator('#case-search').fill('');
+      await openCaseFilterDialog(p);
       await p.locator('#village-filter').selectOption('v:曹公里');
       release();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')) && window.HuiwenCases.getState().filters.village === 'v:曹公里');

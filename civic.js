@@ -36,6 +36,64 @@
   }
   const advanced = document.querySelector('.advanced-filters');
   if (advanced) advanced.open = ['category','subcategory','status','year'].some(key=>new URLSearchParams(location.search).has(key));
+  const filterFields = document.getElementById('case-filter-fields');
+  const filterDialog = document.getElementById('case-filter-dialog');
+  const filterDialogSlot = filterDialog?.querySelector('.case-filter-dialog-slot');
+  const filterTrigger = document.getElementById('case-filter-open');
+  const filterClose = document.getElementById('case-filter-close');
+  const filterHome = document.querySelector('.map-controls');
+  const filterChips = document.querySelector('.active-case-filters');
+  const mobileFilterLayout = window.matchMedia?.('(max-width: 780px)') || {matches:false};
+  const supportsFilterDialog = Boolean(filterFields && filterDialog?.showModal && filterDialog?.close && filterDialogSlot && filterTrigger && filterClose && filterHome && window.matchMedia);
+  let filterCloseFocus = filterTrigger;
+  if (supportsFilterDialog) {
+    const syncFilterLayout = () => {
+      const useDialog = mobileFilterLayout.matches;
+      const ready = document.documentElement.classList.contains('case-filter-dialog-ready');
+      if (useDialog) {
+        const focusedField = filterFields.contains(document.activeElement);
+        if (filterFields.parentElement !== filterDialogSlot) filterDialogSlot.append(filterFields);
+        document.documentElement.classList.add('case-filter-dialog-ready');
+        filterTrigger.hidden = false;
+        if (!ready && focusedField) filterTrigger.focus({preventScroll:true});
+        return;
+      }
+      const activeElement = document.activeElement;
+      if (filterDialog.open) {
+        filterCloseFocus = filterFields.contains(activeElement) ? activeElement : filterFields.querySelector('select');
+        filterDialog.close();
+      } else if (ready && activeElement === filterTrigger) {
+        filterCloseFocus = filterFields.querySelector('select');
+      }
+      if (filterFields.parentElement !== filterHome) filterHome.insertBefore(filterFields, filterChips);
+      document.documentElement.classList.remove('case-filter-dialog-ready');
+      filterTrigger.hidden = true;
+      if (ready && !filterDialog.open && activeElement === filterTrigger) {
+        requestAnimationFrame(() => filterCloseFocus?.focus({preventScroll:true}));
+      }
+    };
+    filterTrigger.addEventListener('click', () => {
+      if (!mobileFilterLayout.matches || filterDialog.open) return;
+      filterCloseFocus = filterTrigger;
+      filterDialog.showModal();
+      filterTrigger.setAttribute('aria-expanded', 'true');
+      document.documentElement.classList.add('case-filter-dialog-open');
+      document.body.classList.add('case-filter-dialog-open');
+      requestAnimationFrame(() => filterFields.querySelector('select')?.focus({preventScroll:true}));
+    });
+    filterClose.addEventListener('click', () => filterDialog.close());
+    filterDialog.addEventListener('close', () => {
+      document.documentElement.classList.remove('case-filter-dialog-open');
+      document.body.classList.remove('case-filter-dialog-open');
+      filterTrigger.setAttribute('aria-expanded', 'false');
+      const target = filterCloseFocus;
+      filterCloseFocus = filterTrigger;
+      if (target?.isConnected && !target.hidden) requestAnimationFrame(() => target.focus({preventScroll:true}));
+    });
+    mobileFilterLayout.addEventListener?.('change', syncFilterLayout);
+    window.addEventListener('resize', syncFilterLayout, {passive:true});
+    syncFilterLayout();
+  }
   const workspace = document.querySelector('.map-workspace');
   if (!workspace) return;
   const panel = workspace.querySelector('.map-panel');

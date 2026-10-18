@@ -129,3 +129,34 @@
 .case-funding details p,.map-popup-case details p{margin:8px 0}.case-funding details a{display:block;margin-top:10px;text-decoration:underline;text-underline-offset:3px}
 .case-funding-note{font-size:12px}.map-popup-case{overflow-wrap:anywhere}.map-popup-case+.map-popup-case{border-top:1px solid #d2dfcd;margin-top:12px}.map-popup-case .case-funding-total{font-size:15px;line-height:1.6}.map-popup-case details{font-size:13px;line-height:1.6}
 #case-list>.case-card{content-visibility:auto;contain-intrinsic-size:auto 260px}
+
+/* Mobile filter dialog: keep one set of controls and move it between its inline home and the modal. */
+.case-filter-fields{display:contents}
+.case-keyword-control,.case-village-control{min-width:0}
+.active-case-filters:not([hidden]){grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.active-case-filters button{min-height:40px;border:1px solid #b9cbbd;border-radius:999px;background:#f3f7ef;color:#244e3d;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+.active-case-filters button:focus-visible,#case-filter-open:focus-visible,#case-filter-close:focus-visible{outline:3px solid #173f33;outline-offset:2px}
+.case-live-summary{grid-column:1/-1;margin:0}
+.case-filter-dialog:not([open]){display:none}
+.case-filter-dialog[open]{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:none;max-height:84vh;max-height:min(84dvh,720px);overflow:hidden;border:0;border-radius:22px 22px 0 0;padding:20px 18px calc(16px + env(safe-area-inset-bottom));box-shadow:0 -12px 40px #173f332e;color:#173f33;background:#fff}
+.case-filter-dialog::backdrop{background:rgba(15,31,24,.48)}
+.case-filter-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid #dce5dc}
+.case-filter-dialog-head h2{font-size:21px;margin:0}
+.case-filter-dialog-head button{min-height:44px;border:1px solid #cfdccd;border-radius:12px;background:#fff;color:#244e3d;padding:8px 14px;font:inherit;cursor:pointer}
+.case-filter-dialog-slot{max-height:calc(84vh - 86px);max-height:calc(min(84dvh,720px) - 86px);overflow:auto;overscroll-behavior:contain;padding:14px 0 0}
+.case-filter-dialog-slot #case-filter-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.case-filter-dialog-slot .case-village-control label,.case-filter-dialog-slot .advanced-filter-fields label{font-size:14px}
+.case-filter-dialog-slot .advanced-filters{border-top:1px solid #e0e8e0;padding-top:12px}
+.case-filter-dialog-slot .advanced-filters>summary{min-height:48px;display:flex;align-items:center;font-weight:700;cursor:pointer}
+.case-filter-dialog-slot .advanced-filter-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.case-filter-dialog-slot #reset-map-filters{width:100%;min-height:48px}
+html.case-filter-dialog-open,body.case-filter-dialog-open{overflow:hidden;overscroll-behavior:none}
+
+@media(max-width:780px){
+ .case-filter-dialog-ready .map-controls{grid-template-columns:minmax(0,1fr) auto;align-items:end}
+ .case-filter-dialog-ready .map-controls>.case-keyword-control{grid-column:1/-1}
+ .case-filter-dialog-ready .map-controls>#case-filter-open{min-height:48px;padding-inline:18px}
+ .case-filter-dialog-ready .map-controls>.case-live-summary{font-size:13px;line-height:1.5;padding-top:0}
+ .map-workspace:not(.civic-list-only){flex-direction:column-reverse}
+ #achievement-map{height:45vh;min-height:0;max-height:none}
+}
