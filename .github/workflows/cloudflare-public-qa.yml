@@ -6,7 +6,7 @@ permissions:
 jobs:
   static-assets:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -17,9 +17,29 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
-      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1
-      - run: python scripts/build_cloudflare_public.py
+      - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
+      - name: Prepare artifact QA reports
+        run: mkdir -p tests/donation/results/cloudflare-assets
+      - name: Build and capture the single cold public artifact
+        run: python scripts/build_cloudflare_public.py > tests/donation/results/cloudflare-assets/build.json
+      - name: Report the measured CI cold and warm build times
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('tests/donation/results/cloudflare-assets/build.json').read_text())['artifactPageFonts']
+          print(json.dumps({'compiler':data['compiler'],'candidateRoutes':data['candidateRoutes'],'cold':data['cold'],'warm':data['warm']},ensure_ascii=False))
+          PY
+      - name: Verify page-font contract negatives against the emitted artifact
+        run: python -m unittest discover -s tests -p test_page_font_contract.py
+      - name: Verify immutable namespace and mutable manifest cache headers
+        env:
+          PAGE_FONT_ARTIFACT_ROOT: _site
+        run: python -m unittest discover -s tests -p test_public_security_headers.py
       - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
       - name: Verify exact assets, existing routes and private-path exclusion
         run: |
           npx --yes wrangler@4.143.1 dev --local --config wrangler.public.jsonc --port 8789 > /tmp/wrangler-public.log 2>&1 &
@@ -28,11 +48,14 @@ jobs:
             sleep 1
           done
           python scripts/verify_cloudflare_assets.py --base-url http://127.0.0.1:8789 --report tests/donation/results/cloudflare-assets/report.json
+          python scripts/verify_security_headers.py --base-url http://127.0.0.1:8789 --artifact-root _site --report tests/donation/results/cloudflare-assets/security-headers.json
+          BASE_URL=http://127.0.0.1:8789/ node tests/donation/page-font-artifact.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: cloudflare-public-artifact-qa
           path: |
             tests/donation/results/cloudflare-assets/
+            tests/donation/results/page-font-artifact/
             /tmp/wrangler-public.log
           retention-days: 14

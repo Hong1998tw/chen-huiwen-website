@@ -210,9 +210,27 @@ def _source_public_paths(source_root):
     return set(build_public.public_paths(Path(source_root)))
 
 
-def _public_path_roster(source_root, source_paths):
+def _validated_page_font_paths(artifact_root, source_root):
+    """Return only page-font outputs proven by the source-derived schema-2 contract."""
+    import page_font_contract
+
+    contract = page_font_contract.validate_artifact_contract(
+        Path(artifact_root), Path(source_root),
+    )
+    font_manifest = contract.get('manifest') if isinstance(contract, dict) else None
+    fonts = font_manifest.get('fonts') if isinstance(font_manifest, dict) else None
+    publication = contract.get('publication') if isinstance(contract, dict) else None
+    published_files = publication.get('files') if isinstance(publication, dict) else None
+    if (not isinstance(fonts, dict) or not fonts
+            or not isinstance(published_files, dict)
+            or page_font_contract.FONT_MANIFEST not in published_files):
+        raise ValueError('public artifact has no validated source-derived page-font manifest')
+    return {page_font_contract.FONT_MANIFEST, *fonts}
+
+
+def _public_path_roster(source_root, source_paths, page_font_paths=()):
     """Return the build_public allowlist plus its documented generated outputs."""
-    roster = set(source_paths)
+    roster = set(source_paths) | set(page_font_paths)
     if 'data/achievements-public.json' in source_paths:
         roster.add('data/achievements.json')  # Safe compatibility projection emitted by build_public.
         editor = Path(source_root) / 'cms-page-editor.js'
@@ -223,14 +241,14 @@ def _public_path_roster(source_root, source_paths):
     return roster
 
 
-def _cloudflare_wrapper_bytes():
+def _cloudflare_wrapper_bytes(artifact_root, publication):
     import build_cloudflare_public
     import build_public
     redirects = ['/ /index.html 200']
     redirects.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
                      for path in build_public.LEGACY_PAGES)
     return {
-        '_headers': build_cloudflare_public.render_headers().encode('utf-8'),
+        '_headers': build_cloudflare_public.render_headers(artifact_root, publication).encode('utf-8'),
         '_redirects': ('\n'.join(redirects) + '\n').encode('utf-8'),
     }
 
@@ -293,7 +311,8 @@ def validate_public_artifact(artifact_root, expected_source_sha, *, source_root=
         raise ValueError('requested source SHA does not match the checked-out source commit')
     source_paths = (set(expected_public_paths) if expected_public_paths is not None
                     else _source_public_paths(source_root))
-    allowed_paths = _public_path_roster(source_root, source_paths)
+    page_font_paths = _validated_page_font_paths(root, source_root)
+    allowed_paths = _public_path_roster(source_root, source_paths, page_font_paths)
 
     manifest_path = root / 'publication-manifest.json'
     if manifest_path.is_symlink() or not manifest_path.is_file():
@@ -349,7 +368,7 @@ def validate_public_artifact(artifact_root, expected_source_sha, *, source_root=
             or deployment != expected_deployment):
         raise ValueError('deployment.json does not identify this source SHA and publication manifest digest')
 
-    wrappers = _cloudflare_wrapper_bytes()
+    wrappers = _cloudflare_wrapper_bytes(root, manifest)
     expected_files = set(files) | {'publication-manifest.json', 'deployment.json', *wrappers}
     actual_files = set()
     for path in root.rglob('*'):

@@ -52,7 +52,7 @@ def write_public_artifact(root, files, *, source_sha=None, manifest_files=None,
     (root / 'deployment.json').write_text(
         json.dumps(receipt, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8'
     )
-    for relative, content in audit._cloudflare_wrapper_bytes().items():
+    for relative, content in audit._cloudflare_wrapper_bytes(root, manifest).items():
         (root / relative).write_bytes(content)
     return receipt
 
@@ -92,6 +92,14 @@ class FingerprintAndInventoryTests(unittest.TestCase):
 
 class PublicArtifactScopeTests(unittest.TestCase):
     def setUp(self):
+        # Small legacy fixtures exercise the A07 scope checks independently from the
+        # full G02 contract. The real source-derived G02 artifact is verified separately.
+        self.font_contract_patch = patch.object(audit, '_validated_page_font_paths', return_value=set())
+        self.wrapper_patch = patch.object(audit, '_cloudflare_wrapper_bytes', side_effect=self.fixture_wrappers)
+        self.font_contract_patch.start()
+        self.wrapper_patch.start()
+        self.addCleanup(self.font_contract_patch.stop)
+        self.addCleanup(self.wrapper_patch.stop)
         self.source_sha = checkout_sha()
         self.files = {
             'index.html': '<a href="https://public.example/root">root</a>',
@@ -107,6 +115,23 @@ class PublicArtifactScopeTests(unittest.TestCase):
                 'publicNote': 'fixture',
             }),
         }
+
+    @staticmethod
+    def fixture_wrappers(_artifact_root, _publication):
+        return {
+            '_headers': b'/*\n  X-Content-Type-Options: nosniff\n',
+            '_redirects': b'/ /index.html 200\n',
+        }
+
+    def test_public_roster_adds_only_exact_validated_font_paths(self):
+        manifest = 'page-font-manifest.json'
+        font = ('assets/fonts/huiwen-site-sans/page-core/'
+                + 'a' * 64 + '.woff2')
+        roster = audit._public_path_roster(
+            Path('/fixture/source'), {'index.html'}, {manifest, font},
+        )
+        self.assertEqual(roster, {'index.html', manifest, font})
+        self.assertNotIn('assets/fonts/huiwen-site-sans/page-core/private.json', roster)
 
     def create_artifact(self, directory, files=None, manifest_files=None,
                         public_record_count=0):

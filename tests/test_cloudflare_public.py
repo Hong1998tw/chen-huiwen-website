@@ -45,13 +45,17 @@ class StaticDeliveryTests(unittest.TestCase):
             publication.write_bytes(encoded)
             sha='a'*40
             with patch.object(build_cloudflare_public.build_public,'build') as build:
-                receipt=build_cloudflare_public.add_delivery_metadata(artifact,sha)
+                with patch.object(build_cloudflare_public,'validate_artifact_contract',return_value={}) as validate, \
+                        patch.object(build_cloudflare_public,'page_font_namespace_records',return_value={}):
+                    receipt=build_cloudflare_public.add_delivery_metadata(artifact,sha)
+                    expected_headers=build_cloudflare_public.render_headers(artifact,manifest)
             build.assert_not_called()
+            validate.assert_called_once_with(artifact.resolve(),build_cloudflare_public.ROOT.resolve())
             self.assertEqual(receipt['sourceCommit'],sha)
             self.assertEqual(receipt['publicArtifactDigest'],hashlib.sha256(encoded).hexdigest())
             self.assertEqual(receipt['publicFileCount'],1)
             self.assertEqual(json.loads((artifact/'deployment.json').read_text()),receipt)
-            self.assertEqual((artifact/'_headers').read_text(),build_cloudflare_public.render_headers())
+            self.assertEqual((artifact/'_headers').read_text(),expected_headers)
     def test_asset_checks_use_one_explicit_automation_identity(self):
         for path in ['/', '/index.html', '/mktexp26/', '/data/case-context.json']:
             request = public_request('https://example.test' + path)
@@ -87,6 +91,12 @@ class StaticDeliveryTests(unittest.TestCase):
         self.assertIn('contents: read',text)
         self.assertNotIn('secrets.',text)
         self.assertNotIn('wrangler deploy',text)
+    def test_live_security_header_and_asset_check_follows_exact_receipt(self):
+        text=(ROOT/'.github/workflows/cloudflare-public.yml').read_text()
+        receipt=text.index('python scripts/verify_cloudflare_delivery.py')
+        security=text.index('python scripts/verify_security_headers.py')
+        self.assertGreater(security,receipt)
+        self.assertIn('--artifact-root _site',text[security:])
 
 if __name__=='__main__':
     unittest.main()

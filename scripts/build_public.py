@@ -459,6 +459,10 @@ def build(root=ROOT, destination=None):
         # copy it to the public site except through the validated projection.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
         editor_manifests = build_page_editor_artifacts(staging, root)
+        # Artifact-only font subsets are compiled from the final public and CMS
+        # projections. Their route closure is included in the publication digest.
+        from build_artifact_page_fonts import build as build_artifact_page_fonts
+        artifact_page_fonts = build_artifact_page_fonts(root, staging, paths)
         validate_artifact_links(staging, root)
         manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
         (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
@@ -470,7 +474,13 @@ def build(root=ROOT, destination=None):
         if destination.exists():
             shutil.rmtree(destination)
         staging.replace(destination)
-    return {'files': len(manifest) + 1, 'publicRecords': len(records), 'editorManifests': editor_manifests, 'output': str(destination)}
+    return {
+        'files': len(manifest) + 1,
+        'publicRecords': len(records),
+        'editorManifests': editor_manifests,
+        'artifactPageFonts': artifact_page_fonts,
+        'output': str(destination),
+    }
 
 
 def main():
