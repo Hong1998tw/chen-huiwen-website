@@ -1,32 +1,21 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { verifyPageFontPreloadEvidence } from './page-font-preload-contract.mjs';
 import { observePendingResult, preservePrimaryError, requireObservedValue } from './page-font-artifact-lifecycle.mjs';
+import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const artifact = resolve(root, '_site');
 const base = process.env.BASE_URL || 'http://127.0.0.1:8789/';
-const publication = JSON.parse(await readFile(resolve(artifact, 'publication-manifest.json'), 'utf8'));
-const fontManifest = JSON.parse(await readFile(resolve(artifact, 'page-font-manifest.json'), 'utf8'));
 const fontRoot = 'assets/fonts/huiwen-site-sans/';
 const fullTcPath = `${fontRoot}huiwen-site-sans-tc-20261007.woff2`;
-const fullTcBytes = await readFile(resolve(artifact, fullTcPath));
-const fullTcSha = createHash('sha256').update(fullTcBytes).digest('hex');
-assert.equal(fullTcSha, publication.files[fullTcPath]);
-assert.equal(fullTcBytes.byteLength, 783820);
 const output = resolve(root, 'tests/donation/results/page-font-artifact');
 const reportPath = resolve(output, 'report.json');
-
-function errorRecord(error) {
-  return {
-    name: error?.name || 'Error',
-    message: String(error?.message || error).slice(0, 1200),
-    stack: typeof error?.stack === 'string' ? error.stack.split('\n').slice(0, 6).join('\n').slice(0, 1200) : null,
-  };
-}
+let publication;
+let fontManifest;
+let fullTcSha;
 
 function urlPath(value) {
   try {
@@ -162,6 +151,12 @@ const schemaRoutes = ['offline.html', 'renwu-anju-social-housing/index.html'];
 const results = {
   ci: { githubSha: process.env.GITHUB_SHA || null, githubRef: process.env.GITHUB_REF || null,
     nodeVersion: process.version },
+  source: { script: 'tests/donation/page-font-artifact.mjs', artifactRoot: artifact },
+  head: { commit: process.env.GITHUB_SHA || null,
+    githubRef: process.env.GITHUB_REF || null },
+  runtime: { nodeVersion: process.version, platform: process.platform, arch: process.arch,
+    chromiumVersion: null },
+  preflight: { status: 'not-run' },
   samples: [], schemaRoutes: [], initialFontNetwork: { status: 'not-run', verification: 'not-evaluated',
     expectedRoutes: 464, routesChecked: 0,
     routes: [], fullTcInitialViolations: [], preloadViolations: [], navigationErrors: [],
@@ -170,6 +165,7 @@ const results = {
   execution: {
     status: 'running', currentPhase: null, primaryError: null, secondaryErrors: [],
     phases: {
+      preflight: { status: 'not-run' },
       representativeSamples: { status: 'not-run', expected: samples.length, completed: 0 },
       schemaRoutes: { status: 'not-run', expected: schemaRoutes.length, completed: 0 },
       initialFontNetwork: { status: 'not-run', verification: 'not-evaluated', expected: 464, completed: 0 },
@@ -220,8 +216,20 @@ function captureRunFailure(error, source = null) {
 }
 
 try {
+  const preflight = await runPageFontArtifactPreflight({
+    artifactRoot: artifact,
+    fullTcPath,
+    expectedBytes: 783820,
+    reportPath,
+    results,
+  });
+  publication = preflight.publication;
+  fontManifest = preflight.fontManifest;
+  fullTcSha = preflight.fullTcSha;
+
   browser = await chromium.launch({ headless: true });
   results.ci.chromiumVersion = await browser.version();
+  results.runtime.chromiumVersion = results.ci.chromiumVersion;
   const context = await browser.newContext({ viewport: { width: 1365, height: 950 } });
   const page = await context.newPage();
   const observedFullTc = [];
@@ -865,8 +873,7 @@ try {
   results.execution.status = runError ? 'failed' : 'passed';
   if (runError && !results.execution.primaryError) results.execution.primaryError = errorRecord(runError);
   try {
-    await mkdir(output, { recursive: true });
-    await writeFile(reportPath, JSON.stringify(results, null, 2) + '\n');
+    await writePageFontArtifactReport(reportPath, results);
   } catch (error) {
     results.reportWriteError = errorRecord(error);
     if (!runError) runError = error;
