@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { createHash } from "node:crypto";
+import { readCmsEditorLoaderSource } from "./cms-editor-loader-source.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const dir = mkdtempSync(`${tmpdir()}/huiwen-cms-test-`);
 const port = 18794,
@@ -340,7 +341,7 @@ try {
       page.on('requestfailed',request=>console.error(`CMS_BROWSER requestfailed: ${request.url()} · ${request.failure()?.errorText||'unknown'}`));
       let editorRuntimeRequests=0, editorManifestRequests=0;
       const manifestPath = "/cms-editor-manifests/index.html.a1b2c3d4e5f6.json";
-      const editorLoader = readFileSync(root + "scripts/cms_editor_loader.js", "utf8");
+      const editorLoader = readCmsEditorLoaderSource();
       const editorFixture = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><base href="https://www.huiwen.tw/index.html"><title>Test page</title><style>body{font:20px sans-serif;padding:24px;color:#173e35}main{max-width:720px;margin:auto}</style><script data-cfasync="false" data-cms-editor-loader data-cms-editor-src="/cms-page-editor.0123456789ab.js" data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="${origin}" data-cms-manifest="https://www.huiwen.tw${manifestPath}">${editorLoader}</script></head><body><main><h1>測試正式頁面</h1></main></body></html>`;
       const editorManifest = JSON.stringify({schemaVersion:1,path:"index.html",fields:[{id:"main>h1:nth-of-type(1)",sourceHash:"a".repeat(64),valueHash:"a".repeat(64)}]});
       const editorRuntime = readFileSync(root + "../cms-page-editor.js", "utf8");
