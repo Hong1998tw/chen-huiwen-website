@@ -323,7 +323,7 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     environment,
     environmentLabel: encodingEvidence.environmentLabel,
     measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
-    sourceSHA: checkoutSHA,
+    sourceSHA: environment === 'cloudflare-production' ? deploymentAtStart?.receipt?.sourceCommit ?? null : checkoutSHA,
     checkoutSHA,
     liveDeployment: environment === 'cloudflare-production'
       ? { sourceCommit: deploymentAtStart?.receipt?.sourceCommit ?? null, publicArtifactDigest: deploymentAtStart?.receipt?.publicArtifactDigest ?? null }
@@ -455,6 +455,7 @@ async function runCapture(options) {
   const deploymentWindow = liveEvidence?.verification ?? null;
   if (deploymentWindow) {
     for (const capture of captures) {
+      capture.sourceSHA = liveEvidence.sourceSHA;
       capture.liveDeployment = liveEvidence.liveDeployment;
       capture.environmentVerification.deploymentWindowStatus = deploymentWindow.status;
       const responseVerified = capture.environmentVerification.cloudflareVerified && capture.environmentVerification.encodingValid;
@@ -480,7 +481,7 @@ async function runCapture(options) {
     exceptions: [],
     environment,
     baseUrl: new URL(baseUrl).origin,
-    sourceSHA: checkoutSHA,
+    sourceSHA: liveEvidence ? liveEvidence.sourceSHA : checkoutSHA,
     checkoutSHA,
     liveDeployment: liveEvidence ? {
       before: deploymentAtStart,

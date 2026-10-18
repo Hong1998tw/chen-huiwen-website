@@ -222,6 +222,7 @@ export function evaluateDeploymentWindow(before, after) {
 export function deploymentEvidence(checkoutSHA, before, after) {
   const verification = evaluateDeploymentWindow(before, after);
   return {
+    sourceSHA: verification.status === 'VERIFIED' ? before.sourceCommit : null,
     checkoutSHA: SHA40.test(checkoutSHA ?? '') ? checkoutSHA : null,
     liveDeployment: {
       sourceCommitAtStart: before?.sourceCommit ?? null,

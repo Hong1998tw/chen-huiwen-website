@@ -307,6 +307,8 @@ test('live deployment evidence stays separate from checkout SHA and detects a mi
   const first = { schemaVersion: 1, provider: 'cloudflare-static-assets', sourceCommit: 'a'.repeat(40), publicArtifactDigest: '1'.repeat(64) };
   const stable = deploymentEvidence(checkoutSHA, first, { ...first });
   assert.equal(stable.checkoutSHA, checkoutSHA);
+  assert.equal(stable.sourceSHA, first.sourceCommit);
+  assert.notEqual(stable.sourceSHA, checkoutSHA);
   assert.equal(stable.liveDeployment.sourceCommitAtStart, first.sourceCommit);
   assert.equal(stable.verification.status, 'VERIFIED');
   assert.notEqual(stable.checkoutSHA, stable.liveDeployment.sourceCommitAtStart);
@@ -314,6 +316,10 @@ test('live deployment evidence stays separate from checkout SHA and detects a mi
   const changed = deploymentEvidence(checkoutSHA, first, { ...first, sourceCommit: 'b'.repeat(40), publicArtifactDigest: '2'.repeat(64) });
   assert.equal(changed.verification.status, 'MIXED_DEPLOYMENT');
   assert.equal(changed.verification.stable, false);
+  assert.equal(changed.sourceSHA, null);
+  const missing = deploymentEvidence(checkoutSHA, null, first);
+  assert.equal(missing.sourceSHA, null);
+  assert.equal(missing.checkoutSHA, checkoutSHA);
 });
 
 test('identity and gzip Cloudflare negotiation are valid evidence and never mislabeled as Brotli', () => {
