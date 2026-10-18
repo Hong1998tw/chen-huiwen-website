@@ -123,6 +123,28 @@ try{
    await page.screenshot({path:out+`map-funding-${width}.png`,fullPage:true});
   },resetOverview);
 
+  await check(`${width}: related detail retains four cards and keyboard link opens its real topic filter`,async()=>{
+   const record=sourceById.get('wende-school-center');const topic=record.categories[0];
+   await go('achievement-wende-school-center.html');
+   const section=page.locator('.related-section');
+   assert.equal(await page.locator('h1').count(),1);
+   assert.equal(await page.getByRole('heading',{name:'相關專題',exact:true}).count(),1);
+   assert.equal(await section.locator('.related-cases > .case-card').count(),4);
+   assert.equal(await section.locator('.related-cases > .case-card:visible').count(),width===390?2:4);
+   const more=section.locator('.related-more a');
+   assert.equal(await more.count(),1);assert(await more.isVisible());
+   const destination=new URL(await more.getAttribute('href'),base);
+   assert.equal(destination.pathname,new URL('achievements.html',base).pathname);
+   assert.equal(destination.searchParams.get('category'),topic);assert.equal(destination.hash,'#case-results');
+   await more.focus();assert(await more.evaluate(el=>el===document.activeElement));
+   await page.keyboard.press('Enter');await waitCases();
+   const expected=source.filter(c=>(c.categories||[]).includes(topic)).map(c=>c.id);
+   await waitCaseIds(expected);
+   assert.equal(await page.locator('#category-filter').inputValue(),topic);
+   assert.equal(new URL(page.url()).searchParams.get('category'),topic);
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  },resetOverview);
+
   await check(`${width}: overview layout, pagination and map availability`,async()=>{
    await resetOverview();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -211,10 +233,20 @@ try{
   await ctx.close();
  }
 
- await check('No JavaScript keeps all public achievement cards and historical partner facts readable',async()=>{
+ await check('No JavaScript keeps all public achievement cards, related topics and historical partner facts readable',async()=>{
   const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'achievements.html');
   assert.equal(await page.locator('#case-list .case-card:visible').count(),source.length);
   assert.match(await page.locator('[data-case="wende-school-center"] .case-funding-total').textContent(),/6,035\.7萬元/);
+  assert.match(await page.locator('noscript').textContent(),/完整紀錄與詳情頁仍可直接閱讀/);
+  await page.goto(base+'achievement-wende-school-center.html');
+  const section=page.locator('.related-section');assert.equal(await section.locator('.related-cases > .case-card').count(),4);
+  assert.equal(await section.locator('.related-cases > .case-card:visible').count(),2);
+  const more=section.locator('.related-more a');assert(await more.isVisible());
+  const destination=new URL(await more.getAttribute('href'),base);assert.equal(destination.searchParams.get('category'),sourceById.get('wende-school-center').categories[0]);
+  await more.focus();assert(await more.evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');
+  await page.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.searchParams.has('category'));
+  assert.equal(new URL(page.url()).searchParams.get('category'),sourceById.get('wende-school-center').categories[0]);
+  assert.equal(await page.locator('#case-list .case-card:visible').count(),source.length);
   await page.goto(base+'achievement-mingfeng-12-gongyuan-road.html');const facts=await page.locator('.case-facts').textContent();assert.match(facts,/合作里長（案件當時）/);assert.match(facts,/侯俊傑/);assert(!facts.includes('現任里長'));await ctx.close();
  });
 }finally{
