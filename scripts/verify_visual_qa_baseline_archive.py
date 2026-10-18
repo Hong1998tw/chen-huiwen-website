@@ -8,6 +8,7 @@ require_supported_python()
 import argparse
 import hashlib
 import json
+import os
 import re
 import stat
 import sys
@@ -49,6 +50,34 @@ def _file_name(info) -> str:
     if mode not in (0, stat.S_IFREG):
         raise ValueError('BASELINE_ARCHIVE_ENTRY_NOT_REGULAR_FILE')
     return name
+
+
+def _safe_output_path(output_dir: Path) -> Path:
+    output = Path(os.path.abspath(os.fspath(output_dir)))
+    # macOS exposes temporary paths through /tmp and /var aliases; normalize those
+    # system aliases before rejecting caller-controlled symlink path components.
+    for alias in (Path('/tmp'), Path('/var')):
+        if output == alias or alias in output.parents:
+            canonical_alias = Path(os.path.realpath(alias))
+            if canonical_alias != alias:
+                output = canonical_alias / output.relative_to(alias)
+            break
+
+    cursor = Path(output.anchor)
+    parts = output.parts[1:]
+    for index, part in enumerate(parts):
+        cursor = cursor / part
+        try:
+            info = cursor.lstat()
+        except FileNotFoundError:
+            break
+        if stat.S_ISLNK(info.st_mode):
+            raise ValueError('BASELINE_OUTPUT_PATH_SYMLINK')
+        if index < len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
+            raise ValueError('BASELINE_OUTPUT_PATH_INVALID')
+        if index == len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
+            raise ValueError('BASELINE_OUTPUT_PATH_INVALID')
+    return output
 
 
 def verify_and_extract(archive_path: Path, output_dir: Path, *, policy_path: Path | None = None,
@@ -161,8 +190,9 @@ def verify_and_extract(archive_path: Path, output_dir: Path, *, policy_path: Pat
     if set(entries) != expected_files:
         raise ValueError('BASELINE_ARCHIVE_FILE_SET_MISMATCH')
 
-    output_dir = Path(output_dir)
+    output_dir = _safe_output_path(Path(output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = _safe_output_path(output_dir)
     if any(output_dir.iterdir()):
         raise ValueError('BASELINE_OUTPUT_NOT_EMPTY')
     for name, (_, data) in entries.items():
