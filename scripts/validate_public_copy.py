@@ -197,19 +197,18 @@ def check_directional_arrows(path, markup):
     soup = BeautifulSoup(markup, "html5lib")
     for anchor in soup.find_all("a", href=True):
         text = anchor.get_text(" ", strip=True)
-        has_internal = "→" in text
-        has_external = "↗" in text
-        if not has_internal and not has_external:
+        marks = {glyph for glyph in ("→", "↗", "↓", "←") if glyph in text}
+        if not marks:
             continue
         href = anchor.get("href", "")
-        if has_internal and has_external:
-            findings.append(f"{path}: link mixes → and ↗: {href}")
+        if len(marks) != 1:
+            findings.append(f"{path}: link must use one directional marker: {href}")
             continue
         external = is_external_link(href, path)
-        if has_external and not external:
-            findings.append(f"{path}: internal link uses ↗: {href}")
-        elif has_internal and external:
-            findings.append(f"{path}: external link uses →: {href}")
+        expected = "↗" if external else "→"
+        if marks != {expected}:
+            kind = "external" if external else "internal"
+            findings.append(f"{path}: {kind} link must use {expected}: {href}")
     return findings
 
 

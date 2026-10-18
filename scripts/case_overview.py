@@ -37,5 +37,5 @@ def render_overview(record, root):
             f'<h2 id="{heading}">先看懂這件事</h2><div class="case-overview-grid">')
     for title, text in points:
         body += f'<div><h3>{e(title)}</h3><p>{e(text)}</p></div>'
-    body += '</div><a class="text-link" href="#case-sources">查看資料來源 ↓</a></section>'
+    body += '</div><a class="text-link" href="#case-sources">查看資料來源 →</a></section>'
     return body

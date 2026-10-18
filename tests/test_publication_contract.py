@@ -372,12 +372,14 @@ class PublicCopyNavigationPolicyTests(unittest.TestCase):
           <a href="/about.html">站內卻標外連 ↗</a>
           <a href="https://example.org/story">外部卻標站內 →</a>
           <a href="#section">混用 → ↗</a>
+          <a href="#section">站內跳轉沿用向下箭頭 ↓</a>
+          <a href="press.html">站內返回沿用向左箭頭 ←</a>
         </nav>'''
         failures = copyguard.check_directional_arrows('fixture.html', markup)
-        self.assertEqual(3, len(failures), failures)
-        self.assertTrue(any('internal link uses ↗' in item for item in failures))
-        self.assertTrue(any('external link uses →' in item for item in failures))
-        self.assertTrue(any('mixes → and ↗' in item for item in failures))
+        self.assertEqual(5, len(failures), failures)
+        self.assertTrue(any('internal link must use →' in item for item in failures))
+        self.assertTrue(any('external link must use ↗' in item for item in failures))
+        self.assertTrue(any('one directional marker' in item for item in failures))
 
     def test_ui_label_guard_preserves_brands_proper_names_and_code(self):
         markup = '''<h1>地方報導</h1><h2>TVBS 與 KUMAMOTO 相關消息</h2>

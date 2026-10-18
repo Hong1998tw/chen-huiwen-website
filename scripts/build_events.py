@@ -272,7 +272,7 @@ def render_detail(event):
     registration = (event.get('registration') or '').strip()
     body += '<p>本活動已取消，請勿依原行程前往。</p>' if status == 'cancelled' else f'<p>{e(registration) if registration else "參與方式請以主辦單位公告為準。"}</p>'
     body += '</section>' + render_notice(event)
-    body += f'<p><a class="text-link event-back-link" href="activities.html#event-{e(event["id"])}">← 回到活動時間軸</a></p></article></div>'
+    body += f'<p><a class="text-link event-back-link" href="activities.html#event-{e(event["id"])}">回到活動時間軸 →</a></p></article></div>'
     return body
 
 
