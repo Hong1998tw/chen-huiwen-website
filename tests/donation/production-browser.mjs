@@ -4,13 +4,27 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import {
+  AXE_CORE_VERSION,
+  AXE_PLAYWRIGHT_VERSION,
+  collectTargetSizeDiagnostics,
+  evaluateTargetSizeGate,
+  nonTargetAxeViolations,
+  PRODUCTION_TARGET_SIZE_SCOPE,
+  readTargetSizeBaseline,
+  resolveTargetSizeMode,
+  targetSizeGateMessage,
+} from './wcag22aa.mjs';
 
 const base = (process.env.BASE_URL || 'https://www.huiwen.tw/').replace(/\/?$/, '/');
 const baseHost = new URL(base).hostname;
 const liveSnapshotDir = process.env.LIVE_SNAPSHOT_DIR;
 assert(liveSnapshotDir, 'LIVE_SNAPSHOT_DIR is required for live Production browser QA');
+const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MODE);
 const output = new URL('./results/production-live/', import.meta.url);
 await mkdir(output, { recursive: true });
+const targetSizeBaseline = await readTargetSizeBaseline(new URL('./wcag22aa-production-baseline.json', import.meta.url));
+const targetSizeEntries = [];
 
 const corePages = [
   'index.html',
@@ -192,13 +206,15 @@ try {
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: overflow`);
 
         const axe = await new AxeBuilder({ page })
-          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa','wcag22aa'])
           .analyze();
-        const serious = axe.violations.filter(v => ['serious', 'critical'].includes(v.impact));
+        targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, 'core-page-default'));
+        const serious = nonTargetAxeViolations(axe.violations, ['serious', 'critical']);
         await writeFile(
           new URL(`axe-${file}-${width}.json`, output),
           JSON.stringify(axe.violations, null, 2),
         );
+        // The target-size baseline gate below preserves strict fail-closed behavior for this finding.
         assert.deepEqual(
           serious.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })),
           [],
@@ -307,7 +323,49 @@ try {
   proxy.kill('SIGTERM');
 }
 
-report.status = report.failures.length ? 'Failed' : 'Passed';
+const productionBaseline = {
+  ...targetSizeBaseline,
+  entries: Array.isArray(targetSizeBaseline.entries)
+    ? targetSizeBaseline.entries.filter(entry => corePages.includes(entry.route) && [1440, 390].includes(entry.viewportWidth) && entry.scenario === 'core-page-default')
+    : targetSizeBaseline.entries,
+};
+const targetSizeGate = evaluateTargetSizeGate(
+  targetSizeMode,
+  productionBaseline,
+  targetSizeEntries,
+  PRODUCTION_TARGET_SIZE_SCOPE,
+);
+report.wcag22aaTargetSize = {
+  mode: targetSizeMode,
+  scope: PRODUCTION_TARGET_SIZE_SCOPE,
+  axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+  axeCoreVersion: AXE_CORE_VERSION,
+  baselineStatus: productionBaseline.status,
+  baselineScope: productionBaseline.scope ?? null,
+  baselineKnownViolationCount: targetSizeGate.knownBaselineCount,
+  gate: targetSizeGate,
+};
+if (targetSizeMode === 'capture-pending') {
+  report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Pending', value: targetSizeGate });
+} else if (!targetSizeGate.pass) {
+  report.failures.push('WCAG 2.2 AA target-size baseline');
+  console.error(targetSizeGateMessage(targetSizeGate));
+} else {
+  report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
+}
+await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
+  schema: 'wcag22aa-target-size-report/v1',
+  source: { baseUrl: base },
+  mode: targetSizeMode,
+  scope: PRODUCTION_TARGET_SIZE_SCOPE,
+  axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+  axeCoreVersion: AXE_CORE_VERSION,
+  baseline: productionBaseline,
+  gate: targetSizeGate,
+  violations: targetSizeEntries,
+}, null, 2));
+
+report.status = report.failures.length ? 'Failed' : targetSizeMode === 'capture-pending' ? 'Pending' : 'Passed';
 await writeFile(new URL('report.json', output), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 if (report.failures.length) process.exitCode = 1;

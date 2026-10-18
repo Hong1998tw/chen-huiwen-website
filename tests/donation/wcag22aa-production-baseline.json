@@ -1,0 +1,12 @@
+{
+  "schema": "wcag22aa-target-size-baseline/v1",
+  "scope": "production-live-core-pages-default",
+  "baseHeadSha": "48f6249a332dc3d4f7d753a1321608167e3336d1",
+  "status": "pending-ci",
+  "axePlaywrightVersion": "4.10.2",
+  "axeCoreVersion": "4.10.3",
+  "knownViolationCount": null,
+  "entries": null,
+  "source": null,
+  "reason": "No approved real-Production artifact has been reviewed for the 11 core pages at 1440px and 390px in the core-page-default scenario. Capture evidence first; do not treat the unknown count as zero."
+}

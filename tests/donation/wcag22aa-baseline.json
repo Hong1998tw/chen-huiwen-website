@@ -1,0 +1,12 @@
+{
+  "schema": "wcag22aa-target-size-baseline/v1",
+  "scope": "full-site-candidate-qa",
+  "status": "pending-ci",
+  "baseHeadSha": "14edfdba29cc7cc1e3650db0611d60761c789648",
+  "axePlaywrightVersion": "4.10.2",
+  "axeCoreVersion": "4.10.3",
+  "knownViolationCount": null,
+  "entries": null,
+  "source": null,
+  "reason": "The public GitHub Actions lookup for this workflow and base SHA returned zero runs, and local browser execution is intentionally not used. CI must publish selector, measured CSS size, axe check evidence, and human-reviewed WCAG 2.5.8 exception decisions before this file can be approved; do not treat the unknown count as zero."
+}
