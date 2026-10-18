@@ -22,6 +22,7 @@ from verify_cloudflare_assets import public_request
 
 PATHS = ('/', '/index.html', '/about.html', '/site.js', '/styles.css',
          '/data/search-index.json', '/assets/chen-huiwen-480.webp',
+         '/sw.js', '/manifest.webmanifest', '/publication-manifest.json',
          '/mktexp26/', '/deployment.json')
 NOT_FOUND_PROBE = '/__security-header-probe__'
 REPORTED = ('content-type', 'cache-control', 'cf-cache-status',
@@ -29,14 +30,58 @@ REPORTED = ('content-type', 'cache-control', 'cf-cache-status',
 
 
 def fetch(url, timeout=25):
-    """Return status, final URL, lower-cased headers and exact response bytes."""
+    """Return status, final URL, raw response header pairs and exact response bytes."""
     try:
         with urlopen(public_request(url), timeout=timeout) as response:
             return (response.status, response.geturl(),
-                    {k.lower(): v for k, v in response.headers.items()}, response.read())
+                    raw_header_items(response.headers), response.read())
     except HTTPError as error:
         return (error.code, error.geturl(),
-                {k.lower(): v for k, v in error.headers.items()}, error.read())
+                raw_header_items(error.headers), error.read())
+
+
+def raw_header_items(headers):
+    """Keep duplicate HTTP fields until their effective values are evaluated."""
+    raw_items = getattr(headers, 'raw_items', None)
+    if callable(raw_items):
+        return tuple(raw_items())
+    if hasattr(headers, 'items'):
+        return tuple(headers.items())
+    return tuple(headers)
+
+
+def collect_headers(headers):
+    """Apply HTTP list-field combination without discarding duplicate field lines."""
+    combined = {}
+    for name, value in raw_header_items(headers):
+        key = str(name).lower()
+        value = str(value).strip()
+        combined[key] = f'{combined[key]}, {value}' if key in combined else value
+    return combined
+
+
+def cache_control_directives(value):
+    """Return directive names, splitting commas outside quoted field values."""
+    directives = set()
+    start = 0
+    quoted = False
+    escaped = False
+    for index, character in enumerate(value):
+        if escaped:
+            escaped = False
+        elif quoted and character == '\\':
+            escaped = True
+        elif character == '"':
+            quoted = not quoted
+        elif character == ',' and not quoted:
+            directive = value[start:index].strip().partition('=')[0].strip().lower()
+            if directive:
+                directives.add(directive)
+            start = index + 1
+    directive = value[start:].strip().partition('=')[0].strip().lower()
+    if directive:
+        directives.add(directive)
+    return directives
 
 
 def expected_for(path):
@@ -47,16 +92,17 @@ def expected_for(path):
     return expected
 
 
-def verify_immutable_assets(base, artifact_root, getter=fetch):
+def verify_immutable_assets(base, artifact_root, getter=fetch, records=None):
     """Check actual response policy and bytes for all locally verified hash assets."""
     root = Path(artifact_root)
-    try:
-        publication = json.loads((root / 'publication-manifest.json').read_text(encoding='utf-8'))
-        records = immutable_asset_records(root, publication)
-    except (OSError, ValueError, TypeError) as error:
-        return {'status': 'FAIL', 'results': [{
-            'failures': [type(error).__name__ + ': ' + str(error)],
-        }]}
+    if records is None:
+        try:
+            publication = json.loads((root / 'publication-manifest.json').read_text(encoding='utf-8'))
+            records = immutable_asset_records(root, publication)
+        except (OSError, ValueError, TypeError) as error:
+            return {'status': 'FAIL', 'results': [{
+                'failures': [type(error).__name__ + ': ' + str(error)],
+            }]}
     if not records:
         return {'status': 'FAIL', 'results': [{
             'failures': ['publication manifest has no verified immutable assets'],
@@ -71,7 +117,8 @@ def verify_immutable_assets(base, artifact_root, getter=fetch):
             response = getter(url)
             if len(response) < 4:
                 raise ValueError('asset getter did not return response bytes')
-            status, final_url, headers, body = response[:4]
+            status, final_url, raw_headers, body = response[:4]
+            headers = collect_headers(raw_headers)
             observed_hash = hashlib.sha256(body).hexdigest()
             failures = []
             if status != 200:
@@ -97,14 +144,23 @@ def verify_immutable_assets(base, artifact_root, getter=fetch):
 
 def verify(base, paths=PATHS, getter=fetch, artifact_root='_site'):
     base = base.rstrip('/')
+    root = Path(artifact_root)
+    try:
+        publication = json.loads((root / 'publication-manifest.json').read_text(encoding='utf-8'))
+        records = immutable_asset_records(root, publication)
+        immutable_paths = {'/' + relative for relative, _ in records}
+    except (OSError, ValueError, TypeError):
+        records = None
+        immutable_paths = set()
     results = []
     for path in (*paths, NOT_FOUND_PROBE):
         url = base + path
         started = datetime.now(timezone.utc).isoformat(timespec='seconds')
         try:
             response = getter(url)
-            status, final_url, headers = response[:3]
-        except OSError as error:
+            status, final_url, raw_headers = response[:3]
+            headers = collect_headers(raw_headers)
+        except (OSError, ValueError, TypeError) as error:
             results.append({'url': url, 'time': started,
                             'failures': [type(error).__name__ + ': ' + str(error)]})
             continue
@@ -117,12 +173,19 @@ def verify(base, paths=PATHS, getter=fetch, artifact_root='_site'):
         for name, value in expected_for(path).items():
             if headers.get(name) != value:
                 failures.append(f'{name}: {headers.get(name)!r} != {value!r}')
-        if path not in {p for p, _ in PATH_HEADERS} and 'no-store' in headers.get('cache-control', ''):
+        cache_control = headers.get('cache-control', '')
+        directives = cache_control_directives(cache_control)
+        if path in immutable_paths:
+            if cache_control != IMMUTABLE_CACHE_CONTROL:
+                failures.append(f'cache-control: {cache_control!r} != {IMMUTABLE_CACHE_CONTROL!r}')
+        elif 'immutable' in directives:
+            failures.append('unexpected immutable cache-control on a mutable path')
+        if path not in {p for p, _ in PATH_HEADERS} and 'no-store' in directives:
             failures.append('unexpected no-store')
         results.append({'url': url, 'time': started, 'status': status, 'finalUrl': final_url,
                         'headers': {k: headers[k] for k in REPORTED if k in headers}, 'failures': failures})
 
-    immutable = verify_immutable_assets(base, artifact_root, getter)
+    immutable = verify_immutable_assets(base, artifact_root, getter, records=records)
     passed = not any(result['failures'] for result in results) and immutable['status'] == 'PASS'
     return {'base': base, 'status': 'PASS' if passed else 'FAIL',
             'results': results, 'immutableAssets': immutable,

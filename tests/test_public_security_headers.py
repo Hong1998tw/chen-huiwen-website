@@ -4,6 +4,7 @@ Tests build the real Cloudflare artifact and evaluate its `_headers` file the wa
 Cloudflare Static Assets does (every matching rule applies; repeated names combine).
 """
 import hashlib
+from http.client import HTTPMessage
 import json
 import re
 import shutil
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -46,6 +48,14 @@ def response_headers(rules, path):
     return merged
 
 
+def http_message(headers):
+    """Build a real HTTPMessage so tests can retain duplicate field lines."""
+    message = HTTPMessage()
+    for name, value in headers.items():
+        message.add_header(name, value)
+    return message
+
+
 class SecurityHeaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -69,6 +79,7 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertGreater(len(self.paths), 300)
         for required in ['/', '/index.html', '/mktexp26/', '/renwu-anju-social-housing/',
                          '/site.js', '/styles.css', '/data/search-index.json',
+                         '/sw.js', '/manifest.webmanifest', '/publication-manifest.json',
                          '/missing-page-for-404.html']:
             self.assertIn(required, self.paths)
         for path in self.paths:
@@ -265,6 +276,7 @@ class PostDeployCheckTests(unittest.TestCase):
             path = url.split('://', 1)[1].partition('/')[2]
             path = '/' + path
             headers = {name.lower(): value for name, value in cloudflare.SECURITY_HEADERS}
+            headers['cache-control'] = 'public, max-age=0, must-revalidate'
             if path == '/deployment.json':
                 headers['cache-control'] = 'no-store'
             code = 404 if path == verifier.NOT_FOUND_PROBE else status
@@ -277,8 +289,31 @@ class PostDeployCheckTests(unittest.TestCase):
                     code, url, headers, body = changed
                 else:
                     code, url, headers = changed
+            if isinstance(headers, dict):
+                headers = http_message(headers)
             return code, url, headers, body
         return getter
+
+    def test_fetch_keeps_raw_duplicate_http_message_fields(self):
+        url = 'https://example.test/asset.woff2'
+        message = HTTPMessage()
+        message.add_header('Cache-Control', 'no-store')
+        message.add_header('cAcHe-CoNtRoL', cloudflare.IMMUTABLE_CACHE_CONTROL)
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.geturl.return_value = url
+        response.headers = message
+        response.read.return_value = b'asset'
+
+        with patch.object(verifier, 'urlopen', return_value=response):
+            fetched = verifier.fetch(url)
+
+        self.assertEqual(fetched[2], tuple(message.raw_items()))
+        self.assertEqual(
+            verifier.collect_headers(fetched[2])['cache-control'],
+            'no-store, ' + cloudflare.IMMUTABLE_CACHE_CONTROL,
+        )
 
     def test_passes_when_every_path_carries_the_reviewed_headers(self):
         report = verifier.verify('https://example.test', getter=self.fake(), artifact_root=self.site)
@@ -286,6 +321,63 @@ class PostDeployCheckTests(unittest.TestCase):
         self.assertEqual(len(report['results']), len(verifier.PATHS) + 1)
         self.assertEqual(report['results'][-1]['status'], 404)
         self.assertEqual(report['immutableAssets']['status'], 'PASS')
+        self.assertEqual(len(report['immutableAssets']['results']), 20)
+
+    def test_mutable_public_paths_reject_immutable_cache_control(self):
+        mutable_paths = ('/', '/index.html', '/about.html', '/site.js', '/styles.css',
+                         '/data/search-index.json', '/sw.js', '/manifest.webmanifest',
+                         '/publication-manifest.json', '/deployment.json')
+
+        def make_mutable_immutable(path, code, url, headers):
+            if path in mutable_paths:
+                headers['cache-control'] = cloudflare.IMMUTABLE_CACHE_CONTROL
+            return code, url, headers
+
+        report = verifier.verify('https://example.test', getter=self.fake(make_mutable_immutable),
+                                 artifact_root=self.site)
+        self.assertEqual(report['status'], 'FAIL')
+        for path in mutable_paths:
+            result = next(item for item in report['results'] if item['url'].endswith(path))
+            self.assertTrue(any('immutable' in failure for failure in result['failures']), path)
+
+    def test_conflicting_duplicate_cache_control_fields_fail_for_real_http_message(self):
+        immutable_path = '/' + cloudflare.immutable_asset_records(self.site, self.publication)[0][0]
+
+        def duplicate_cache_control(path, code, url, headers):
+            if path == immutable_path:
+                message = http_message({name: value for name, value in headers.items()
+                                        if name.lower() != 'cache-control'})
+                message.add_header('Cache-Control', 'no-store')
+                message.add_header('cAcHe-CoNtRoL', cloudflare.IMMUTABLE_CACHE_CONTROL)
+                return code, url, message, b''
+            return code, url, headers
+
+        report = verifier.verify('https://example.test', getter=self.fake(duplicate_cache_control),
+                                 artifact_root=self.site)
+        self.assertEqual(report['status'], 'FAIL')
+        asset_result = next(item for item in report['immutableAssets']['results']
+                            if item['url'].endswith(immutable_path))
+        self.assertTrue(any('cache-control' in failure for failure in asset_result['failures']))
+        self.assertEqual(
+            asset_result['headers']['cache-control'],
+            'no-store, ' + cloudflare.IMMUTABLE_CACHE_CONTROL,
+        )
+
+    def test_conflicting_duplicate_security_fields_fail_for_all_five_headers(self):
+        def duplicate_security_headers(path, code, url, headers):
+            if path == '/':
+                message = http_message(headers)
+                for name, _ in cloudflare.SECURITY_HEADERS:
+                    message.add_header(name.swapcase(), 'conflicting-value')
+                return code, url, message
+            return code, url, headers
+
+        report = verifier.verify('https://example.test', getter=self.fake(duplicate_security_headers),
+                                 artifact_root=self.site)
+        self.assertEqual(report['status'], 'FAIL')
+        root_result = next(item for item in report['results'] if item['url'] == 'https://example.test/')
+        for name, _ in cloudflare.SECURITY_HEADERS:
+            self.assertTrue(any(name.lower() in failure for failure in root_result['failures']), name)
 
     def test_fails_on_missing_changed_redirected_or_wrong_status(self):
         def drop_nosniff(path, code, url, headers):
