@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { verifyPageFontPreloadEvidence } from './page-font-preload-contract.mjs';
+import { observePendingResult, preservePrimaryError, requireObservedValue } from './page-font-artifact-lifecycle.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const artifact = resolve(root, '_site');
@@ -161,13 +162,63 @@ const schemaRoutes = ['offline.html', 'renwu-anju-social-housing/index.html'];
 const results = {
   ci: { githubSha: process.env.GITHUB_SHA || null, githubRef: process.env.GITHUB_REF || null,
     nodeVersion: process.version },
-  samples: [], schemaRoutes: [], initialFontNetwork: { expectedRoutes: 464, routesChecked: 0,
+  samples: [], schemaRoutes: [], initialFontNetwork: { status: 'not-run', verification: 'not-evaluated',
+    expectedRoutes: 464, routesChecked: 0,
     routes: [], fullTcInitialViolations: [], preloadViolations: [], navigationErrors: [],
     criticalRequestFailures: [], runtimeErrors: [], observationErrors: [] },
-  serviceInitial: { status: 'not-run', errors: [] }, legacyRoutes: [], cmsPreview: {}, negativeGuards: {},
+  serviceInitial: { status: 'not-run', errors: [] }, legacyRoutes: [], cmsPreview: { status: 'not-run' }, negativeGuards: {},
+  execution: {
+    status: 'running', currentPhase: null, primaryError: null, secondaryErrors: [],
+    phases: {
+      representativeSamples: { status: 'not-run', expected: samples.length, completed: 0 },
+      schemaRoutes: { status: 'not-run', expected: schemaRoutes.length, completed: 0 },
+      initialFontNetwork: { status: 'not-run', verification: 'not-evaluated', expected: 464, completed: 0 },
+      crossMonth: { status: 'not-run' },
+      dynamicSearch: { status: 'not-run' },
+      legacyRoutes: { status: 'not-run', expected: legacyRoutes.length, completed: 0, currentRoute: null },
+      cmsPreview: { status: 'not-run' },
+      cmsNegativeGuards: { status: 'not-run', expected: 3, completed: 0, currentMode: null },
+      topLevelCmsGuard: { status: 'not-run' },
+      finalAssertions: { status: 'not-run' },
+    },
+  },
 };
 let browser;
 let runError;
+let cmsFullFontResponseWait;
+
+function startPhase(name) {
+  results.execution.currentPhase = name;
+  results.execution.phases[name].status = 'running';
+}
+
+function completePhase(name) {
+  results.execution.phases[name].status = 'completed';
+  if (results.execution.currentPhase === name) results.execution.currentPhase = null;
+}
+
+function captureRunFailure(error, source = null) {
+  const merged = preservePrimaryError(runError, error);
+  runError = merged.primaryError;
+  if (merged.secondaryError) results.execution.secondaryErrors.push({
+    ...(source ? { source } : {}), ...errorRecord(merged.secondaryError),
+  });
+  if (!results.execution.primaryError) {
+    results.fatalError = errorRecord(runError);
+    results.execution.primaryError = errorRecord(runError);
+    if (source) results.execution.primarySource = source;
+  }
+  results.execution.status = 'failed';
+  const phaseName = results.execution.currentPhase;
+  if (phaseName) {
+    const phase = results.execution.phases[phaseName];
+    if (phase.status === 'running') {
+      phase.status = 'failed';
+      phase.error = errorRecord(runError);
+    }
+  }
+}
+
 try {
   browser = await chromium.launch({ headless: true });
   results.ci.chromiumVersion = await browser.version();
@@ -178,6 +229,7 @@ try {
     if (new URL(response.url()).pathname === `/${fullTcPath}`) observedFullTc.push(response.url());
   });
 
+  startPhase('representativeSamples');
   for (const route of samples) {
     const routeRow = fontManifest.routes[route];
     assert.ok(routeRow, `missing manifest route: ${route}`);
@@ -242,8 +294,11 @@ try {
     await page.locator('html').evaluate((html) => { html.style.removeProperty('font-size'); });
     await page.setViewportSize({ width: 1365, height: 950 });
     results.samples.push({ route, preloads: state.preloads, footerGlyphs: footerCodepoints.length, zoom });
+    results.execution.phases.representativeSamples.completed += 1;
   }
+  completePhase('representativeSamples');
 
+  startPhase('schemaRoutes');
   for (const route of schemaRoutes) {
     const routeRow = fontManifest.routes[route];
     assert.ok(routeRow, `missing schema-2 route: ${route}`);
@@ -278,10 +333,14 @@ try {
     }
     results.schemaRoutes.push({ route, preloads: state.preloads, rootFamily: state.rootFamily,
       bodyFamily: state.bodyFamily, headingFamily: state.headingFamily });
+    results.execution.phases.schemaRoutes.completed += 1;
   }
+  completePhase('schemaRoutes');
   const fontOnlyRoutes = Object.keys(fontManifest.routes).sort();
   const fullTcInitialViolations = results.initialFontNetwork.fullTcInitialViolations;
   const fontOnlyStarted = performance.now();
+  startPhase('initialFontNetwork');
+  results.initialFontNetwork.status = 'running';
   for (const route of fontOnlyRoutes) {
     const routeRow = fontManifest.routes[route];
     const routeRecord = { route, navigation: { status: null }, fullTcRequests: [],
@@ -404,7 +463,7 @@ try {
 
       if (route === 'service.html' && response) {
         const initialFullTcRequests = routeNetwork.fullTcRequests.filter((item) => item.phase === 'initial').length;
-        const card = { route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
+        const card = { status: 'running', route, viewport: '390x844', fixedTaipeiDate: '2026-10-19',
           initialFullTcRequests, cardFullTcRequests: 0, totalFullTcRequests: 0,
           cardFullTcBytes: null, cardFullTcSha256: null, responsePhase: null,
           cardCanvasVisible: false, errors: [] };
@@ -442,8 +501,12 @@ try {
         card.totalFullTcRequests = routeNetwork.fullTcRequests.length;
         if (initialFullTcRequests === 0 && card.cardFullTcRequests === 0)
           card.errors.push({ kind: 'missing-on-demand-request', message: 'legal-card activation did not request the full TC font' });
+        card.status = card.errors.length === 0 ? 'passed' : 'failed';
         routeRecord.serviceCard = card;
         results.serviceInitial = card;
+      } else if (route === 'service.html') {
+        results.serviceInitial = { status: 'failed', errors: [{ kind: 'missing-service-response',
+          message: 'service route did not return a document, so the legal-card check did not run' }] };
       }
     } catch (error) {
       routeRecord.observationErrors.push({ kind: 'route-sweep-exception', ...errorRecord(error) });
@@ -474,12 +537,20 @@ try {
         results.initialFontNetwork.criticalRequestFailures.push({ route, ...error }));
       routeRecord.runtimeErrors.forEach((error) => results.initialFontNetwork.runtimeErrors.push({ route, ...error }));
       routeRecord.observationErrors.forEach((error) => results.initialFontNetwork.observationErrors.push({ route, ...error }));
+      if (route === 'service.html' && results.serviceInitial.status === 'not-run') {
+        results.serviceInitial = { status: 'failed', errors: [{ kind: 'service-card-check-incomplete',
+          routeErrors: routeRecord.observationErrors }] };
+      }
       results.initialFontNetwork.routes.push(routeRecord);
       results.initialFontNetwork.routesChecked = results.initialFontNetwork.routes.length;
+      results.execution.phases.initialFontNetwork.completed = results.initialFontNetwork.routesChecked;
     }
   }
   results.initialFontNetwork.durationSeconds = Number(((performance.now() - fontOnlyStarted) / 1000).toFixed(2));
+  results.initialFontNetwork.status = 'observed';
+  completePhase('initialFontNetwork');
 
+  startPhase('crossMonth');
   const crossMonthContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const crossMonthPage = await crossMonthContext.newPage();
@@ -499,8 +570,10 @@ try {
   } finally {
     await crossMonthContext.close();
   }
+  completePhase('crossMonth');
   assert.deepEqual(observedFullTc, [], 'initial representative page visits downloaded the 783,820-byte full TC font');
 
+  startPhase('dynamicSearch');
   const searchPage = await context.newPage();
   await searchPage.setViewportSize({ width: 390, height: 844 });
   const searchFullTcResponses = [];
@@ -525,8 +598,11 @@ try {
   results.dynamicSearch = { triggered: true, fullTcBytes: searchFontBytes.byteLength,
     fullTcSha256: fullTcSha, firstResult: await searchPage.locator('.global-search-result').first().innerText() };
   await searchPage.close();
+  completePhase('dynamicSearch');
 
+  startPhase('legacyRoutes');
   for (const [route, expectedPage] of legacyRoutes) {
+    results.execution.phases.legacyRoutes.currentRoute = route;
     const response = await page.goto(new URL(route, base).href, { waitUntil: 'domcontentloaded' });
     assert.equal(response.status(), 200, route);
     await page.evaluate(() => document.fonts.ready.then(() => true));
@@ -534,8 +610,13 @@ try {
     assert.equal(pageData, expectedPage, `${route}: existing nine-route font marker changed`);
     assert.equal(await page.locator('html').getAttribute('data-huiwen-font-artifact-route'), null, route);
     results.legacyRoutes.push({ route, fontPage: pageData });
+    results.execution.phases.legacyRoutes.completed += 1;
   }
+  results.execution.phases.legacyRoutes.currentRoute = null;
+  completePhase('legacyRoutes');
 
+  startPhase('cmsPreview');
+  results.cmsPreview = { status: 'running' };
   const cmsRoute = 'achievement-wujia-public-parking.html';
   const cmsRow = fontManifest.routes[cmsRoute];
   const draftChar = '黑';
@@ -613,14 +694,18 @@ try {
   }
 
   const cmsPage = await cmsContext.newPage();
-  const fullFontResponse = cmsPage.waitForResponse((response) => new URL(response.url()).pathname === `/${fullTcPath}` && response.status() === 200);
+  cmsFullFontResponseWait = observePendingResult(cmsPage.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/${fullTcPath}` && response.status() === 200));
   await installAdminRoutes(cmsPage, 'valid');
   await cmsPage.goto('https://admin.huiwen.tw/__g02/cms', { waitUntil: 'domcontentloaded' });
   const frame = cmsPage.frames().find((item) => item.url().includes('/api/page-preview'));
   assert.ok(frame, 'authenticated CMS proxy iframe did not load');
   await frame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
   await frame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
-  const loadedFullFont = await fullFontResponse;
+  const fullFontResponseOutcome = await cmsFullFontResponseWait;
+  results.cmsPreview.fullFontResponseWait = { status: fullFontResponseOutcome.status,
+    error: fullFontResponseOutcome.status === 'rejected' ? errorRecord(fullFontResponseOutcome.error) : null };
+  const loadedFullFont = requireObservedValue(fullFontResponseOutcome);
   const loadedBytes = await loadedFullFont.body();
   assert.equal(createHash('sha256').update(loadedBytes).digest('hex'), fullTcSha, 'CMS proxy did not download the published full TC font bytes');
   const cmsState = await frame.evaluate((text) => {
@@ -644,11 +729,15 @@ try {
   assert.equal(cmsState.fontLoaded, true);
   assert.ok(cmsState.glyphWidth > 0);
   assert.equal(cmsState.tofu, false);
-  results.cmsPreview = { route: cmsRoute, access: 'verified owner assertion fixture', draftChar,
+  results.cmsPreview = { ...results.cmsPreview, route: cmsRoute, access: 'verified owner assertion fixture', draftChar,
     fontBytes: loadedBytes.byteLength, fontSha256: fullTcSha, ...cmsState };
   await cmsContext.close();
+  results.cmsPreview.status = 'passed';
+  completePhase('cmsPreview');
 
+  startPhase('cmsNegativeGuards');
   for (const mode of ['unauthenticated', 'wrong-cms-edit', 'unauthorized-message']) {
+    results.execution.phases.cmsNegativeGuards.currentMode = mode;
     const negativeContext = await browser.newContext();
     await negativeContext.route('https://www.huiwen.tw/**', async (route) => {
       const requestUrl = new URL(route.request().url());
@@ -705,8 +794,12 @@ try {
     }
     results.negativeGuards[mode] = state;
     await negativeContext.close();
+    results.execution.phases.cmsNegativeGuards.completed += 1;
   }
+  results.execution.phases.cmsNegativeGuards.currentMode = null;
+  completePhase('cmsNegativeGuards');
 
+  startPhase('topLevelCmsGuard');
   const topLevelPage = await context.newPage();
   const topLevelRequests = [];
   topLevelPage.on('request', (request) => topLevelRequests.push(request.url()));
@@ -717,27 +810,60 @@ try {
   assert.equal(topLevelRequests.some((url) => new URL(url).pathname === `/${editorAsset}`), false,
     'top-level cmsEdit=1 downloaded the CMS runtime');
   results.negativeGuards.topLevel = { marker: null, editorRuntimeRequested: false };
+  completePhase('topLevelCmsGuard');
 
-  assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
-  assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
-  assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
-  assert.deepEqual(results.initialFontNetwork.navigationErrors, [], 'at least one route had a navigation error');
-  assert.deepEqual(results.initialFontNetwork.criticalRequestFailures, [], 'at least one route had a critical request failure');
-  assert.deepEqual(results.initialFontNetwork.runtimeErrors, [], 'at least one route raised an uncaught page error');
-  assert.deepEqual(results.initialFontNetwork.observationErrors, [], 'at least one route could not be fully diagnosed');
+  startPhase('finalAssertions');
+  try {
+    assert.equal(results.initialFontNetwork.routesChecked, 464, 'initial font-only sweep missed schema-2 routes');
+    assert.deepEqual(fullTcInitialViolations, [], 'at least one of the 464 initial route visits requested full TC');
+    assert.deepEqual(results.initialFontNetwork.preloadViolations, [], 'at least one route had a different first-view font preload closure');
+    assert.deepEqual(results.initialFontNetwork.navigationErrors, [], 'at least one route had a navigation error');
+    assert.deepEqual(results.initialFontNetwork.criticalRequestFailures, [], 'at least one route had a critical request failure');
+    assert.deepEqual(results.initialFontNetwork.runtimeErrors, [], 'at least one route raised an uncaught page error');
+    assert.deepEqual(results.initialFontNetwork.observationErrors, [], 'at least one route could not be fully diagnosed');
+    results.initialFontNetwork.verification = 'passed';
+    results.execution.phases.initialFontNetwork.verification = 'passed';
+  } catch (error) {
+    results.initialFontNetwork.verification = 'failed';
+    results.execution.phases.initialFontNetwork.verification = 'failed';
+    throw error;
+  }
+  assert.equal(results.serviceInitial.status, 'passed', 'service-card check did not complete successfully');
   assert.deepEqual(results.serviceInitial.errors, [], 'service-card font bytes or on-demand behavior failed');
 
   await context.close();
+  completePhase('finalAssertions');
 } catch (error) {
-  runError = error;
-  results.fatalError = errorRecord(error);
+  captureRunFailure(error);
 } finally {
   if (browser) {
     try { await browser.close(); } catch (error) {
       results.browserCloseError = errorRecord(error);
-      if (!runError) runError = error;
+      captureRunFailure(error, 'browser-close');
     }
   }
+  if (cmsFullFontResponseWait) {
+    const outcome = await cmsFullFontResponseWait;
+    results.cmsPreview.fullFontResponseWait = { status: outcome.status,
+      error: outcome.status === 'rejected' ? errorRecord(outcome.error) : null };
+    if (outcome.status === 'rejected') captureRunFailure(outcome.error, 'cms-full-font-response-wait');
+  }
+  if (results.cmsPreview.status === 'running') {
+    results.cmsPreview.status = runError ? 'failed' : 'incomplete';
+    if (runError) results.cmsPreview.error = errorRecord(runError);
+  }
+  if (results.initialFontNetwork.status === 'running') {
+    results.initialFontNetwork.status = runError ? 'failed' : 'incomplete';
+  }
+  for (const phase of Object.values(results.execution.phases)) {
+    if (phase.status === 'running') {
+      phase.status = runError ? 'failed' : 'incomplete';
+      if (runError) phase.error ||= errorRecord(runError);
+    }
+  }
+  results.execution.currentPhase = results.execution.currentPhase || null;
+  results.execution.status = runError ? 'failed' : 'passed';
+  if (runError && !results.execution.primaryError) results.execution.primaryError = errorRecord(runError);
   try {
     await mkdir(output, { recursive: true });
     await writeFile(reportPath, JSON.stringify(results, null, 2) + '\n');
