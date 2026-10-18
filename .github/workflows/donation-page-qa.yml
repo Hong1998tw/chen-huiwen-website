@@ -66,9 +66,6 @@ jobs:
     name: A-05 visual evidence and approved-baseline comparison
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    permissions:
-      contents: read
-      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,24 +108,9 @@ jobs:
           if [[ "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 ]]; then
             exit 1
           fi
-      - name: Download the configured same-repository approved baseline artifact
-        id: baseline-download
-        if: steps.capture.outcome == 'success' && vars.VISUAL_QA_BASELINE_ARTIFACT_ID != '' && vars.VISUAL_QA_BASELINE_SHA256 != '' && vars.VISUAL_QA_BASELINE_SOURCE_SHA != ''
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RUNNER_TEMP: ${{ runner.temp }}
-          VISUAL_QA_BASELINE_ARTIFACT_ID: ${{ vars.VISUAL_QA_BASELINE_ARTIFACT_ID }}
-          VISUAL_QA_PYTHON: python3
-        run: node tests/donation/download-visual-qa-baseline.mjs
-      - name: Compare local captures or record baseline pending
+      - name: Compare local captures with the committed Git baseline or record baseline pending
         if: always()
         shell: bash
-        env:
-          VISUAL_QA_BASELINE_ARTIFACT_ID: ${{ vars.VISUAL_QA_BASELINE_ARTIFACT_ID }}
-          VISUAL_QA_BASELINE_SHA256: ${{ vars.VISUAL_QA_BASELINE_SHA256 }}
-          VISUAL_QA_BASELINE_SOURCE_SHA: ${{ vars.VISUAL_QA_BASELINE_SOURCE_SHA }}
-          RUNNER_TEMP: ${{ runner.temp }}
         run: |
           set +e
           if [[ "${{ steps.capture.outcome }}" != "success" ]]; then
@@ -136,24 +118,11 @@ jobs:
             exit 0
           fi
           candidate='tests/donation/results/visual-qa/local-http-uncompressed/manifest.json'
-          if [[ -z "$VISUAL_QA_BASELINE_ARTIFACT_ID" && -z "$VISUAL_QA_BASELINE_SHA256" && -z "$VISUAL_QA_BASELINE_SOURCE_SHA" ]]; then
-            node tests/donation/visual-qa.mjs compare --candidate-manifest "$candidate"
-            compare_status=$?
-          elif [[ -z "$VISUAL_QA_BASELINE_ARTIFACT_ID" || -z "$VISUAL_QA_BASELINE_SHA256" || -z "$VISUAL_QA_BASELINE_SOURCE_SHA" ]]; then
-            echo 'A-05 baseline configuration is incomplete; all three artifact ID, manifest SHA-256 and source SHA variables are required.' >&2
-            compare_status=1
-          elif [[ "${{ steps.baseline-download.outcome }}" != "success" ]]; then
-            echo 'A-05 configured baseline artifact was not downloaded and verified; comparison is rejected.' >&2
-            compare_status=1
-          else
-            node tests/donation/visual-qa.mjs compare \
-              --candidate-manifest "$candidate" \
-              --baseline-manifest "$RUNNER_TEMP/a05-approved-baseline/manifest.json" \
-              --baseline-sha256 "$VISUAL_QA_BASELINE_SHA256" \
-              --baseline-source-sha "$VISUAL_QA_BASELINE_SOURCE_SHA"
-            compare_status=$?
-          fi
-          echo "- Comparison exit: ${compare_status} (PENDING only when no baseline variables are configured)." >> "$GITHUB_STEP_SUMMARY"
+          node tests/donation/visual-qa.mjs compare \
+            --candidate-manifest "$candidate" \
+            --baseline-selection
+          compare_status=$?
+          echo "- Comparison exit: ${compare_status}; baseline source is the committed Git selection at tests/baselines/visual-qa/selection.json. Missing selection is PENDING; invalid selected content is rejected." >> "$GITHUB_STEP_SUMMARY"
           exit "$compare_status"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

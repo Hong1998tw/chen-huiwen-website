@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { join, resolve, sep } from 'node:path';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
 export const VISUAL_QA_SCHEMA_VERSION = 2;
 export const MAX_TRANSFER_BYTES = 300000;
 export const MAX_DOM_ELEMENTS = 1500;
+export const GIT_BASELINE_SELECTION_RELATIVE_PATH = 'tests/baselines/visual-qa/selection.json';
 
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -71,6 +72,129 @@ export async function readApprovedBaseline({ manifestPath, expectedSha256, expec
   const exceptionCheck = validateBaselineExceptions(manifest);
   if (!exceptionCheck.valid) return { status: 'REJECTED', reason: exceptionCheck.reason, actualSha256 };
   return { status: 'APPROVED', manifest, actualSha256 };
+}
+
+export async function readGitBaselineSelection({ repositoryRoot }) {
+  let root;
+  try {
+    root = await realpath(repositoryRoot);
+  } catch {
+    return { status: 'REJECTED', reason: 'BASELINE_REPOSITORY_ROOT_UNAVAILABLE' };
+  }
+
+  const baselineRoot = resolve(root, 'tests/baselines/visual-qa');
+  const selectionPath = resolve(baselineRoot, 'selection.json');
+  for (const directory of [resolve(root, 'tests'), resolve(root, 'tests/baselines'), baselineRoot]) {
+    let info;
+    try {
+      info = await lstat(directory);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return { status: 'PENDING', reason: 'BASELINE_SELECTION_MISSING', selectionPath: GIT_BASELINE_SELECTION_RELATIVE_PATH };
+      }
+      return { status: 'REJECTED', reason: 'BASELINE_SELECTION_UNAVAILABLE' };
+    }
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PATH_UNSAFE' };
+    }
+  }
+
+  let selectionInfo;
+  try {
+    selectionInfo = await lstat(selectionPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { status: 'PENDING', reason: 'BASELINE_SELECTION_MISSING', selectionPath: GIT_BASELINE_SELECTION_RELATIVE_PATH };
+    }
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_UNAVAILABLE' };
+  }
+  if (selectionInfo.isSymbolicLink() || !selectionInfo.isFile()) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PATH_UNSAFE' };
+  }
+
+  let selectionBytes;
+  let selection;
+  try {
+    selectionBytes = await readFile(selectionPath);
+    selection = JSON.parse(selectionBytes.toString('utf8'));
+  } catch {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_INVALID' };
+  }
+  const allowedSelectionKeys = new Set(['manifestPath', 'manifestSha256', 'schemaVersion', 'sourceSHA']);
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection) || selection.schemaVersion !== 1 ||
+      Object.keys(selection).some(key => !allowedSelectionKeys.has(key))) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_INVALID' };
+  }
+  if (!/^[a-f0-9]{40}$/.test(selection.sourceSHA ?? '') ||
+      !/^[a-f0-9]{64}$/.test(selection.manifestSha256 ?? '')) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PROVENANCE_INVALID' };
+  }
+  if (typeof selection.manifestPath !== 'string' || selection.manifestPath !== `${selection.sourceSHA}/manifest.json`) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PATH_INVALID' };
+  }
+
+  const releaseDirectory = join(baselineRoot, selection.sourceSHA);
+  let releaseInfo;
+  try {
+    releaseInfo = await lstat(releaseDirectory);
+  } catch (error) {
+    return { status: 'REJECTED', reason: error.code === 'ENOENT' ? 'CONFIGURED_BASELINE_MISSING' : 'CONFIGURED_BASELINE_UNAVAILABLE' };
+  }
+  if (releaseInfo.isSymbolicLink() || !releaseInfo.isDirectory()) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PATH_UNSAFE' };
+  }
+
+  const manifestPath = join(releaseDirectory, 'manifest.json');
+  let manifestInfo;
+  try {
+    manifestInfo = await lstat(manifestPath);
+  } catch (error) {
+    return { status: 'REJECTED', reason: error.code === 'ENOENT' ? 'CONFIGURED_BASELINE_MISSING' : 'CONFIGURED_BASELINE_UNAVAILABLE' };
+  }
+  if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) {
+    return { status: 'REJECTED', reason: 'BASELINE_SELECTION_PATH_UNSAFE' };
+  }
+
+  const baseline = await readApprovedBaseline({
+    manifestPath,
+    expectedSha256: selection.manifestSha256,
+    expectedSourceSha: selection.sourceSHA
+  });
+  if (baseline.status !== 'APPROVED') return { ...baseline, selectionPath: GIT_BASELINE_SELECTION_RELATIVE_PATH };
+
+  for (const capture of baseline.manifest.captures) {
+    for (const relativePath of [capture.screenshotPath, capture.metadataPath]) {
+      const capturePath = join(releaseDirectory, relativePath);
+      let captureInfo;
+      try {
+        captureInfo = await lstat(capturePath);
+      } catch (error) {
+        return {
+          status: 'REJECTED',
+          reason: error.code === 'ENOENT' ? 'BASELINE_CAPTURE_FILE_MISSING' : 'BASELINE_CAPTURE_FILE_UNAVAILABLE',
+          captureId: capture.id
+        };
+      }
+      if (captureInfo.isSymbolicLink() || !captureInfo.isFile()) {
+        return { status: 'REJECTED', reason: 'BASELINE_CAPTURE_PATH_UNSAFE', captureId: capture.id };
+      }
+    }
+    try {
+      const screenshot = await verifyCaptureHash(manifestPath, capture);
+      if (!screenshot.valid) return { status: 'REJECTED', reason: 'BASELINE_IMAGE_SHA256_MISMATCH', captureId: capture.id };
+      const metadata = await verifyCaptureMetadata(manifestPath, capture);
+      if (!metadata.valid) return { status: 'REJECTED', reason: 'BASELINE_METADATA_SHA256_MISMATCH', captureId: capture.id };
+    } catch {
+      return { status: 'REJECTED', reason: 'BASELINE_CAPTURE_CONTENT_INVALID', captureId: capture.id };
+    }
+  }
+
+  return {
+    ...baseline,
+    manifestPath,
+    selectionPath: GIT_BASELINE_SELECTION_RELATIVE_PATH,
+    sourceType: 'git-selection'
+  };
 }
 
 const SHA40 = /^[a-f0-9]{40}$/i;

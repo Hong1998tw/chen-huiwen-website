@@ -12,6 +12,7 @@ import {
   deploymentEvidence,
   evaluateCaptureQuality,
   readApprovedBaseline,
+  readGitBaselineSelection,
   sha256,
   validateDeploymentReceipt,
   verifyCaptureHash,
@@ -542,16 +543,26 @@ async function runCompare(options) {
   const candidateManifestPath = resolve(options['candidate-manifest']);
   const candidate = JSON.parse(await readFile(candidateManifestPath, 'utf8'));
   const comparisonPath = resolve(options.output ?? resolve(dirname(candidateManifestPath), 'comparison.json'));
-  const baselineState = await readApprovedBaseline({
-    manifestPath: options['baseline-manifest'] ? resolve(options['baseline-manifest']) : null,
-    expectedSha256: options['baseline-sha256'],
-    expectedSourceSha: options['baseline-source-sha']
-  });
+  const gitSelectionRequested = Boolean(options['baseline-selection']);
+  const explicitBaselineRequested = Boolean(options['baseline-manifest'] || options['baseline-sha256'] || options['baseline-source-sha']);
+  const baselineState = gitSelectionRequested && explicitBaselineRequested
+    ? { status: 'REJECTED', reason: 'BASELINE_SOURCE_CONFLICT' }
+    : gitSelectionRequested
+      ? await readGitBaselineSelection({ repositoryRoot: root })
+      : await readApprovedBaseline({
+        manifestPath: options['baseline-manifest'] ? resolve(options['baseline-manifest']) : null,
+        expectedSha256: options['baseline-sha256'],
+        expectedSourceSha: options['baseline-source-sha']
+      });
+  const baselineSourceType = gitSelectionRequested ? 'git-selection' : 'explicit-baseline';
+  const baselineManifestPath = baselineState.manifestPath ?? (options['baseline-manifest'] ? resolve(options['baseline-manifest']) : null);
   if (baselineState.status === 'PENDING') {
     const report = {
       status: 'PENDING',
       reason: baselineState.reason,
       comparisonPerformed: false,
+      baselineSourceType,
+      ...(baselineState.selectionPath ? { selectionPath: baselineState.selectionPath } : {}),
       sourceSHA: candidate.sourceSHA,
       message: 'No approved baseline was compared. Capture-only artifacts are not a visual regression pass.'
     };
@@ -561,7 +572,14 @@ async function runCompare(options) {
     return;
   }
   if (baselineState.status !== 'APPROVED') {
-    const report = { status: 'REJECTED', reason: baselineState.reason, actualBaselineSha256: baselineState.actualSha256, comparisonPerformed: false };
+    const report = {
+      status: 'REJECTED',
+      reason: baselineState.reason,
+      actualBaselineSha256: baselineState.actualSha256,
+      comparisonPerformed: false,
+      baselineSourceType,
+      ...(baselineState.selectionPath ? { selectionPath: baselineState.selectionPath } : {})
+    };
     await mkdir(dirname(comparisonPath), { recursive: true });
     await writeFile(comparisonPath, `${JSON.stringify(report, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -590,7 +608,12 @@ async function runCompare(options) {
     const report = {
       status: 'INCOMPARABLE',
       comparisonPerformed: false,
-      baseline: { checkoutSHA: approved.checkoutSHA ?? approved.sourceSHA, manifestSha256: baselineState.actualSha256 },
+      baseline: {
+        sourceType: baselineSourceType,
+        ...(baselineState.selectionPath ? { selectionPath: baselineState.selectionPath } : {}),
+        checkoutSHA: approved.checkoutSHA ?? approved.sourceSHA,
+        manifestSha256: baselineState.actualSha256
+      },
       candidate: { checkoutSHA: candidate.checkoutSHA, environment: candidate.environment },
       summary: { captures: 30, incomparable: incomparable.length },
       captures: incomparable.map(item => ({ ...item, status: 'INCOMPARABLE' }))
@@ -608,9 +631,9 @@ async function runCompare(options) {
   for (const [id, current] of candidateById) {
     const previous = baselineById.get(id);
     if (!previous) throw new Error(`BASELINE_CAPTURE_MISSING:${id}`);
-    const baselineImage = await verifyCaptureHash(resolve(options['baseline-manifest']), previous);
+    const baselineImage = await verifyCaptureHash(baselineManifestPath, previous);
     const candidateImage = await verifyCaptureHash(candidateManifestPath, current);
-    const baselineMetadata = await verifyCaptureMetadata(resolve(options['baseline-manifest']), previous);
+    const baselineMetadata = await verifyCaptureMetadata(baselineManifestPath, previous);
     const candidateMetadata = await verifyCaptureMetadata(candidateManifestPath, current);
     if (!baselineImage.valid) throw new Error(`BASELINE_IMAGE_SHA256_MISMATCH:${id}`);
     if (!candidateImage.valid) throw new Error(`CANDIDATE_IMAGE_SHA256_MISMATCH:${id}`);
@@ -630,7 +653,12 @@ async function runCompare(options) {
   const report = {
     status: failed.length ? 'FAIL' : stale.length ? 'STALE_BASELINE' : 'PASS',
     comparisonPerformed: captures.length > 0,
-    baseline: { sourceSHA: approved.sourceSHA, manifestSha256: baselineState.actualSha256 },
+    baseline: {
+      sourceType: baselineSourceType,
+      ...(baselineState.selectionPath ? { selectionPath: baselineState.selectionPath } : {}),
+      sourceSHA: approved.sourceSHA,
+      manifestSha256: baselineState.actualSha256
+    },
     candidate: { sourceSHA: candidate.sourceSHA, checkoutSHA: candidate.checkoutSHA, environment: candidate.environment },
     comparisonPolicy: approved.comparisonPolicy,
     summary: { captures: captures.length, failed: failed.length, staleBaseline: stale.length, passed: captures.length - failed.length - stale.length },
@@ -647,7 +675,7 @@ async function main() {
   if (command === 'capture') return runCapture(options);
   if (command === 'compare') return runCompare(options);
   if (command === 'help' || command === '--help' || !command) {
-    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
+    process.stdout.write('Usage:\n  node visual-qa.mjs capture --environment local-http-uncompressed\n  node visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-selection]\n  node visual-qa.mjs compare --candidate-manifest PATH [--baseline-manifest PATH --baseline-sha256 SHA --baseline-source-sha SHA]\n');
     return;
   }
   throw new Error(`Unknown command: ${command}`);
