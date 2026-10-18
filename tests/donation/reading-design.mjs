@@ -84,6 +84,11 @@ try{
     await page.getByRole('button',{name:'移除篩選：曹公里',exact:true}).waitFor({state:'visible'});
     await page.keyboard.press('Escape');
     await dialog.waitFor({state:'hidden'});
+    await page.waitForFunction(()=>{
+     const dialog=document.querySelector('#case-filter-dialog');
+     const trigger=document.querySelector('#case-filter-open');
+     return Boolean(dialog&&!dialog.open&&trigger&&trigger.getAttribute('aria-expanded')==='false'&&document.activeElement===trigger);
+    },null,{timeout:8000});
     assert.equal(await dialog.evaluate(element=>element.open),false,'Escape closes the filter dialog');
     assert.equal(await trigger.getAttribute('aria-expanded'),'false');
     assert.equal(await trigger.evaluate(element=>element===document.activeElement),true,'closing the filter dialog restores focus to its opener');
