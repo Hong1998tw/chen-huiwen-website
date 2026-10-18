@@ -55,7 +55,7 @@ body .footer{margin-top:48px}
 .civic-tasknav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-block:1px solid var(--civic-ink)}
 .civic-tasknav a{padding:22px 24px;display:grid;grid-template-columns:1fr auto;gap:5px 8px;border-right:1px solid var(--civic-line);color:var(--civic-ink)}
 .civic-tasknav a:first-child{padding-left:0}.civic-tasknav a:last-child{border:0}
-.civic-tasknav a>span:first-child{grid-column:1/-1;font-size:.72rem;letter-spacing:.08em;color:#506259}
+.civic-tasknav a>span:first-child{grid-column:1/-1;font-size:.75rem;letter-spacing:.08em;color:#506259}
 .civic-tasknav strong{font-size:1.05rem}
 .civic-tasknav a:hover{background:#eaf0e6}
 .civic-stories{padding-block:60px 34px}
@@ -65,7 +65,7 @@ body .footer{margin-top:48px}
 .civic-story-grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:52px}
 .civic-feature-photo{margin:0 0 20px}
 .civic-feature-photo img{display:block;width:100%;height:auto;max-height:370px;object-fit:contain;background:#e6e9df}
-.civic-feature-photo figcaption{font-size:.72rem;line-height:1.7;color:#506259;margin-top:8px}
+.civic-feature-photo figcaption{font-size:.75rem;line-height:1.7;color:#506259;margin-top:8px}
 .civic-feature-copy h3{font-family:var(--civic-serif);font-size:1.8rem;line-height:1.5;margin:0 0 14px}
 .civic-feature-copy>p:not(.civic-kicker){font-size:1rem;line-height:1.9;color:#506259}
 .civic-read{font-weight:700;display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--civic-ink);margin-bottom:12px}
@@ -73,7 +73,7 @@ body .footer{margin-top:48px}
 .civic-reading-row{display:grid;grid-template-columns:32px 1fr;gap:18px;padding:24px 0;border-top:1px solid var(--civic-line)}
 .civic-reading-row:first-child{padding-top:0;border-top:0}
 .civic-number{font-family:var(--civic-sans);font-size:1.45rem;color:#56745b}
-.civic-reading-row .civic-kicker{margin-bottom:9px;font-size:.7rem}
+.civic-reading-row .civic-kicker{margin-bottom:9px;font-size:.75rem}
 .civic-reading-row h3{font-family:var(--civic-serif);font-size:1.35rem;line-height:1.5;margin:0 0 10px}
 .civic-reading-row p:not(.civic-kicker){color:#506259;font-size:.88rem;line-height:1.85;margin:0 0 12px}
 .civic-date-note{font-size:.78rem;color:#506259;margin-top:28px;line-height:1.8}
@@ -232,7 +232,7 @@ body .platform-content>.source-note{display:block!important;font-size:.85rem;lin
  body .map-controls>div:first-child{grid-column:1/-1}.map-controls>div:nth-child(2){grid-row:2}
  body .map-controls #reset-map-filters{grid-column:2;grid-row:2;padding-inline:10px}
  .advanced-filters{grid-row:3}.advanced-filter-fields{grid-template-columns:1fr 1fr;gap:12px}
- .case-latest{padding:18px}.case-latest .civic-kicker{font-size:.72rem;letter-spacing:.03em}
+ .case-latest{padding:18px}.case-latest .civic-kicker{font-size:.75rem;letter-spacing:.03em}
  .about-work-grid{grid-template-columns:1fr;gap:8px}
  body .platform-row{grid-template-columns:1fr;gap:8px}.platform-year{font-size:1rem!important;text-align:left!important;padding:0!important}.platform-election>summary{padding:18px!important}.platform-election h2{font-size:1.4rem!important}.platform-content{padding:0 18px 20px!important}.platform-accountability{padding:16px}.platform-theme ol{padding-left:22px}
 }
@@ -281,14 +281,14 @@ body .platform-original>summary{padding:12px 0;min-height:48px;font-size:.9rem}
  .home-task-paths{gap:7px;margin-top:14px}
  .home-task-paths>a{min-height:106px;padding:12px 9px;gap:4px}
  .home-task-paths strong{font-size:.92rem;line-height:1.4}
- .home-task-paths span,.home-task-paths small{font-size:.74rem;line-height:1.4}
+ .home-task-paths span,.home-task-paths small{font-size:.75rem;line-height:1.4}
  .home-service-shortcuts{gap:8px 16px;padding-bottom:20px;font-size:.84rem}
  .home-recent{padding-block:24px 30px}
  .home-recent-list{grid-template-columns:1fr;gap:12px}
  .home-recent-award,.home-recent-event,.home-recent-local{padding:18px 16px}
  .home-recent-event figure img{max-height:160px}
 }
-@media(max-width:350px){.hero-task-links{gap:4px}.hero-task-links a{font-size:.7rem;padding-inline:2px}.home-task-paths>a{padding-inline:7px}.home-task-paths strong{font-size:.84rem}}
+@media(max-width:350px){.hero-task-links{gap:4px}.hero-task-links a{font-size:.75rem;padding-inline:2px}.home-task-paths>a{padding-inline:7px}.home-task-paths strong{font-size:.84rem}}
 body .platform-original>summary::after{content:'＋'}body .platform-original[open]>summary::after{content:'−'}
 @media(max-width:780px){.platform-row::before{display:none}.contact-card .phone-number{white-space:normal}.schedule-period-note{margin-top:12px}}
 .civic-service-desk h2{font-size:1.65rem}
