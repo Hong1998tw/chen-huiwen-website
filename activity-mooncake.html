@@ -13,7 +13,7 @@
 <meta property="og:description" content="中秋節的手作時光，與大家分享做月餅的樂趣。">
 <meta property="og:url" content="https://www.huiwen.tw/activity-mooncake.html">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=bdd336127761">
+<link rel="stylesheet" href="styles.css?v=3f018a00718c">
 <script src="site.js?v=9a075fcc7f89" defer></script>
 
 <meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png">
@@ -31,7 +31,30 @@
 <meta property="og:site_name" content="陳慧文官網">
 <link rel="stylesheet" href="civic.css?v=bd612ed6cee3">
 <script src="civic.js?v=dbacdb22cb1e" defer></script>
-<script data-cms-editor-loader>if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))document.write('<scr'+'ipt defer src="/cms-page-editor.js?v=78cbab7cfa45"></scr'+'ipt>');</script>
+<script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js?v=2671ebb87087">(() => {
+  const loader = document.currentScript;
+  const params = new URLSearchParams(window.location.search);
+  if (!loader || window.self === window.top || params.get("cmsEdit") !== "1") return;
+
+  const source = loader.dataset.cmsEditorSrc;
+  if (!source || document.querySelector("script[data-cms-editor-runtime]")) return;
+
+  const loadEditor = () => {
+    if (document.querySelector("script[data-cms-editor-runtime]")) return;
+    const script = document.createElement("script");
+    script.src = source;
+    // Dynamic classic scripts do not honor defer; disable async execution instead.
+    script.async = false;
+    script.dataset.cmsEditorRuntime = "true";
+    (document.head || document.documentElement).append(script);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadEditor, { once: true });
+  } else {
+    loadEditor();
+  }
+})();</script>
 </head>
 <body>
 <a class="skip-link" href="#main">跳到主要內容</a>

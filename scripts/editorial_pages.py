@@ -12,6 +12,7 @@ import re
 
 from case_media import classify, render as render_media
 from page_seo import BASE, validate as validate_seo
+from page_copy import cms_editor_loader
 
 SECTIONS = {
     'news': ('news.html', '新聞媒體'),
@@ -161,8 +162,8 @@ def render_page(path, page, root):
             '<meta name="theme-color" content="#075548">' + head + '<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">'
             '<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="mobile.css"><link rel="stylesheet" href="layout.css">'
             '<link rel="stylesheet" href="civic.css"><script src="site.js" defer></script><script src="civic.js" defer></script>'
-            '<script data-cms-editor-loader>if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled===\'true\'||new URLSearchParams(location.search).get(\'cmsEdit\')===\'1\'))document.write(\'<scr\'+\'ipt defer src="/cms-page-editor.js"></scr\'+\'ipt>\');</script>'
-            '</head><body><a class="skip-link" href="#main">跳到主要內容</a><!-- shared-header:start -->\n<!-- shared-header:end -->'
+            + cms_editor_loader()
+            + '</head><body><a class="skip-link" href="#main">跳到主要內容</a><!-- shared-header:start -->\n<!-- shared-header:end -->'
             '<main id="main">' + body + '</main><!-- shared-footer:start -->\n<!-- shared-footer:end --></body></html>')
 
 

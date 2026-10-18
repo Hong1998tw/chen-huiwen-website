@@ -13,7 +13,7 @@
 <meta property="og:description" content="陳慧文公開行程與鳳山活動時間軸；查看各場活動的日期、時間、地點、活動詳情，以及 Google 日曆與地圖連結。">
 <meta property="og:url" content="https://www.huiwen.tw/activities.html">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=bdd336127761">
+<link rel="stylesheet" href="styles.css?v=3f018a00718c">
 <script src="site.js?v=9a075fcc7f89" defer></script>
 <meta property="og:image" content="https://www.huiwen.tw/assets/site-share-20260909.png">
 <meta property="og:image:width" content="1200">
@@ -30,7 +30,30 @@
 <meta property="og:site_name" content="陳慧文官網">
 <link rel="stylesheet" href="activities.css?v=76f16797cd1e">
 <script src="activities.js?v=c9e334b56005" defer></script>
-<script data-cms-editor-loader>if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))document.write('<scr'+'ipt defer src="/cms-page-editor.js?v=78cbab7cfa45"></scr'+'ipt>');</script>
+<script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js?v=2671ebb87087">(() => {
+  const loader = document.currentScript;
+  const params = new URLSearchParams(window.location.search);
+  if (!loader || window.self === window.top || params.get("cmsEdit") !== "1") return;
+
+  const source = loader.dataset.cmsEditorSrc;
+  if (!source || document.querySelector("script[data-cms-editor-runtime]")) return;
+
+  const loadEditor = () => {
+    if (document.querySelector("script[data-cms-editor-runtime]")) return;
+    const script = document.createElement("script");
+    script.src = source;
+    // Dynamic classic scripts do not honor defer; disable async execution instead.
+    script.async = false;
+    script.dataset.cmsEditorRuntime = "true";
+    (document.head || document.documentElement).append(script);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadEditor, { once: true });
+  } else {
+    loadEditor();
+  }
+})();</script>
 <link rel="stylesheet" href="civic.css?v=bd612ed6cee3">
 <script src="civic.js?v=dbacdb22cb1e" defer></script>
 </head>

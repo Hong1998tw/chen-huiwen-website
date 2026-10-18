@@ -4,11 +4,24 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+from pathlib import Path
 from html.parser import HTMLParser
 
 EDITABLE = {"h1", "h2", "h3", "h4", "p", "li", "blockquote", "figcaption", "dt", "dd"}
 EXCLUDED = {"nav", "header", "footer", "button", "form", "script", "style", "svg", "select", "textarea"}
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+CMS_EDITOR_LOADER_SCRIPT = Path(__file__).with_name("cms_editor_loader.js").read_text(encoding="utf-8").strip()
+CMS_EDITOR_SOURCE = "/cms-page-editor.js"
+
+
+def cms_editor_loader(editor_source: str = CMS_EDITOR_SOURCE) -> str:
+    """Build the shared iframe-gated editor loader with a root-relative runtime URL."""
+    if not re.fullmatch(r"/cms-page-editor(?:\.[a-f0-9]{12})?\.js", editor_source):
+        raise ValueError("CMS editor runtime path is invalid")
+    return (
+        f'<script data-cms-editor-loader data-cms-editor-src="{html.escape(editor_source, quote=True)}">'
+        f"{CMS_EDITOR_LOADER_SCRIPT}</script>"
+    )
 
 
 def digest(value: str) -> str:
@@ -144,12 +157,7 @@ class PageCopy(HTMLParser):
         parts.append(self.source[cursor:])
         result = "".join(parts)
         if self.count:
-            loader = (
-                "<script data-cms-editor-loader>"
-                "if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))"
-                "document.write('<scr'+'ipt defer src=\"/cms-page-editor.js\"></scr'+'ipt>');"
-                "</script>"
-            )
+            loader = cms_editor_loader()
             existing_loader = re.search(r"<script\b[^>]*data-cms-editor-loader[^>]*>.*?</script>", result, re.I | re.S)
             if existing_loader:
                 if existing_loader.group(0) == loader:
