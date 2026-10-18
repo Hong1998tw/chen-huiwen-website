@@ -18,6 +18,14 @@ import {
 import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
 import { assertNoHorizontalOverflow, captureLayoutDiagnostics, findVisibleClickPoint } from './layout-diagnostics.mjs';
 import { openCaseFilterDialog, closeCaseFilterDialog } from './achievement-filter-dialog.mjs';
+import {
+  assertHeaderAnimationContractFixtures,
+  evaluateMenuAnchor,
+  evaluateRequiredCheckGate,
+  MENU_ANCHOR_TOLERANCE_PX,
+} from './header-animation-contracts.mjs';
+
+assertHeaderAnimationContractFixtures();
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
@@ -31,16 +39,17 @@ const targetSizeEntries = [];
 let browser;
 let diagnosticPage;
 
-async function check(name, fn) {
+async function check(name, fn, { required = false } = {}) {
+  const metadata = required ? { required: true } : {};
   try {
     const value = await fn();
     if (value?.__checkStatus === 'Pending') {
-      report.checks.push({ name, status: 'Pending', value: value.value });
+      report.checks.push({ name, ...metadata, status: 'Pending', value: value.value });
       return;
     }
-    report.checks.push({ name, status: 'Passed', ...(value === undefined ? {} : { value }) });
+    report.checks.push({ name, ...metadata, status: 'Passed', ...(value === undefined ? {} : { value }) });
   } catch (error) {
-    report.checks.push({ name, status: 'Failed', error: String(error) });
+    report.checks.push({ name, ...metadata, status: 'Failed', error: String(error) });
     report.failures.push(name);
     if (diagnosticPage && /horizontal overflow|navigation, layout|G06 mobile header|mobile menu|no JavaScript|CLS/i.test(name) && !String(error).includes('horizontal overflow')) {
       try {
@@ -115,6 +124,8 @@ async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, com
         headerHeight: round(headerRect.height),
         headerBottom: round(headerRect.bottom),
         menuTop: round(navigationRect.top),
+        headerBottomForAnchor: headerRect.bottom,
+        menuTopForAnchor: navigationRect.top,
         menuLeft: round(navigationRect.left),
         menuRight: round(navigationRect.right),
         viewportWidth: window.innerWidth,
@@ -184,6 +195,7 @@ async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, com
     const low = Math.min(initial.headerHeight, targetHeight);
     const high = Math.max(initial.headerHeight, targetHeight);
     const intermediateSamples = samples.filter(item => item.headerHeight > low + 0.75 && item.headerHeight < high - 0.75);
+    samples.forEach(item => { item.isIntermediate = intermediateSamples.includes(item); });
     const overlappingSamples = samples.filter(item => item.menuTop < item.headerBottom - 0.5);
     const rightOverflowSamples = samples.filter(item => item.menuLeft < -0.5 || item.menuRight > item.viewportWidth + 0.5);
     const expectedScrollReached = targetScrollY > 8 ? final.scrollY > 8 : final.scrollY <= 8;
@@ -229,11 +241,35 @@ async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, com
       intermediateSampleCount: intermediateSamples.length,
       overlappingFrameCount: overlappingSamples.length,
       rightOverflowFrameCount: rightOverflowSamples.length,
+      anchorFormula: 'Math.ceil(header.bottom + 12px)',
       initial,
       final,
       samples,
     };
   }, { label, targetScrollY, compact });
+
+  for (const sample of evidence.samples) {
+    Object.assign(sample, evaluateMenuAnchor(sample.headerBottomForAnchor, sample.menuTopForAnchor));
+    delete sample.headerBottomForAnchor;
+    delete sample.menuTopForAnchor;
+  }
+  const intermediateSamples = evidence.samples.filter(sample => sample.isIntermediate);
+  const maxAbsoluteAnchorDelta = Math.max(0, ...evidence.samples.map(sample => Math.abs(sample.anchorDelta)));
+  const intermediateMaxAbsoluteAnchorDelta = Math.max(0, ...intermediateSamples.map(sample => Math.abs(sample.anchorDelta)));
+  evidence.anchorAudit = {
+    tolerancePx: MENU_ANCHOR_TOLERANCE_PX,
+    startWithinTolerance: evidence.initial.withinTolerance,
+    endWithinTolerance: evidence.final.withinTolerance,
+    maxAbsoluteAnchorDelta,
+    intermediateMaxAbsoluteAnchorDelta,
+  };
+  if (!evidence.anchorAudit.startWithinTolerance) {
+    evidence.unsupportedReasons.push(`The start sample missed the ${evidence.anchorFormula} anchor by ${evidence.initial.anchorDelta}px.`);
+  }
+  if (!evidence.anchorAudit.endWithinTolerance) {
+    evidence.unsupportedReasons.push(`The end sample missed the ${evidence.anchorFormula} anchor by ${evidence.final.anchorDelta}px.`);
+  }
+  evidence.supported = evidence.unsupportedReasons.length === 0;
 
   report.interactions.push({ name: `live header transition: ${label}`, ...evidence });
   assert(evidence.supported, `${label} did not demonstrate a valid native header transition: ${JSON.stringify(evidence.unsupportedReasons)}`);
@@ -537,6 +573,8 @@ try {
                   headerHeight: headerRect.height,
                   headerBottom: headerRect.bottom,
                   menuTop: navigationRect.top,
+                  headerBottomForAnchor: headerRect.bottom,
+                  menuTopForAnchor: navigationRect.top,
                   menuLeft: navigationRect.left,
                   menuRight: navigationRect.right,
                   viewportWidth: window.innerWidth,
@@ -572,6 +610,13 @@ try {
             return { __checkStatus: 'Pending', value: pending };
           }
 
+          const firstSampleState = {
+            ...probe.firstSampleState,
+            ...evaluateMenuAnchor(probe.firstSampleState.headerBottomForAnchor, probe.firstSampleState.menuTopForAnchor),
+          };
+          delete firstSampleState.headerBottomForAnchor;
+          delete firstSampleState.menuTopForAnchor;
+
           const evidence = {
             controllerRafQueued: probe.controllerRafQueued,
             queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
@@ -589,7 +634,7 @@ try {
             firstSampleScrollY: probe.firstSampleScrollY,
             ariaExpandedBeforeControllerSample: probe.ariaExpandedBeforeControllerSample,
             menuOpenBeforeControllerSample: probe.menuOpenBeforeControllerSample,
-            firstSampleState: probe.firstSampleState,
+            firstSampleState,
           };
           report.interactions.push({ name: 'early restored-scroll header/menu sample', status: 'observed', ...evidence });
           assert(evidence.firstSampleObservedAfterDOMContentLoaded, JSON.stringify(evidence));
@@ -603,9 +648,9 @@ try {
           assert.equal(evidence.firstSampleState.compact, true, JSON.stringify(evidence));
           assert.equal(evidence.firstSampleState.ariaExpanded, 'true', JSON.stringify(evidence));
           assert.equal(evidence.firstSampleState.activeElementInsideMenu, true, JSON.stringify(evidence));
-          assert(evidence.firstSampleState.menuTop >= evidence.firstSampleState.headerBottom - 0.5, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.withinTolerance, true, JSON.stringify(evidence));
           assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
-        });
+        }, { required: true });
       } finally {
         await animationPage.close();
         diagnosticPage = page;
@@ -1111,6 +1156,8 @@ try {
   } else {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
   }
+  const requiredCheckGate = evaluateRequiredCheckGate(report.checks);
+  report.requiredCheckGate = requiredCheckGate;
   report.status = report.failures.length ? 'Failed' : report.checks.some(item => item.status === 'Pending') ? 'Pending' : 'Passed';
   await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
     schema: 'wcag22aa-target-size-report/v1',
@@ -1125,5 +1172,5 @@ try {
   }, null, 2));
   await writeFile(new URL('browser-report.json', output), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
-  if (report.failures.length) process.exitCode = 1;
+  if (report.failures.length || requiredCheckGate.shouldExitNonZero) process.exitCode = 1;
 }
