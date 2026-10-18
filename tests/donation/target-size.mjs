@@ -1,9 +1,10 @@
 /** Verify rendered pointer targets, WCAG 2.2 exceptions, keyboard use and reflow on news routes. */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { startStaticServer } from './static-server.mjs';
+import { finishTargetSizeRun } from './target-size-lifecycle.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = resolve(process.env.EVIDENCE_DIR || fileURLToPath(new URL('./results/target-size/', import.meta.url)));
@@ -28,7 +29,8 @@ const report = {
     textResize: 'At 390 CSS px, root font-size is set to 200% as a text-scaling stress case; browser UI zoom is not emulated.'
   },
   cases: [],
-  failures: []
+  failures: [],
+  diagnostics: []
 };
 
 const controlsSelector = 'a[href],button,summary,input:not([type="hidden"]),select,textarea,[role="button"]';
@@ -262,10 +264,11 @@ async function verifyKeyboard(page, route) {
   return keyboardReport;
 }
 
-await mkdir(out, { recursive: true });
 let server;
 let browser;
+let finalization;
 try {
+  await mkdir(out, { recursive: true });
   server = await startStaticServer({ root, compression: 'auto', port: 0 });
   browser = await chromium.launch({ headless: true });
   for (const route of routes) {
@@ -327,12 +330,8 @@ try {
 } catch (error) {
   addFailure('runner', String(error));
 } finally {
-  await browser?.close();
-  server?.kill();
-  report.finished = new Date().toISOString();
-  report.status = report.failures.length ? 'failed' : 'passed';
-  await writeFile(resolve(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
+  finalization = await finishTargetSizeRun({ report, out, browser, server });
 }
 
-console.log(JSON.stringify({ status: report.status, cases: report.cases.length, failures: report.failures, evidence: resolve(out, 'report.json') }, null, 2));
+console.log(JSON.stringify({ status: report.status, reportWritten: finalization.written, cases: report.cases.length, failures: report.failures, diagnostics: report.diagnostics, evidence: resolve(out, 'report.json') }, null, 2));
 if (report.failures.length) process.exitCode = 1;

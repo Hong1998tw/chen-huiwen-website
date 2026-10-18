@@ -31,11 +31,15 @@ jobs:
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/min-font.mjs
       - run: node --check tests/donation/target-size.mjs
+      - run: node --check tests/donation/target-size-lifecycle.mjs
+      - run: node --check tests/donation/target-size-lifecycle.test.mjs
       - run: node --check tests/donation/target-size-inline.mjs
       - run: node --check tests/donation/target-size-inline.test.mjs
       - run: node --check tests/donation/election-mode.mjs
       - name: Verify inline-link target-size exception predicate with pure fixtures
         run: node tests/donation/target-size-inline.test.mjs
+      - name: Verify target-size cleanup and report persistence failures
+        run: node tests/donation/target-size-lifecycle.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
