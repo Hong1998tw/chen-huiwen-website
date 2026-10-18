@@ -1,26 +1,25 @@
-# Homepage small Q companion
+# 小 Q 首頁互動規範
 
-The owner-approved five-pose AI cartoon is one consistent visual identity: idle, wave, nod, happy and guide. These are illustrations with finite CSS movement, not documentary photos or complete hand-drawn animation. Keep the same face, hair, light-blue shirt and proportions for future uses; do not regenerate a replacement without approval.
+小 Q 沿用已核准的五種姿勢：待機、揮手、點頭、開心與引導。角色是卡通插畫，保留既有臉型、髮型、淺藍襯衫與比例；不以生成素材替代，也不把插畫當成事件照片。
 
-## Automatic homepage behavior
+## 開啟與收合
 
-The owner's October 2, 2026 direction removes visitor settings and action selection. The public component has no settings panel or action chooser. Only a small accessible dismiss button remains; dismissal lasts for the current page visit, without storage or a restore toolbar.
+- 首頁右下角固定顯示 56 × 56 CSS px 的「展開小 Q」按鈕；桌面和手機行為一致。
+- 初次進站、捲動、手機瀏覽或載入頁面時，小 Q 角色都不會自動出現。
+- 使用者啟動按鈕後，才載入待機圖並展開角色面板；支援按鈕、面板內收合鍵及 Escape。收合後焦點回到開啟按鈕。
+- 開啟時最多揮手 1.8 秒，之後回到靜態待機。角色面板收合時不顯示插畫。
+- 已開啟面板時，首次看到首頁地方進度區做引導（2.4 秒）、選擇里別時點頭（1.5 秒）、首次看到聯絡區時開心（1.7 秒）。動作間隔至少 12 秒、不排隊、單次均短於 5 秒。
+- `prefers-reduced-motion` 保持靜態待機；頁面隱藏、離開或瀏覽器原生對話框開啟時停止動作或隱藏按鈕。
 
-- First time the companion is visible: wave for 1.8 seconds, once, then static idle.
-- First eligible view of the existing projects section (30% intersection): guide for 2.4 seconds, once, then idle. The unchanged source pose is mirrored only in CSS to point inward from the desktop right corner.
-- Explicit click of an existing homepage topic filter: nod for 1.5 seconds, then idle.
-- First eligible view of the existing contact section (30% intersection): happy for 1.7 seconds, once, then idle. This is a friendly closing gesture, not a claim that a service request was submitted.
-- All gestures share a 12-second minimum interval. Suppressed gestures are not queued. Idle never loops. Every gesture is shorter than 5 seconds.
-- Reduced motion keeps static idle. Leaving the companion's viewport or hiding the browser tab returns to idle; hidden/background gestures do not run. Open navigation/native dialogs conceal the companion; print excludes it.
+## 版面與資料邊界
 
-## Placement and boundaries
+- 按鈕固定在右下安全區，不參與版面排版；展開面板只顯示既有透明 WebP 角色圖。
+- 保留清楚的可及名稱、`aria-expanded`、鍵盤操作與可見 focus；圖片失敗時仍保留主要網站內容與可重試按鈕。
+- 不提供設定面板、姿勢選單、音訊、追蹤、儲存、第三方請求或資料收集。
+- JavaScript 停用、角色樣式失敗或圖片載入失敗時，角色不自動出現；首頁主要內容不受影響。
 
-Desktop image is 128 CSS px in the right corner. Up to 780px wide, the 96px character sits in normal flow after the hero; it never overlays service copy or the mobile service bar. Contextual gestures are suppressed while that inline companion is offscreen. No audio, tracking, storage, third-party requests or data collection. Other routes remain unchanged.
+## 素材與驗收
 
-The same five transparent 320px WebP files total 89,946 bytes. Load only the selected pose; load the companion stylesheet after primary window load, before revealing the character. If initial style/image loading fails or JavaScript is disabled, the companion remains absent and the main site works.
-
-## Source and verification
-
-An initially hidden aside in index.html is outside generated regions and is relocated after the hero by progressive enhancement. The existing public artifact allowlist explicitly includes small-q.js and small-q.css. verify_production.py explicitly fetches and hash-verifies the deferred CSS before live-snapshot browser QA. CMS keeps its existing text/structured-content scope, without arbitrary script injection or a new publisher.
-
-Run node --check small-q.js, existing canonical quality/build and full-site CI, and tests/donation/small-q.mjs. Focused browser coverage includes four widths, finite automatic entry/guide/filter/closing behavior, no visitor settings, dismissal, reduced motion, image failure, no JavaScript and non-home exclusion. Complete same-SHA deployment and production verification before final release receipt. Rollback uses a revert PR through existing checks; preserve the canonical artwork archive separately from website runtime.
+- 沿用五張 320px 透明 WebP：idle、wave、nod、happy、guide；只在使用者展開時載入待機圖，需要姿勢時才載入對應圖片。
+- `small-q.js` 延後到頁面載入後初始化，再載入首頁專用樣式。
+- 執行 `node --check small-q.js`、`node tests/donation/small-q.mjs` 與首頁瀏覽器檢查。CI 瀏覽器測試需涵蓋 320、390、768、1440px、開關與鍵盤焦點、減少動態、圖片失敗、停用 JavaScript 及非首頁排除。

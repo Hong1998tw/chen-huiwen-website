@@ -89,10 +89,14 @@
       chip.textContent = label + ' ×';
       chip.setAttribute('aria-label', '移除篩選：' + label);
       chip.addEventListener('click', () => {
+        const dialog = document.getElementById('case-filter-dialog');
+        const trigger = document.getElementById('case-filter-open');
+        const removedFromClosedDialog = Boolean(dialog?.contains(control) && !dialog.open);
         control.value = key === 'q' ? '' : 'all';
         clearTimeout(searchTimer);
         filter();
-        control.focus();
+        if (removedFromClosedDialog) (host.querySelector('button') || trigger)?.focus({preventScroll:true});
+        else control.focus();
       });
       host.append(chip);
     }

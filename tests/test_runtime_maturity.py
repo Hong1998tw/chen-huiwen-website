@@ -30,7 +30,7 @@ class RuntimeMaturityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             for folder in ('data','templates'):(root/folder).mkdir()
-            for name in ('site.js','digital.js','digital.css','civic.js','civic.css','index.html','election.html','data/navigation.json','templates/site-header.html','templates/site-footer.html'):
+            for name in ('site.js','digital.js','digital.css','civic.js','civic.css','index.html','election.html','service.html','data/navigation.json','templates/site-header.html','templates/site-footer.html'):
                 shutil.copyfile(ROOT/name,root/name)
             for asset in ('digital.js','digital.css'):
                 with (root/asset).open('a') as file:file.write('\n/* changed dependency fixture */\n')

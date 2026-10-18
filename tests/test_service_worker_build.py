@@ -9,7 +9,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -42,6 +44,46 @@ def required_shell_urls(source: bytes) -> list[str]:
     if not match:
         raise AssertionError('generated worker is missing REQUIRED_SHELL')
     return json.loads(match.group(1))
+
+
+class _CompiledIndexResources(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stylesheet = None
+        self.core_font = None
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag != 'link':
+            return
+        values = dict(attrs)
+        href = values.get('href')
+        if not href:
+            return
+        rel = set((values.get('rel') or '').lower().split())
+        parsed = urlsplit(href)
+        if 'stylesheet' in rel and Path(parsed.path).name == 'styles.css':
+            self.stylesheet = href
+        if ('preload' in rel and values.get('as', '').lower() == 'font'
+                and values.get('type', '').lower() == 'font/woff2'
+                and Path(parsed.path).name.startswith('huiwen-index-core-')
+                and parsed.path.endswith('.woff2')):
+            self.core_font = href
+
+
+def compiled_index_shell_resources(index_path: Path) -> tuple[str, str]:
+    parser = _CompiledIndexResources()
+    parser.feed(index_path.read_text(encoding='utf-8'))
+    if not parser.stylesheet:
+        raise AssertionError('compiled index is missing its exact styles.css link')
+    if not parser.core_font:
+        raise AssertionError('compiled index is missing its generated core font preload')
+    return parser.stylesheet, parser.core_font
+
+
+def shell_url_for_index_reference(raw: str) -> str:
+    parsed = urlsplit(raw)
+    path = '.' + parsed.path if parsed.path.startswith('/') else './' + parsed.path
+    return path + (('?' + parsed.query) if parsed.query else '')
 
 
 class ServiceWorkerArtifactTests(unittest.TestCase):
@@ -124,6 +166,9 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
     def test_shell_keeps_exact_homepage_queries_and_excludes_private_or_external_urls(self):
         destination = self.copy_artifact('shell-fixture')
         index = (destination / 'index.html').read_text(encoding='utf-8')
+        stylesheet_href, core_font_href = compiled_index_shell_resources(self.first / 'index.html')
+        expected_stylesheet = shell_url_for_index_reference(stylesheet_href)
+        expected_core_font = shell_url_for_index_reference(core_font_href)
         injected = '''
 <link rel="stylesheet" href="/styles.css?release=next">
 <link rel="stylesheet" href="https://cdn.example.invalid/private.css">
@@ -156,10 +201,10 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
         offline_row = self.font_contract['routes']['offline.html']
         expected_offline_fonts = ['./' + path for path in offline_row['preloads']]
 
-        self.assertIn('./styles.css?v=d8417c5e5f02', urls)
+        self.assertIn(expected_stylesheet, urls)
         self.assertIn('./styles.css?release=next', urls)
         self.assertIn('./manifest.webmanifest?v=20260912-1', urls)
-        self.assertIn('./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-ead400a26308.woff2', urls)
+        self.assertIn(expected_core_font, urls)
         self.assertIn('./offline-extra.css?version=exact', urls)
         self.assertIn('./offline-extra.js?version=exact', urls)
         self.assertIn('./offline.html', urls)  # Required separately before skipWaiting.
@@ -175,10 +220,12 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
     def test_cache_changes_with_public_bytes_and_worker_logic_but_not_derived_outputs(self):
         base = worker.render_service_worker(self.first, self.source_worker, self.font_contract)
         base_cache = cache_name(base)
+        _, core_font_href = compiled_index_shell_resources(self.first / 'index.html')
+        core_font_path = urlsplit(core_font_href).path.lstrip('/')
 
         for name, path in (
             ('css', 'styles.css'),
-            ('home-font', 'assets/fonts/huiwen-site-sans/generated/huiwen-index-core-ead400a26308.woff2'),
+            ('home-font', core_font_path),
             ('shell-js', 'small-q.js'),
             ('public-page', 'about.html'),
         ):

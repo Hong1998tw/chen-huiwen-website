@@ -101,8 +101,8 @@ class CaseContextTests(unittest.TestCase):
     def test_home_selection_does_not_delete_unselected_case_context(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
         selected = json.loads((ROOT / 'data/civic-home.json').read_text())
-        expected = [selected['featured'], *selected['reading']]
-        self.assertEqual([node['data-record-id'] for node in soup.select('.civic-story-grid [data-record-id]')], expected)
+        self.assertEqual([node['data-home-local-record'] for node in soup.select('.home-recent-local')], [selected['featured']])
+        self.assertFalse(soup.select('.civic-story-grid, .civic-reading-row, [data-record-id]'))
         # The removed homepage question does not remove the public case or its evidence.
         self.assertTrue((ROOT / 'achievement-bade-detention.html').is_file())
         self.assertIn('bade-detention', {item['recordId'] for item in self.config['cases']})

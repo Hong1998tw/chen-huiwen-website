@@ -128,6 +128,64 @@ async function captureServiceWorkerCacheKeys(page, cacheName, keyUrls) {
   return snapshot;
 }
 
+async function captureDetailedServiceWorkerCacheState(page, cacheName, keyUrls) {
+  try {
+    return await page.evaluate(async ({name, urls}) => {
+      const cacheNames = await caches.keys();
+      const cache = cacheNames.includes(name) ? await caches.open(name) : null;
+      const cacheKeyRequests = cache ? await cache.keys() : [];
+      const cacheKeys = cacheKeyRequests.map(request => request.url);
+      const entries = {};
+      for (const [key, url] of Object.entries(urls)) {
+        entries[key] = {url, match: Boolean(cache && await cache.match(url))};
+      }
+      const offlineUrl = new URL('/offline.html', location.origin).href;
+      const offlineRequest = cacheKeyRequests.find(request => request.method === 'GET' && request.url === offlineUrl) || null;
+      const offlineResponse = offlineRequest ? await cache.match(offlineRequest) : null;
+      let offlineKey = {
+        url: offlineRequest?.url || null,
+        requestUrl: offlineUrl,
+        cacheKeyUrl: offlineRequest?.url || null,
+        match: Boolean(offlineRequest && offlineResponse),
+      };
+      if (offlineResponse) {
+        offlineKey = {
+          url: offlineRequest.url,
+          requestUrl: offlineUrl,
+          cacheKeyUrl: offlineRequest.url,
+          match: true,
+          responseUrl: offlineResponse.url,
+          status: offlineResponse.status,
+          headers: Object.fromEntries(offlineResponse.headers.entries()),
+          bodyBytes: Array.from(new Uint8Array(await offlineResponse.arrayBuffer())),
+        };
+      }
+      return {
+        controller: navigator.serviceWorker.controller?.scriptURL || null,
+        cacheNames,
+        cacheKeys,
+        entries,
+        offlineKey,
+      };
+    }, {name: cacheName, urls: keyUrls});
+  } catch (error) {
+    return {error: error?.stack || String(error)};
+  }
+}
+
+function summarizeDetailedCacheState(snapshot) {
+  if (!snapshot || snapshot.error) return snapshot;
+  const {bodyBytes, ...offlineKey} = snapshot.offlineKey || {};
+  return {
+    ...snapshot,
+    offlineKey: bodyBytes ? {
+      ...offlineKey,
+      bodyByteLength: bodyBytes.length,
+      bodySha256: sha256(Buffer.from(bodyBytes)),
+    } : offlineKey,
+  };
+}
+
 async function listenFixture({workerBytes, failingOffline = false} = {}) {
   const state = {
     workerBytes,
@@ -496,9 +554,15 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   const offlineWorkerProbe = await page.evaluate(async url => {
     try {
       const response = await fetch(url, {cache: 'no-store'});
-      return {ok: response.ok, status: response.status};
+      return {
+        ok: response.ok,
+        status: response.status,
+        url: response.url,
+        headers: Object.fromEntries(response.headers.entries()),
+        bodyPrefix: (await response.clone().text()).slice(0, 160),
+      };
     } catch (error) {
-      return {ok: false, error: error.name};
+      return {ok: false, error: error?.stack || String(error)};
     }
   }, offlineProbe.href);
   offlineDiagnostics.probes.offlineWorkerNetwork = {url: offlineProbe.href, ...offlineWorkerProbe};
@@ -513,10 +577,127 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   await page.locator('[data-offline-cache]').waitFor({state: 'attached', timeout: 8000});
   const banner = await page.locator('[data-offline-cache]').innerText();
   assert.match(banner, /儲存時間：.+（台灣時間）/);
-  const offlineFallback = await page.goto(new URL('/c11-never-cached-route.html', BASE_URL).href,
-    {waitUntil: 'domcontentloaded'});
-  assert(offlineFallback && offlineFallback.ok(), 'uncached offline navigation must receive the cached fallback');
-  assert.match(await page.locator('body').innerText(), /目前離線/);
+
+  const aboutUrl = new URL('/about.html', BASE_URL).href;
+  const unknownUrl = new URL('/c11-never-cached-route.html', BASE_URL).href;
+  const offlineUrl = new URL('/offline.html', BASE_URL).href;
+  const shellPaths = new Set(shell.map(value => new URL(value, BASE_URL).pathname));
+  const aboutInManifest = Object.prototype.hasOwnProperty.call(manifest.files || {}, 'about.html');
+  const aboutNotInShell = !shellPaths.has('/about.html');
+  Object.assign(state.cacheKeyUrls, {
+    manifestAbout: aboutUrl,
+    unknownNavigation: unknownUrl,
+    offlineFallback: offlineUrl,
+  });
+
+  const aboutBefore = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
+  const aboutBeforeDetailed = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.probes.manifestAboutBeforeNavigation = summarizeDetailedCacheState(aboutBeforeDetailed);
+  const expectedOffline = aboutBeforeDetailed.offlineKey || {};
+  const expectedOfflineSha256 = expectedOffline.bodyBytes
+    ? sha256(Buffer.from(expectedOffline.bodyBytes)) : null;
+
+  let aboutResponse = null;
+  let aboutNavigationError = null;
+  try {
+    aboutResponse = await page.goto(aboutUrl, {waitUntil: 'domcontentloaded'});
+  } catch (error) {
+    aboutNavigationError = error?.stack || String(error);
+  }
+  const aboutResponseBody = aboutResponse ? await aboutResponse.body().catch(() => Buffer.alloc(0)) : Buffer.alloc(0);
+  const aboutBodyText = await page.locator('body').innerText().catch(() => '');
+  const aboutAfter = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.probes.manifestAboutNavigation = {
+    url: aboutUrl,
+    manifestContainsRoute: aboutInManifest,
+    routeIsOutsideShell: aboutNotInShell,
+    cacheBeforeNavigation: aboutBefore,
+    navigationError: aboutNavigationError,
+    status: aboutResponse?.status() ?? null,
+    responseUrl: aboutResponse?.url() ?? null,
+    headers: aboutResponse?.headers() ?? {},
+    bodyByteLength: aboutResponseBody.length,
+    bodySha256: sha256(aboutResponseBody),
+    bodyPrefix: aboutBodyText.slice(0, 240),
+    cacheAfterNavigation: summarizeDetailedCacheState(aboutAfter),
+    fallbackAssetUrl: expectedOffline.url || null,
+    fallbackAssetStatus: expectedOffline.status ?? null,
+    fallbackAssetHeaders: expectedOffline.headers || {},
+    fallbackAssetBodyByteLength: expectedOffline.bodyBytes?.length ?? null,
+    fallbackAssetBodySha256: expectedOfflineSha256,
+    fallbackAssetManifestSha256: manifest.files?.['offline.html'] || null,
+  };
+
+  // Keep the original synthetic route as a diagnostic probe even when the
+  // manifest-backed positive route fails. Its raw response and cache state
+  // help distinguish a service worker miss from a server-side 404.
+  const unknownBefore = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  let unknownResponse = null;
+  let unknownNavigationError = null;
+  try {
+    unknownResponse = await page.goto(unknownUrl, {waitUntil: 'domcontentloaded'});
+  } catch (error) {
+    unknownNavigationError = error?.stack || String(error);
+  }
+  const unknownResponseBody = unknownResponse
+    ? await unknownResponse.body().catch(() => Buffer.alloc(0)) : Buffer.alloc(0);
+  const unknownBodyText = await page.locator('body').innerText().catch(() => '');
+  const unknownAfter = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  offlineDiagnostics.probes.unknownNavigation = {
+    url: unknownUrl,
+    navigationError: unknownNavigationError,
+    status: unknownResponse?.status() ?? null,
+    responseUrl: unknownResponse?.url() ?? null,
+    headers: unknownResponse?.headers() ?? {},
+    bodyByteLength: unknownResponseBody.length,
+    bodySha256: sha256(unknownResponseBody),
+    bodyPrefix: unknownBodyText.slice(0, 240),
+    controller: unknownBefore.controller || null,
+    cacheBeforeNavigation: summarizeDetailedCacheState(unknownBefore),
+    cacheAfterNavigation: summarizeDetailedCacheState(unknownAfter),
+    offlineWorkerProbe: offlineDiagnostics.probes.offlineWorkerNetwork,
+    offlineFallbackCacheKey: summarizeDetailedCacheState(unknownBefore).offlineKey || null,
+  };
+
+  assert(aboutInManifest, 'the positive offline route must exist in the publication manifest');
+  assert(aboutNotInShell, 'the positive offline route must not be in the install SHELL');
+  assert.equal(aboutBefore.entries.manifestAbout?.match, false,
+    'manifest-backed about.html must be a real Cache Storage miss before its offline navigation');
+  assert.equal(expectedOffline.match, true, 'the exact offline fallback must exist in Cache Storage');
+  assert.equal(expectedOffline.cacheKeyUrl, offlineUrl,
+    'the exact GET /offline.html Cache Storage request key must identify the cached fallback');
+  assert.equal(expectedOffline.url, offlineUrl, 'the cached fallback must identify the actual /offline.html resource');
+  assert.equal(expectedOffline.status, 200, 'the cached offline fallback must retain its successful artifact status');
+  assert.match(expectedOffline.headers?.['content-type'] || '', /^text\/html\b/i,
+    'the cached offline fallback must retain its HTML content type');
+  assert(expectedOffline.headers?.['x-huiwen-cached-at'], 'the cached fallback timestamp header must be present');
+  assert(!/\b(?:private|no-store)\b/i.test(expectedOffline.headers?.['cache-control'] || ''),
+    'the required cached offline fallback must not carry a private or no-store cache directive');
+  assert.equal(expectedOfflineSha256, manifest.files?.['offline.html'],
+    'the exact cached offline body must match the publication manifest SHA-256');
+  assert(aboutResponse, 'manifest-backed offline navigation must return a Service Worker fallback response');
+  assert.equal(aboutResponse.status(), expectedOffline.status,
+    'manifest-backed navigation fallback must preserve the cached fallback status');
+  for (const header of ['content-type', 'cache-control', 'x-huiwen-cached-at']) {
+    assert.equal(aboutResponse.headers()[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation must preserve the cached offline ${header} header`);
+  }
+  assert.deepEqual(aboutResponseBody, Buffer.from(expectedOffline.bodyBytes || []),
+    'manifest-backed navigation must return the exact cached offline fallback body bytes');
+  assert.equal(sha256(aboutResponseBody), manifest.files?.['offline.html'],
+    'manifest-backed offline navigation bytes must match the publication manifest SHA-256');
+  assert.match(aboutBodyText, /目前離線/);
+
+  const unknownExpected = unknownBefore.offlineKey || {};
+  assert.equal(unknownBefore.entries.unknownNavigation?.match, false,
+    'the original synthetic unknown route must also begin as a Cache Storage miss');
+  assert(unknownResponse, 'the original synthetic unknown route must produce a response or recorded navigation error');
+  assert.equal(unknownResponse.status(), unknownExpected.status,
+    'unknown navigation must be checked against the cached offline response, not a live 404');
+  assert.deepEqual(unknownResponseBody, Buffer.from(unknownExpected.bodyBytes || []),
+    'unknown navigation must return the cached offline response bytes');
+  assert.match(unknownBodyText, /目前離線/);
+
   await context.setOffline(false);
   state.offline = false;
   offlineDiagnostics.transitions.push({api: 'BrowserContext.setOffline', offline: false, status: 'accepted'});

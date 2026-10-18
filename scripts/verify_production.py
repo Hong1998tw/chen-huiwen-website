@@ -64,11 +64,31 @@ STATIC_FILES = (
     "publication-manifest.json",
     "offline.html",
     "assets/fengshan-villages.geojson",
+    "assets/fengshan-home-map.svg",
+    "assets/legal/portrait.webp",
+    "assets/home-portrait-384.avif",
+    "assets/home-portrait-480.avif",
+    "assets/home-portrait-640.avif",
+    "assets/home-portrait-1004.avif",
+    "assets/home-portrait-384.webp",
+    "assets/home-portrait-480.webp",
+    "assets/home-portrait-640.webp",
+    "assets/events/campaign-opening-20261031-landscape-480.avif",
+    "assets/events/campaign-opening-20261031-landscape-800.avif",
+    "assets/events/campaign-opening-20261031-landscape-1087.avif",
+    "assets/events/campaign-opening-20261031-landscape-480.webp",
+    "assets/events/campaign-opening-20261031-landscape-800.webp",
+    "assets/events/campaign-opening-20261031-landscape-1087.webp",
+    "assets/events/campaign-opening-20261031-landscape.jpg",
     "assets/vendor/leaflet.css",
     "small-q.css",  # Loaded after window load; still required by the live snapshot.
     "assets/vendor/leaflet.js",
 )
 MIN_TEXT_COVERAGE = 0.95
+BINARY_SUFFIXES = frozenset({
+    ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".mp4", ".otf", ".pdf",
+    ".png", ".ttf", ".webm", ".webp", ".woff", ".woff2",
+})
 
 
 def normalize_space(value: str) -> str:
@@ -290,21 +310,34 @@ def normalize_text_bytes(data: bytes) -> bytes:
     return text.rstrip().encode("utf-8")
 
 
-def digest(data: bytes) -> str:
-    return hashlib.sha256(normalize_text_bytes(data)).hexdigest()
+def is_binary_path(path: str) -> bool:
+    return Path(path).suffix.lower() in BINARY_SUFFIXES
 
 
-def source_parity(local_path: str, local: bytes, remote: bytes) -> bool:
-    """Keep exact SHA-256 equality for the derived worker's deployment contract."""
+def digest(data: bytes, *, binary: bool = False) -> str:
+    if binary:
+        canonical = data
+    else:
+        try:
+            canonical = normalize_text_bytes(data)
+        except UnicodeDecodeError:
+            # Font and other binary callers may not have a path available to
+            # select the explicit binary mode. Invalid UTF-8 remains byte exact.
+            canonical = data
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def source_parity(local_path: str, local: bytes, remote: bytes, *, binary: bool = False) -> bool:
+    """Keep exact SHA-256 equality for the derived worker and binary assets."""
     if local_path == 'sw.js':
         return hashlib.sha256(local).digest() == hashlib.sha256(remote).digest()
-    return digest(local) == digest(remote)
+    return digest(local, binary=binary) == digest(remote, binary=binary)
 
 
-def source_sha256(local_path: str, data: bytes) -> str:
+def source_sha256(local_path: str, data: bytes, *, binary: bool = False) -> str:
     if local_path == 'sw.js':
         return hashlib.sha256(data).hexdigest()
-    return digest(data)
+    return digest(data, binary=binary)
 
 
 def visible_text_coverage(local: PageParser, remote: PageParser) -> float:
@@ -337,9 +370,9 @@ def fetch(base_url: str, path: str, cache_key: str, timeout: int) -> tuple[int, 
         return response.status, response.geturl(), response.read()
 
 
-def verification_cache_key(local: bytes, run_cache_key: str, attempt: int) -> str:
-    """Hash raw response bytes so binary WOFF2 assets never pass through UTF-8."""
-    return f"{hashlib.sha256(local).hexdigest()[:16]}-{run_cache_key}-{attempt}"
+def verification_cache_key(local: bytes, run_cache_key: str, attempt: int, *, binary: bool = False) -> str:
+    """Use canonical text or exact binary bytes in the per-run cache key."""
+    return f"{digest(local, binary=binary)[:16]}-{run_cache_key}-{attempt}"
 
 
 def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
@@ -386,7 +419,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
         if local_path != "publication-manifest.json" and hashlib.sha256(local).hexdigest() != publication_files[local_path]:
             failures.append(f"{local_path}: local bytes differ from emitted publication manifest")
             continue
-        cache_key = verification_cache_key(local, run_cache_key, attempt)
+        binary = is_binary_path(local_path)
+        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
         try:
             status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -395,7 +429,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
             continue
 
         same_host = urlsplit(final_url).hostname == base_host
-        raw_parity = source_parity(local_path, local, remote)
+        raw_parity = source_parity(local_path, local, remote, binary=binary)
         if status == 200 and same_host:
             save_snapshot(local_path, remote)
 
@@ -445,8 +479,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
                     "visibleTextCoverage": round(coverage, 4),
                     "expectedAssetsPresent": not missing_assets,
                     "criticalFactsMatch": not critical,
-                    "localSha256": source_sha256(local_path, local),
-                    "remoteSha256": source_sha256(local_path, remote),
+                    "localSha256": source_sha256(local_path, local, binary=binary),
+                    "remoteSha256": source_sha256(local_path, remote, binary=binary),
                 }
             )
             failures.extend(f"{local_path}: {failure}" for failure in page_failures)
@@ -460,8 +494,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
                 "http": status,
                 "sameHost": same_host,
                 "sourceParity": parity,
-                "localSha256": source_sha256(local_path, local),
-                "remoteSha256": source_sha256(local_path, remote),
+                "localSha256": source_sha256(local_path, local, binary=binary),
+                "remoteSha256": source_sha256(local_path, remote, binary=binary),
             }
         )
         if status != 200:
@@ -480,7 +514,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
         if asset not in publication_files or hashlib.sha256(local).hexdigest() != publication_files[asset]:
             failures.append(f"{asset}: local bytes differ from emitted publication manifest")
             continue
-        cache_key = verification_cache_key(local, run_cache_key, attempt)
+        binary = is_binary_path(asset)
+        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
         try:
             status, final_url, remote = fetch(base_url, "/" + asset, cache_key, timeout)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
@@ -489,7 +524,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
             continue
 
         same_host = urlsplit(final_url).hostname == base_host
-        parity = digest(local) == digest(remote)
+        parity = digest(local, binary=binary) == digest(remote, binary=binary)
         if status == 200 and same_host:
             save_snapshot(asset, remote)
         checks.append(
@@ -499,8 +534,8 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
                 "http": status,
                 "sameHost": same_host,
                 "sourceParity": parity,
-                "localSha256": digest(local),
-                "remoteSha256": digest(remote),
+                "localSha256": digest(local, binary=binary),
+                "remoteSha256": digest(remote, binary=binary),
             }
         )
         if status != 200:
@@ -515,7 +550,7 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
         path, row = item
         local_path = Path(artifact_root) / path
         local = local_path.read_bytes()
-        cache_key = verification_cache_key(local, run_cache_key, attempt)
+        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=True)
         try:
             status, final_url, remote = fetch(base_url, "/" + path, cache_key, timeout)
             same_host = urlsplit(final_url).hostname == base_host

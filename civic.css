@@ -107,9 +107,9 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
 .civic-list-only #case-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
 @media(max-width:1100px){.civic-lead{gap:32px}.civic-service-desk{padding:26px 22px 10px}.civic-tasknav a{padding-inline:14px}.civic-story-grid{gap:28px}}
 @media(max-width:780px){
- :root{--site-header-height:68px}
- html:not(.menu-ready) .site-header{position:relative}
- body .site-header .nav-wrap{padding:10px 0;min-height:68px;gap:12px}body .site-header{border-bottom:1px solid var(--civic-line)}
+ :root{--site-header-height:64px}
+ body .site-header .nav-wrap{height:auto;min-height:63px;padding:0 16px;gap:8px;align-items:center}body .site-header{border-bottom:1px solid var(--civic-line)}
+ body .site-header.is-compact .nav-wrap{height:auto;min-height:51px;padding-block:0}
  body .site-header .brand-mark{width:32px;height:32px;line-height:32px;border-radius:8px;transform:none}
  body .site-header .brand-mark>span{right:-4px;top:-8px;font-size:.75rem}
  body .site-header .brand-name{font-size:1.2rem}
@@ -135,6 +135,7 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
  .civic-article-nav{gap:4px 20px}.civic-article-nav span{width:100%;margin-left:0;padding-bottom:6px}.civic-list-only #case-list{grid-template-columns:1fr}
  body .page-head{padding:24px 0 16px}body .case-card{padding:20px}body .case-body>p{font-size:1rem}
 }
+@media(max-width:780px) and (scripting:none){body .site-header{position:relative;top:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 @media print{.site-header,.topline,.footer,.external-embed,.civic-view-controls,.global-search-trigger,.menu-backdrop{display:none!important}body{background:white;color:black}.case-layout,.civic-story-grid{display:block!important}.case-aside{position:static!important}.case-sources a::after{content:" (" attr(href) ")";font-size:9pt;overflow-wrap:anywhere}}
 
@@ -492,4 +493,3 @@ body .explore-summary .digital-stat span{color:var(--civic-muted)}
  body .site-header .nav-wrap{min-height:54px}
  html{scroll-padding-top:16px}
 }
-

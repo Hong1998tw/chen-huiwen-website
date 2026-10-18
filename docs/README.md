@@ -39,3 +39,7 @@ GitHub `main` 是程式碼、內容 source、build 與 generated output 的正�
 ## 外部連結檢查報告
 
 [A07 外部連結可達性報告候選](maintenance-candidates/a07-external-link-audit.md)記錄既有手動檢查器的離線報告行為與限制；候選內容不等於已排程或已啟用。
+
+## 相依更新候選
+
+[A08 Renovate 依賴更新候選](maintenance-candidates/a08-renovate-candidate.md) 說明尚未啟用的候選設定、預設探索範圍與後續啟用門檻。

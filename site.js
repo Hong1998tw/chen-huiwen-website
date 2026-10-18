@@ -6,10 +6,64 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   if (!header) return;
   // ResizeObserver supplies the completed layout size; avoid forcing a full
   // page reflow during startup, especially on the long achievement index.
-  new ResizeObserver(([entry]) => {
-    const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
-    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
-  }).observe(header, {box:'border-box'});
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(([entry]) => {
+      const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
+      document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
+    }).observe(header, {box:'border-box'});
+  } else {
+    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+  }
+})();
+// Keep the native sticky header calm while scrolling: compact while moving down,
+// restore its accessible 64px height on the first meaningful upward movement.
+(() => {
+  const header = document.querySelector('.site-header');
+  if (!header) return;
+  const mobile = window.matchMedia('(max-width: 780px)');
+  let lastY = window.scrollY;
+  let direction = 0;
+  let directionStartY = lastY;
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const y = window.scrollY;
+    const movement = Math.sign(y - lastY);
+    if (!mobile.matches || y <= 8) {
+      header.classList.remove('is-compact');
+      direction = 0;
+      directionStartY = y;
+    } else if (movement) {
+      if (movement !== direction) {
+        direction = movement;
+        directionStartY = lastY;
+      }
+      // The 64px/52px header moves centered controls by up to 6px. Wait for
+      // cumulative 8px movement so that small scroll-anchor corrections do
+      // not reverse the user's scroll direction and toggle the header back.
+      if (direction > 0 && y - directionStartY >= 8) {
+        header.classList.add('is-compact');
+        directionStartY = y;
+      } else if (direction < 0 && directionStartY - y >= 8) {
+        header.classList.remove('is-compact');
+        directionStartY = y;
+      }
+    }
+    lastY = y;
+  };
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(update);
+  };
+  if (mobile.matches && lastY > 8) header.classList.add('is-compact');
+  window.addEventListener('scroll', onScroll, {passive:true});
+  mobile.addEventListener('change', () => {
+    lastY = window.scrollY;
+    direction = 0;
+    directionStartY = lastY;
+    header.classList.remove('is-compact');
+  });
 })();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
@@ -61,6 +115,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   });
   const background = [...document.body.children].filter(node =>
     node !== backdrop && !node.contains(toggle) && !['SCRIPT', 'STYLE', 'DIALOG'].includes(node.tagName));
+  const headerControls = [document.querySelector('.site-header .brand'), document.querySelector('.site-header .header-phone')].filter(Boolean);
   let inertBefore = [];
   function positionMenu() {
     const bottom = document.querySelector('.site-header').getBoundingClientRect().bottom;
@@ -78,8 +133,8 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     navigation.classList.add('is-open'); document.body.classList.add('menu-open');
     toggle.setAttribute('aria-expanded', 'true'); backdrop.hidden = false;
     toggle.setAttribute('aria-label', '關閉主要選單');
-    inertBefore = background.map(node => [node, node.inert]);
-    background.forEach(node => { node.inert = true; });
+    inertBefore = [...background, ...headerControls].map(node => [node, node.inert]);
+    [...background, ...headerControls].forEach(node => { node.inert = true; });
     const search = navigation.querySelector('.global-search-trigger');
     (search || groups[0]?.querySelector('summary') || links.find(link => link.getClientRects().length))?.focus({preventScroll:true});
   }

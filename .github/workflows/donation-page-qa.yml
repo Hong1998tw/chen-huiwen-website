@@ -30,13 +30,33 @@ jobs:
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/min-font.mjs
+      - run: node --check tests/donation/target-size.mjs
+      - run: node --check tests/donation/target-size-lifecycle.mjs
+      - run: node --check tests/donation/target-size-lifecycle.test.mjs
+      - run: node --check tests/donation/target-size-inline.mjs
+      - run: node --check tests/donation/target-size-inline.test.mjs
       - run: node --check tests/donation/election-mode.mjs
+      - run: node --check tests/donation/petition-preservation.mjs
+      - run: node tests/donation/petition-preservation.test.mjs
+      - name: Verify inline-link target-size exception predicate with pure fixtures
+        run: node tests/donation/target-size-inline.test.mjs
+      - name: Verify target-size cleanup and report persistence failures
+        run: node tests/donation/target-size-lifecycle.test.mjs
+      - run: node --check tests/donation/visual-qa.mjs
+      - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-check.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npm run test:visual-qa --prefix tests/donation
+      - run: node --check tests/donation/wcag22aa.mjs
+      - run: node --check tests/donation/wcag22aa.test.mjs
+      - run: node --test tests/donation/wcag22aa.test.mjs
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
       - run: node tests/donation/browser.mjs
       - name: Check computed text font sizes and horizontal overflow across representative pages
         run: node tests/donation/min-font.mjs
+      - name: Check target sizes, WCAG spacing exceptions, keyboard use and narrow reflow on news routes
+        run: node tests/donation/target-size.mjs
       - run: node tests/donation/sticky-navigation.mjs
       - run: node tests/donation/small-q.mjs
       - run: node tests/donation/public-service-audit.mjs
@@ -49,6 +69,8 @@ jobs:
       - run: node tests/donation/font-rendering.mjs
       - run: node tests/donation/p0.mjs
       - run: node tests/donation/achievement-governance.mjs
+      - name: Verify achievement mobile filters, map layout and no-JavaScript fallback
+        run: node tests/donation/achievement-list-mobile.mjs
       - run: node tests/donation/election-mode.mjs
       - name: Verify lifecycle resilience and negative browser fixtures
         run: node tests/donation/lifecycle.mjs
@@ -61,9 +83,80 @@ jobs:
           name: full-site-browser-qa
           path: tests/donation/results/
 
+  visual-qa:
+    name: A-05 visual evidence and approved-baseline comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - name: Verify A-05 archive safety fixtures
+        run: python -m unittest discover -s tests -p 'test_visual_qa_baseline_archive.py'
+      - run: node --check tests/donation/visual-qa.mjs
+      - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-check.mjs
+      - run: node --check tests/donation/download-visual-qa-baseline.mjs
+      - run: npm run test:visual-qa --prefix tests/donation
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
+      - name: Capture A-05 local screenshots and live Cloudflare measurements
+        id: capture
+        shell: bash
+        run: |
+          set +e
+          node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
+          local_capture_status=$?
+          node tests/donation/visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/
+          cloudflare_capture_status=$?
+          {
+            echo '## A-05 visual QA'
+            echo "- Local capture exit: ${local_capture_status}"
+            echo "- Cloudflare capture exit: ${cloudflare_capture_status}"
+            echo '- Cloudflare source is read from deployment.json before and after capture; transfer encoding is recorded as observed.'
+            echo '- Pixel comparison uses only the local screenshot set.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "local_status=${local_capture_status}" >> "$GITHUB_OUTPUT"
+          echo "cloudflare_status=${cloudflare_capture_status}" >> "$GITHUB_OUTPUT"
+          if [[ "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 ]]; then
+            exit 1
+          fi
+      - name: Compare local captures with the committed Git baseline or record baseline pending
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ "${{ steps.capture.outcome }}" != "success" ]]; then
+            echo '- Comparison: NOT_RUN because one or both capture commands failed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          candidate='tests/donation/results/visual-qa/local-http-uncompressed/manifest.json'
+          node tests/donation/visual-qa.mjs compare \
+            --candidate-manifest "$candidate" \
+            --baseline-selection
+          compare_status=$?
+          echo "- Comparison exit: ${compare_status}; baseline source is the committed Git selection at tests/baselines/visual-qa/selection.json. Missing selection is PENDING; invalid selected content is rejected." >> "$GITHUB_STEP_SUMMARY"
+          exit "$compare_status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          retention-days: 14
+          name: a05-visual-qa-${{ github.run_id }}
+          path: tests/donation/results/visual-qa/
+
   lighthouse:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +180,8 @@ jobs:
         run: node tests/donation/static-server-check.mjs
       - name: Verify the Lighthouse comparison refuses runs without identical-content evidence
         run: node tests/donation/lighthouse-compare-check.mjs
+      - name: Verify election Lighthouse trace and allowlisted snapshot evidence
+        run: node tests/donation/election-lighthouse-evidence-check.mjs
       - name: Enforce mobile Lighthouse acceptance medians
         # Pages are served with production-like brotli/gzip (tests/donation/static-server.mjs);
         # conditions and how to compare with older scores: docs/LIGHTHOUSE-MEASUREMENT.md.

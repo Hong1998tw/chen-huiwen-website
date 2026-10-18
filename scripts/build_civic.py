@@ -5,6 +5,7 @@ from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import json, html, re, math
 from achievement_metadata import is_public
+from build_shared import link_arrow
 
 R = Path(__file__).resolve().parents[1]
 STATION_ID = 'metro-green-line'
@@ -20,6 +21,14 @@ def block(text, name, body):
     if not re.search(pattern, text, re.S):
         raise ValueError('Missing generation marker ' + name)
     return re.sub(pattern, lambda _: replacement, text, flags=re.S)
+
+
+def optional_block(text, name, body):
+    """Rebuild a legacy home region only while its explicit template marker exists."""
+    start, end = f'<!-- {name}:start -->', f'<!-- {name}:end -->'
+    if text.count(start) == 0 and text.count(end) == 0:
+        return text
+    return block(text, name, body)
 
 
 def amount_wan(value):
@@ -64,7 +73,7 @@ def render_photo(record, class_name, station=False):
         f'alt="{e(metadata.get("alt", ""))}" width="{e(width)}" height="{e(height)}" '
         f'loading="lazy" decoding="async"><figcaption>{e(caption)} · '
         f'<a href="{e(metadata.get("sourceUrl", ""))}" target="_blank" '
-        f'rel="noopener noreferrer">{e(metadata.get("credit", ""))} ↗</a></figcaption></figure>'
+        f'rel="noopener noreferrer">{e(metadata.get("credit", ""))} {link_arrow(metadata.get("sourceUrl", ""))}</a></figcaption></figure>'
     )
 
 
@@ -78,7 +87,7 @@ def render_funding(record):
     source = ''
     if funding.get('sourceUrl'):
         source = (f'<a class="source civic-funding-source" href="{e(funding["sourceUrl"])}" '
-                  f'target="_blank" rel="noopener noreferrer">{e(funding.get("sourceTitle") or "核對經費來源")} ↗</a>')
+                  f'target="_blank" rel="noopener noreferrer">{e(funding.get("sourceTitle") or "核對經費來源")} {link_arrow(funding["sourceUrl"])}</a>')
     return (
         f'<aside class="budget civic-feature-funding" aria-label="{e(record["title"])}核定經費">'
         f'<p class="kicker">核定計畫總經費</p><p class="amount">{amount_wan(funding["total"])}<small>萬元</small></p>'
@@ -102,7 +111,7 @@ def render_stories(config, data):
         f'{e((featured.get("categories") or ["地方專題"])[0])} · {e(featured.get("status", ""))}</p>'
         f'<h3><a href="{e(url)}">{e(story_title(featured))}</a></h3>'
         f'<p>{e(summary_for(config, featured))}</p>{collaboration}'
-        f'<a class="source civic-read" href="{e(url)}#case-sources">閱讀歷程與資料來源 ↗</a>'
+        f'<a class="source civic-read" href="{e(url)}#case-sources">閱讀歷程與資料來源 →</a>'
         f'<small class="meta">內容整理 <time datetime="{e(featured["updated"])}">{e(featured["updated"])}</time></small></div>'
     )
     rows = []
@@ -138,7 +147,7 @@ def render_home_map(config, data):
         detail = '　／　'.join([*record.get('villages', []), status])
         rows.append(
             f'<article class="place" data-topic="{topic}" data-record-id="{e(record_id)}">'
-            f'<a href="achievement-{e(record_id)}.html">{e(story_title(record))} ↗</a><p>{e(detail)}</p></article>'
+            f'<a href="achievement-{e(record_id)}.html">{e(story_title(record))} →</a><p>{e(detail)}</p></article>'
         )
     return ''.join(rows) + f'<p class="meta" id="filter-status" aria-live="polite">本頁精選{len(ids)}筆，不代表全部案件或完工數。</p>'
 
@@ -152,9 +161,9 @@ def build():
     if set(config.get('summaries', {})) != set(ids):
         raise ValueError('Home summaries must match selected public records')
     page = R / 'index.html'
-    text = block(page.read_text(), 'civic-stories', render_stories(config, data))
-    if '<!-- civic-home-map:start -->' in text:
-        text = block(text, 'civic-home-map', render_home_map(config, data))
+    text = page.read_text()
+    text = optional_block(text, 'civic-stories', render_stories(config, data))
+    text = optional_block(text, 'civic-home-map', render_home_map(config, data))
     if '<!-- civic-questions:start -->' in text:
         guides = {item['recordId']: item for item in json.loads((R / 'data/case-context.json').read_text())['cases']}
         question_ids = ('metro-green-line', 'after-school-care', 'bade-detention')
@@ -162,8 +171,9 @@ def build():
             raise ValueError('Home questions must reference reviewed public context')
         questions = ''.join(f'<article class="civic-feature-copy"><h3>{e(guides[record_id]["question"])}</h3><a class="civic-read" href="achievement-{e(record_id)}.html">閱讀議題與來源 <span aria-hidden="true">→</span></a></article>' for record_id in question_ids)
         question_html = '<section class="wrap civic-reading-guide" id="civic-questions" aria-labelledby="civic-questions-heading"><h2 id="civic-questions-heading">從鳳山日常，問一個具體問題</h2><p>從交通、照顧與防汛，了解地方需求、議會提問與市府辦理進度。</p><div>' + questions + '</div></section>'
-        text = block(text, 'civic-questions', question_html)
-    page.write_text(text)
+        text = optional_block(text, 'civic-questions', question_html)
+    if text != page.read_text():
+        page.write_text(text)
     print('Built public civic home selections')
 
 
