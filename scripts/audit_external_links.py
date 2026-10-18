@@ -10,6 +10,21 @@ from collections import Counter
 import argparse, json, re, time
 
 ROOT = Path(__file__).resolve().parents[1]
+FORBIDDEN_IMAGE_SOURCE_DOMAINS = (
+    'fbcdn.net', 'instagram.com', 'cdninstagram.com', 'googleusercontent.com',
+)
+
+def forbidden_image_source_host(raw):
+    """Return a disallowed remote image host, without restricting ordinary source links."""
+    try:
+        parsed = urlsplit(raw)
+        host = (parsed.hostname or '').lower().rstrip('.')
+    except (TypeError, ValueError):
+        return None
+    if parsed.scheme not in ('http', 'https') or not host:
+        return None
+    return next((domain for domain in FORBIDDEN_IMAGE_SOURCE_DOMAINS
+                 if host == domain or host.endswith('.' + domain)), None)
 
 def inventory(root):
     urls = {}
