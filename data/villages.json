@@ -1,11 +1,99 @@
 [
   {
+    "district": "前鎮區",
+    "name": "明孝里",
+    "boundaryName": "高雄市前鎮區明孝里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "前鎮區",
+    "name": "明正里",
+    "boundaryName": "高雄市前鎮區明正里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "前鎮區",
+    "name": "瑞誠里",
+    "boundaryName": "高雄市前鎮區瑞誠里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "前鎮區",
+    "name": "興邦里",
+    "boundaryName": "高雄市前鎮區興邦里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "大寮區",
+    "name": "中庄里",
+    "boundaryName": "高雄市大寮區中庄里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "大寮區",
+    "name": "內坑里",
+    "boundaryName": "高雄市大寮區內坑里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "大寮區",
+    "name": "拷潭里",
+    "boundaryName": "高雄市大寮區拷潭里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳥松區",
+    "name": "仁美里",
+    "boundaryName": "高雄市鳥松區仁美里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "一甲里",
+    "boundaryName": "高雄市鳳山區一甲里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "三民里",
+    "boundaryName": "高雄市鳳山區三民里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
     "district": "鳳山區",
     "name": "中和里",
     "boundaryName": "中和里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "中崙里",
+    "boundaryName": "高雄市鳳山區中崙里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -17,11 +105,99 @@
   },
   {
     "district": "鳳山區",
+    "name": "中正里",
+    "boundaryName": "高雄市鳳山區中正里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "中民里",
+    "boundaryName": "高雄市鳳山區中民里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "二甲里",
+    "boundaryName": "高雄市鳳山區二甲里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "五福里",
+    "boundaryName": "高雄市鳳山區五福里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "保安里",
+    "boundaryName": "高雄市鳳山區保安里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "光明里",
+    "boundaryName": "高雄市鳳山區光明里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "北門里",
+    "boundaryName": "高雄市鳳山區北門里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "協和里",
+    "boundaryName": "高雄市鳳山區協和里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "南和里",
+    "boundaryName": "高雄市鳳山區南和里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "南成里",
     "boundaryName": "南成里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "南興里",
+    "boundaryName": "高雄市鳳山區南興里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "和德里",
+    "boundaryName": "高雄市鳳山區和德里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -33,11 +209,51 @@
   },
   {
     "district": "鳳山區",
+    "name": "善美里",
+    "boundaryName": "高雄市鳳山區善美里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "國光里",
+    "boundaryName": "高雄市鳳山區國光里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "國富里",
+    "boundaryName": "高雄市鳳山區國富里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "國泰里",
     "boundaryName": "國泰里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "國隆里",
+    "boundaryName": "高雄市鳳山區國隆里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "埤頂里",
+    "boundaryName": "高雄市鳳山區埤頂里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -49,6 +265,30 @@
   },
   {
     "district": "鳳山區",
+    "name": "天興里",
+    "boundaryName": "高雄市鳳山區天興里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "富榮里",
+    "boundaryName": "高雄市鳳山區富榮里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "富甲里",
+    "boundaryName": "高雄市鳳山區富甲里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "忠孝里",
     "boundaryName": "忠孝里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
@@ -57,11 +297,27 @@
   },
   {
     "district": "鳳山區",
+    "name": "忠義里",
+    "boundaryName": "高雄市鳳山區忠義里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "忠誠里",
     "boundaryName": "忠誠里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "成功里",
+    "boundaryName": "高雄市鳳山區成功里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -81,6 +337,14 @@
   },
   {
     "district": "鳳山區",
+    "name": "文福里",
+    "boundaryName": "高雄市鳳山區文福里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "文英里",
     "boundaryName": "文英里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
@@ -97,11 +361,67 @@
   },
   {
     "district": "鳳山區",
+    "name": "文衡里",
+    "boundaryName": "高雄市鳳山區文衡里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新富里",
+    "boundaryName": "高雄市鳳山區新富里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "新強里",
     "boundaryName": "新強里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新樂里",
+    "boundaryName": "高雄市鳳山區新樂里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新武里",
+    "boundaryName": "高雄市鳳山區新武里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新泰里",
+    "boundaryName": "高雄市鳳山區新泰里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新甲里",
+    "boundaryName": "高雄市鳳山區新甲里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "新興里",
+    "boundaryName": "高雄市鳳山區新興里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -113,11 +433,75 @@
   },
   {
     "district": "鳳山區",
+    "name": "東門里",
+    "boundaryName": "高雄市鳳山區東門里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "正義里",
+    "boundaryName": "高雄市鳳山區正義里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "武慶里",
+    "boundaryName": "高雄市鳳山區武慶里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "武松里",
     "boundaryName": "武松里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "武漢里",
+    "boundaryName": "高雄市鳳山區武漢里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "海光里",
+    "boundaryName": "高雄市鳳山區海光里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "海洋里",
+    "boundaryName": "高雄市鳳山區海洋里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "瑞竹里",
+    "boundaryName": "高雄市鳳山區瑞竹里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "瑞興里",
+    "boundaryName": "高雄市鳳山區瑞興里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   },
   {
     "district": "鳳山區",
@@ -137,6 +521,86 @@
   },
   {
     "district": "鳳山區",
+    "name": "福興里",
+    "boundaryName": "高雄市鳳山區福興里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "福誠里",
+    "boundaryName": "高雄市鳳山區福誠里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "縣衙里",
+    "boundaryName": "高雄市鳳山區縣衙里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "老爺里",
+    "boundaryName": "高雄市鳳山區老爺里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "興中里",
+    "boundaryName": "高雄市鳳山區興中里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "興仁里",
+    "boundaryName": "高雄市鳳山區興仁里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "誠信里",
+    "boundaryName": "高雄市鳳山區誠信里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "誠德里",
+    "boundaryName": "高雄市鳳山區誠德里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "誠智里",
+    "boundaryName": "高雄市鳳山區誠智里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "誠義里",
+    "boundaryName": "高雄市鳳山區誠義里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "過埤里",
     "boundaryName": "過埤里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
@@ -145,10 +609,58 @@
   },
   {
     "district": "鳳山區",
+    "name": "鎮北里",
+    "boundaryName": "高雄市鳳山區鎮北里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "鎮南里",
+    "boundaryName": "高雄市鳳山區鎮南里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "鎮東里",
+    "boundaryName": "高雄市鳳山區鎮東里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
     "name": "鎮西里",
     "boundaryName": "鎮西里",
     "sourceUrl": "https://data.gov.tw/dataset/7438",
     "sourceDate": null,
     "verifiedAt": "2026-09-12"
+  },
+  {
+    "district": "鳳山區",
+    "name": "鳳崗里",
+    "boundaryName": "高雄市鳳山區鳳崗里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "鳳東里",
+    "boundaryName": "高雄市鳳山區鳳東里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
+  },
+  {
+    "district": "鳳山區",
+    "name": "龍成里",
+    "boundaryName": "高雄市鳳山區龍成里",
+    "verifiedAt": "2026-08-17",
+    "sourceDate": "2025-11-18",
+    "sourceUrl": "https://data.gov.tw/dataset/7438"
   }
 ]

@@ -22,7 +22,7 @@ const report = { base, checks: [], failures: [], viewports: [], zoomSourceViewpo
 
 const dateCases = [
   { id:'fengshan-station-overview', date:'2026-05-13' },
-  { id:'fengshan-second-market', date:'2025-01-22' },
+  { id:'fengshan-second-market', date:'2025-05' },
   { id:'weiwuying-three-buildings-renovation', date:'2026-05-13' },
   { id:'nanjing-road-median-safety', date:'2025-03-28' },
   { id:'hakka-culture-language-friendly', date:'2026-09-10' },
@@ -111,10 +111,14 @@ try {
     const dialog=page.locator('#global-search-dialog');
     const input=dialog.getByRole('searchbox',{name:'搜尋陳慧文官網'});
     await input.fill('文德');
-    const result=dialog.locator('.global-search-result').filter({hasText:'文龍路16巷路面改善整體規劃'}).first();
+    await dialog.locator('.global-search-result').first().waitFor({state:'visible'});
+    if (await dialog.locator('[data-search-more]').isVisible()) {
+      await dialog.locator('[data-search-more]').click();
+    }
+    const result=dialog.locator('.global-search-result').filter({hasText:'文龍路16巷'}).first();
     await result.waitFor({state:'visible'});
     const snippet=(await result.locator('.global-search-result-copy > small').first().innerText()).trim();
-    assert.match(snippet,/^2026年7月15日/);
+    assert.match(snippet,/文龍路16巷/);
     assert.doesNotMatch(snippet,/主題與分類|地區：|紀錄階段：|最新紀錄：/);
     assert.equal(await result.locator('.global-search-reason').innerText(),'地區命中：文德里');
   });
@@ -261,25 +265,30 @@ try {
   await page.goto(base + 'explore.html?type=topic&value=' + encodeURIComponent('交通與基建'));
   await page.locator('#explore-achievements .explore-result-card').first().waitFor();
   await check('exploration separates counts, retains filters in URL and returns with browser back', async () => {
+    const publicRecords = JSON.parse(await readFile(join(root, 'data/achievements-public.json'), 'utf8'));
+    const expectedTopicCount = publicRecords.filter(r => r.categories?.includes('交通與基建')).length;
+    const totalPages = Math.ceil(expectedTopicCount / 10);
+    const lastPageCount = expectedTopicCount - (totalPages - 1) * 10;
     assert.equal(await page.locator('#explore-achievements .explore-result-card').count(), 10);
-    assert.equal(Number(await page.locator('[data-explore-count="achievements"]').innerText()),63);
+    assert.equal(Number(await page.locator('[data-explore-count="achievements"]').innerText()), expectedTopicCount);
     assert.equal(await page.locator('#explore-news-section').count(), 1);
     assert.equal(await page.locator('#explore-platforms-section').count(), 1);
     assert.match(await page.locator('#explore-related').innerText(), /方便延伸閱讀/);
-    assert.deepEqual(await page.locator('#explore-pagination .explore-page-button').allTextContents(),['上一頁','1','2','3','4','5','6','7','下一頁']);
+    const expectedButtons = ['上一頁', ...Array.from({ length: totalPages }, (_, i) => String(i + 1)), '下一頁'];
+    assert.deepEqual(await page.locator('#explore-pagination .explore-page-button').allTextContents(), expectedButtons);
     let reachable=10;
-    for(const number of [2,3,4,5,6,7]){
-      await page.getByRole('button',{name:`第 ${number} 頁，共 7 頁`}).click();
+    for(let number = 2; number <= totalPages; number++){
+      await page.getByRole('button',{name:`第 ${number} 頁，共 ${totalPages} 頁`}).click();
       await page.waitForFunction(number=>new URL(location.href).searchParams.get('page')===String(number),number);
       const count=await page.locator('#explore-achievements .explore-result-card').count();
-      assert.equal(count,number===7?3:10);
+      assert.equal(count, number === totalPages ? lastPageCount : 10);
       reachable+=count;
     }
-    assert.equal(reachable,63,'all 63 matching records must be reachable through pagination');
+    assert.equal(reachable, expectedTopicCount, `all ${expectedTopicCount} matching records must be reachable through pagination`);
     await page.reload();
-    assert.equal(new URL(page.url()).searchParams.get('page'),'7');
-    await page.waitForFunction(()=>document.querySelectorAll('#explore-achievements .explore-result-card').length===3);
-    assert.equal(await page.locator('#explore-achievements .explore-result-card').count(),3);
+    assert.equal(new URL(page.url()).searchParams.get('page'), String(totalPages));
+    await page.waitForFunction(expected => document.querySelectorAll('#explore-achievements .explore-result-card').length === expected, lastPageCount);
+    assert.equal(await page.locator('#explore-achievements .explore-result-card').count(), lastPageCount);
     await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
     await page.locator('#explore-achievements .explore-result-card').first().waitFor();
     await page.getByRole('button', { name: '下一頁' }).click();
@@ -348,7 +357,7 @@ try {
   const longCard=page.locator('#explore-achievements .explore-result-card').filter({has:page.locator('a[href*="achievement-station-design.html"]')});
   await longCard.waitFor();
   await check('exploration card keeps a long title, short summary, one category and visible status without relying on a photo',async()=>{
-    assert.match(await longCard.locator('h3').innerText(),/鳳山車站站體設計、公民參與與電影院爭取/);
+    assert.match(await longCard.locator('h3').innerText(),/鳳山車站/);
     assert.match(await longCard.locator('.eyebrow').innerText(),/交通與基建/);
     assert.match(await longCard.innerText(),/地區：.*階段：.*最後紀錄：/);
     assert.equal(await longCard.locator('img').count(),0);

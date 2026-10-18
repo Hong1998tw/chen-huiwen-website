@@ -92,7 +92,7 @@ try{
   });
   await page.goto(base+'achievement-wufu-2nd-lane81-drainage.html');
   await check(width+' old record not represented as recent construction',async()=>{
-   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);assert.match(await page.locator('.case-latest .record-boundary').innerText(),/以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
+   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);assert.match(await page.locator('.case-latest .record-boundary').innerText(),/陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。/);
   });
   await page.goto(base+'vision.html');
   await page.screenshot({path:fileURLToPath(new URL('platform-'+width+'.png',out))});

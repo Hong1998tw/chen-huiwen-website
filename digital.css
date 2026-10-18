@@ -15,7 +15,7 @@
 .global-search-type{font-size:.72rem;font-weight:800;letter-spacing:.04em;color:#075548;background:#dff1e8;border-radius:999px;padding:.32rem .5rem}
 .global-search-result-copy{min-width:0;display:grid;gap:.2rem}
 .global-search-result-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.global-search-result-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#667a72}
+.global-search-result-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#4c5f58}
 .global-search-footer{display:flex;justify-content:space-between;gap:1rem;margin-top:auto;padding:.75rem 1.1rem;border-top:1px solid #e7ece9;color:#667a72;font-size:.8rem}
 .global-search-footer a{color:#075548;font-weight:700}
 body.search-open{overflow:hidden}

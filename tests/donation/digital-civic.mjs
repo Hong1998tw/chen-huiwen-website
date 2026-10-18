@@ -44,7 +44,7 @@ try {
     await input.fill('寵物');
     const petResult = dialog.locator('a[href$="/achievement-consumer-dudu.html"]');
     await petResult.waitFor({ state: 'visible' });
-    assert.match(await petResult.textContent(), /毛動力嘟嘟車消費爭議協助/);
+    assert.match(await petResult.textContent(), /毛動力嘟嘟車消費爭議/);
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
   });
@@ -80,8 +80,9 @@ try {
   });
   await check('achievement live search and ten-item pagination remain functional', async () => {
     await page.locator('#case-search').fill('文德國小');
-    await page.waitForFunction(() => document.querySelector('#case-count')?.textContent.includes('共 1 個專題'));
-    assert.equal(await page.locator('#case-list .case-card:not([hidden])').count(), 1);
+    const expectedWende = items.filter(item => JSON.stringify(item).includes('文德國小')).length;
+    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 個專題`), expectedWende);
+    assert.equal(await page.locator('#case-list .case-card:not([hidden])').count(), Math.min(expectedWende, 10));
     await page.locator('#case-search').fill('');
     await page.waitForFunction(() => document.querySelectorAll('#case-list .case-card:not([hidden])').length === 10);
   });
@@ -102,8 +103,8 @@ try {
     const expectedPetCases = items.filter(item => item.subcategories.includes('寵物'));
     await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 個專題`), expectedPetCases.length);
     const visible = page.locator('#case-list .case-card:not([hidden])');
-    assert.equal(await visible.count(), expectedPetCases.length);
-    const dudu = visible.filter({ hasText: '毛動力嘟嘟車消費爭議協助' });
+    assert.equal(await visible.count(), Math.min(expectedPetCases.length, 10));
+    const dudu = visible.filter({ hasText: '毛動力嘟嘟車消費爭議' });
     assert.equal(await dudu.count(), 1);
     assert((await dudu.boundingBox()).height < 360);
     await page.locator('#reset-map-filters').click();

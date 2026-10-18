@@ -433,7 +433,7 @@ try {
       await leadLocator.scrollIntoViewIfNeeded();
       const lead = await leadLocator.boundingBox();
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /以上為所列日期的辦理情形，最新進度請見主管機關公告。/);
+      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。/);
       await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
       const sources = page.locator('#case-sources');
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
