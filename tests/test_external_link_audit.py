@@ -405,6 +405,17 @@ class PublicArtifactScopeTests(unittest.TestCase):
                     Path(directory) / 'artifact', FIXTURE_PATHS | {relative},
                 )
 
+    def test_search_index_allows_the_producer_intents_string_list(self):
+        payload = {
+            'version': 1, 'count': 1,
+            'items': [{
+                'title': 'fixture', 'url': 'fixture.html', 'description': 'fixture',
+                'summary': 'fixture', 'type': '頁面', 'keywords': 'fixture',
+                'priority': 40, 'intents': ['fixture-intent'],
+            }],
+        }
+        self.assertEqual(audit._public_json_urls('data/search-index.json', payload), ['fixture.html'])
+
     def test_cms_index_private_field_rows_fail_before_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             editor = Path(ROOT / 'cms-page-editor.js')

@@ -151,7 +151,7 @@ def _public_json_urls(relative, payload):
                     or payload['count'] != len(payload['items'])):
                 raise ValueError('search-index has an invalid producer schema')
             required = {'title', 'url', 'description', 'summary', 'type', 'keywords', 'priority'}
-            optional = {'primaryRegion', 'recordStage', 'lastRecordDate', 'categories'}
+            optional = {'primaryRegion', 'recordStage', 'lastRecordDate', 'categories', 'intents'}
             for row in payload['items']:
                 if (not isinstance(row, dict) or required - row.keys()
                         or row.keys() - (required | optional)
@@ -160,6 +160,8 @@ def _public_json_urls(relative, payload):
                         or type(row.get('priority')) is not int
                         or ('categories' in row and (not isinstance(row['categories'], list)
                                                      or any(not isinstance(item, str) for item in row['categories'])))
+                        or ('intents' in row and (not isinstance(row['intents'], list)
+                                                  or any(not isinstance(item, str) for item in row['intents'])))
                         or not build_search.route_key(row['url'])):
                     raise ValueError('search-index item has an invalid producer schema')
     except (KeyError, TypeError, IndexError) as error:
