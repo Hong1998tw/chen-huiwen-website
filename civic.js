@@ -81,6 +81,24 @@
       document.body.classList.add('case-filter-dialog-open');
       requestAnimationFrame(() => filterFields.querySelector('select')?.focus({preventScroll:true}));
     });
+    filterDialog.addEventListener('keydown', event => {
+      if (event.key !== 'Tab' || !filterDialog.open) return;
+      const tabStops = [...filterDialog.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')].filter(element => {
+        if (element.tabIndex < 0 || element.matches(':disabled') || element.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden' || !element.getClientRects().length) return false;
+        for (let ancestor = element.parentElement; ancestor && ancestor !== filterDialog; ancestor = ancestor.parentElement) {
+          if (ancestor.tagName === 'DETAILS' && !ancestor.open && ancestor.querySelector(':scope > summary') !== element) return false;
+        }
+        return true;
+      });
+      if (!tabStops.length) return;
+      const activeIndex = tabStops.indexOf(document.activeElement);
+      const wraps = event.shiftKey ? activeIndex <= 0 : activeIndex === -1 || activeIndex === tabStops.length - 1;
+      if (!wraps) return;
+      event.preventDefault();
+      tabStops[event.shiftKey ? tabStops.length - 1 : 0].focus({preventScroll:true});
+    });
     filterClose.addEventListener('click', () => filterDialog.close());
     filterDialog.addEventListener('close', () => {
       document.documentElement.classList.remove('case-filter-dialog-open');
