@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "../../tests/donation/node_modules/playwright/index.mjs";
 
 const root = new URL("../public/", import.meta.url);
-const [html, script, consoleScript, style, dateTimeScript, editorRuntime, homepage] = await Promise.all([
+const [html, script, consoleScript, style, dateTimeScript, editorRuntime, editorLoader, homepage] = await Promise.all([
   readFile(new URL("index.html", root)), readFile(new URL("app.js", root)),
   readFile(new URL("console.js", root)),
   readFile(new URL("style.css", root)), readFile(new URL("date-time.js", root)),
   readFile(new URL("../../cms-page-editor.js", import.meta.url)),
+  readFile(new URL("../../scripts/cms_editor_loader.js", import.meta.url), "utf8"),
   readFile(new URL("../../index.html", import.meta.url), "utf8"),
 ]);
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "摘要 A", b: "摘要 B", c: "摘要 C", d: "摘要 D" } };
@@ -26,9 +27,10 @@ const server = createServer(async (req, res) => {
   if (path === "/cms-page-editor.js") return send(res, editorRuntime, "application/javascript");
   if (path === "/api/page-preview") {
     const port = server.address().port;
-    const loader = `<script data-cms-editor-loader data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json">`;
-    let preview = homepage.replace("<script data-cms-editor-loader>", loader);
-    if (preview === homepage) throw new Error("New homepage CMS loader contract is missing");
+    const loader = `<script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js" data-cms-editor-enabled="true" data-cms-page-path="index.html" data-cms-admin-origin="http://127.0.0.1:${port}" data-cms-manifest="https://www.huiwen.tw/cms-editor-manifests/test.json">${editorLoader}</script>`;
+    let preview = homepage.replace(/<script\b[^>]*\bdata-cms-editor-loader\b[^>]*>[\s\S]*?<\/script>/i, loader);
+    if (preview === homepage) preview = homepage.replace(/<\/head>/i, `${loader}</head>`);
+    if (preview === homepage) throw new Error("Homepage preview could not receive the CMS editor loader");
     preview = preview.replace(/<script\b([^>]*)>[\s\S]*?<\/script>/gi, (whole, attributes) =>
       /\bdata-cms-editor-loader\b/.test(attributes) ? whole : "");
     return send(res, preview, "text/html; charset=utf-8");

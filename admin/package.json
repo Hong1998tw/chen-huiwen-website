@@ -5,7 +5,7 @@
   "scripts": {
     "types": "wrangler types",
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler d1 migrations apply huiwen-cms --remote && wrangler deploy"
   },

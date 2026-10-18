@@ -10,6 +10,16 @@ class LinkAuditTests(unittest.TestCase):
         for code in (None,401,403,429,500):self.assertEqual(links.classify(code)[0],'BLOCKED')
         for code in (404,410):self.assertEqual(links.classify(code)[0],'FAIL')
         self.assertEqual(links.classify(200)[0],'PASS')
+    def test_known_third_party_image_domains_are_identified(self):
+        for host in ('scontent.fkhh1-2.fna.fbcdn.net','www.instagram.com','scontent.cdninstagram.com','lh3.googleusercontent.com'):
+            self.assertIsNotNone(links.forbidden_image_source_host('https://' + host + '/photo.jpg'))
+        for raw in ('//scontent.fkhh1-2.fna.fbcdn.net/photo.jpg',
+                    '//SCONTENT.FKHH1-2.FNA.FBCDN.NET/photo.jpg',
+                    '//scontent.fkhh1-2.fna.fbcdn.net./photo.jpg'):
+            self.assertEqual(links.forbidden_image_source_host(raw),'fbcdn.net')
+        self.assertIsNone(links.forbidden_image_source_host('assets/legal/portrait.webp'))
+        self.assertIsNone(links.forbidden_image_source_host('https://www.huiwen.tw/assets/legal/portrait.webp'))
+        self.assertIsNone(links.forbidden_image_source_host('https://tile.openstreetmap.org/0/0/0.png'))
     def test_structured_inventory_not_regex_fragments(self):
         with tempfile.TemporaryDirectory() as d:
             r=Path(d);(r/'data').mkdir()
@@ -58,6 +68,16 @@ class QualityMutationTests(unittest.TestCase):
     def test_private_url_leak(self):
         domain='notion'+'.so';self.edit('index.html','</main>',f'<a href="https://{domain}/fixture-private">fixture</a></main>')
         self.reject('validate_site.py','non-allowlisted')
+    def test_social_cdn_img_sources_are_rejected(self):
+        for src in ('//scontent.fkhh1-2.fna.fbcdn.net/fixture.jpg',
+                    '//SCONTENT.FKHH1-2.FNA.FBCDN.NET/fixture.jpg',
+                    '//scontent.fkhh1-2.fna.fbcdn.net./fixture.jpg'):
+            self.setUp()
+            self.edit('index.html','</main>',f'<a href="https://www.instagram.com/huiwen.ifs/">來源頁</a><img src="{src}" alt="fixture" width="1200" height="900"></main>')
+            self.reject('validate_site.py','blocked external image source fbcdn.net')
+    def test_map_tile_img_and_social_source_link_remain_allowed(self):
+        self.edit('index.html','</main>','<a href="https://www.instagram.com/huiwen.ifs/">來源頁</a><img src="assets/legal/portrait.webp" alt="相對圖片" width="1200" height="900"><img src="https://www.huiwen.tw/assets/legal/portrait.webp" alt="同站圖片" width="1200" height="900"><img src="https://tile.openstreetmap.org/0/0/0.png" alt="地圖圖磚" width="256" height="256"></main>')
+        result=self.gate('validate_site.py');self.assertEqual(result.returncode,0,result.stdout[-1000:]+result.stderr[-1000:])
     def test_stale_generated_output(self):
         p=self.root/'data/achievements.json';rows=json.loads(p.read_text());rows[0]['title']='Fixture changed title';p.write_text(json.dumps(rows))
         self.reject('quality.py','GENERATED_STALE','--generated-only')
