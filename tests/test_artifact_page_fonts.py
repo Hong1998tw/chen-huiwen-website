@@ -3,12 +3,13 @@ from copy import deepcopy
 from hashlib import sha256
 from io import BytesIO
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import sys
 import tempfile
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 import unittest
 
 from bs4 import BeautifulSoup
@@ -87,6 +88,18 @@ def fixture_html(extra: str) -> bytes:
         '<button aria-label="按鈕共">送出</button>'
         '<form><input value="表單己" placeholder="提示庚" aria-description="說明辛"></form>'
         f'<p>{extra}</p><script>草稿秘密字</script></main></body></html>'
+    ).encode("utf-8")
+
+
+def service_calendar_fixture(month: str, sessions: list[dict]) -> bytes:
+    schedule = json.dumps({"month": month, "sessions": sessions}, ensure_ascii=False)
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+        f'<section data-schedule-month="{month}"><table><caption>{month} 公益律師時間表</caption>'
+        '<tbody></tbody></table><p class="schedule-period-note">原始月份說明</p></section>'
+        '<script src="/civic.js"></script><script src="/legal-calendar.js"></script>'
+        f'<script type="application/json" id="legal-schedule-data">{schedule}</script>'
+        '</body></html>'
     ).encode("utf-8")
 
 
@@ -292,6 +305,80 @@ class Q9FontProducerTests(unittest.TestCase):
                 split_bytes = len(common_payload) + len(delta_payload)
                 whole_bytes = len(whole_payload)
                 self.assertLessEqual(split_bytes, whole_bytes * 1.10)
+
+    def test_service_first_load_calendar_states_and_source_glyph_coverage(self):
+        sessions = [
+            {"date": "2026-10-08", "start": "19:30", "end": "21:00", "lawyer": "林岡輝"},
+            {"date": "2026-10-24", "start": "10:00", "end": "11:30", "lawyer": "鄭明達"},
+        ]
+        raw = service_calendar_fixture("2026-10", sessions)
+        soup = BeautifulSoup(raw, "html5lib")
+        dynamic_text = fonts.dynamic_ui_text("service.html", soup)
+        for expected in (
+            "顯示本月全部日期",
+            "只看尚未結束的場次",
+            " · 僅顯示尚未結束的場次",
+            "2026年10月已公布 2 場，請先確認名額再前往",
+            "此為2026年10月時間表；新月份請先來電確認",
+            "此場次已結束",
+            "下一場諮詢",
+            "已選場次",
+        ):
+            self.assertIn(expected, dynamic_text)
+
+        missing_from_common = set(map(ord, "尚束結此為"))
+        self.assertTrue(missing_from_common <= self.tc_cmap.keys())
+        self.assertTrue(missing_from_common <= set(map(ord, dynamic_text)))
+        spec = fonts._page_spec_from_bytes(
+            ROOT, "service.html", raw, self.tc_cmap, self.jp_allowed, self.jp_cmap,
+            require_unmarked=False,
+        )
+        self.assertTrue(missing_from_common <= set(spec["codepoints"]))
+
+        cross_month = BeautifulSoup(
+            service_calendar_fixture("2026-09", [
+                {"date": "2026-09-03", "start": "19:30", "end": "21:00", "lawyer": "林岡輝"},
+            ]),
+            "html5lib",
+        )
+        historical_text = fonts.dynamic_ui_text("service.html", cross_month)
+        self.assertIn("此為2026年9月時間表；新月份請先來電確認", historical_text)
+        self.assertIn(
+            "這是 2026-09 的歷史時間表，已非當月資訊。新月份時段請查看服務處最新公告或來電確認。",
+            historical_text,
+        )
+
+        actual_service = BeautifulSoup((ROOT / "service.html").read_bytes(), "html5lib")
+        actual_text = fonts.dynamic_ui_text("service.html", actual_service)
+        self.assertIn("2026年10月已公布 14 場，請先確認名額再前往", actual_text)
+        self.assertIn(" · 僅顯示尚未結束的場次", actual_text)
+
+        calendar_source = (ROOT / "legal-calendar.js").read_text(encoding="utf-8")
+        self.assertIn("if(mode==='card')showCard();", calendar_source)
+        self.assertIn("show(matchMedia('(max-width: 430px)').matches?'list':'calendar');", calendar_source)
+        self.assertNotIn("圖卡字型尚未載入", dynamic_text)
+        self.assertNotIn("正在準備圖卡", dynamic_text)
+
+    def test_activity_script_has_no_automatic_initial_status_copy(self):
+        activity_routes = (
+            "activities.html",
+            "event-campaign-headquarters-opening-2026-10-31.html",
+            "event-council-general-interpellation-2026-10-08.html",
+        )
+        for route in activity_routes:
+            with self.subTest(route=route):
+                soup = BeautifulSoup((ROOT / route).read_bytes(), "html5lib")
+                self.assertTrue(any(
+                    PurePosixPath(urlsplit(tag["src"]).path).name == "activities.js"
+                    for tag in soup.find_all("script", src=True)
+                ))
+                for status in soup.select(".event-reminder-status"):
+                    self.assertEqual(status.get_text(strip=True), "")
+
+        activity_script = (ROOT / "activities.js").read_text(encoding="utf-8")
+        self.assertIn("status.textContent = '';", activity_script)
+        self.assertIn("select.addEventListener('change'", activity_script)
+        self.assertIn("status.textContent = '已選擇 ' + minutes", activity_script)
 
     def test_process_cache_key_and_fake_payload_fail_closed(self):
         cache = fonts.ProcessFontCompiler()

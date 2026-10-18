@@ -11,6 +11,7 @@ from python_guard import require_supported_python
 require_supported_python()
 
 from collections import OrderedDict, defaultdict
+from calendar import monthrange
 from hashlib import sha256
 from html import unescape
 from io import BytesIO
@@ -487,6 +488,46 @@ def dynamic_ui_text(route: str, soup) -> str:
         pieces.extend((NEWS_DYNAMIC_TEXT, "陳慧文於高雄市議會市政總質詢發言 2024年11月29日，陳慧文於高雄市議會市政總質詢發言。圖／陳慧文議員服務處提供。"))
     if "civic.js" in script_names:
         pieces.append("搜尋政績、新聞、歷屆政見、活動與服務資訊。 顯示本月全部日期 只看今日起的日期 僅顯示今日起的日期")
+    if route == "service.html" and "legal-calendar.js" in script_names:
+        schedule_node = soup.find(id="legal-schedule-data")
+        if schedule_node is None:
+            raise ValueError("FONT_SERVICE_LEGAL_SCHEDULE_DATA_MISSING")
+        try:
+            schedule = json.loads(schedule_node.string or schedule_node.get_text())
+        except (json.JSONDecodeError, TypeError) as error:
+            raise ValueError("FONT_SERVICE_LEGAL_SCHEDULE_DATA_INVALID") from error
+        month = schedule.get("month") if isinstance(schedule, dict) else None
+        sessions = schedule.get("sessions") if isinstance(schedule, dict) else None
+        if not isinstance(month, str) or not re.fullmatch(r"\d{4}-\d{2}", month) or not isinstance(sessions, list):
+            raise ValueError("FONT_SERVICE_LEGAL_SCHEDULE_SHAPE_INVALID")
+        page_month = soup.select_one("[data-schedule-month]")
+        if page_month is None or page_month.get("data-schedule-month") != month:
+            raise ValueError("FONT_SERVICE_LEGAL_SCHEDULE_MONTH_MISMATCH")
+        year, month_number = month.split("-")
+        session_dates = []
+        for session in sessions:
+            session_date = session.get("date") if isinstance(session, dict) else None
+            if not isinstance(session_date, str) or not re.fullmatch(rf"{re.escape(month)}-\d{{2}}", session_date):
+                raise ValueError("FONT_SERVICE_LEGAL_SCHEDULE_SESSION_DATE_INVALID")
+            session_dates.append(session_date)
+
+        pieces.extend((
+            f"{year}年{int(month_number)}月已公布 {len(sessions)} 場，請先確認名額再前往",
+            f"此為{year}年{int(month_number)}月時間表；新月份請先來電確認",
+            f"這是 {month} 的歷史時間表，已非當月資訊。新月份時段請查看服務處最新公告或來電確認。",
+        ))
+        if sessions:
+            pieces.append(
+                "下一場諮詢 已選場次 此場次已結束 本月已公布場次已結束 "
+                "顯示本月全部日期 只看尚未結束的場次 · 僅顯示尚未結束的場次"
+            )
+        else:
+            pieces.append("本月未安排諮詢場次")
+        # civic.js filters by date, so its state is reachable before month-end
+        # when at least one published session falls before the final day.
+        last_day = monthrange(int(year), int(month_number))[1]
+        if any(int(session_date[-2:]) < last_day for session_date in session_dates):
+            pieces.append("只看今日起的日期 · 僅顯示今日起的日期")
     return "\n".join(pieces)
 
 
