@@ -30,6 +30,8 @@ jobs:
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/election-mode.mjs
+      - run: node --check tests/donation/petition-preservation.mjs
+      - run: node tests/donation/petition-preservation.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
