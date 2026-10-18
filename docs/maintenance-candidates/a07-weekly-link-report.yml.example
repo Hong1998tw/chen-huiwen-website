@@ -1,0 +1,107 @@
+# Review candidate only. GitHub Actions loads workflows only from .github/workflows/.
+name: Weekly external link report (candidate)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 20 * * 0' # Monday 04:30 Asia/Taipei (Sunday 20:30 UTC)
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install report and contract-test dependencies
+        run: python -m pip install --disable-pip-version-check beautifulsoup4==4.13.5 PyYAML==6.0.3
+      - name: Validate the candidate workflow contract
+        run: python -m unittest discover -s tests -p test_a07_weekly_candidate_contract.py
+      - name: Create bounded external-link report
+        shell: bash
+        run: timeout --signal=TERM --kill-after=10s 900s python3 scripts/audit_external_links.py external-links.json --timeout 1 --attempts 2 --interval 0.5
+      - name: Summarize report
+        if: always()
+        env:
+          REPORT_PATH: external-links.json
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          from scripts.audit_external_links import inventory
+
+          report_path = Path(os.environ['REPORT_PATH'])
+          summary_path = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          try:
+              report = json.loads(report_path.read_text(encoding='utf-8'))
+              state = report.get('state')
+              checked_at = report.get('checkedAt')
+              links = report.get('links')
+              if state not in ('running', 'complete') or not isinstance(checked_at, str):
+                  raise ValueError('report state or checkedAt is missing or invalid')
+              if not isinstance(links, list):
+                  raise ValueError('report links must be a list')
+
+              statuses = ('PASS', 'FAIL', 'BLOCKED', 'NOT_RUN')
+              counts = Counter()
+              for row in links:
+                  status = row.get('status') if isinstance(row, dict) else None
+                  if status not in statuses:
+                      raise ValueError(f'unknown report status: {status!r}')
+                  counts[status] += 1
+
+              total = len(inventory(Path.cwd()))
+              if len(links) > total:
+                  raise ValueError('report contains more rows than the source inventory')
+              if state == 'complete':
+                  if len(links) != total or report.get('summary') != dict(counts):
+                      raise ValueError('complete report does not match the source inventory')
+                  if not isinstance(report.get('finishedAt'), str):
+                      raise ValueError('complete report is missing finishedAt')
+
+              recorded = len(links)
+              lines = [
+                  '# A07 外部連結報告',
+                  f"- 來源 SHA：{os.environ['SOURCE_SHA']}",
+                  f'- 開始時間（UTC）：{checked_at}',
+                  f'- 報告狀態：{state}',
+                  f'- 盤點連結總數：{total}',
+                  f'- 已記錄結果：{recorded}/{total}',
+              ]
+              if state == 'complete':
+                  lines.append(f"- 完成時間（UTC）：{report['finishedAt']}")
+              else:
+                  lines.append('- 部分報告：狀態仍為 running；下列數量只涵蓋已寫入的結果。')
+              lines.extend(f'- {status}：{counts[status]}' for status in statuses)
+              lines.append('- JSON artifact 僅保存報告，不代表連結全數 PASS。')
+              summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          except Exception as error:
+              summary_path.write_text(
+                  f'# A07 外部連結報告\n- 報告無法驗證：{error}\n',
+                  encoding='utf-8',
+              )
+              print(f'::error::External-link report could not be verified: {error}', file=sys.stderr)
+              raise SystemExit(1)
+          PY
+      - name: Preserve JSON report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: external-link-report-${{ github.sha }}
+          path: external-links.json
+          if-no-files-found: warn
+          retention-days: 30
