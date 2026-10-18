@@ -12,6 +12,37 @@ import build_font_subsets as fonts
 
 
 class FontSubsetContractTests(unittest.TestCase):
+    def test_global_full_tc_face_uses_the_exact_source_cmap(self):
+        tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        face = re.search(r'@font-face\{font-family:"Huiwen Sans TC"[^}]*\}', css)
+        self.assertIsNotNone(face)
+        range_match = re.search(r"unicode-range:([^;}]+)", face.group(0))
+        self.assertIsNotNone(range_match)
+
+        intervals = []
+        for item in range_match.group(1).split(","):
+            match = re.fullmatch(r"U\+([0-9A-Fa-f]{1,6})(?:-([0-9A-Fa-f]{1,6}))?", item)
+            self.assertIsNotNone(match, item)
+            start = int(match.group(1), 16)
+            end = int(match.group(2), 16) if match.group(2) else start
+            self.assertLessEqual(start, end)
+            intervals.append((start, end))
+
+        self.assertEqual(
+            range_match.group(1),
+            fonts.unicode_range_for_codepoints(tc_cmap),
+        )
+        self.assertTrue(all(any(start <= cp <= end for start, end in intervals) for cp in tc_cmap))
+        self.assertEqual(sum(end - start + 1 for start, end in intervals), len(tc_cmap))
+        self.assertFalse(any(start <= cp <= end for start, end in intervals for cp in (0x2733, 0x2630)))
+        self.assertIn("font-weight:250 900", face.group(0))
+        self.assertIn("font-display:swap", face.group(0))
+
+        broad_face = [(0, 0x10FFFF)]
+        self.assertGreater(sum(end - start + 1 for start, end in broad_face), len(tc_cmap))
+        self.assertNotEqual("U+0-10FFFF", range_match.group(1))
+
     def test_required_cjk_glyphs_have_a_source_font(self):
         _, codepoints = fonts.collect_corpus(ROOT)
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))

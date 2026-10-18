@@ -380,6 +380,16 @@ class Q9FontProducerTests(unittest.TestCase):
         self.assertIn("select.addEventListener('change'", activity_script)
         self.assertIn("status.textContent = '已選擇 ' + minutes", activity_script)
 
+    def test_press_initial_pagination_copy_is_in_its_page_font_subset(self):
+        route = "press.html"
+        soup = BeautifulSoup((ROOT / route).read_bytes(), "html5lib")
+        dynamic_text = fonts.dynamic_ui_text(route, soup, ROOT)
+        spec = self.public_specs[route]
+        self.assertIn("全部 · 17 筆 · 第 1/2 頁", dynamic_text)
+        self.assertIn("新聞發稿第 1 頁", dynamic_text)
+        self.assertIn(ord("第"), spec["codepoints"])
+        self.assertIn(ord("頁"), spec["codepoints"])
+
     def test_process_cache_key_and_fake_payload_fail_closed(self):
         cache = fonts.ProcessFontCompiler()
         codepoints = tuple(sorted(ord(char) for char in "陳慧文"))
