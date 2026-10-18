@@ -80,6 +80,23 @@ try {
       await page.keyboard.press('Enter');
     });
 
+    if (width === 1440 || width === 390) await check(`G07 ${width}px: named topline region, single banner, axe region and keyboard`, async () => {
+      await page.goto(base + 'political-donation.html');
+      const topline = page.locator('section.topline');
+      assert.equal(await topline.count(), 1);
+      assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
+      assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      assert.equal(await page.getByRole('banner').count(), 1);
+      await page.screenshot({ path: fileURLToPath(new URL(`political-donation-g07-${width}.png`, output)), fullPage: true });
+
+      const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
+      await writeFile(new URL(`axe-g07-region-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
+      assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+
+      await page.keyboard.press('Tab');
+      assert(await page.locator('a[href="tel:+88678212536"]').first().evaluate(el => el === document.activeElement));
+    });
+
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
       const toggle = page.locator('.menu-toggle');
       await toggle.focus();
