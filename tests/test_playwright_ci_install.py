@@ -64,6 +64,9 @@ class PlaywrightCiInstallTests(unittest.TestCase):
         self.assertIn("run: node tests/donation/static-server-check.mjs", lighthouse)
         self.assertIn("Verify the Lighthouse comparison refuses runs without identical-content evidence", lighthouse)
         self.assertIn("run: node tests/donation/lighthouse-compare-check.mjs", lighthouse)
+        self.assertIn("Verify election Lighthouse trace and allowlisted snapshot evidence", lighthouse)
+        self.assertIn("run: node tests/donation/election-lighthouse-evidence-check.mjs", lighthouse)
+        self.assertIn("CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}", lighthouse)
         self.assertIn("npm run test:lighthouse --prefix tests/donation", lighthouse)
 
         self.assertEqual(activity.count("bash scripts/install_playwright_ci.sh"), 1)

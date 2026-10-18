@@ -22,13 +22,17 @@
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 import { chromium } from 'playwright';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { buildContentManifest } from './content-manifest.mjs';
+import { correlateBrowserRequests, serializeRawTrace, writeElectionResourceSnapshot } from './election-lighthouse-evidence.mjs';
 import { fileURLToPath } from 'node:url';
 import { BROTLI_QUALITY, CACHE_CONTROL, COMPRESSION_MODES, GZIP_LEVEL, startStaticServer } from './static-server.mjs';
 const root=resolve(process.env.ROOT_DIR || fileURLToPath(new URL('../../',import.meta.url)));
 const label=process.env.LABEL || 'candidate';
+const sourceCommit=process.env.CANDIDATE_SOURCE_SHA || process.env.GITHUB_SHA || null;
+const checkedOutCommit=process.env.GITHUB_SHA || null;
 const out=resolve(process.env.EVIDENCE_DIR || fileURLToPath(new URL('./results/readiness/',import.meta.url)),label+'-lighthouse');
 const runs=Number(process.env.RUNS || 3);
 const pages=(process.env.PAGES || 'index.html,about.html,achievements.html,vision.html,news.html,news-20260915-special-education-nurse.html,political-donation.html,election.html').split(',');
@@ -44,8 +48,10 @@ if(contentBefore)await writeFile(resolve(out,'content-manifest.json'),JSON.strin
 const content=external?{external:true,digest:null,unchangedDuringRun:null}:{root,digest:contentBefore.digest,fileCount:contentBefore.fileCount,totalBytes:contentBefore.totalBytes,manifestFile:'content-manifest.json',skippedPaths:contentBefore.skipPaths,digestAfterRun:null,unchangedDuringRun:null};
 const server=process.env.BASE_URL?null:await startStaticServer({root,compression,port});
 const base=process.env.BASE_URL || server.url;
+const baseOrigin=new URL(base).origin;
 const results=[];
 const serverLog=[];
+let electionEvidence=null;
 const thresholds={performance:90,accessibility:95,'best-practices':95,seo:95};
 const conditions={
  server:server?'tests/donation/static-server.mjs':'external BASE_URL',
@@ -63,7 +69,7 @@ const conditions={
  enforceThresholds:process.env.ENFORCE_THRESHOLDS!=='0',
  thresholds
 };
-const summarize=(extra={})=>({label,node:process.version,root,content,conditions,method:'Default mobile Lighthouse; all network requests allowed; cold Chrome per run; lab data, not field CWV. Pages are served over HTTP by static-server.mjs with production-like Content-Encoding (see conditions); production edge, TLS/HTTP2 and the registered SW are not exercised (site disables SW on localhost).',...extra,results});
+const summarize=(extra={})=>({label,node:process.version,sourceCommit,checkedOutCommit,root,content,conditions,electionEvidence,method:'Default mobile Lighthouse; all network requests allowed; cold Chrome per run; lab data, not field CWV. Pages are served over HTTP by static-server.mjs with production-like Content-Encoding (see conditions); production edge, TLS/HTTP2 and the registered SW are not exercised (site disables SW on localhost).',...extra,results});
 const median=values=>{const a=[...values].sort((x,y)=>x-y);return a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;};
 try{
  if(!process.env.BASE_URL){let ready=false;for(let i=0;i<50;i++){try{if((await fetch(base)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}if(!ready)throw Error('Local server failed');serverLog.length=0;server.log.length=0;}
@@ -76,22 +82,34 @@ try{
    conditions.browserVersion=browserVersion;
    if(process.env.EXPECT_BROWSER_VERSION&&process.env.EXPECT_BROWSER_VERSION!==browserVersion)throw Error(`Chromium ${browserVersion} does not match EXPECT_BROWSER_VERSION=${process.env.EXPECT_BROWSER_VERSION}; update the pin deliberately and keep old and new scores separate`);
    const logStart=server?server.log.length:0;
-   const {lhr}=await lighthouse(new URL(page,base).href,{port:chrome.port,logLevel:'error',output:'json',onlyCategories:['performance','accessibility','best-practices','seo']});
+   const runnerResult=await lighthouse(new URL(page,base).href,{port:chrome.port,logLevel:'error',output:'json',onlyCategories:['performance','accessibility','best-practices','seo']});
+   const {lhr,artifacts}=runnerResult;
    const scores=Object.fromEntries(Object.entries(lhr.categories).map(([k,v])=>[k,Math.round(v.score*100)]));
    const metrics=Object.fromEntries(['first-contentful-paint','largest-contentful-paint','speed-index','total-blocking-time','cumulative-layout-shift','total-byte-weight'].map(id=>[id,lhr.audits[id]?.numericValue]));
    const failures=Object.values(lhr.audits).filter(a=>a.score!==null&&a.score<1).map(a=>({id:a.id,title:a.title,score:a.score,displayValue:a.displayValue,details:a.details}));
    const items=lhr.audits['network-requests']?.details?.items||[];
    const requests=server?server.log.slice(logStart).map(row=>({page,run,...row})):[];
    serverLog.push(...requests);
-   // Chrome-observed requests joined to what the server actually sent for the same path.
-   const sent=new Map(requests.filter(row=>row.status===200).map(row=>[row.path,row]));
-   const pageRequests=items.map(item=>{const url=new URL(item.url);const row=sent.get(url.pathname+url.search);return {path:url.pathname+url.search,statusCode:item.statusCode,mimeType:item.mimeType,resourceType:item.resourceType,
-    chromeTransferSize:item.transferSize,chromeResourceSize:item.resourceSize,contentEncoding:row?row.contentEncoding:null,vary:row?row.vary:null,serverIdentityBytes:row?.identityBytes??null,serverIdentitySha256:row?.identitySha256??null,serverBodyBytes:row?.transferBytes??null};});
+   // Keep the complete request origin and join only this server's same-origin responses.
+   const pageRequests=correlateBrowserRequests(items,requests,baseOrigin);
    const network={requests:items.length,transferSize:items.reduce((sum,item)=>sum+(item.transferSize||0),0),resourceSize:items.reduce((sum,item)=>sum+(item.resourceSize||0),0),
     encodedBodies:Object.fromEntries(['br','gzip','identity'].map(name=>[name,pageRequests.filter(row=>row.serverBodyBytes!==null&&(row.contentEncoding||'identity')===name).length])),
     serverBodyBytes:pageRequests.reduce((sum,row)=>sum+(row.serverBodyBytes||0),0),serverIdentityBytes:pageRequests.reduce((sum,row)=>sum+(row.serverIdentityBytes||0),0),
     serverRequestsTotal:requests.length,serverRequestsOutsidePage:requests.length-pageRequests.length};
-   const result={page,run,scores,metrics,network,pageRequests,failures,warnings:lhr.runWarnings,runtimeError:lhr.runtimeError,lighthouseVersion:lhr.lighthouseVersion,browserVersion,hostUserAgent:lhr.environment?.hostUserAgent,environment:lhr.environment,configSettings:lhr.configSettings,fetchTime:lhr.fetchTime};
+   let traceEvidence=null;
+   if(page==='election.html'){
+    const trace=artifacts?.Trace;
+    if(!Array.isArray(trace?.traceEvents))throw Error('Lighthouse 13.4.1 did not return artifacts.Trace.traceEvents for election.html');
+    const rawTrace=serializeRawTrace(trace);
+    const traceFile=`${page}-${run}.trace.json`;
+    const tracePath=resolve(out,traceFile);
+    await writeFile(tracePath,rawTrace.bytes);
+    const metaBytes=Buffer.from(JSON.stringify({sourceCommit,checkedOutCommit,contentDigest:content.digest,lighthouseVersion:lhr.lighthouseVersion,browserVersion,page,run,traceFile,traceSha256:rawTrace.sha256,traceEventCount:rawTrace.traceEventCount},null,2));
+    const metaFile=`${page}-${run}.trace-meta.json`;
+    await writeFile(resolve(out,metaFile),metaBytes);
+    traceEvidence={file:traceFile,bytes:rawTrace.bytes.length,sha256:rawTrace.sha256,metaFile,metaSha256:createHash('sha256').update(metaBytes).digest('hex'),traceEventCount:rawTrace.traceEventCount};
+   }
+   const result={page,run,scores,metrics,network,pageRequests,failures,warnings:lhr.runWarnings,runtimeError:lhr.runtimeError,lighthouseVersion:lhr.lighthouseVersion,browserVersion,hostUserAgent:lhr.environment?.hostUserAgent,environment:lhr.environment,configSettings:lhr.configSettings,fetchTime:lhr.fetchTime,...(traceEvidence?{trace:traceEvidence}:{})};
    results.push(result);await writeFile(resolve(out,`${page}-${run}.json`),JSON.stringify(lhr));
    console.log(JSON.stringify({label,page,run,scores,metrics,network,error:lhr.runtimeError}));
    await writeFile(resolve(out,'summary.json'),JSON.stringify(summarize(),null,2));
@@ -99,6 +117,10 @@ try{
   }finally{await chrome.kill();}
  }
 }finally{await server?.close();}
+if(contentBefore&&pages.includes('election.html')){
+ const electionStylesheet=await readFile(resolve(root,'styles.css'),'utf8');
+ electionEvidence=await writeElectionResourceSnapshot({root,outDir:resolve(out,'election-snapshot'),manifest:contentBefore,stylesheet:electionStylesheet,baseOrigin,sourceCommit,checkedOutCommit,serverLog,results});
+}
 if(contentBefore){const contentAfter=await buildContentManifest(root,manifestOptions);
 content.digestAfterRun=contentAfter.digest;
 content.unchangedDuringRun=contentAfter.digest===contentBefore.digest;

@@ -2,7 +2,7 @@
 .external-embed .embed-intro>p{margin:0 0 10px;color:var(--muted);font-size:.86rem;line-height:1.65}
 .external-embed[data-loaded="true"] .embed-intro>p{display:none}
 .external-embed .embed-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.external-embed .embed-actions .button{width:auto;min-height:40px;padding:8px 14px;border:1px solid var(--line);background:#fff;color:var(--green);font-size:.82rem;gap:8px}
+.external-embed .embed-actions .button{width:auto;min-width:44px;min-height:44px;padding:8px 14px;border:1px solid var(--line);background:#fff;color:var(--green);font-size:.82rem;gap:8px}
 .external-embed .embed-actions .text-link{min-height:40px;display:inline-flex;align-items:center;font-size:.84rem}
 .external-embed [data-embed-status]{min-height:0;margin:8px 0 0;color:var(--muted);font-size:.78rem;line-height:1.55}
 .external-embed [data-embed-status]:empty{display:none}

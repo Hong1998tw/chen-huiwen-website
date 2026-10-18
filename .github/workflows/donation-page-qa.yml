@@ -155,6 +155,8 @@ jobs:
   lighthouse:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -178,6 +180,8 @@ jobs:
         run: node tests/donation/static-server-check.mjs
       - name: Verify the Lighthouse comparison refuses runs without identical-content evidence
         run: node tests/donation/lighthouse-compare-check.mjs
+      - name: Verify election Lighthouse trace and allowlisted snapshot evidence
+        run: node tests/donation/election-lighthouse-evidence-check.mjs
       - name: Enforce mobile Lighthouse acceptance medians
         # Pages are served with production-like brotli/gzip (tests/donation/static-server.mjs);
         # conditions and how to compare with older scores: docs/LIGHTHOUSE-MEASUREMENT.md.

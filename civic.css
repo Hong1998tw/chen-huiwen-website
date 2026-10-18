@@ -108,8 +108,8 @@ body .map-workspace.civic-list-only{grid-template-columns:1fr}
 @media(max-width:1100px){.civic-lead{gap:32px}.civic-service-desk{padding:26px 22px 10px}.civic-tasknav a{padding-inline:14px}.civic-story-grid{gap:28px}}
 @media(max-width:780px){
  :root{--site-header-height:64px}
- body .site-header .nav-wrap{padding:10px 0;min-height:64px;gap:12px}body .site-header{border-bottom:1px solid var(--civic-line)}
- body .site-header.is-compact .nav-wrap{padding-block:4px}
+ body .site-header .nav-wrap{height:auto;min-height:63px;padding:0 16px;gap:8px;align-items:center}body .site-header{border-bottom:1px solid var(--civic-line)}
+ body .site-header.is-compact .nav-wrap{height:auto;min-height:51px;padding-block:0}
  body .site-header .brand-mark{width:32px;height:32px;line-height:32px;border-radius:8px;transform:none}
  body .site-header .brand-mark>span{right:-4px;top:-8px;font-size:.75rem}
  body .site-header .brand-name{font-size:1.2rem}

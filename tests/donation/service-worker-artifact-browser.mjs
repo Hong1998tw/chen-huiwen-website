@@ -544,8 +544,10 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert(aboutResponse, 'manifest-backed offline navigation must return a Service Worker fallback response');
   assert.equal(aboutResponse.status(), expectedOffline.status,
     'manifest-backed navigation fallback must preserve the cached fallback status');
-  assert.equal(aboutResponse.headers()['x-huiwen-cached-at'], expectedOffline.headers?.['x-huiwen-cached-at'],
-    'manifest-backed navigation must return the cached offline resource headers');
+  for (const header of ['content-type', 'cache-control', 'x-huiwen-cached-at']) {
+    assert.equal(aboutResponse.headers()[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation must preserve the cached offline ${header} header`);
+  }
   assert.deepEqual(aboutResponseBody, Buffer.from(expectedOffline.bodyBytes || []),
     'manifest-backed navigation must return the exact cached offline fallback body bytes');
   assert.match(aboutBodyText, /目前離線/);

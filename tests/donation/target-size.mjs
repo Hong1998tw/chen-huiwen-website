@@ -46,6 +46,56 @@ function addFailure(label, details) {
   report.failures.push({ label, details });
 }
 
+async function captureHorizontalOffenders(page) {
+  return page.evaluate(() => {
+    const round = value => Math.round(value * 100) / 100;
+    const selectorOf = element => {
+      if (element.id) return `${element.localName}#${element.id}`;
+      const classes = [...element.classList].slice(0, 4).map(name => `.${name}`).join('');
+      return `${element.localName}${classes}`;
+    };
+    const nodes = [document.documentElement, document.body, ...document.body.querySelectorAll('*')];
+    const offenders = nodes.map(element => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const boxOverflow = Math.max(0, -rect.left, rect.right - innerWidth);
+      const contentOverflow = Math.max(0, element.scrollWidth - element.clientWidth);
+      return {
+        selector: selectorOf(element),
+        text: (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+        rect: {
+          left: round(rect.left), right: round(rect.right), top: round(rect.top), bottom: round(rect.bottom),
+          width: round(rect.width), height: round(rect.height),
+        },
+        boxOverflowPx: round(boxOverflow),
+        contentOverflowPx: round(contentOverflow),
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        overflowX: style.overflowX,
+        whiteSpace: style.whiteSpace,
+        position: style.position,
+        minWidth: style.minWidth,
+        flex: style.flex,
+        gridTemplateColumns: style.gridTemplateColumns,
+        fontSize: style.fontSize,
+      };
+    }).filter(item => item.boxOverflowPx > 0.5 || item.contentOverflowPx > 1)
+      .sort((a, b) => Math.max(b.boxOverflowPx, b.contentOverflowPx) - Math.max(a.boxOverflowPx, a.contentOverflowPx))
+      .slice(0, 40);
+    return {
+      url: location.pathname,
+      viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+      document: {
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+        bodyClientWidth: document.body.clientWidth,
+      },
+      offenders,
+    };
+  });
+}
+
 async function evaluateTargets(page) {
   return page.evaluate(({ controlsSelector, primarySelector }) => {
     const min = 24;
@@ -314,6 +364,15 @@ try {
           await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
           await page.evaluate(() => new Promise(resolveFrame => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
           testCase.zoomMetrics = await evaluateTargets(page);
+          if (route.id === 'news-article') {
+            testCase.zoomOverflowDiagnostics = await captureHorizontalOffenders(page);
+            report.diagnostics.push({
+              route: route.id,
+              viewport: viewport.id,
+              mode: '200% root text scaling after shared header CSS',
+              ...testCase.zoomOverflowDiagnostics,
+            });
+          }
           if (testCase.zoomMetrics.horizontalOverflowPx > 1) addFailure('text-zoom-overflow:' + route.id, testCase.zoomMetrics.horizontalOverflowPx + 'px at 200% text scale');
           if (testCase.zoomMetrics.targetFailures.length || testCase.zoomMetrics.moreTargetFailures) addFailure('text-zoom-target-size:' + route.id, testCase.zoomMetrics.targetFailures);
           if (testCase.zoomMetrics.primaryFailures.length || testCase.zoomMetrics.morePrimaryFailures) addFailure('text-zoom-mobile-primary-size:' + route.id, testCase.zoomMetrics.primaryFailures);

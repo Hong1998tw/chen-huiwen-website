@@ -53,7 +53,7 @@ const cachePolicy = (() => {
 /* END HUIWEN SW CACHE POLICY */
 const CACHE='huiwen-digital-v15-20261008-route-font-subsets';
 const OFFLINE='./offline.html';
-const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-f5a135b4c68e.woff2'];
+const SHELL=['./index.html','./civic.css','./civic.js','./styles.css','./mobile.css','./home.css','./layout.css','./digital.css','./digital.js','./assets/favicon.svg','./assets/fonts/huiwen-site-sans/generated/huiwen-index-core-78b98ac16374.woff2'];
 const scopedRequest=url=>new Request(new URL(url,self.registration.scope));
 async function remember(cache,request,response) {
   if(!cachePolicy.canCache(request,response))return false;

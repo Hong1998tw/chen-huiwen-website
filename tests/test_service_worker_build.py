@@ -48,7 +48,7 @@ class _CompiledIndexResources(HTMLParser):
             return
         rel = set((values.get('rel') or '').lower().split())
         parsed = urlsplit(href)
-        if 'stylesheet' in rel and parsed.path.endswith('/styles.css'):
+        if 'stylesheet' in rel and Path(parsed.path).name == 'styles.css':
             self.stylesheet = href
         if ('preload' in rel and values.get('as', '').lower() == 'font'
                 and values.get('type', '').lower() == 'font/woff2'
@@ -69,7 +69,8 @@ def compiled_index_shell_resources(index_path: Path) -> tuple[str, str]:
 
 def shell_url_for_index_reference(raw: str) -> str:
     parsed = urlsplit(raw)
-    return '.' + parsed.path + (('?' + parsed.query) if parsed.query else '')
+    path = '.' + parsed.path if parsed.path.startswith('/') else './' + parsed.path
+    return path + (('?' + parsed.query) if parsed.query else '')
 
 
 class ServiceWorkerArtifactTests(unittest.TestCase):
