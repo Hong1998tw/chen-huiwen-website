@@ -4,10 +4,42 @@ import { join, resolve, sep } from 'node:path';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
-export const VISUAL_QA_SCHEMA_VERSION = 2;
+export const VISUAL_QA_SCHEMA_VERSION = 3;
 export const MAX_TRANSFER_BYTES = 300000;
 export const MAX_DOM_ELEMENTS = 1500;
 export const GIT_BASELINE_SELECTION_RELATIVE_PATH = 'tests/baselines/visual-qa/selection.json';
+const MAX_BASELINE_EXCEPTION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function parseZonedInstant(value) {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , zone, sign, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const daysInMonth = [31, (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1] ||
+      hour > 23 || minute > 59 || second > 59) return null;
+  if (zone !== 'Z') {
+    const offsetHour = Number(offsetHourText);
+    const offsetMinute = Number(offsetMinuteText);
+    if (offsetMinute > 59 || offsetHour > 14 || (offsetHour === 14 && offsetMinute !== 0)) return null;
+  }
+  const instant = Date.parse(value);
+  return Number.isFinite(instant) ? instant : null;
+}
+
+function exceptionExpiryProblem(exception, nowMs) {
+  const expiresAtMs = parseZonedInstant(exception?.expiresAt);
+  if (expiresAtMs == null) return 'BASELINE_EXCEPTION_EXPIRY_INVALID';
+  if (!Number.isFinite(nowMs)) return 'BASELINE_EXCEPTION_CLOCK_INVALID';
+  if (nowMs >= expiresAtMs) return 'BASELINE_EXCEPTION_EXPIRED';
+  return null;
+}
 
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -45,8 +77,9 @@ export async function readApprovedBaseline({ manifestPath, expectedSha256, expec
   if (!manifest.approval?.reviewedBy || !manifest.approval?.reviewedAt || !manifest.approval?.note) {
     return { status: 'REJECTED', reason: 'APPROVAL_RECORD_INCOMPLETE', actualSha256 };
   }
-  if (!/^[a-f0-9]{40}$/i.test(expectedSourceSha) || (manifest.checkoutSHA ?? manifest.sourceSHA) !== expectedSourceSha ||
-      (manifest.checkoutSHA && manifest.sourceSHA && manifest.checkoutSHA !== manifest.sourceSHA)) {
+  if (!/^[a-f0-9]{40}$/i.test(expectedSourceSha) || manifest.sourceSHA !== expectedSourceSha ||
+      manifest.siteSourceSHA !== expectedSourceSha || manifest.checkoutSHA !== manifest.captureToolSHA ||
+      !/^[a-f0-9]{40}$/i.test(manifest.captureToolSHA ?? '')) {
     return { status: 'REJECTED', reason: 'BASELINE_SOURCE_SHA_MISMATCH', actualSha256 };
   }
   if (!Array.isArray(manifest.captures) || manifest.captures.length !== 30) {
@@ -54,7 +87,8 @@ export async function readApprovedBaseline({ manifestPath, expectedSha256, expec
   }
   const captureIds = new Set();
   for (const capture of manifest.captures) {
-    if ((capture?.checkoutSHA ?? capture?.sourceSHA) !== expectedSourceSha) {
+    if (capture?.sourceSHA !== expectedSourceSha || capture?.siteSourceSHA !== expectedSourceSha ||
+        capture?.checkoutSHA !== manifest.captureToolSHA || capture?.captureToolSHA !== manifest.captureToolSHA) {
       return { status: 'REJECTED', reason: 'BASELINE_CAPTURE_SOURCE_SHA_MISMATCH', actualSha256 };
     }
     if (!capture || typeof capture.id !== 'string' || !/^[a-z0-9-]+$/.test(capture.id) || captureIds.has(capture.id) ||
@@ -284,11 +318,19 @@ export function compareCaptureConditions(candidate, baseline) {
   return { comparable: true, reason: null };
 }
 
-export function validateBaselineExceptions(manifest) {
+export function validateBaselineExceptions(manifest, { now = new Date() } = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
   const byCapture = new Map();
   for (const exception of manifest.exceptions ?? []) {
     const key = `${exception.captureId}:${exception.metric}`;
     if (byCapture.has(key)) return { valid: false, reason: 'DUPLICATE_BASELINE_EXCEPTION' };
+    const expiryProblem = exceptionExpiryProblem(exception, nowMs);
+    if (expiryProblem) return { valid: false, reason: expiryProblem };
+    const approvalAtMs = parseZonedInstant(manifest.approval?.reviewedAt);
+    if (approvalAtMs == null || approvalAtMs > nowMs) return { valid: false, reason: 'BASELINE_EXCEPTION_APPROVAL_TIME_INVALID' };
+    if (parseZonedInstant(exception.expiresAt) > approvalAtMs + MAX_BASELINE_EXCEPTION_TTL_MS) {
+      return { valid: false, reason: 'BASELINE_EXCEPTION_TTL_EXCEEDS_30_DAYS' };
+    }
     const capture = manifest.captures.find(item => item.id === exception.captureId);
     if (!capture || !["domElementCount", "sameOriginTransferSizeBytes"].includes(exception.metric)) {
       return { valid: false, reason: 'BASELINE_EXCEPTION_TARGET_INVALID' };
@@ -320,7 +362,8 @@ export function validateBaselineExceptions(manifest) {
   return { valid: true };
 }
 
-export function compareMetrics(candidate, baseline, exceptions = []) {
+export function compareMetrics(candidate, baseline, exceptions = [], { now = new Date() } = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
   const exceptionByMetric = new Map(exceptions
     .filter(item => item.captureId === baseline.id)
     .map(item => [item.metric, item]));
@@ -339,16 +382,17 @@ export function compareMetrics(candidate, baseline, exceptions = []) {
       continue;
     }
     const exception = exceptionByMetric.get(metric);
+    const expiryProblem = exception ? exceptionExpiryProblem(exception, nowMs) : null;
     if (exception && after <= limit) staleExceptions.push({ captureId: baseline.id, metric, oldObservedValue: exception.observedValue, currentValue: after });
     const newRegression = after > before;
     const overBudgetWithoutException = after > limit && !exception;
     const exceptionMeasurementChanged = exception && (exception.observedValue !== before || exception.limit !== limit);
-    const passed = !newRegression && !overBudgetWithoutException && !exceptionMeasurementChanged;
+    const passed = !expiryProblem && !newRegression && !overBudgetWithoutException && !exceptionMeasurementChanged;
     if (!passed) regression = true;
     results.push({
       metric,
       status: passed ? 'PASS' : 'FAIL',
-      reason: newRegression ? 'NEW_REGRESSION' : overBudgetWithoutException ? 'ABSOLUTE_BUDGET_EXCEEDED' : exceptionMeasurementChanged ? 'BASELINE_EXCEPTION_MISMATCH' : null,
+      reason: expiryProblem ?? (newRegression ? 'NEW_REGRESSION' : overBudgetWithoutException ? 'ABSOLUTE_BUDGET_EXCEEDED' : exceptionMeasurementChanged ? 'BASELINE_EXCEPTION_MISMATCH' : null),
       before,
       after,
       limit,
@@ -429,7 +473,8 @@ export async function verifyCaptureMetadata(manifestPath, capture) {
   const valid = sha256(bytes) === capture.metadataSha256;
   const metadata = valid ? JSON.parse(bytes.toString('utf8')) : null;
   const valuesMatch = metadata && metadata.id === capture.id &&
-    (metadata.checkoutSHA ?? metadata.sourceSHA) === (capture.checkoutSHA ?? capture.sourceSHA) &&
+    metadata.sourceSHA === capture.sourceSHA && metadata.siteSourceSHA === capture.siteSourceSHA &&
+    metadata.captureToolSHA === capture.captureToolSHA && metadata.checkoutSHA === capture.checkoutSHA &&
     metadata.metrics?.sameOriginTransferSizeBytes === capture.metrics?.sameOriginTransferSizeBytes &&
     metadata.metrics?.domElementCount === capture.metrics?.domElementCount &&
     metadata.environmentLabel === capture.environmentLabel &&

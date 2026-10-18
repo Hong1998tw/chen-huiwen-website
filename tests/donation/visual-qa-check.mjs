@@ -18,6 +18,8 @@ import {
   sha256,
   validateBaselineExceptions
 } from './visual-qa-lib.mjs';
+import { assertAllowedOptions, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 
 function png(width, height, color) {
   const image = new PNG({ width, height });
@@ -35,6 +37,8 @@ function approvedManifest(overrides = {}) {
   const captures = Array.from({ length: 30 }, (_, index) => ({
     id: `capture-${index}`,
     sourceSHA,
+    siteSourceSHA: sourceSHA,
+    captureToolSHA: sourceSHA,
     checkoutSHA: sourceSHA,
     screenshotPath: `capture-${index}.png`,
     metadataPath: `capture-${index}.json`,
@@ -45,9 +49,11 @@ function approvedManifest(overrides = {}) {
     metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 120, sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
   }));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: 'APPROVED',
     sourceSHA,
+    siteSourceSHA: sourceSHA,
+    captureToolSHA: sourceSHA,
     checkoutSHA: sourceSHA,
     approval: { reviewedBy: 'independent-controller', reviewedAt: '2026-10-18T00:00:00+08:00', note: 'Independently inspected baseline.' },
     comparisonPolicy: { pixelThreshold: 0.1, maxDiffRatio: 0.005 },
@@ -57,7 +63,7 @@ function approvedManifest(overrides = {}) {
   };
 }
 
-async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40)) {
+async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40), captureToolSHA = sourceSHA) {
   const baselineRoot = join(repositoryRoot, 'tests', 'baselines', 'visual-qa');
   const releaseDirectory = join(baselineRoot, sourceSHA);
   await mkdir(releaseDirectory, { recursive: true });
@@ -72,7 +78,9 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40)) {
     const capture = {
       id,
       sourceSHA,
-      checkoutSHA: sourceSHA,
+      siteSourceSHA: sourceSHA,
+      captureToolSHA,
+      checkoutSHA: captureToolSHA,
       screenshotPath,
       metadataPath,
       screenshotSha256,
@@ -87,8 +95,10 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40)) {
     };
     const metadata = {
       id,
-      checkoutSHA: sourceSHA,
       sourceSHA,
+      siteSourceSHA: sourceSHA,
+      captureToolSHA,
+      checkoutSHA: captureToolSHA,
       metrics: capture.metrics,
       environmentLabel: capture.environmentLabel,
       measurementScope,
@@ -102,10 +112,12 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40)) {
   }
 
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: 'APPROVED',
     sourceSHA,
-    checkoutSHA: sourceSHA,
+    siteSourceSHA: sourceSHA,
+    captureToolSHA,
+    checkoutSHA: captureToolSHA,
     environment: 'local-http-uncompressed',
     approval: { reviewedBy: 'independent-controller', reviewedAt: '2026-10-18T00:00:00+08:00', note: 'Inspected all 30 captures.' },
     comparisonPolicy: { pixelThreshold: 0.1, maxDiffRatio: 0.005 },
@@ -125,9 +137,228 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40)) {
   return { baselineRoot, releaseDirectory, manifestPath, manifest, selection };
 }
 
+async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { candidate = false } = {}) {
+  const policy = JSON.parse(await readFile(new URL('./visual-qa-policy.json', import.meta.url), 'utf8'));
+  const toolVersions = {
+    visualQaRunner: '1.0.0',
+    node: 'v24.1.0',
+    playwright: '1.55.1',
+    pixelmatch: '6.0.0',
+    chromium: '140.0.7339.186',
+  };
+  const baselinePolicy = {
+    viewportCount: policy.viewports.length,
+    routeCount: policy.routes.length,
+    expectedCaptureCount: 30,
+    budgets: policy.budgets,
+    comparisonPolicy: policy.comparison,
+    captureConditions: policy.capture,
+    exceptionCandidates: policy.routes.filter(route => route.exceptionCandidates?.length).map(route => ({ routeId: route.id, candidates: route.exceptionCandidates })),
+  };
+  const pngCache = new Map();
+  const captures = [];
+  await mkdir(bundleRoot, { recursive: true });
+  for (const route of policy.routes) {
+    for (const viewport of policy.viewports) {
+      const id = `${route.id}-${viewport.width}`;
+      const isChangedCandidate = candidate && id === 'home-390';
+      const color = isChangedCandidate ? [240, 10, 10] : [10, 20, 30];
+      const colorKey = `${viewport.width}:${viewport.height}:${color.join(',')}`;
+      if (!pngCache.has(colorKey)) pngCache.set(colorKey, png(viewport.width, viewport.height, color));
+      const screenshotBytes = pngCache.get(colorKey);
+      const screenshotPath = `${id}.png`;
+      const metadataPath = `${id}.json`;
+      const metrics = {
+        sameOriginTransferSizeBytes: 1200 + (isChangedCandidate ? 1 : 0),
+        domElementCount: 120 + (isChangedCandidate ? 2 : 0),
+        sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation',
+        sameOriginPerformanceTransferSizeBytes: 1200,
+        sameOriginEncodedDataLengthBytes: 1200,
+      };
+      const capture = {
+        id,
+        routeId: route.id,
+        routePath: route.path,
+        template: route.template,
+        exceptionCandidates: route.exceptionCandidates ?? [],
+        viewport,
+        environment: 'local-http-uncompressed',
+        environmentLabel: 'local-http-identity',
+        measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
+        sourceSHA,
+        siteSourceSHA: sourceSHA,
+        captureToolSHA,
+        checkoutSHA: captureToolSHA,
+        liveDeployment: null,
+        targetUrl: `http://127.0.0.1:8765/${route.path}`,
+        screenshotPath,
+        screenshotEnabled: true,
+        screenshotSha256: sha256(screenshotBytes),
+        metadataPath,
+        capturedAt: '2026-10-19T00:00:00.000Z',
+        browserVersion: toolVersions.chromium,
+        toolVersion: '1.0.0; Playwright 1.55.1',
+        toolVersions: { visualQaRunner: toolVersions.visualQaRunner, playwright: toolVersions.playwright },
+        initialRequest: policy.capture.initialRequest,
+        conditions: {
+          locale: policy.capture.locale,
+          timezoneId: policy.capture.timezoneId,
+          fixedDate: policy.capture.fixedDate,
+          deviceScaleFactor: policy.capture.deviceScaleFactor,
+          reducedMotion: policy.capture.reducedMotion,
+          serviceWorkers: 'blocked',
+          browserCache: 'disabled per context',
+          fontsReady: true,
+          animationsFinished: true,
+          activeAnimationsStabilized: 0,
+          dynamicMasks: policy.capture.dynamicMasks,
+        },
+        httpStatus: route.expectedHttpStatus ?? 200,
+        expectedHttpStatus: route.expectedHttpStatus ?? 200,
+        pageErrors: [],
+        navigationError: null,
+        screenshotError: null,
+        environmentVerification: {
+          status: 'VERIFIED',
+          requestedMode: 'local-http-uncompressed',
+          originHost: '127.0.0.1',
+          cloudflareVerified: false,
+          documentContentEncoding: 'identity',
+          encodingValid: true,
+          deploymentWindowStatus: null,
+        },
+        imageState: { visibleImageCount: 0, decodedImageCount: 0, failedImageCount: 0, firstPartyFailedImageCount: 0, thirdPartyFailedImageCount: 0, visibleImages: [] },
+        metrics,
+        budgetObservation: {
+          transferLimitBytes: policy.budgets.sameOriginTransferSizeBytes,
+          transferWithinLimit: metrics.sameOriginTransferSizeBytes <= policy.budgets.sameOriginTransferSizeBytes,
+          domLimit: policy.budgets.domElementCount,
+          domWithinLimit: metrics.domElementCount <= policy.budgets.domElementCount,
+          enforcement: 'OBSERVATION_ONLY_UNTIL_BASELINE_APPROVED',
+        },
+        network: [],
+        captureQuality: { status: 'COMPLETE', firstPartyRequestFailureCount: 0, thirdPartyFailureCount: 0, thirdPartyPageErrorCount: 0, unclassifiedPageErrorCount: 0 },
+      };
+      const metadataBytes = Buffer.from(`${JSON.stringify(capture, null, 2)}\n`);
+      capture.metadataSha256 = sha256(metadataBytes);
+      await writeFile(join(bundleRoot, screenshotPath), screenshotBytes);
+      await writeFile(join(bundleRoot, metadataPath), metadataBytes);
+      captures.push(capture);
+    }
+  }
+  const manifest = {
+    schemaVersion: 3,
+    status: 'CAPTURE_ONLY',
+    baselineApproval: null,
+    approval: null,
+    exceptions: [],
+    environment: 'local-http-uncompressed',
+    baseUrl: 'http://127.0.0.1:8765',
+    sourceSHA,
+    siteSourceSHA: sourceSHA,
+    captureToolSHA,
+    checkoutSHA: captureToolSHA,
+    capturedAt: '2026-10-19T00:00:00.000Z',
+    toolVersions,
+    policy: baselinePolicy,
+    comparisonPolicy: policy.comparison,
+    counts: { captures: 30, screenshots: 30, failedCaptures: 0, environmentVerificationFailures: 0 },
+    captures,
+  };
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(join(bundleRoot, 'manifest.json'), manifestBytes);
+  await writeFile(join(bundleRoot, 'manifest.sha256'), `${sha256(manifestBytes)}  manifest.json\n`);
+  return { manifestPath: join(bundleRoot, 'manifest.json'), manifest };
+}
+
 test('missing baseline stays PENDING and never reports a comparison pass', async () => {
   const missing = await readApprovedBaseline({ manifestPath: null, expectedSha256: null, expectedSourceSha: null });
   assert.deepEqual(missing, { status: 'PENDING', reason: 'BASELINE_MISSING' });
+});
+
+test('A-05 resolves site and capture-tool Git identities separately and rejects unsafe output or SHA overrides', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-independent-source-'));
+  const runnerRoot = join(directory, 'capture-tool');
+  const siteRoot = join(directory, 'site-source');
+  const outputRoot = join(directory, 'capture-output');
+  const defaultOutput = join(runnerRoot, 'tests', 'donation', 'results', 'visual-qa');
+  try {
+    await mkdir(runnerRoot, { recursive: true });
+    await mkdir(siteRoot, { recursive: true });
+    await writeFile(join(runnerRoot, 'runner.mjs'), 'export const runnerFixture = true;\n');
+    await writeFile(join(siteRoot, 'index.html'), '<main>source fixture</main>\n');
+    const gitAt = (repositoryRoot, args) => {
+      const result = spawnSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    for (const repositoryRoot of [runnerRoot, siteRoot]) {
+      gitAt(repositoryRoot, ['init', '-q']);
+      gitAt(repositoryRoot, ['config', 'user.name', 'A05 fixture']);
+      gitAt(repositoryRoot, ['config', 'user.email', 'a05-fixture@example.invalid']);
+      gitAt(repositoryRoot, ['add', '.']);
+      gitAt(repositoryRoot, ['commit', '-q', '-m', 'fixture checkout']);
+    }
+    const siteSha = gitAt(siteRoot, ['rev-parse', 'HEAD']);
+    const result = await resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: outputRoot, defaultOutput });
+    const toolSha = gitAt(runnerRoot, ['rev-parse', 'HEAD']);
+    assert.equal(result.siteSourceSHA, siteSha);
+    assert.equal(result.captureToolSHA, toolSha);
+    assert.notEqual(result.siteSourceSHA, result.captureToolSHA);
+    assert.equal(result.independentSiteSource, true);
+
+    const siteAlias = join(directory, 'site-source-alias');
+    await symlink(siteRoot, siteAlias, 'dir');
+    await assert.rejects(
+      resolveCaptureRoots({ runnerRoot, siteRoot: siteAlias, outputDir: join(directory, 'alias-output'), defaultOutput }),
+      /site source root must be a real directory/
+    );
+    await assert.rejects(resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: join(siteRoot, 'capture-output'), defaultOutput }), /must not overlap/);
+    await writeFile(join(siteRoot, 'index.html'), '<main>dirty source fixture</main>\n');
+    await assert.rejects(resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: join(directory, 'other-output'), defaultOutput }), /must be clean/);
+    gitAt(siteRoot, ['checkout', '--', 'index.html']);
+    await writeFile(join(runnerRoot, 'runner.mjs'), 'export const runnerFixture = false;\n');
+    await assert.rejects(resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: join(directory, 'dirty-tool-output'), defaultOutput }), /Capture tool worktree must be clean/);
+    assert.throws(() => assertAllowedOptions('capture', { environment: 'local-http-uncompressed', 'source-sha': siteSha }), /Unsupported capture option/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('A-05 cross-source review verifies both capture bundles and emits review diffs without selecting a golden', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-cross-source-review-'));
+  const runnerSha = 'f'.repeat(40);
+  const referenceSourceSha = 'a'.repeat(40);
+  const candidateSourceSha = runnerSha;
+  const reference = await writeCrossSourceBundle(join(directory, 'reference'), referenceSourceSha, runnerSha);
+  const candidate = await writeCrossSourceBundle(join(directory, 'candidate'), candidateSourceSha, runnerSha, { candidate: true });
+  const reviewOutput = join(directory, 'cross-source-review');
+  try {
+    const report = await createCrossSourceReview({
+      referenceManifestPath: reference.manifestPath,
+      candidateManifestPath: candidate.manifestPath,
+      outputDir: reviewOutput,
+    });
+    assert.equal(report.status, 'CROSS_SOURCE_REVIEW');
+    assert.equal(report.reviewRequired, true);
+    assert.equal(report.pass, null);
+    assert.equal(report.approval, null);
+    assert.equal(report.baselineSelected, false);
+    assert.equal(report.summary.captureCount, 30);
+    assert.equal(report.summary.capturesWithPixelChanges, 1);
+    assert.equal(report.summary.newMetricRegressionCount, 2);
+    assert.equal(report.summary.exceptionAppliedCount, 0);
+    assert.equal(report.captures[0].pixelReview.withinConfiguredThreshold, false);
+    assert.equal(report.captures[0].metrics[0].delta, 1);
+    assert.equal((await readFile(join(reviewOutput, report.captures[0].pixelReview.diffPath))).length > 0, true);
+    await assert.rejects(createCrossSourceReview({
+      referenceManifestPath: reference.manifestPath,
+      candidateManifestPath: candidate.manifestPath,
+      outputDir: reviewOutput,
+    }), /must not already exist/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('compare CLI writes PENDING and exits successfully when the baseline has not been approved', async () => {
@@ -167,12 +398,17 @@ test('the fixed Git selection is PENDING when it has not been created', async ()
   }
 });
 
-test('the Git selection accepts a complete approved, hash-matched 30-capture bundle', async () => {
+test('the Git selection accepts a complete approved bundle with independent site and capture-tool SHAs', async () => {
   const repositoryRoot = await mkdtemp(join(tmpdir(), 'a05-git-selection-valid-'));
   try {
-    const bundle = await writeGitBaseline(repositoryRoot);
+    const sourceSHA = 'd'.repeat(40);
+    const captureToolSHA = 'e'.repeat(40);
+    const bundle = await writeGitBaseline(repositoryRoot, sourceSHA, captureToolSHA);
     const selected = await readGitBaselineSelection({ repositoryRoot });
     assert.equal(selected.status, 'APPROVED');
+    assert.equal(selected.manifest.sourceSHA, sourceSHA);
+    assert.equal(selected.manifest.siteSourceSHA, sourceSHA);
+    assert.equal(selected.manifest.captureToolSHA, captureToolSHA);
     assert.equal(selected.sourceType, 'git-selection');
     assert.equal(selected.selectionPath, 'tests/baselines/visual-qa/selection.json');
     assert.equal(selected.manifestPath, await realpath(bundle.manifestPath));
@@ -444,7 +680,7 @@ test('metric comparison catches a new regression against an approved baseline', 
 test('a resolved exception makes its old approved baseline stale and requires re-approval', () => {
   const baseline = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1800 } };
   const candidate = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1400 } };
-  const exceptions = [{ captureId: 'gallery-390', metric: 'domElementCount', limit: 1500, observedValue: 1800 }];
+  const exceptions = [{ captureId: 'gallery-390', metric: 'domElementCount', limit: 1500, observedValue: 1800, expiresAt: '2026-10-30T00:00:00+08:00' }];
   const result = compareMetrics(candidate, baseline, exceptions);
   assert.equal(result.status, 'STALE_BASELINE');
   assert.equal(result.staleExceptions[0].currentValue, 1400);
@@ -468,11 +704,44 @@ test('an over-budget baseline exception must match captured measurement and incl
     observedValue: 1800,
     reason: 'Measured gallery nodes retained for the active gallery view.',
     resolutionTask: 'Review the measured gallery DOM and reduce initial nodes without removing the browse flow.',
-    evidencePath: 'gallery-390.json'
+    evidencePath: 'gallery-390.json',
+    expiresAt: '2026-10-30T00:00:00+08:00'
   };
-  assert.deepEqual(validateBaselineExceptions({ captures, exceptions: [exception] }), { valid: true });
-  assert.equal(validateBaselineExceptions({ captures, exceptions: [{ ...exception, observedValue: 6380 }] }).reason, 'BASELINE_EXCEPTION_MEASUREMENT_MISMATCH');
-  assert.equal(validateBaselineExceptions({ captures, exceptions: [{ ...exception, resolutionTask: '' }] }).reason, 'BASELINE_EXCEPTION_EVIDENCE_INCOMPLETE');
+  const manifest = {
+    approval: { reviewedAt: '2026-10-18T00:00:00+08:00' },
+    captures,
+    exceptions: [exception],
+  };
+  assert.deepEqual(validateBaselineExceptions(manifest, { now: new Date('2026-10-19T00:00:00+08:00') }), { valid: true });
+  assert.equal(validateBaselineExceptions({ ...manifest, exceptions: [{ ...exception, observedValue: 6380 }] }, { now: new Date('2026-10-19T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_MEASUREMENT_MISMATCH');
+  assert.equal(validateBaselineExceptions({ ...manifest, exceptions: [{ ...exception, resolutionTask: '' }] }, { now: new Date('2026-10-19T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_EVIDENCE_INCOMPLETE');
+  assert.equal(validateBaselineExceptions({ ...manifest, exceptions: [{ ...exception, expiresAt: '2026-10-30T00:00:00' }] }, { now: new Date('2026-10-19T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_EXPIRY_INVALID');
+  assert.equal(validateBaselineExceptions({ ...manifest, exceptions: [{ ...exception, expiresAt: '2026-02-30T00:00:00+08:00' }] }, { now: new Date('2026-10-19T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_EXPIRY_INVALID');
+  assert.equal(validateBaselineExceptions(manifest, { now: new Date('2026-10-30T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_EXPIRED');
+  assert.equal(validateBaselineExceptions({ ...manifest, exceptions: [{ ...exception, expiresAt: '2026-11-18T00:00:00+08:00' }] }, { now: new Date('2026-10-19T00:00:00+08:00') }).reason, 'BASELINE_EXCEPTION_TTL_EXCEEDS_30_DAYS');
+});
+
+test('an active exception cannot produce a comparison pass at or after expiresAt', () => {
+  const baseline = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1800 } };
+  const candidate = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1800 } };
+  const exception = { captureId: 'gallery-390', metric: 'domElementCount', limit: 1500, observedValue: 1800, expiresAt: '2026-10-30T00:00:00+08:00' };
+  const beforeExpiry = compareMetrics(candidate, baseline, [exception], { now: new Date('2026-10-29T23:59:59+08:00') });
+  assert.equal(beforeExpiry.status, 'PASS');
+  const worseExceptionMetric = compareMetrics({
+    ...candidate,
+    metrics: { ...candidate.metrics, domElementCount: 1801 },
+  }, baseline, [exception], { now: new Date('2026-10-29T23:59:59+08:00') });
+  assert.equal(worseExceptionMetric.status, 'FAIL');
+  assert(worseExceptionMetric.metrics.some(item => item.metric === 'domElementCount' && item.reason === 'NEW_REGRESSION'));
+  const worseOtherMetric = compareMetrics({
+    ...candidate,
+    metrics: { ...candidate.metrics, sameOriginTransferSizeBytes: 1201 },
+  }, baseline, [exception], { now: new Date('2026-10-29T23:59:59+08:00') });
+  assert.equal(worseOtherMetric.status, 'FAIL');
+  assert(worseOtherMetric.metrics.some(item => item.metric === 'sameOriginTransferSizeBytes' && item.reason === 'NEW_REGRESSION'));
+  const atExpiry = compareMetrics(candidate, baseline, [exception], { now: new Date('2026-10-30T00:00:00+08:00') });
+  assert.equal(atExpiry.status, 'FAIL');
+  assert(atExpiry.metrics.some(item => item.reason === 'BASELINE_EXCEPTION_EXPIRED'));
 });
 
 test('approved baseline source SHA is checked independently from its content hash', async () => {

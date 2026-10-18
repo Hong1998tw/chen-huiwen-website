@@ -81,9 +81,21 @@
 
 PR browser 與 Production browser 使用 `WCAG22AA_TARGET_SIZE_MODE` 精確選擇 `capture-pending` 或 `compare`；未設定時為 `capture-pending`。此模式輸出目前 target-size 違規、量測結果與例外證據，gate 標示 `capture-pending`，已知基準數維持 `null`，不宣稱比較或通過；同時其他 axe 嚴格斷言照常執行。零筆目前 entries 也不會核定成零違規基準。
 
-PR 使用 `tests/donation/wcag22aa-baseline.json` 與 `full-site-candidate-qa` scope；Production 使用獨立的 `tests/donation/wcag22aa-production-baseline.json` 與 `production-live-core-pages-default` scope。只有明確設定 `WCAG22AA_TARGET_SIZE_MODE=compare` 才進行比較；必須有相同 scope、真實 workflow run／artifact 來源、相符 axe 版本、明確 entries（零筆時也須為已核准的空陣列），且每筆既有違規都有人工作成 WCAG 2.5.8 例外判定與理由，否則 fail closed。核准後新增 selector／viewport 違規、已修復項目未自基準移除、或無法量得完整 target 尺寸都會使比較失敗。readiness 與 lifecycle runner 保留原有 strict-zero target-size gate。
+PR 使用 `tests/donation/wcag22aa-baseline.json` 與 `candidate-core-pages-15x2` scope；Production 使用獨立的 `tests/donation/wcag22aa-production-baseline.json` 與 `production-live-core-pages-default` scope。候選 A-06 基準只涵蓋 `core-page-default` 的 15 個頁面 × 390×844、1440×960 CSS px：`index.html`、`about.html`、`achievements.html`、`vision.html`、`news.html`、`press.html`、`activities.html`、`gallery.html`、`service.html`、`petition.html`、`political-donation.html`、`election.html`、`404.html`、`offline.html`、`achievement-wende-school-center.html`。此矩陣不包含全站其餘頁面、額外互動角色、200% 放大或選後分頁；G-04 原有的 24／44px、200% 與窄螢幕檢查仍由原流程執行。
+
+只有明確設定 `WCAG22AA_TARGET_SIZE_MODE=compare` 才進行比較；必須有相同 scope、真實 workflow run／artifact 來源、相符 axe 版本、明確 entries（零筆時也須為已核准的空陣列），且每筆既有違規都有人工作成 WCAG 2.5.8 例外判定與理由，否則 fail closed。報告列出預期與完成的 route × viewport × scenario、axe target-size 違規數、無法量測數、工具 Git SHA、source／native run／artifact URL 與 Node／Playwright／axe／Chromium 版本。缺 route、未完成掃描或任何無法量測項目都 fail closed；零 entries 只有在 30 組掃描完整且 measurement errors 為零時才可交主控審查，不會自動成為零違規基準。核准後新增 selector／viewport 違規、已修復項目未自基準移除、或無法量得完整 target 尺寸都會使比較失敗。readiness 與 lifecycle runner 保留原有 strict-zero target-size gate。
 
 Browser CI 會把 route、viewport、scenario、axe selector、量得的 CSS bounding box、axe check／exception 證據與基準狀態輸出到 `tests/donation/results/wcag22aa-target-size.json`。複合 frame／shadow selector 暫不以宿主元素或路徑片段代替；無法解析完整 target 時記為 `unresolved`，compare 會失敗並保留診斷。
+
+從下載並解壓的 `full-site-browser-qa` 原生 artifact 產生待審提案時，先核對 GitHub Actions run 與 artifact 身分，再執行：
+
+```sh
+node tests/donation/wcag22aa-baseline-proposal.mjs \
+  --artifact-dir /absolute/path/to/extracted/full-site-browser-qa \
+  --output /private/tmp/wcag22aa-baseline-proposal.json
+```
+
+提案工具會同時驗證 `wcag22aa-target-size.json` 與 `browser-report.json`、schema、完整 30 組 coverage、source／工具／runtime 來源、違規計數及 measurement errors。它只建立新的 `pending-human-review` 檔案，拒絕覆寫 PR 或 Production baseline；主控仍須讀回原生 CI run/artifact、逐筆審查 axe 與 WCAG 2.5.8 證據後，才可另行核准基準。
 
 自動 axe 規則只提供工具能檢查的頁面線索，不等於完整 WCAG 2.2 AA 符合性認證。WCAG 2.5.8 例外、控制用途與上下文仍須人工覆核；鍵盤、真實輔助科技及其他無法由該規則確認的項目仍按各自流程檢查。
 
