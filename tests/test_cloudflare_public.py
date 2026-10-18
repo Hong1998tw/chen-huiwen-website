@@ -64,6 +64,12 @@ class StaticDeliveryTests(unittest.TestCase):
         self.assertIn('contents: read',text)
         self.assertNotIn('secrets.',text)
         self.assertNotIn('wrangler deploy',text)
+    def test_live_security_header_and_asset_check_follows_exact_receipt(self):
+        text=(ROOT/'.github/workflows/cloudflare-public.yml').read_text()
+        receipt=text.index('python scripts/verify_cloudflare_delivery.py')
+        security=text.index('python scripts/verify_security_headers.py')
+        self.assertGreater(security,receipt)
+        self.assertIn('--artifact-root _site',text[security:])
 
 if __name__=='__main__':
     unittest.main()

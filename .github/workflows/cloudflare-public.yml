@@ -25,6 +25,12 @@ jobs:
         run: python scripts/build_cloudflare_public.py
       - name: Wait for the exact source revision and artifact at the production origin
         run: python scripts/verify_cloudflare_delivery.py
+      - name: Verify live security headers and immutable asset bytes
+        run: >
+          python scripts/verify_security_headers.py
+          --base-url https://www.huiwen.tw
+          --artifact-root _site
+          --report tests/donation/results/cloudflare-public-delivery/security-headers.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -39,10 +39,11 @@ Static Assets 的 `_headers` 由 `scripts/build_cloudflare_public.py` 的 `SECUR
 部署後唯讀驗收（不修改任何設定）：
 
 ```bash
-python3 scripts/verify_security_headers.py --base-url https://www.huiwen.tw
+python3 scripts/build_cloudflare_public.py
+python3 scripts/verify_security_headers.py --base-url https://www.huiwen.tw --artifact-root _site
 ```
 
-腳本逐一檢查 `/`、`/index.html`、`/about.html`、`/site.js`、`/styles.css`、`/data/search-index.json`、圖片、`/mktexp26/`、`/deployment.json` 與 404 探針，列出 URL、時間、狀態碼、是否重新導向與實際標頭；任一缺漏或異常 exit 1。本機可用 `wrangler dev --local` 對建好的 `_site` 預跑。回復：revert 該提交後依現行部署流程重新部署，或使用 Cloudflare Workers 的前一個 deployment。
+腳本逐一檢查 `/`、`/index.html`、`/about.html`、`/site.js`、`/styles.css`、`/data/search-index.json`、圖片、`/mktexp26/`、`/deployment.json` 與 404 探針；另依本次本機建置的 `publication-manifest.json` 逐檔驗證已 hash 的 CMS runtime 與 generated WOFF2 回應之 Cache-Control 和 SHA-256 bytes。報告列出 URL、時間、狀態碼、重新導向、實際標頭及預期／觀察 hash；任一缺漏或異常 exit 1。本機可用 `wrangler dev --local` 對建好的 `_site` 預跑。回復：revert 該提交後依現行部署流程重新部署，或使用 Cloudflare Workers 的前一個 deployment。
 
 ## 2026-09-29 pre-change baseline
 
