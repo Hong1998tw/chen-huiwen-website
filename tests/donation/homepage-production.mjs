@@ -5,7 +5,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {assertWithHomeDiagnostics} from './homepage-diagnostics.mjs';
-
+import {assertNoHorizontalOverflow,captureLayoutDiagnostics} from './layout-diagnostics.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=root+'tests/donation/results/homepage-production/';
 await mkdir(out,{recursive:true});
@@ -30,9 +30,11 @@ try{
    try{new PerformanceObserver(list=>window.__homeLcp.push(...list.getEntries().map(entry=>entry.renderTime||entry.loadTime||entry.startTime))).observe({type:'largest-contentful-paint',buffered:true});}catch{}
   });
   page.on('pageerror',e=>report.errors.push(String(e)));
-  await page.goto(base);await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(250);
+  await page.goto(base);await page.evaluate(()=>document.fonts.ready);
+  for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
+  await page.waitForTimeout(250);
   const initial=await page.evaluate(()=>({lcp:window.__homeLcp.at(-1)||null,height:document.documentElement.scrollHeight}));
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-layout`});
   assert.equal(await page.locator('h1').count(),1);
   const main=page.locator('main.home-redesign');
   assert.deepEqual(await main.locator(':scope > section').evaluateAll(xs=>xs.map(x=>x.id||null)),[null,'recent','home-local-progress','council','contact']);
@@ -120,6 +122,14 @@ try{
   const controls=await page.locator('#home-village').evaluate(el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width,clientWidth:el.clientWidth,scrollWidth:el.scrollWidth};});
   assert(controls.left>=0&&controls.right<=width,JSON.stringify(controls));
   assert(controls.scrollWidth<=controls.clientWidth,JSON.stringify(controls));
+  await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-layout`});
+  const legalLayout=await page.locator('main [data-home-legal-month]').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{left:r.left,right:r.right,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,whiteSpace:s.whiteSpace};});
+  if(legalLayout.height<44||legalLayout.left<0||legalLayout.right>width||legalLayout.scrollWidth>legalLayout.clientWidth||legalLayout.scrollHeight>legalLayout.clientHeight||legalLayout.whiteSpace!=='normal')await captureLayoutDiagnostics(page,{directory:out+'diagnostics/',label:`homepage-${width}-text-200-legal-layout`,error:'legal shortcut 200% reflow assertion failed',extra:{legalLayout}});
+  assert(legalLayout.height>=44,JSON.stringify(legalLayout));
+  assert(legalLayout.left>=0&&legalLayout.right<=width,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollWidth<=legalLayout.clientWidth,JSON.stringify(legalLayout));
+  assert(legalLayout.scrollHeight<=legalLayout.clientHeight,JSON.stringify(legalLayout));
+  assert.equal(legalLayout.whiteSpace,'normal');
   await page.screenshot({path:out+`home-${width}-text-200-top.png`});
   report.checks.push({width,sourceParity:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp});
   await ctx.close();

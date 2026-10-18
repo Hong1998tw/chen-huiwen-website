@@ -1,10 +1,15 @@
 """Keep the shared site contact strip inside a named landmark."""
 from html.parser import HTMLParser
 from pathlib import Path
+import sys
+import tempfile
 import unittest
+from bs4 import BeautifulSoup
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from build_shared import canonical_service_phone
 VOID_ELEMENTS = {
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
     "meta", "param", "source", "track", "wbr",
@@ -92,6 +97,36 @@ class SharedToplineLandmarkTests(unittest.TestCase):
             failures,
             f"{len(failures)} landmark/content issue(s):\n" + "\n".join(failures[:20]),
         )
+
+    def test_mobile_header_phone_is_generated_from_canonical_service_contact(self):
+        service = BeautifulSoup((ROOT / "service.html").read_text(), "html.parser")
+        canonical = service.select_one("#contact .contact-card a.big-phone")
+        number = canonical.select_one(".phone-number")
+        href, display = canonical_service_phone(ROOT)
+        self.assertEqual(href, canonical["href"])
+        self.assertEqual(display, number.get_text(" ", strip=True))
+
+        pages = [path for path in ROOT.glob("*.html")
+                 if "<!-- shared-header:start -->" in path.read_text()]
+        for path in pages:
+            document = BeautifulSoup(path.read_text(), "html.parser")
+            phone = document.select_one(".site-header a.header-phone")
+            self.assertIsNotNone(phone, f"{path.name}: mobile header phone missing")
+            self.assertEqual(phone["href"], href, f"{path.name}: phone URL drifted")
+            self.assertIn(display, phone["aria-label"], f"{path.name}: phone label drifted")
+            role = document.select_one(".site-header .brand-role")
+            self.assertIn("高雄市議員", role.get_text(" ", strip=True), path.name)
+            self.assertIn("鳳山區", role.get_text(" ", strip=True), path.name)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "service.html").write_text(
+                '<section id="contact"><div class="contact-card">'
+                '<a class="big-phone" href="tel:+88675551234">'
+                '<span class="phone-number">07-555-1234</span></a>'
+                '</div></section>'
+            )
+            self.assertEqual(canonical_service_phone(root), ("tel:+88675551234", "07-555-1234"))
 
 
 if __name__ == "__main__":

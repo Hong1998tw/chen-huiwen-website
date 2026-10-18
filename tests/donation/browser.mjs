@@ -16,6 +16,7 @@ import {
   targetSizeGateMessage,
 } from './wcag22aa.mjs';
 import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
+import { assertNoHorizontalOverflow, captureLayoutDiagnostics, findVisibleClickPoint } from './layout-diagnostics.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
@@ -23,10 +24,11 @@ const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MO
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
-const report = { scope: 'Full-site candidate QA', checks: [], failures: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
+const report = { scope: 'Full-site candidate QA', checks: [], failures: [], diagnostics: [], interactions: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
 const targetSizeBaseline = await readTargetSizeBaseline();
 const targetSizeEntries = [];
 let browser;
+let diagnosticPage;
 
 async function check(name, fn) {
   try {
@@ -35,7 +37,22 @@ async function check(name, fn) {
   } catch (error) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
     report.failures.push(name);
+    if (diagnosticPage && /horizontal overflow|navigation, layout|G06 mobile header|mobile menu|no JavaScript|CLS/i.test(name) && !String(error).includes('horizontal overflow')) {
+      try {
+        const evidence = await captureLayoutDiagnostics(diagnosticPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:name,error});
+        report.diagnostics.push(evidence.files);
+      } catch (diagnosticError) {
+        report.diagnostics.push({label:name,error:String(diagnosticError)});
+      }
+    }
   }
+}
+
+async function assertWithinHalfPixel(page, label, actual, expected) {
+  if (Math.abs(actual - expected) > 0.5) {
+    await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label,error:`${label}: ${actual}px differs from ${expected}px`});
+  }
+  assert(Math.abs(actual - expected) <= 0.5, `${label}: ${actual}px differs from ${expected}px by more than 0.5px`);
 }
 
 function largestCls(shifts) {
@@ -63,6 +80,7 @@ try {
   });
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
+  diagnosticPage = page;
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
   const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
   const mapRecords = JSON.parse(await readFile(new URL('../../data/achievement-map.json', import.meta.url)));
@@ -83,7 +101,7 @@ try {
     });
 
     await check(`donation ${width}px: no horizontal overflow`, async () => {
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`donation-${width}-horizontal-overflow`});
     });
 
     await check(`donation ${width}px: keyboard FAQ and focus`, async () => {
@@ -95,12 +113,20 @@ try {
       await page.keyboard.press('Enter');
     });
 
-    if (width === 1440 || width === 390) await check(`G07 ${width}px: named topline region, single banner, axe region and keyboard`, async () => {
+    if (width === 1440 || width === 390) await check(`G07 ${width}px: topline semantics, single banner, axe region and keyboard`, async () => {
       await page.goto(base + 'political-donation.html');
       const topline = page.locator('section.topline');
       assert.equal(await topline.count(), 1);
       assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
-      assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      if (width === 1440) {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'block');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+        assert.equal(await page.locator('.site-header').evaluate(el => getComputedStyle(el).position), 'sticky');
+        assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      } else {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'none');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+      }
       assert.equal(await page.getByRole('banner').count(), 1);
       await page.screenshot({ path: fileURLToPath(new URL(`political-donation-g07-${width}.png`, output)), fullPage: true });
 
@@ -114,8 +140,104 @@ try {
       assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BODY');
       await page.keyboard.press('Tab');
       assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
+      if (width === 1440) {
+        await page.keyboard.press('Tab');
+        assert(await page.locator('.topline a[href^="tel:"]').evaluate(el => el === document.activeElement));
+      }
+    });
+
+    if (width === 390) await check('G06 mobile header: first-screen position, identity, service phone and keyboard order', async () => {
+      await page.goto(base + 'service.html');
+      const header = page.locator('.site-header');
+      const topline = page.locator('section.topline');
+      const phone = page.locator('.site-header a.header-phone');
+      const brand = page.locator('.site-header a.brand');
+      const toggle = page.locator('.menu-toggle');
+      const canonicalPhone = page.locator('#contact .contact-card a.big-phone');
+      const expectedHref = await canonicalPhone.getAttribute('href');
+      const expectedNumber = await canonicalPhone.locator('.phone-number').innerText();
+      const firstScreen = await page.evaluate(() => ({
+        mainTop: document.querySelector('main').getBoundingClientRect().top,
+        headerHeight: document.querySelector('.site-header').getBoundingClientRect().height,
+        headerPosition: getComputedStyle(document.querySelector('.site-header')).position,
+        toplineDisplay: getComputedStyle(document.querySelector('.topline')).display,
+      }));
+      assert.equal(firstScreen.toplineDisplay, 'none');
+      assert.equal(firstScreen.headerPosition, 'sticky');
+      assert(firstScreen.mainTop < 70, `main starts at ${firstScreen.mainTop}px`);
+      await assertWithinHalfPixel(page,'mobile header height',firstScreen.headerHeight,64);
+      assert.equal(await topline.count(), 1);
+      assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
+      assert.equal(await phone.getAttribute('href'), expectedHref);
+      assert.equal(await phone.getAttribute('aria-label'), `撥打陳慧文服務處電話 ${expectedNumber}`);
+      assert.equal(await phone.locator('svg').count(), 1);
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
+      assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
+      assert(await page.locator('.brand-role').isVisible());
+      assert(parseFloat(await page.locator('.brand-role').evaluate(el => getComputedStyle(el).fontSize)) >= 12);
+      assert(await page.getByRole('banner').count() === 1);
+
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
       await page.keyboard.press('Tab');
-      assert(await page.locator('a[href="tel:+88678212536"]').first().evaluate(el => el === document.activeElement));
+      assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await brand.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await phone.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await toggle.evaluate(el => el === document.activeElement));
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-initial.png', output)), fullPage: false });
+    });
+
+    if (width === 390) await check('G06 mobile header: down 52px, up restore 64px, reduced motion and stable flow', async () => {
+      await page.goto(base + 'service.html');
+      await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'instant' }));
+      await page.waitForFunction(() => document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 52) <= 0.5);
+      const down = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      await assertWithinHalfPixel(page,'compact mobile header height',down.height,52);
+      await assertWithinHalfPixel(page,'compact mobile header flow footprint',down.flowFootprint,64);
+      await assertWithinHalfPixel(page,'compact mobile header top',down.top,0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-down.png', output)), fullPage: false });
+
+      await page.evaluate(() => window.scrollTo({ top: 660, behavior: 'instant' }));
+      await page.waitForTimeout(50);
+      await page.evaluate(() => window.scrollTo({ top: 620, behavior: 'instant' }));
+      await page.waitForFunction(() => !document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 64) <= 0.5);
+      const up = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      await assertWithinHalfPixel(page,'restored mobile header height',up.height,64);
+      await assertWithinHalfPixel(page,'restored mobile header flow footprint',up.flowFootprint,64);
+      await assertWithinHalfPixel(page,'restored mobile header top',up.top,0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-up.png', output)), fullPage: false });
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const reduced = await page.evaluate(() => ({
+        scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+        transitionDuration: getComputedStyle(document.querySelector('.site-header')).transitionDuration,
+      }));
+      assert.equal(reduced.scrollBehavior, 'auto');
+      assert.equal(reduced.transitionDuration, '0s');
+      const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
+      assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      await page.goto(base + 'political-donation.html');
     });
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
@@ -125,6 +247,8 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
       assert(await page.locator('main').evaluate(el => el.inert));
+      assert(await page.locator('.header-phone').evaluate(el => el.inert));
+      assert(await page.locator('.brand').evaluate(el => el.inert));
       assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
       await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
@@ -136,11 +260,19 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
       assert.equal(await page.locator('main').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.header-phone').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.brand').evaluate(el => el.inert), false);
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
-      await page.locator('.menu-backdrop').click({ position: { x: 4, y: 4 } });
+      const backdropPoint = await findVisibleClickPoint(page,'.menu-backdrop');
+      report.interactions.push({name:'menu backdrop closes through an unobscured real pointer point',targetRect:backdropPoint.rect,selected:backdropPoint.selected,samples:backdropPoint.samples});
+      if (!backdropPoint.selected) {
+        await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:'menu-backdrop-no-visible-hit-point',error:'No point in the visible backdrop receives the real pointer hit test',extra:{backdropPoint}});
+      }
+      assert(backdropPoint.selected,JSON.stringify(backdropPoint));
+      await page.mouse.click(backdropPoint.selected.x,backdropPoint.selected.y);
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     });
 
@@ -166,7 +298,7 @@ try {
         page.on('pageerror', onError);
         page.on('requestfailed', onFailed);
         await page.goto(base + file);
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
+        await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`all-pages-${width}-${file}-horizontal-overflow`});
         if (file !== 'offline.html') {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
@@ -235,6 +367,7 @@ try {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;
         for(const e of shifts){ if(current>0&&e.startTime-last<1000&&e.startTime-start<=5000) current+=e.value; else {current=e.value;start=e.startTime;} last=e.startTime;max=Math.max(max,current); } return max;
       }));
+      if (cls >= 0.1) await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`homepage-${width}-cls`,error:`homepage CLS ${cls}`,extra:{cls,layoutShifts:await page.evaluate(()=>window.layoutShifts.map(({value,startTime,hadRecentInput,sources})=>({value,startTime,hadRecentInput,sources:sources?.map(source=>({previousRect:source.previousRect,currentRect:source.currentRect}))})))}});
       assert(cls < 0.1, `homepage CLS ${cls}`);
       await page.screenshot({ path: fileURLToPath(new URL(`index-${width}.png`, output)), fullPage: true });
     });
@@ -459,7 +592,7 @@ try {
       const lead = await page.locator('.news-card-lead').first().boundingBox();
       await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`news-first-screen-${viewport.width}-layout`});
     });
   }
 
@@ -500,6 +633,53 @@ try {
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
+  diagnosticPage = nojsPage;
+  await check('no JavaScript: mobile native navigation flows, expands and leaves the page reachable', async () => {
+    await nojsPage.setViewportSize({ width: 320, height: 740 });
+    try {
+      await nojsPage.goto(base + 'service.html');
+      const header = nojsPage.locator('.site-header');
+      const navigation = nojsPage.locator('#navigation');
+      const role = nojsPage.locator('.brand-role');
+      const phone = nojsPage.locator('.site-header a.header-phone');
+      const canonicalPhone = nojsPage.locator('#contact .contact-card a.big-phone');
+      assert.equal(await nojsPage.locator('html.menu-ready').count(), 0);
+      assert.equal(await nojsPage.locator('.menu-toggle').isVisible(), false);
+      assert(await role.isVisible());
+      assert(parseFloat(await role.evaluate(el => getComputedStyle(el).fontSize)) >= 12);
+      assert((await role.innerText()).includes('高雄市議員'));
+      assert((await role.innerText()).includes('鳳山區'));
+      assert.equal(await phone.getAttribute('href'), await canonicalPhone.getAttribute('href'));
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-service-320-layout'});
+
+      const group = navigation.locator('.nav-group').first();
+      await group.locator('summary').click();
+      assert.equal(await group.getAttribute('open'), '');
+      assert(await group.locator('a[href="achievements.html"]').isVisible());
+      const flow = await nojsPage.evaluate(() => {
+        const headerRect = document.querySelector('.site-header').getBoundingClientRect();
+        const navRect = document.querySelector('#navigation').getBoundingClientRect();
+        const mainRect = document.querySelector('main').getBoundingClientRect();
+        const headingRect = document.querySelector('main h1').getBoundingClientRect();
+        return { headerBottom: headerRect.bottom, navBottom: navRect.bottom, mainTop: mainRect.top, headingTop: headingRect.top };
+      });
+      assert(flow.navBottom <= flow.headerBottom + 1, JSON.stringify(flow));
+      assert(flow.mainTop >= flow.headerBottom - 1, JSON.stringify(flow));
+      assert(flow.headingTop >= flow.mainTop - 1, JSON.stringify(flow));
+
+      const heading = nojsPage.locator('main h1').first();
+      await heading.scrollIntoViewIfNeeded();
+      const headingPosition = await heading.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+      });
+      assert(headingPosition.top >= 0 && headingPosition.top < headingPosition.viewportHeight, JSON.stringify(headingPosition));
+    } finally {
+      await nojsPage.setViewportSize({ width: 390, height: 844 });
+    }
+  });
   await check('no JavaScript: political donation remains readable', async () => {
     await nojsPage.goto(base + 'political-donation.html');
     assert(await nojsPage.locator('.brand[href="./"]').isVisible());
@@ -507,7 +687,7 @@ try {
     assert.equal(await nojsPage.locator('main details').first().getAttribute('open'), '');
     assert(await nojsPage.getByText('752200636579', { exact: true }).isVisible());
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
-    assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-political-donation-layout'});
   });
 
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
