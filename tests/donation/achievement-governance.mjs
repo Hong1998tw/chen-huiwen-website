@@ -81,6 +81,12 @@ try{
   const allCaseIds=source.map(c=>c.id);
   const sortedIds=ids=>[...ids].sort();
   const waitCases=async()=>page.waitForFunction(n=>window.HuiwenCases?.getState().data.length===n,source.length);
+  const showMapAndWaitForLayers=async()=>{
+   const showMap=page.getByRole('button',{name:'地圖與列表',exact:true});
+   if(await showMap.getAttribute('aria-pressed')!=='true')await showMap.click();
+   await page.locator('#achievement-map').waitFor({state:'visible'});
+   await page.locator('.leaflet-overlay-pane path').first().waitFor({state:'attached'});
+  };
   const waitCaseIds=async ids=>page.waitForFunction(expected=>{
    const actual=window.HuiwenCases?.getState().visible.map(c=>c.id);
    return actual?.length===expected.length&&JSON.stringify([...actual].sort())===JSON.stringify(expected);
@@ -90,6 +96,7 @@ try{
    if(new URL(page.url()).pathname!==new URL('achievements.html',base).pathname)await go('achievements.html');
    await waitCases();await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);
    await page.waitForFunction(()=>new URL(location.href).search==='');
+   await showMapAndWaitForLayers();
   };
   const resetFilters=async()=>{await page.locator('#reset-map-filters').click();await waitCaseIds(allCaseIds);};
 
