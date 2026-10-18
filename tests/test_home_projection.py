@@ -93,6 +93,10 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertIn('[data-home-recent-item="local"] .home-recent-local',editor)
         self.assertIn('.home-recent-card-copy .home-recent-copy',editor)
         self.assertNotIn('civic-story-grid',editor)
+        preview=editor.split('  function applyHomePreview',1)[1].split('  function applyCasePreview',1)[0]
+        self.assertIn('typeof featured.lastRecordDate === "string"',preview)
+        self.assertIn('latestHistoryEvent(history)?.date',preview)
+        self.assertNotIn('localeCompare',preview)
 
     def test_home_stats_and_village_options_follow_public_projection(self):
         records=json.loads((ROOT/'data/achievements-public.json').read_text())

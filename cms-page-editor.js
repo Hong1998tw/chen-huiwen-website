@@ -53,6 +53,30 @@
     if (className) item.className = className;
     return item;
   };
+  // Match scripts/achievement_metadata.py: calendar prefixes rank first, then
+  // compare the original labels by Unicode code point without date rollover.
+  function historyDateKey(value) {
+    const text = String(value || "");
+    return [/^\d{4}(?:-\d{2})?(?:-\d{2})?(?:$|[\s至–—])/u.test(text), text];
+  }
+  function compareHistoryDates(left, right) {
+    const leftKey = historyDateKey(left), rightKey = historyDateKey(right);
+    if (leftKey[0] !== rightKey[0]) return leftKey[0] ? 1 : -1;
+    const leftPoints = Array.from(leftKey[1], character => character.codePointAt(0));
+    const rightPoints = Array.from(rightKey[1], character => character.codePointAt(0));
+    const length = Math.min(leftPoints.length, rightPoints.length);
+    for (let index = 0; index < length; index++) {
+      if (leftPoints[index] !== rightPoints[index]) return leftPoints[index] < rightPoints[index] ? -1 : 1;
+    }
+    return Math.sign(leftPoints.length - rightPoints.length);
+  }
+  function latestHistoryEvent(events) {
+    let latest = null;
+    for (const event of events) {
+      if (latest === null || compareHistoryDates(event?.date, latest.date) > 0) latest = event;
+    }
+    return latest;
+  }
   function applyHomePreview(home, records) {
     const card = document.querySelector('[data-home-recent-item="local"] .home-recent-local');
     if (!card || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
@@ -127,13 +151,15 @@
     if (!category || !place || !title || !summary || !meta || !source) return;
     const villages = Array.isArray(featured.villages) ? featured.villages.filter(value => typeof value === "string") : [];
     const history = Array.isArray(featured.history) ? featured.history.filter(item => item && typeof item.date === "string") : [];
-    const latest = history.sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+    const latestDate = typeof featured.lastRecordDate === "string"
+      ? featured.lastRecordDate
+      : latestHistoryEvent(history)?.date;
     card.dataset.homeLocalRecord = featured.id;
     category.textContent = featured.categories?.[0] || "地方專題";
     place.textContent = villages.join("、") || featured.scope || "地區未載";
     title.textContent = titleFor(featured); title.href = url;
     summary.textContent = summaryFor(featured);
-    meta.textContent = `${featured.status || "階段未載"} · 最新收錄 ${latest?.date || "日期未載"}`;
+    meta.textContent = `${featured.status || "階段未載"} · 最新收錄 ${latestDate || "日期未載"}`;
     source.href = url;
 
     // Optional companion to the civic-home-map generated region. Filters remain
@@ -255,7 +281,7 @@
     const history = Array.isArray(data.history) ? data.history.filter(h => h.date && h.title && h.text) : [];
     latestWrap.replaceChildren(); latestWrap.removeAttribute("id");
     if (history.length) {
-      const latest = [...history].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+      const latest = latestHistoryEvent(history);
       const section = node("section", undefined, "case-latest");
       const kicker = node("p", "收錄的最新歷程 · ", "civic-kicker"); kicker.append(node("time", latest.date));
       const heading = node("h2", latest.title); heading.id = "latest-heading";
