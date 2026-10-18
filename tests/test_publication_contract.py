@@ -278,6 +278,8 @@ class PublicProjectionTests(unittest.TestCase):
             editor_assets = list(destination.glob('cms-page-editor.*.js'))
             self.assertEqual(len(editor_assets), 1)
             self.assertIn(editor_assets[0].name, page)
+            self.assertIn(f'data-cms-editor-src="/{editor_assets[0].name}"', page)
+            self.assertNotIn('data-cms-editor-src="/cms-page-editor.js"', page)
             self.assertIn(manifest_path.relative_to(destination).as_posix(), page)
             self.assertIn('petition.html', paths)
             self.assertFalse(list((destination / 'cms-editor-manifests').glob('petition.html.*.json')))
