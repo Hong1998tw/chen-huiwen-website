@@ -5,26 +5,6 @@
   const month = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Taipei',year:'numeric',month:'2-digit'}).format(new Date());
   const legal = main.querySelector('[data-home-legal-month]');
   if (legal && legal.dataset.homeLegalMonth !== month) {
-    const title = legal.querySelector('strong');
-    const note = legal.querySelector('small');
-    if (title && note) {
-      title.textContent = '律師時間表 ↗';
-      note.textContent = '查看已公布場次，來電確認預約';
-    } else {
-      legal.textContent = '公益法律諮詢 · 查看已公布場次 ↗';
-    }
+    legal.textContent = '查看公益律師時間表 →';
   }
-  main.addEventListener('click', event => {
-    const button = event.target.closest('[data-filter]');
-    if (!button || !main.contains(button)) return;
-    const filter = button.dataset.filter;
-    main.querySelectorAll('[data-filter]').forEach(node => node.setAttribute('aria-pressed', String(node === button)));
-    let count = 0;
-    main.querySelectorAll('.place[data-topic]').forEach(node => {
-      node.hidden = filter !== 'all' && node.dataset.topic !== filter;
-      if (!node.hidden) count++;
-    });
-    const status = main.querySelector('#filter-status');
-    if (status) status.textContent = '本頁精選' + count + '筆，不代表全部案件或完工數。';
-  });
 })();

@@ -47,6 +47,7 @@ jobs:
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npx --prefix tests/donation playwright install --with-deps chromium
       - run: node tests/donation/homepage-production.mjs
+      - run: node tests/donation/small-q.mjs
       - name: Require committed generated outputs
         run: |
           git diff --exit-code -- '*.html' 'data/*.json' 'sitemap.xml' 'updates.xml'
@@ -55,5 +56,7 @@ jobs:
         if: always()
         with:
           name: homepage-production-design
-          path: tests/donation/results/homepage-production/
+          path: |
+            tests/donation/results/homepage-production/
+            tests/donation/results/small-q/
           retention-days: 14

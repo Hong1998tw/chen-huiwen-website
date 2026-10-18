@@ -74,7 +74,8 @@ class QualityMutationTests(unittest.TestCase):
         path=self.root/'data/achievements.json'; rows=json.loads(path.read_text())
         row=next(r for r in rows if r['id']==config['featured']);row['title']='Fixture <script>alert(1)</script> title'
         path.write_text(json.dumps(rows))
-        self.assertEqual(self.gate('build_civic.py').returncode,0)
+        self.assertEqual(self.gate('build_public.py','--projection-only').returncode,0)
+        self.assertEqual(self.gate('build_home.py').returncode,0)
         text=(self.root/'index.html').read_text()
         self.assertIn('Fixture &lt;script&gt;alert(1)&lt;/script&gt; title',text)
         self.assertNotIn('Fixture <script>alert(1)</script> title',text)

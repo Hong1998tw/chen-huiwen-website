@@ -439,10 +439,13 @@ try {
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const stories = page.locator('.civic-story-grid');
-      assert.equal(await stories.locator('.civic-reading-row').count(),4);
-      assert.equal(await stories.locator('[data-record-id="bade-detention"]').count(),0);
-      await stories.screenshot({path:fileURLToPath(new URL(`home-stories-${viewport.width}.png`, output))});
+      const recent = page.locator('.home-recent-list');
+      assert.equal(await recent.locator('> li').count(),3);
+      assert.equal(await page.locator('.home-recent-local').count(),1);
+      assert.equal(await page.locator('[data-home-local-record="bade-detention"]').count(),0);
+      assert.equal(await page.locator('.civic-story-grid, .civic-reading-row, .place').count(),0);
+      await recent.screenshot({path:fileURLToPath(new URL(`home-recent-${viewport.width}.png`, output))});
+      await page.locator('.home-local-progress').screenshot({path:fileURLToPath(new URL(`home-local-progress-${viewport.width}.png`, output))});
 
     });
   }

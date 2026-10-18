@@ -1,50 +1,157 @@
-/* Homepage-only, silent contextual companion. No tracking, storage or settings. */
+/* Homepage-only companion; the character appears only after an explicit open. */
 (() => {
   'use strict';
-  const scriptURL=document.currentScript.src;
-  const initialize=()=>{
-  const root=document.getElementById('small-q');
-  if(!root||root.dataset.mounted)return;
-  root.dataset.mounted='true';
-  document.querySelector('.home-redesign .hero')?.after(root);
-  const base=new URL('assets/small-q/',scriptURL);
-  const styleURL=new URL('small-q.css?v=2c1b99baab17',scriptURL);
-  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
-  const durations={wave:1800,nod:1500,happy:1700,guide:2400};
-  root.innerHTML='<img class="small-q-figure" width="320" height="320" alt="陳慧文的小 Q AI 卡通形象" decoding="async"><button class="small-q-dismiss" type="button" aria-label="收起小 Q" title="收起小 Q">×</button>';
-  const image=root.querySelector('img');
-  const dismiss=root.querySelector('button');
-  let ready=false,closed=false,departing=false,visible=!('IntersectionObserver' in window),sequence=0,timer=null,lastAction=-Infinity;
-  const played=new Set();
-  const idleURL=new URL('idle.webp',base).href;
-  function idle(){sequence++;if(timer!==null)window.clearTimeout(timer);timer=null;if(ready&&!closed&&!departing&&!document.hidden&&visible)image.src=idleURL;root.dataset.action='idle';}
-  function play(key,once=false){
-    if(!ready||closed||departing||!visible||document.hidden||reduced.matches||!durations[key]||(once&&played.has(key))||performance.now()-lastAction<12000)return false;
-    lastAction=performance.now();if(once)played.add(key);
-    const ticket=++sequence,next=new Image();
-    next.onload=()=>{if(ticket!==sequence||closed||departing||!visible||document.hidden||reduced.matches)return;image.src=next.src;root.dataset.action=key;timer=window.setTimeout(idle,durations[key]);};
-    next.onerror=()=>{if(ticket===sequence)idle();};
-    next.src=new URL(key+'.webp',base).href;
-    return true;
-  }
-  function enter(){if(ready&&visible&&!departing){if(root.dataset.action==='idle')image.src=idleURL;play('wave',true);}}
-  dismiss.addEventListener('click',()=>{closed=true;idle();root.hidden=true;});
-  const sync=()=>{root.dataset.reduced=String(reduced.matches);if(reduced.matches||document.hidden)idle();else enter();};
-  if(reduced.addEventListener)reduced.addEventListener('change',sync);else reduced.addListener(sync);
-  document.addEventListener('visibilitychange',sync);
-  window.addEventListener('pagehide',()=>{departing=true;idle();});
-  window.addEventListener('pageshow',()=>{departing=false;sync();});
-  if('IntersectionObserver' in window){
-    const visibility=new IntersectionObserver(entries=>{for(const entry of entries){visible=entry.isIntersecting;if(!visible)idle();else enter();}});
-    visibility.observe(root);
-    const context=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;if(entry.target.id==='projects')play('guide',true);if(entry.target.id==='contact')play('happy',true);}},{threshold:0.3});
-    for(const id of ['projects','contact']){const target=document.getElementById(id);if(target)context.observe(target);}
-  }
-  document.querySelectorAll('.home-redesign .filters button[data-filter]').forEach(button=>button.addEventListener('click',()=>play('nod')));
-  const show=()=>{if(closed||departing)return;image.onload=()=>{if(ready||closed||departing)return;ready=true;image.onload=null;root.hidden=false;sync();enter();};image.onerror=()=>{if(!ready)root.hidden=true;};image.src=idleURL;};
-  const start=()=>{const load=()=>{const link=document.createElement('link');link.rel='stylesheet';link.href=styleURL.href;link.onload=show;link.onerror=()=>{root.hidden=true;};document.head.append(link);};if('requestIdleCallback' in window)window.requestIdleCallback(load,{timeout:1200});else window.setTimeout(load,100);};
-  sync();start();
+  const scriptURL = document.currentScript && document.currentScript.src;
+  if (!scriptURL) return;
+
+  const initialize = () => {
+    const root = document.getElementById('small-q');
+    if (!root || root.dataset.mounted) return;
+    root.dataset.mounted = 'true';
+    const base = new URL('assets/small-q/', scriptURL);
+    const styleURL = new URL('small-q.css?v=93390f7e605a', scriptURL);
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const durations = {wave: 1800, nod: 1500, happy: 1700, guide: 2400};
+    root.innerHTML = '<div class="small-q-panel" id="small-q-panel" role="region" aria-label="小 Q AI 卡通角色" hidden><img class="small-q-figure" id="small-q-figure" width="320" height="320" alt="陳慧文的小 Q AI 卡通形象" decoding="async"><button class="small-q-close" type="button" aria-label="收合小 Q">×</button></div><button class="small-q-toggle" id="small-q-toggle" type="button" aria-expanded="false" aria-controls="small-q-panel" aria-label="展開小 Q 卡通角色"><span aria-hidden="true">Q</span></button>';
+    const panel = root.querySelector('#small-q-panel');
+    const image = panel.querySelector('img');
+    const toggle = root.querySelector('.small-q-toggle');
+    const close = root.querySelector('.small-q-close');
+    const cached = new Map();
+    let ready = false;
+    let opened = false;
+    let departing = false;
+    let pageVisible = !document.hidden;
+    let sequence = 0;
+    let timer = null;
+    let lastAction = -Infinity;
+    const played = new Set();
+    const idleURL = new URL('idle.webp', base).href;
+
+    function loadPose(key) {
+      const url = key === 'idle' ? idleURL : new URL(key + '.webp', base).href;
+      if (cached.has(url)) return cached.get(url);
+      const promise = new Promise((resolve, reject) => {
+        const probe = new Image();
+        probe.onload = () => resolve(url);
+        probe.onerror = () => reject(new Error('companion image unavailable'));
+        probe.src = url;
+      });
+      cached.set(url, promise);
+      promise.catch(() => cached.delete(url));
+      return promise;
+    }
+
+    function idle() {
+      sequence += 1;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = null;
+      root.dataset.action = 'idle';
+      if (ready && opened && pageVisible && !departing) image.src = idleURL;
+    }
+
+    async function play(key, once = false) {
+      if (!ready || !opened || departing || !pageVisible || document.hidden || reduced.matches ||
+          !durations[key] || (once && played.has(key)) || performance.now() - lastAction < 12000) return false;
+      lastAction = performance.now();
+      if (once) played.add(key);
+      const ticket = ++sequence;
+      try {
+        const url = await loadPose(key);
+        if (ticket !== sequence || !opened || departing || !pageVisible || document.hidden || reduced.matches) return false;
+        image.src = url;
+        root.dataset.action = key;
+        timer = window.setTimeout(idle, durations[key]);
+        return true;
+      } catch {
+        if (ticket === sequence) idle();
+        return false;
+      }
+    }
+
+    async function openPanel() {
+      if (opened || departing) return;
+      toggle.setAttribute('aria-busy', 'true');
+      try {
+        const url = await loadPose('idle');
+        if (departing || !root.isConnected) return;
+        image.src = url;
+        ready = true;
+        opened = true;
+        panel.hidden = false;
+        root.dataset.expanded = 'true';
+        toggle.setAttribute('aria-expanded', 'true');
+        toggle.setAttribute('aria-label', '收合小 Q 卡通角色');
+        toggle.removeAttribute('aria-busy');
+        if (reduced.matches) idle();
+        else play('wave', true);
+      } catch {
+        toggle.removeAttribute('aria-busy');
+        root.dataset.imageError = 'true';
+      }
+    }
+
+    function closePanel(returnFocus = true) {
+      if (!opened) return;
+      opened = false;
+      panel.hidden = true;
+      root.dataset.expanded = 'false';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', '展開小 Q 卡通角色');
+      idle();
+      if (returnFocus) toggle.focus();
+    }
+
+    toggle.addEventListener('click', () => opened ? closePanel(false) : openPanel());
+    close.addEventListener('click', () => closePanel(true));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && opened) closePanel(true);
+    });
+    document.addEventListener('visibilitychange', () => {
+      pageVisible = !document.hidden;
+      if (!pageVisible) idle();
+    });
+    const syncMotion = () => {
+      root.dataset.reduced = String(reduced.matches);
+      if (reduced.matches) idle();
+    };
+    if (reduced.addEventListener) reduced.addEventListener('change', syncMotion);
+    else reduced.addListener(syncMotion);
+    window.addEventListener('pagehide', () => { departing = true; idle(); });
+    window.addEventListener('pageshow', () => { departing = false; pageVisible = !document.hidden; });
+
+    if ('IntersectionObserver' in window) {
+      const contextual = new IntersectionObserver(entries => {
+        if (!opened) return;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (entry.target.id === 'home-local-progress') play('guide', true);
+          if (entry.target.id === 'contact') play('happy', true);
+        }
+      }, {threshold: 0.3});
+      for (const id of ['home-local-progress', 'contact']) {
+        const target = document.getElementById(id);
+        if (target) contextual.observe(target);
+      }
+    }
+    document.getElementById('home-village')?.addEventListener('change', () => play('nod'));
+
+    const addStyles = () => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = styleURL.href;
+      link.onload = () => { root.hidden = false; };
+      link.onerror = () => { root.hidden = true; };
+      document.head.append(link);
+    };
+    if ('requestIdleCallback' in window) window.requestIdleCallback(addStyles, {timeout: 1200});
+    else window.setTimeout(addStyles, 100);
   };
-  const begin=()=>{if('requestIdleCallback' in window)window.requestIdleCallback(initialize,{timeout:1200});else window.setTimeout(initialize,100);};
-  if(document.readyState==='complete')begin();else window.addEventListener('load',begin,{once:true});
+
+  const begin = () => {
+    if ('requestIdleCallback' in window) window.requestIdleCallback(initialize, {timeout: 1200});
+    else window.setTimeout(initialize, 100);
+  };
+  if (document.readyState === 'complete') begin();
+  else window.addEventListener('load', begin, {once: true});
 })();

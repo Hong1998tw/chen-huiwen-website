@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const base=process.env.BASE_URL||'http://127.0.0.1:8788/';
 const server=process.env.BASE_URL?null:spawn('python3',['-m','http.server','8788','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
@@ -10,30 +11,100 @@ const out=new URL('./results/small-q/',import.meta.url);
 await mkdir(out,{recursive:true});
 const report={checks:[],failures:[],pageErrors:[]};
 const browser=await chromium.launch();
-async function check(name,fn){try{await fn();report.checks.push(name);}catch(e){report.failures.push({name,error:String(e)});}}
+async function check(name,fn){try{await fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:String(e)});}}
 const state=(page,key)=>page.waitForFunction(k=>document.querySelector('#small-q')?.dataset.action===k,key,{timeout:8000});
+const waitReady=async page=>page.locator('#small-q-toggle').waitFor({state:'visible'});
 try{
-for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
-for(const width of [320,390,768,1440]){
- const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'no-preference'});
- const page=await context.newPage();page.on('pageerror',e=>report.pageErrors.push(String(e)));
- await page.goto(base);await page.locator('#small-q').waitFor({state:'visible'});await page.locator('#small-q').scrollIntoViewIfNeeded();
- await check(width+' automatic welcome then static idle',async()=>{await state(page,'wave');await state(page,'idle');assert.equal(await page.locator('#small-q img').evaluate(e=>getComputedStyle(e).animationName),'none');});
- await check(width+' no visitor settings or pose selector',async()=>{assert.equal(await page.locator('#small-q button').count(),1);assert.equal(await page.locator('#small-q-panel,[data-q-action]').count(),0);assert(await page.getByRole('button',{name:'收起小 Q',exact:true}).isVisible());});
- await check(width+' horizontal fit and in-flow mobile',async()=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const q=await page.locator('#small-q').boundingBox();assert(q.x>=0&&q.x+q.width<=width);if(width<=780){const s=await page.locator('.home-redesign .home-task-paths').boundingBox();assert(q.y+q.height<=s.y);assert.equal(await page.locator('#small-q').evaluate(e=>getComputedStyle(e).position),'relative');}});
- await page.screenshot({path:fileURLToPath(new URL(width+'-automatic.png',out))});
- await check(width+' dismissal has no settings restore toolbar',async()=>{await page.getByRole('button',{name:'收起小 Q',exact:true}).click();assert(await page.locator('#small-q').isHidden());assert.equal(await page.getByRole('button',{name:'顯示小 Q',exact:true}).count(),0);});
- await context.close();
+ for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ for(const width of [320,390,768,1440]){
+  const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'no-preference'});
+  const page=await context.newPage();page.on('pageerror',e=>report.pageErrors.push(String(e)));
+  await page.goto(base);await page.locator('#small-q').waitFor({state:'visible'});await waitReady(page);
+  const launcher=page.locator('#small-q-toggle'),panel=page.locator('#small-q-panel');
+  await check(width+' hidden character until explicit open',async()=>{
+   assert.equal(await launcher.getAttribute('aria-expanded'),'false');
+   assert.equal(await launcher.getAttribute('aria-label'),'展開小 Q 卡通角色');
+   assert(await panel.isHidden());
+   assert.equal(await page.locator('#small-q-figure').getAttribute('src'),null);
+   const box=await launcher.boundingBox();assert.equal(box.width,56);assert.equal(box.height,56);
+  });
+  await check(width+' fixed position and no content reflow',async()=>{
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   assert.equal(await page.locator('#small-q').evaluate(el=>getComputedStyle(el).position),'fixed');
+   const box=await launcher.boundingBox();assert(box.x>=0&&box.x+box.width<=width);assert(box.y>=0&&box.y+box.height<=844);
+  });
+  await launcher.focus();await page.keyboard.press('Enter');await panel.waitFor({state:'visible'});
+  await page.locator('#small-q-figure').evaluate(el=>el.decode());
+  await check(width+' keyboard open shows labelled character and wave',async()=>{
+   assert.equal(await launcher.getAttribute('aria-expanded'),'true');
+   assert.equal(await launcher.getAttribute('aria-label'),'收合小 Q 卡通角色');
+   assert.equal(await page.locator('#small-q-panel').getAttribute('role'),'region');
+   assert.equal(await page.locator('#small-q-figure').getAttribute('alt'),'陳慧文的小 Q AI 卡通形象');
+   assert.equal(await launcher.evaluate(el=>el===document.activeElement),true,'focus stays on the launcher after opening');
+   await state(page,'wave');await state(page,'idle');
+   assert.equal(await page.locator('#small-q-figure').evaluate(el=>getComputedStyle(el).animationName),'none');
+  });
+  if(width===390||width===1440)await page.screenshot({path:fileURLToPath(new URL(width+'-open.png',out))});
+  await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
+  await check(width+' Escape closes and restores focus',async()=>{
+   assert.equal(await launcher.getAttribute('aria-expanded'),'false');
+   assert.equal(await launcher.evaluate(el=>el===document.activeElement),true);
+  });
+  await launcher.click();await panel.waitFor({state:'visible'});
+  await page.locator('.small-q-close').click();await panel.waitFor({state:'hidden'});
+  await check(width+' close control returns focus to launcher',async()=>{
+   assert.equal(await launcher.getAttribute('aria-expanded'),'false');
+   assert.equal(await launcher.evaluate(el=>el===document.activeElement),true);
+   assert.equal(await page.locator('#small-q-panel button').count(),1);
+   assert.equal(await page.locator('#small-q form, #small-q [data-q-action]').count(),0);
+  });
+  if(width===390||width===1440)await page.screenshot({path:fileURLToPath(new URL(width+'-closed.png',out))});
+  await context.close();
+ }
+
+ await check('opened desktop context gestures stay finite and require explicit opening',async()=>{
+  const c=await browser.newContext({viewport:{width:1440,height:960},reducedMotion:'no-preference'}),p=await c.newPage();
+  await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);
+  assert(await p.locator('#small-q-panel').isHidden());
+  await p.locator('#small-q-toggle').click();await p.locator('#small-q-panel').waitFor({state:'visible'});await state(p,'wave');await state(p,'idle');
+  await p.waitForTimeout(12200);await p.locator('#home-local-progress').scrollIntoViewIfNeeded();await state(p,'guide');await state(p,'idle');
+  await p.waitForTimeout(12200);await p.locator('#home-village').selectOption('v:文德里');await state(p,'nod');await state(p,'idle');
+  await p.waitForTimeout(12200);await p.locator('#contact').scrollIntoViewIfNeeded();await state(p,'happy');await state(p,'idle');
+  await c.close();
+ });
+
+ await check('reduced motion remains static after explicit open',async()=>{
+  const c=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),p=await c.newPage();
+  await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);
+  assert(await p.locator('#small-q-panel').isHidden());
+  await p.locator('#small-q-toggle').click();await p.locator('#small-q-panel').waitFor({state:'visible'});
+  await p.locator('#small-q-figure').evaluate(el=>el.decode());
+  assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');
+  assert.equal(await p.locator('#small-q-figure').evaluate(el=>getComputedStyle(el).animationName),'none');
+  await p.locator('#home-local-progress').scrollIntoViewIfNeeded();await p.locator('#home-village').selectOption('v:文德里');
+  assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');await c.close();
+ });
+
+ await check('without JavaScript the launcher and character are absent, site content stays available',async()=>{
+  const c=await browser.newContext({javaScriptEnabled:false}),p=await c.newPage();await p.goto(base);
+  assert(await p.locator('h1').isVisible());assert(await p.locator('#small-q').isHidden());await c.close();
+ });
+
+ await check('idle image failure keeps the panel closed and permits retry',async()=>{
+  const c=await browser.newContext(),p=await c.newPage();
+  await p.route('**/assets/small-q/**',r=>r.abort());await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);
+  await p.locator('#small-q-toggle').click();await p.waitForTimeout(300);
+  assert(await p.locator('#small-q-panel').isHidden());assert.equal(await p.locator('#small-q-toggle').getAttribute('aria-expanded'),'false');
+  assert(await p.locator('#small-q-toggle').isVisible());assert(await p.locator('h1').isVisible());await c.close();
+ });
+
+ await check('non-home routes exclude the companion',async()=>{
+  const p=await browser.newPage();await p.goto(new URL('about.html',base).href);
+  assert.equal(await p.locator('#small-q').count(),0);assert.equal(await p.locator('script[src*="small-q"]').count(),0);await p.close();
+ });
+}finally{
+ await browser.close();server?.kill();
+ await writeFile(new URL('report.json',out),JSON.stringify(report,null,2));
 }
-await check('desktop context gestures are finite and tied to real page sections',async()=>{
- const c=await browser.newContext({viewport:{width:1440,height:960},reducedMotion:'no-preference'}),p=await c.newPage();await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await state(p,'wave');await state(p,'idle');
- await p.waitForTimeout(12200);await p.locator('#projects').scrollIntoViewIfNeeded();await state(p,'guide');await state(p,'idle');
- await p.waitForTimeout(12200);await p.locator('.filters button[data-filter=education]').click();await state(p,'nod');await state(p,'idle');
- await p.waitForTimeout(12200);await p.locator('#contact').scrollIntoViewIfNeeded();await state(p,'happy');await state(p,'idle');await c.close();
-});
-await check('reduced motion remains static without settings',async()=>{const c=await browser.newContext({reducedMotion:'reduce'}),p=await c.newPage();await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');assert.equal(await p.locator('#small-q img').evaluate(e=>getComputedStyle(e).animationName),'none');await p.locator('#projects').scrollIntoViewIfNeeded();assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');await c.close();});
-await check('without JavaScript primary content remains available',async()=>{const c=await browser.newContext({javaScriptEnabled:false}),p=await c.newPage();await p.goto(base);assert(await p.locator('h1').isVisible());assert(await p.locator('#small-q').isHidden());await c.close();});
-await check('image failure does not expose empty companion or break content',async()=>{const c=await browser.newContext(),p=await c.newPage();await p.route('**/assets/small-q/*',r=>r.abort());await p.goto(base);await p.waitForTimeout(1800);assert(await p.locator('#small-q').isHidden());assert(await p.locator('h1').isVisible());await c.close();});
-await check('non-home pages exclude companion',async()=>{const p=await browser.newPage();await p.goto(new URL('about.html',base).href);assert.equal(await p.locator('#small-q').count(),0);assert.equal(await p.locator('script[src*="small-q"]').count(),0);await p.close();});
-}finally{await browser.close();server?.kill();await writeFile(new URL('report.json',out),JSON.stringify(report,null,2));}
-console.log(JSON.stringify(report));if(report.failures.length||report.pageErrors.length)process.exitCode=1;
+console.log(JSON.stringify(report));
+if(report.failures.length||report.pageErrors.length)process.exitCode=1;
