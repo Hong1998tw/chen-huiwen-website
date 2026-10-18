@@ -77,7 +77,7 @@ try{
    assert.equal(url.searchParams.get('status'),status);
   }
   const heroSources=await page.locator('.hero-portrait picture source').evaluateAll(nodes=>nodes.map(node=>node.type));
-  assert.deepEqual(heroSources,['image/avif','image/webp']);
+  assert.deepEqual(heroSources,['image/webp']);
   assert.equal(await page.locator('main img[fetchpriority=high]').count(),1,'only the actual hero image has high fetch priority');
   assert.equal(await page.locator('[data-home-event] img[fetchpriority=high]').count(),0);
   const eventImage=page.locator('[data-home-event] img');

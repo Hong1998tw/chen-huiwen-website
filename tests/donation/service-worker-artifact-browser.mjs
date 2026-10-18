@@ -115,9 +115,14 @@ async function captureDetailedServiceWorkerCacheState(page, cacheName, keyUrls) 
           url: offlineRequest.url,
           requestUrl: offlineUrl,
           cacheKeyUrl: offlineRequest.url,
+          requestMethod: offlineRequest.method,
+          requestMode: offlineRequest.mode,
+          requestDestination: offlineRequest.destination,
           match: true,
           responseUrl: offlineResponse.url,
           status: offlineResponse.status,
+          responseType: offlineResponse.type,
+          responseRedirected: offlineResponse.redirected,
           headers: Object.fromEntries(offlineResponse.headers.entries()),
           bodyBytes: Array.from(new Uint8Array(await offlineResponse.arrayBuffer())),
         };
@@ -494,6 +499,33 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   const aboutResponseBody = aboutResponse ? await aboutResponse.body().catch(() => Buffer.alloc(0)) : Buffer.alloc(0);
   const aboutBodyText = await page.locator('body').innerText().catch(() => '');
   const aboutAfter = await captureDetailedServiceWorkerCacheState(page, cacheName, state.cacheKeyUrls);
+  const aboutResponseHeaders = aboutResponse?.headers() ?? {};
+  const aboutResponseAllHeaders = aboutResponse ? await aboutResponse.allHeaders() : {};
+  const aboutResponseHeadersArray = aboutResponse ? await aboutResponse.headersArray() : [];
+  const aboutResponseHeaderNames = ['content-type', 'cache-control', 'x-huiwen-cached-at'];
+  const aboutResponseDiagnosticHeaderNames = new Set([
+    ...aboutResponseHeaderNames,
+    'access-control-allow-credentials',
+    'access-control-allow-origin',
+    'access-control-expose-headers',
+    'content-encoding',
+    'content-length',
+    'transfer-encoding',
+  ]);
+  const aboutResponseHeaderValues = aboutResponse
+    ? Object.fromEntries(await Promise.all(aboutResponseHeaderNames.map(async name =>
+      [name, await aboutResponse.headerValue(name)])))
+    : {};
+  const aboutCachedAtHeaderValueCanonical = aboutResponse
+    ? await aboutResponse.headerValue('X-Huiwen-Cached-At') : null;
+  const normalizedAboutResponseAllHeaders = Object.fromEntries(Object.entries(aboutResponseAllHeaders)
+    .map(([name, value]) => [name.toLowerCase(), value]));
+  const aboutResponseHeaderDiagnostics = Object.fromEntries([...aboutResponseDiagnosticHeaderNames]
+    .map(name => [name, aboutResponseHeaders[name] ?? null]));
+  const normalizedAboutResponseAllHeaderDiagnostics = Object.fromEntries([...aboutResponseDiagnosticHeaderNames]
+    .map(name => [name, normalizedAboutResponseAllHeaders[name] ?? null]));
+  const aboutResponseHeadersArrayDiagnostics = aboutResponseHeadersArray
+    .filter(({name}) => aboutResponseDiagnosticHeaderNames.has(name.toLowerCase()));
   offlineDiagnostics.probes.manifestAboutNavigation = {
     url: aboutUrl,
     manifestContainsRoute: aboutInManifest,
@@ -502,7 +534,21 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     navigationError: aboutNavigationError,
     status: aboutResponse?.status() ?? null,
     responseUrl: aboutResponse?.url() ?? null,
-    headers: aboutResponse?.headers() ?? {},
+    playwrightResponse: aboutResponse ? {
+      api: 'page.goto navigation Response',
+      fromServiceWorker: aboutResponse.fromServiceWorker(),
+      request: {
+        isNavigationRequest: aboutResponse.request().isNavigationRequest(),
+        resourceType: aboutResponse.request().resourceType(),
+      },
+      sameOriginAsRequest: new URL(aboutResponse.url()).origin === new URL(aboutUrl).origin,
+      headers: aboutResponseHeaderDiagnostics,
+      allHeaders: normalizedAboutResponseAllHeaderDiagnostics,
+      headersArray: aboutResponseHeadersArrayDiagnostics,
+      headerValues: aboutResponseHeaderValues,
+      cachedAtHeaderValueCanonical: aboutCachedAtHeaderValueCanonical,
+      accessControlExposeHeaders: normalizedAboutResponseAllHeaders['access-control-expose-headers'] ?? null,
+    } : null,
     bodyByteLength: aboutResponseBody.length,
     bodySha256: sha256(aboutResponseBody),
     bodyPrefix: aboutBodyText.slice(0, 240),
@@ -566,7 +612,15 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert.equal(aboutResponse.status(), expectedOffline.status,
     'manifest-backed navigation fallback must preserve the cached fallback status');
   for (const header of ['content-type', 'cache-control', 'x-huiwen-cached-at']) {
-    assert.equal(aboutResponse.headers()[header], expectedOffline.headers?.[header],
+    assert.equal(normalizedAboutResponseAllHeaders[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation allHeaders must preserve the cached offline ${header} header`);
+    assert.equal(aboutResponseHeaderValues[header], expectedOffline.headers?.[header],
+      `manifest-backed navigation headerValue must preserve the cached offline ${header} header`);
+  }
+  assert.equal(aboutCachedAtHeaderValueCanonical, expectedOffline.headers?.['x-huiwen-cached-at'],
+    'manifest-backed navigation headerValue must match the cached timestamp with canonical header casing');
+  for (const header of ['content-type', 'cache-control']) {
+    assert.equal(aboutResponseHeaders[header], expectedOffline.headers?.[header],
       `manifest-backed navigation must preserve the cached offline ${header} header`);
   }
   assert.deepEqual(aboutResponseBody, Buffer.from(expectedOffline.bodyBytes || []),
