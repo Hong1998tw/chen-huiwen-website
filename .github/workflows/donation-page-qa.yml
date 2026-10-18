@@ -171,6 +171,8 @@ jobs:
           {
             echo '## A-05 visual QA'
             echo "- Independent base-reference capture exit: ${reference_status}; its site SHA and capture-tool SHA are recorded separately."
+            echo '- On PR base-reference captures, the source records exact HEAD, clean status, tracked-byte digest, and read-only mode digest before capture, then rechecks HEAD, clean status, and tracked bytes before reporting the source SHA.'
+            echo '- This read-only mode protection deters writes by the reviewed capture tool; same-UID code can change modes, so it is not a strong sandbox.'
             echo "- Local capture exit: ${local_capture_status}"
             echo "- Cloudflare capture exit: ${cloudflare_capture_status}"
             echo '- Cloudflare source is read from deployment.json before and after capture; transfer encoding is recorded as observed.'

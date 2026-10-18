@@ -13,6 +13,19 @@ const SHA40 = /^[a-f0-9]{40}$/i;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const REPORT_SCHEMA = 'wcag22aa-target-size-report/v2';
 const PROPOSAL_SCHEMA = 'wcag22aa-target-size-baseline-proposal/v1';
+const SEMVER_CORE = '(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)';
+const SEMVER_PRERELEASE_IDENTIFIER = '(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)';
+const SEMVER_BUILD_IDENTIFIER = '[0-9A-Za-z-]+';
+const SEMVER = new RegExp(`^${SEMVER_CORE}(?:-${SEMVER_PRERELEASE_IDENTIFIER}(?:\\.${SEMVER_PRERELEASE_IDENTIFIER})*)?(?:\\+${SEMVER_BUILD_IDENTIFIER}(?:\\.${SEMVER_BUILD_IDENTIFIER})*)?$`);
+const NODE_VERSION = new RegExp(`^v${SEMVER.source.slice(1, -1)}$`);
+
+function isNodeVersion(value) {
+  return typeof value === 'string' && NODE_VERSION.test(value);
+}
+
+function isPlaywrightVersion(value) {
+  return typeof value === 'string' && SEMVER.test(value);
+}
 
 function sameCases(actual, expected) {
   if (!Array.isArray(actual) || actual.length !== expected.length) return false;
@@ -31,8 +44,8 @@ function assertSource(source, tool, runtime) {
     throw new Error('The native CI run, artifact, URL, or source SHA provenance is missing or invalid.');
   }
   if (!tool || tool.entrypoint !== 'tests/donation/browser.mjs' || tool.gitHeadSha !== source.checkoutSha ||
-      !SHA256.test(tool.scriptSha256 ?? '') || !runtime || runtime.node == null ||
-      runtime.playwrightVersion == null || runtime.axePlaywrightVersion !== AXE_PLAYWRIGHT_VERSION ||
+      !SHA256.test(tool.scriptSha256 ?? '') || !runtime || !isNodeVersion(runtime.node) ||
+      !isPlaywrightVersion(runtime.playwrightVersion) || runtime.axePlaywrightVersion !== AXE_PLAYWRIGHT_VERSION ||
       runtime.axeCoreVersion !== AXE_CORE_VERSION || !String(runtime.chromiumVersion ?? '').trim()) {
     throw new Error('The A-06 runner tool or runtime provenance is incomplete.');
   }

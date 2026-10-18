@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ import {
   sha256,
   validateBaselineExceptions
 } from './visual-qa-lib.mjs';
-import { assertAllowedOptions, resolveCaptureRoots } from './visual-qa-identity.mjs';
+import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 
 function png(width, height, color) {
@@ -323,6 +323,114 @@ test('A-05 resolves site and capture-tool Git identities separately and rejects 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('A-05 default output rejects a committed symlink escape and the PR base source is guarded and rechecked', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-default-output-and-readonly-base-'));
+  const gitAt = (repositoryRoot, args) => {
+    const result = spawnSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const initRepository = async repositoryRoot => {
+    await mkdir(repositoryRoot, { recursive: true });
+    gitAt(repositoryRoot, ['init', '-q']);
+    gitAt(repositoryRoot, ['config', 'user.name', 'A05 fixture']);
+    gitAt(repositoryRoot, ['config', 'user.email', 'a05-fixture@example.invalid']);
+  };
+  const commitAll = repositoryRoot => {
+    gitAt(repositoryRoot, ['add', '.']);
+    gitAt(repositoryRoot, ['commit', '-q', '-m', 'fixture checkout']);
+  };
+  const escapedRunner = join(directory, 'escaped-runner');
+  const externalOutput = join(directory, 'external-output');
+  const escapedDefault = join(escapedRunner, 'tests', 'donation', 'results', 'visual-qa');
+  await initRepository(escapedRunner);
+  await mkdir(join(escapedRunner, 'tests', 'donation', 'results'), { recursive: true });
+  await mkdir(externalOutput);
+  await writeFile(join(escapedRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  await symlink(externalOutput, escapedDefault, 'dir');
+  commitAll(escapedRunner);
+  await assert.rejects(
+    resolveCaptureRoots({ runnerRoot: escapedRunner, defaultOutput: escapedDefault }),
+    /Default capture output directory (?:must resolve within|symlink resolves outside) the capture tool checkout/
+  );
+  const explicitOutput = join(directory, 'explicit-output');
+  const explicitIdentity = await resolveCaptureRoots({ runnerRoot: escapedRunner, outputDir: explicitOutput, defaultOutput: escapedDefault });
+  assert.equal(explicitIdentity.outputRoot, join(await realpath(directory), 'explicit-output'));
+
+  const escapedParentRunner = join(directory, 'escaped-parent-runner');
+  const externalParent = join(directory, 'external-parent');
+  const escapedResultsParent = join(escapedParentRunner, 'tests', 'donation', 'results');
+  await initRepository(escapedParentRunner);
+  await mkdir(join(escapedParentRunner, 'tests', 'donation'), { recursive: true });
+  await mkdir(externalParent);
+  await writeFile(join(escapedParentRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  await symlink(externalParent, escapedResultsParent, 'dir');
+  commitAll(escapedParentRunner);
+  await assert.rejects(
+    resolveCaptureRoots({
+      runnerRoot: escapedParentRunner,
+      defaultOutput: join(escapedResultsParent, 'visual-qa'),
+    }),
+    /symlink resolves outside the capture tool checkout/
+  );
+
+  const safeRunner = join(directory, 'safe-runner');
+  await initRepository(safeRunner);
+  await writeFile(join(safeRunner, '.gitignore'), 'tests/donation/results/\n');
+  await writeFile(join(safeRunner, 'runner.mjs'), 'export const fixture = true;\n');
+  commitAll(safeRunner);
+  const safeDefault = join(safeRunner, 'tests', 'donation', 'results', 'visual-qa');
+  await mkdir(safeDefault, { recursive: true });
+  const defaultIdentity = await resolveCaptureRoots({ runnerRoot: safeRunner, defaultOutput: safeDefault });
+  assert.equal(defaultIdentity.outputRoot, await realpath(safeRunner).then(path => join(path, 'tests', 'donation', 'results', 'visual-qa')));
+
+  const sourceRepository = join(directory, 'source-repository');
+  const runnerTemp = join(directory, 'runner-temp');
+  const baseRoot = join(runnerTemp, 'a05-main-reference');
+  const externalSourceTarget = join(directory, 'external-source-target.txt');
+  await initRepository(sourceRepository);
+  await mkdir(join(sourceRepository, 'pages'), { recursive: true });
+  await writeFile(join(sourceRepository, 'pages', 'index.html'), '<main>reviewed source</main>\n');
+  await writeFile(externalSourceTarget, 'outside the base worktree\n');
+  await symlink(externalSourceTarget, join(sourceRepository, 'external-link'), 'file');
+  commitAll(sourceRepository);
+  await mkdir(runnerTemp, { recursive: true });
+  gitAt(sourceRepository, ['worktree', 'add', '--detach', baseRoot, 'HEAD']);
+  const sourcePath = join(baseRoot, 'pages', 'index.html');
+  const sourceRepositoryPath = join(sourceRepository, 'pages', 'index.html');
+  const commonGitDir = join(sourceRepository, gitAt(sourceRepository, ['rev-parse', '--git-common-dir']));
+  const originalFileMode = (await lstat(sourcePath)).mode & 0o777;
+  const originalDirectoryMode = (await lstat(join(baseRoot, 'pages'))).mode & 0o777;
+  const originalRepositoryMode = (await lstat(sourceRepositoryPath)).mode & 0o777;
+  const originalCommonGitDirMode = (await lstat(commonGitDir)).mode & 0o777;
+  const originalExternalTargetMode = (await lstat(externalSourceTarget)).mode & 0o777;
+
+  const guard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+  assert.equal(guard.initialState.headSha, gitAt(baseRoot, ['rev-parse', 'HEAD']));
+  assert.equal((await lstat(sourcePath)).mode & 0o222, 0);
+  assert.equal((await lstat(join(baseRoot, 'pages'))).mode & 0o222, 0);
+  assert.equal(guard.modeRecord.skippedSymlinkCount, 1);
+  assert.notEqual((await lstat(sourceRepositoryPath)).mode & 0o222, 0);
+  assert.equal((await lstat(commonGitDir)).mode & 0o777, originalCommonGitDirMode);
+  assert.equal((await lstat(externalSourceTarget)).mode & 0o777, originalExternalTargetMode);
+  const integrity = await guard.verifyAndRestore();
+  assert.equal(integrity.cleanAfterCapture, true);
+  assert.equal(integrity.trackedContentSha256After, integrity.trackedContentSha256Before);
+  assert.notEqual(integrity.readOnlyMode.sha256, '');
+  assert.equal((await lstat(sourcePath)).mode & 0o777, originalFileMode);
+  assert.equal((await lstat(join(baseRoot, 'pages'))).mode & 0o777, originalDirectoryMode);
+  assert.equal((await lstat(sourceRepositoryPath)).mode & 0o777, originalRepositoryMode);
+  assert.equal((await lstat(commonGitDir)).mode & 0o777, originalCommonGitDirMode);
+  assert.equal((await lstat(externalSourceTarget)).mode & 0o777, originalExternalTargetMode);
+
+  const changedSourceGuard = await protectReadOnlyBaseSource({ root: baseRoot, runnerTemp, baseRoot });
+  await chmod(sourcePath, originalFileMode);
+  await writeFile(sourcePath, '<main>changed during capture</main>\n');
+  await assert.rejects(changedSourceGuard.verifyAndRestore(), /tracked content changed/);
+  assert.equal(await readFile(sourcePath, 'utf8'), '<main>changed during capture</main>\n');
+  assert.equal((await lstat(sourcePath)).mode & 0o777, originalFileMode);
 });
 
 test('A-05 cross-source review verifies both capture bundles and emits review diffs without selecting a golden', async () => {
