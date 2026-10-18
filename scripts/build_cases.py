@@ -3,7 +3,7 @@
 from python_guard import require_supported_python
 require_supported_python()
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode,urlsplit
 import xml.etree.ElementTree as ET
 import json,re,html,hashlib
 from achievement_metadata import facts_html, is_public, partner_text, search_text, village_lookup, latest_history_event
@@ -28,8 +28,13 @@ public_items.sort(key=lambda c: c['id'] in station_details)
 geo=json.loads((R/'assets/fengshan-villages.geojson').read_text())
 template=(R/'templates/case-page.html').read_text()
 byid={x['id']:x for x in public_items}
+related_topics={topic for item in public_items for topic in item['categories']}
 assert len({x['id']:x for x in items})==len(items)
 def href(i):return 'achievement-'+i+'.html'
+def related_more(c):
+ topic=next((value for value in c.get('categories',[]) if value in related_topics),None)
+ if topic:return 'achievements.html?'+urlencode({'category':topic})+'#case-results','更多相關專題：'+topic+' →'
+ return 'achievements.html#case-results','查看更多建設與進度 →'
 def ext(url,title):return f'<a href="{E(url)}" target="_blank" rel="noopener noreferrer">{E(title)} {link_arrow(url)}</a>'
 def is_council_index(url):
  parsed=urlsplit(url)
@@ -115,7 +120,10 @@ for c in public_items:
  related=''
  if c['related']:
   related_ids=[id for id in c['related'] if id in byid]
-  if related_ids: related='<section class="section wrap"><p class="eyebrow">相關專題</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
+  if related_ids:
+   more_href,more_label=related_more(c)
+   heading_id='related-'+c['id']+'-heading'
+   related=f'<section class="section wrap related-section" aria-labelledby="{E(heading_id)}"><h2 id="{E(heading_id)}">相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+f'</div><p class="related-more"><a href="{E(more_href)}">{E(more_label)}</a></p></section>'
  section_links={'overview':('case-overview','重點說明',bool(content)), 'media':('case-media','照片與影片',bool(photos)),
                 'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
  reading_links=[('case-context','議題導讀',bool(context))]+[section_links[key] for key in section_order]
