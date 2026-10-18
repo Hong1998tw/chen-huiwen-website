@@ -1167,6 +1167,8 @@ def validate_manifest(
     all_public_html_routes = set(candidates) | set(skipped_routes) | set(excluded_names)
     if any(not _safe_public_html_route(route) for route in all_public_html_routes):
         raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_PATH_INVALID")
+    inactive_routes = set(inactive_routes or ())
+    validate_route_source_status(candidates, skipped_routes, inactive_routes)
     for route in skipped_routes:
         path = artifact_root / route
         if not path.is_file() or path.is_symlink():
@@ -1200,7 +1202,6 @@ def validate_manifest(
     if not styles_path.is_file() or styles_path.is_symlink():
         raise ValueError("FONT_MANIFEST_STYLESHEET_MISSING")
     jp_allowed, jp_cmap = parse_jp_face(artifact_root, styles_path.read_text(encoding="utf-8"))
-    inactive_routes = set(inactive_routes or ())
     public_ids = None if public_ids is None else set(public_ids)
     for route in routes:
         if not _safe_public_html_route(route) or route in inactive_routes:
@@ -1342,6 +1343,14 @@ def _inactive_and_public_ids(source_root: Path) -> tuple[set[str], set[str]]:
     rows = json.loads((source_root / "data/achievements-public.json").read_text(encoding="utf-8"))
     public_ids = {row.get("id") for row in rows if isinstance(row, dict) and isinstance(row.get("id"), str)}
     return inactive, public_ids
+
+
+def validate_route_source_status(candidates, skipped_routes, inactive_routes) -> None:
+    """Reject source-unpublished routes in both generated and pre-existing font inventories."""
+    source_routes = set(candidates) | set(skipped_routes)
+    inactive = sorted(source_routes.intersection(inactive_routes))
+    if inactive:
+        raise ValueError("FONT_MANIFEST_ROUTE_NOT_PUBLIC: " + inactive[0])
 
 
 def _runtime_rss_bytes() -> int:

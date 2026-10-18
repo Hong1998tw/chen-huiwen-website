@@ -31,7 +31,10 @@ jobs:
           print(json.dumps({'compiler':data['compiler'],'candidateRoutes':data['candidateRoutes'],'cold':data['cold'],'warm':data['warm']},ensure_ascii=False))
           PY
       - name: Verify page-font contract negatives against the emitted artifact
-        run: python -m unittest discover -s tests -p test_page_font_contract.py
+        env:
+          PAGE_FONT_ARTIFACT_ROOT: _site
+          G02_BUILD_REPORT: tests/donation/results/cloudflare-assets/build.json
+        run: python tests/page_font_artifact_integration.py
       - name: Verify immutable namespace and mutable manifest cache headers
         env:
           PAGE_FONT_ARTIFACT_ROOT: _site
