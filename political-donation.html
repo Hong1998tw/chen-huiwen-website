@@ -15,7 +15,7 @@
 <meta content="https://www.huiwen.tw/political-donation.html" property="og:url"/>
 <link href="assets/favicon.svg" rel="icon" type="image/svg+xml"/>
 <!-- HUIWEN_FONT_PRELOAD:start --><link rel="preload" href="/assets/fonts/huiwen-site-sans/generated/huiwen-political-donation-core-627875829fb3.woff2" as="font" type="font/woff2" crossorigin="anonymous"><!-- HUIWEN_FONT_PRELOAD:end -->
-<link href="styles.css?v=7c06305b3fd9" rel="stylesheet"/>
+<link href="styles.css?v=d8417c5e5f02" rel="stylesheet"/>
 <script defer="" src="site.js?v=39080b4ef4e7"></script>
 <link href="political-donation.css?v=cb1c0e7292ad" rel="stylesheet"/>
 <meta content="https://www.huiwen.tw/assets/site-share-20260909.png" property="og:image"/>
@@ -33,7 +33,30 @@
 <meta property="og:site_name" content="陳慧文官網">
 <link rel="stylesheet" href="civic.css?v=d968a1363772">
 <script src="civic.js?v=dbacdb22cb1e" defer></script>
-<script data-cms-editor-loader>if(window.self!==window.top&&(document.currentScript?.dataset.cmsEditorEnabled==='true'||new URLSearchParams(location.search).get('cmsEdit')==='1'))document.write('<scr'+'ipt defer src="/cms-page-editor.js?v=78cbab7cfa45"></scr'+'ipt>');</script>
+<script data-cms-editor-loader data-cms-editor-src="/cms-page-editor.js?v=2671ebb87087">(() => {
+  const loader = document.currentScript;
+  const params = new URLSearchParams(window.location.search);
+  if (!loader || window.self === window.top || params.get("cmsEdit") !== "1") return;
+
+  const source = loader.dataset.cmsEditorSrc;
+  if (!source || document.querySelector("script[data-cms-editor-runtime]")) return;
+
+  const loadEditor = () => {
+    if (document.querySelector("script[data-cms-editor-runtime]")) return;
+    const script = document.createElement("script");
+    script.src = source;
+    // Dynamic classic scripts do not honor defer; disable async execution instead.
+    script.async = false;
+    script.dataset.cmsEditorRuntime = "true";
+    (document.head || document.documentElement).append(script);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadEditor, { once: true });
+  } else {
+    loadEditor();
+  }
+})();</script>
 </head>
 <body>
 <a class="skip-link" href="#main">跳到主要內容</a>
