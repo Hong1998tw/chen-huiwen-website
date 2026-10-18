@@ -18,6 +18,32 @@ from verify_cloudflare_assets import verify_private_paths
 
 
 class PageFontContractUnitTests(unittest.TestCase):
+    def _write_minimal_font_binding(self, root):
+        files = {}
+        font_rows = {}
+        for role, directory, payload in (
+            ('common', producer.CORE_DIR, b'offline-common-font-fixture'),
+            ('delta', producer.DELTA_DIR, b'offline-delta-font-fixture'),
+        ):
+            digest = hashlib.sha256(payload).hexdigest()
+            path = f'{directory}/{digest}.woff2'
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            files[path] = digest
+            font_rows[path] = {
+                'sha256': digest,
+                'bytes': len(payload),
+                'codepoints': [0x4E00],
+                'glyphsetSha256': producer.glyphset_sha256([0x4E00]),
+            }
+        manifest = {'schemaVersion': producer.MANIFEST_SCHEMA, 'fonts': font_rows}
+        manifest_bytes = json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()
+        (root / contract.FONT_MANIFEST).write_bytes(manifest_bytes)
+        files[contract.FONT_MANIFEST] = hashlib.sha256(manifest_bytes).hexdigest()
+        publication = {'version': 1, 'files': files}
+        return publication, manifest, manifest_bytes, font_rows
+
     def test_ordinary_paths_and_legacy_font_assets_are_not_page_font_assets(self):
         for path in (
             "achievement-alpha.html",
@@ -66,6 +92,34 @@ class PageFontContractUnitTests(unittest.TestCase):
         producer.validate_route_source_status(candidates, skipped, inactive)
         with self.assertRaisesRegex(ValueError, "FONT_MANIFEST_ROUTE_NOT_PUBLIC"):
             producer.validate_route_source_status([], skipped, {next(iter(skipped))})
+        with self.assertRaisesRegex(ValueError, "FONT_MANIFEST_ROUTE_NOT_PUBLIC: offline.html"):
+            producer.validate_route_source_status(["offline.html"], [], {"offline.html"})
+
+    def test_offline_font_publication_rejects_missing_wrong_hash_tamper_and_namespace_sidecar(self):
+        with tempfile.TemporaryDirectory(prefix='offline-font-binding-') as name:
+            root = Path(name)
+            publication, manifest, manifest_bytes, font_rows = self._write_minimal_font_binding(root)
+            contract.validate_publication_binding(root, publication, manifest, manifest_bytes)
+
+            common = next(path for path in font_rows if path.startswith(producer.CORE_DIR + '/'))
+            wrong_hash_publication = json.loads(json.dumps(publication))
+            wrong_hash_publication['files'][common] = '0' * 64
+            with self.assertRaisesRegex(ValueError, 'PAGE_FONT_ASSET_NOT_BOUND_TO_PUBLICATION'):
+                contract.validate_publication_binding(root, wrong_hash_publication, manifest, manifest_bytes)
+
+            (root / common).write_bytes(b'tampered offline common bytes')
+            with self.assertRaisesRegex(ValueError, 'PAGE_FONT_ASSET_PUBLICATION_BYTES_MISMATCH'):
+                contract.validate_publication_binding(root, publication, manifest, manifest_bytes)
+
+            (root / common).write_bytes(b'offline-common-font-fixture')
+            (root / common).parent.joinpath('unlisted-sidecar.woff2').write_bytes(b'unlisted')
+            with self.assertRaisesRegex(ValueError, 'PAGE_FONT_NAMESPACE_CLOSURE_INVALID'):
+                contract.validate_publication_binding(root, publication, manifest, manifest_bytes)
+
+            (root / common).parent.joinpath('unlisted-sidecar.woff2').unlink()
+            (root / common).unlink()
+            with self.assertRaisesRegex(ValueError, 'PAGE_FONT_ASSET_PUBLICATION_BYTES_MISMATCH'):
+                contract.validate_publication_binding(root, publication, manifest, manifest_bytes)
 
     def test_local_http_private_path_guard_rejects_public_exposure(self):
         class Handler(BaseHTTPRequestHandler):

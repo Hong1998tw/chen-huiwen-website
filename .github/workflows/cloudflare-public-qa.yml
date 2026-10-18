@@ -6,7 +6,7 @@ permissions:
 jobs:
   static-assets:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -45,14 +45,21 @@ jobs:
         run: bash scripts/install_playwright_ci.sh
       - name: Verify exact assets, existing routes and private-path exclusion
         run: |
+          set -euo pipefail
           npx --yes wrangler@4.143.1 dev --local --config wrangler.public.jsonc --port 8789 > /tmp/wrangler-public.log 2>&1 &
+          wrangler_pid=$!
+          trap 'kill "$wrangler_pid" 2>/dev/null || true' EXIT
+          ready=0
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:8789/deployment.json > /dev/null; then break; fi
+            if curl --fail --silent http://127.0.0.1:8789/deployment.json > /dev/null; then ready=1; break; fi
             sleep 1
           done
+          if [[ "$ready" != 1 ]]; then cat /tmp/wrangler-public.log; exit 1; fi
           python scripts/verify_cloudflare_assets.py --base-url http://127.0.0.1:8789 --report tests/donation/results/cloudflare-assets/report.json
           python scripts/verify_security_headers.py --base-url http://127.0.0.1:8789 --artifact-root _site --report tests/donation/results/cloudflare-assets/security-headers.json
           BASE_URL=http://127.0.0.1:8789/ node tests/donation/page-font-artifact.mjs
+          node --test tests/donation/service-worker-cache-policy.test.mjs
+          BASE_URL=http://127.0.0.1:8789 node tests/donation/service-worker-artifact-browser.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

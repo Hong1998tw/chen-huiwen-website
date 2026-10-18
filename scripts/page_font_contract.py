@@ -275,4 +275,5 @@ def validate_artifact_contract(artifact_root: Path, source_root: Path = ROOT) ->
     validate_source_kern_shard_closure((root / producer.TC_REL).read_bytes(), manifest)
     return {"publication": publication, "manifest": manifest, "manifestBytes": manifest_bytes,
             "fonts": manifest["fonts"], "routes": manifest["routes"],
-            "fontRoutes": sorted(manifest["routes"]), "fontAssets": sorted(manifest["fonts"])}
+            "fontRoutes": sorted(manifest["routes"]), "fontAssets": sorted(manifest["fonts"]),
+            "fontNamespaces": [producer.CORE_DIR, producer.DELTA_DIR]}

@@ -9,7 +9,7 @@ jobs:
   preview:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -23,7 +23,7 @@ jobs:
       - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
       - run: python scripts/build_cloudflare_public.py
       - name: Wait for the exact reviewed revision at the verified preview host
-        run: python scripts/verify_cloudflare_delivery.py --base-url https://huiwen-website.lihong.workers.dev --report tests/donation/results/cloudflare-preview/receipt.json
+        run: python scripts/verify_cloudflare_delivery.py --base-url https://huiwen-website.lihong.workers.dev --report tests/donation/results/cloudflare-preview/receipt.json --attempts 420 --delay 5
       - name: Verify all public asset bytes, preserved routes and private-path exclusion
         run: python scripts/verify_cloudflare_assets.py --base-url https://huiwen-website.lihong.workers.dev --report tests/donation/results/cloudflare-preview/assets.json
       - name: Verify all reviewed HTML pages

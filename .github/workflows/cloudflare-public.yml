@@ -12,7 +12,7 @@ jobs:
   delivery:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -24,7 +24,7 @@ jobs:
       - name: Rebuild the reviewed public artifact without deploying
         run: python scripts/build_cloudflare_public.py
       - name: Wait for the exact source revision and artifact at the production origin
-        run: python scripts/verify_cloudflare_delivery.py
+        run: python scripts/verify_cloudflare_delivery.py --attempts 420 --delay 5
       - name: Verify live security headers and immutable asset bytes
         run: >
           python scripts/verify_security_headers.py
