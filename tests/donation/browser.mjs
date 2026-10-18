@@ -34,6 +34,10 @@ let diagnosticPage;
 async function check(name, fn) {
   try {
     const value = await fn();
+    if (value?.__checkStatus === 'Pending') {
+      report.checks.push({ name, status: 'Pending', value: value.value });
+      return;
+    }
     report.checks.push({ name, status: 'Passed', ...(value === undefined ? {} : { value }) });
   } catch (error) {
     report.checks.push({ name, status: 'Failed', error: String(error) });
@@ -56,6 +60,187 @@ async function assertWithinHalfPixel(page, label, actual, expected) {
   assert(Math.abs(actual - expected) <= 0.5, `${label}: ${actual}px differs from ${expected}px by more than 0.5px`);
 }
 
+async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, compact }) {
+  const evidence = await page.evaluate(async ({ label, targetScrollY, compact }) => {
+    const header = document.querySelector('.site-header');
+    const navigation = document.querySelector('#navigation');
+    const toggle = document.querySelector('.menu-toggle');
+    const round = value => Math.round(value * 10) / 10;
+    const activeElement = () => {
+      const element = document.activeElement;
+      return element ? {
+        tagName: element.tagName,
+        id: element.id || null,
+        className: typeof element.className === 'string' ? element.className : null,
+        href: element.getAttribute?.('href') ?? null,
+        text: (element.textContent || '').trim().slice(0, 64),
+      } : null;
+    };
+    if (!header || !navigation || !toggle) {
+      return { label, supported: false, unsupportedReason: 'Required header, navigation, or menu toggle selector is missing.' };
+    }
+
+    const media = {
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+    };
+    const initialStyle = getComputedStyle(header);
+    const properties = initialStyle.transitionProperty.split(',').map(value => value.trim());
+    const durations = initialStyle.transitionDuration.split(',').map(value => value.trim());
+    const delays = initialStyle.transitionDelay.split(',').map(value => value.trim());
+    const parseTime = value => {
+      const number = Number.parseFloat(value);
+      if (!Number.isFinite(number)) return 0;
+      return value.endsWith('ms') ? number : number * 1000;
+    };
+    const transitionIndex = properties.findIndex(value => value === 'min-height' || value === 'all');
+    const minHeightTransitionMs = transitionIndex < 0 ? 0 : parseTime(durations[transitionIndex % durations.length] || '0s');
+    const minHeightDelayMs = transitionIndex < 0 ? 0 : parseTime(delays[transitionIndex % delays.length] || '0s');
+    const targetHeight = compact ? 52 : 64;
+    const startedAt = performance.now();
+    const samples = [];
+    const transitionEvents = [];
+    let transitionRunAt = null;
+    let transitionEndAt = null;
+    let transitionCancelAt = null;
+    let pendingFrameId = 0;
+
+    const sample = frame => {
+      const headerRect = header.getBoundingClientRect();
+      const navigationRect = navigation.getBoundingClientRect();
+      return {
+        frame,
+        elapsedMs: round(performance.now() - startedAt),
+        scrollY: round(window.scrollY),
+        headerHeight: round(headerRect.height),
+        headerBottom: round(headerRect.bottom),
+        menuTop: round(navigationRect.top),
+        menuLeft: round(navigationRect.left),
+        menuRight: round(navigationRect.right),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        compact: header.classList.contains('is-compact'),
+        ariaExpanded: toggle.getAttribute('aria-expanded'),
+        activeElement: activeElement(),
+        focusInsideMenu: navigation.contains(document.activeElement),
+        menuVisible: getComputedStyle(navigation).display !== 'none',
+      };
+    };
+    const onTransition = event => {
+      if (event.target !== header || event.propertyName !== 'min-height') return;
+      const atMs = round(performance.now() - startedAt);
+      transitionEvents.push({ type: event.type, atMs, propertyName: event.propertyName });
+      if (event.type === 'transitionrun' && transitionRunAt === null) transitionRunAt = atMs;
+      if (event.type === 'transitionend' && transitionEndAt === null) transitionEndAt = atMs;
+      if (event.type === 'transitioncancel' && transitionCancelAt === null) transitionCancelAt = atMs;
+    };
+    header.addEventListener('transitionrun', onTransition);
+    header.addEventListener('transitionstart', onTransition);
+    header.addEventListener('transitionend', onTransition);
+    header.addEventListener('transitioncancel', onTransition);
+
+    const initial = sample('before-trigger');
+    samples.push(initial);
+    window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+    const timeoutMs = Math.min(1500, Math.max(600, minHeightTransitionMs + minHeightDelayMs + 500));
+    const deadline = startedAt + timeoutMs;
+    let timeoutId;
+    const timeoutPromise = new Promise(resolve => { timeoutId = window.setTimeout(() => resolve(false), timeoutMs); });
+    let terminalReachedAt = null;
+    let terminalFramesWithoutRun = 0;
+    let timedOut = false;
+    try {
+      while (performance.now() < deadline) {
+        const hasFrame = await Promise.race([
+          new Promise(resolve => { pendingFrameId = requestAnimationFrame(() => { pendingFrameId = 0; resolve(true); }); }),
+          timeoutPromise,
+        ]);
+        if (!hasFrame) {
+          timedOut = true;
+          break;
+        }
+        const current = sample(samples.length);
+        samples.push(current);
+        const expectedCompact = current.compact === compact;
+        const atEndpoint = Math.abs(current.headerHeight - targetHeight) <= 0.75;
+        if (expectedCompact && atEndpoint && terminalReachedAt === null) terminalReachedAt = current.elapsedMs;
+        if (expectedCompact && atEndpoint && transitionRunAt !== null &&
+            current.elapsedMs - transitionRunAt >= minHeightTransitionMs + minHeightDelayMs) break;
+        if (expectedCompact && atEndpoint && transitionRunAt === null) {
+          terminalFramesWithoutRun++;
+          if (terminalFramesWithoutRun >= 3) break;
+        }
+      }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (pendingFrameId) cancelAnimationFrame(pendingFrameId);
+      header.removeEventListener('transitionrun', onTransition);
+      header.removeEventListener('transitionstart', onTransition);
+      header.removeEventListener('transitionend', onTransition);
+      header.removeEventListener('transitioncancel', onTransition);
+    }
+
+    const final = samples.at(-1);
+    const low = Math.min(initial.headerHeight, targetHeight);
+    const high = Math.max(initial.headerHeight, targetHeight);
+    const intermediateSamples = samples.filter(item => item.headerHeight > low + 0.75 && item.headerHeight < high - 0.75);
+    const overlappingSamples = samples.filter(item => item.menuTop < item.headerBottom - 0.5);
+    const rightOverflowSamples = samples.filter(item => item.menuLeft < -0.5 || item.menuRight > item.viewportWidth + 0.5);
+    const expectedScrollReached = targetScrollY > 8 ? final.scrollY > 8 : final.scrollY <= 8;
+    const terminalReached = final.compact === compact && Math.abs(final.headerHeight - targetHeight) <= 0.75;
+    const transitionEndpoint = transitionEndAt !== null ? 'transitionend' : terminalReached ? 'raf-endpoint-fallback' : 'timeout';
+    const unsupportedReasons = [];
+    if (!media.noPreference || media.reducedMotion) unsupportedReasons.push('The browser does not report prefers-reduced-motion: no-preference.');
+    if (!properties.some(value => value === 'min-height' || value === 'all') || minHeightTransitionMs <= 0) unsupportedReasons.push('Computed CSS has no positive min-height transition duration.');
+    if (!expectedScrollReached) unsupportedReasons.push(`Programmatic scroll did not reach the requested ${targetScrollY}px transition trigger; final scrollY=${final.scrollY}px.`);
+    if (transitionRunAt === null) unsupportedReasons.push('No native min-height transitionrun event was observed.');
+    if (transitionCancelAt !== null) unsupportedReasons.push('The native min-height transition was canceled.');
+    if (!terminalReached) unsupportedReasons.push(`The ${compact ? 'compact' : 'expanded'} terminal height was not observed before the bounded ${timeoutMs}ms wait ended.`);
+    if (intermediateSamples.length === 0) unsupportedReasons.push('No intermediate requestAnimationFrame sample fell between the start and terminal heights.');
+    if (samples.length < 4) unsupportedReasons.push(`Only ${samples.length} requestAnimationFrame samples were captured; at least 4 are required.`);
+    if (overlappingSamples.length) unsupportedReasons.push(`${overlappingSamples.length} sampled frame(s) placed the menu over the header.`);
+    if (rightOverflowSamples.length) unsupportedReasons.push(`${rightOverflowSamples.length} sampled frame(s) placed the menu outside the viewport width.`);
+    if (samples.some(item => item.ariaExpanded !== 'true' || !item.menuVisible || !item.focusInsideMenu)) unsupportedReasons.push('The open menu lost visible/ARIA/focus state during the transition.');
+
+    return {
+      label,
+      supported: unsupportedReasons.length === 0,
+      unsupportedReasons,
+      viewport: { width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio },
+      motion: { requested: 'no-preference', ...media },
+      css: {
+        transitionProperty: properties,
+        transitionDuration: durations,
+        transitionDelay: delays,
+        minHeightTransitionMs: round(minHeightTransitionMs),
+        minHeightDelayMs: round(minHeightDelayMs),
+      },
+      target: { scrollY: targetScrollY, compact, height: targetHeight },
+      terminalWait: { timeoutMs, timedOut, endpoint: transitionEndpoint, terminalReachedAtMs: terminalReachedAt },
+      transition: {
+        runAtMs: transitionRunAt,
+        endAtMs: transitionEndAt,
+        cancelAtMs: transitionCancelAt,
+        actualDurationMs: transitionRunAt !== null && transitionEndAt !== null ? round(transitionEndAt - transitionRunAt) : null,
+        observedDurationMs: transitionRunAt !== null && terminalReachedAt !== null ? round(terminalReachedAt - transitionRunAt) : null,
+        events: transitionEvents,
+      },
+      sampleCount: samples.length,
+      intermediateSampleCount: intermediateSamples.length,
+      overlappingFrameCount: overlappingSamples.length,
+      rightOverflowFrameCount: rightOverflowSamples.length,
+      initial,
+      final,
+      samples,
+    };
+  }, { label, targetScrollY, compact });
+
+  report.interactions.push({ name: `live header transition: ${label}`, ...evidence });
+  assert(evidence.supported, `${label} did not demonstrate a valid native header transition: ${JSON.stringify(evidence.unsupportedReasons)}`);
+  assert(evidence.terminalWait.endpoint === 'transitionend' || evidence.terminalWait.endpoint === 'raf-endpoint-fallback', `${label} did not reach an observed animation endpoint`);
+  return evidence;
+}
+
 function largestCls(shifts) {
   const ordered = [...shifts].sort((a, b) => a.startTime - b.startTime);
   let max = 0, current = 0, windowStart = 0, last = 0;
@@ -74,7 +259,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   await context.addInitScript(() => {
     window.layoutShifts = [];
     new PerformanceObserver(list => window.layoutShifts.push(...list.getEntries().filter(x => !x.hadRecentInput))).observe({ type: 'layout-shift', buffered: true });
@@ -238,8 +423,194 @@ try {
       assert.equal(reduced.transitionDuration, '0s');
       const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       await page.goto(base + 'political-donation.html');
     });
+
+    if (width === 390) {
+      const animationPage = await context.newPage();
+      await animationPage.setViewportSize({ width: 390, height: 844 });
+      diagnosticPage = animationPage;
+      try {
+        await check('G06 mobile header animation: live compact and expand frames while menu is open', async () => {
+          await animationPage.emulateMedia({ reducedMotion: 'no-preference' });
+          await animationPage.goto(base + 'service.html');
+          const initial = await animationPage.evaluate(() => ({
+            scrollY: window.scrollY,
+            compact: document.querySelector('.site-header').classList.contains('is-compact'),
+            height: document.querySelector('.site-header').getBoundingClientRect().height,
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+            noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+          }));
+          assert.equal(initial.scrollY, 0, JSON.stringify(initial));
+          assert.equal(initial.compact, false, JSON.stringify(initial));
+          assert(Math.abs(initial.height - 64) <= 0.75, JSON.stringify(initial));
+          assert.equal(initial.reducedMotion, false, JSON.stringify(initial));
+          assert.equal(initial.noPreference, true, JSON.stringify(initial));
+
+          const toggle = animationPage.locator('.menu-toggle');
+          await toggle.focus();
+          await animationPage.keyboard.press('Enter');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open compact 64px to 52px', targetScrollY: 600, compact: true });
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open expand 52px to 64px', targetScrollY: 0, compact: false });
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await animationPage.keyboard.press('Escape');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+          assert(await toggle.evaluate(el => el === document.activeElement));
+        });
+
+        await check('G06 mobile header animation: restored nonzero scroll and programmatic menu before first controller RAF', async () => {
+          await animationPage.addInitScript(() => {
+            const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+            const probe = {
+              controllerRafQueued: false,
+              controllerRafQueuedAt: null,
+              queuedWhileDocumentLoading: false,
+              domContentLoadedAt: null,
+              releasedAt: null,
+              firstSampleStartedAt: null,
+              firstSampleScrollY: null,
+              firstSampleState: null,
+              inputSource: 'programmatic focus() and HTMLElement.click() in DOMContentLoaded listener; not human input',
+              programmaticFocusInvoked: false,
+              programmaticClickInvoked: false,
+              clickIsTrusted: null,
+              unsupportedReason: null,
+            };
+            let heldControllerCallback = null;
+            window.__earlyHeaderAnimationProbe = probe;
+            window.requestAnimationFrame = callback => {
+              const currentScript = document.currentScript;
+              const fromHeaderController = document.readyState === 'loading' && currentScript?.src &&
+                new URL(currentScript.src).pathname.endsWith('/site.js') && !probe.controllerRafQueued;
+              if (fromHeaderController) {
+                probe.controllerRafQueued = true;
+                probe.controllerRafQueuedAt = performance.now();
+                probe.queuedWhileDocumentLoading = true;
+                heldControllerCallback = callback;
+                return nativeRequestAnimationFrame(() => {});
+              }
+              return nativeRequestAnimationFrame(callback);
+            };
+            document.addEventListener('DOMContentLoaded', () => {
+              probe.domContentLoadedAt = performance.now();
+              if (!heldControllerCallback) {
+                probe.unsupportedReason = 'The deferred site.js header controller did not expose a queued first RAF before DOMContentLoaded.';
+                return;
+              }
+              const toggle = document.querySelector('.menu-toggle');
+              const navigation = document.querySelector('#navigation');
+              const header = document.querySelector('.site-header');
+              if (!toggle || !navigation || !header) {
+                probe.unsupportedReason = 'The existing header, menu toggle, or navigation selector was missing at DOMContentLoaded.';
+                return;
+              }
+
+              window.scrollTo({ top: 600, behavior: 'instant' });
+              probe.scrollYBeforeControllerSample = window.scrollY;
+              toggle.addEventListener('click', event => { probe.clickIsTrusted = event.isTrusted; }, { once: true });
+              toggle.focus({ preventScroll: true });
+              probe.programmaticFocusInvoked = document.activeElement === toggle;
+              toggle.click();
+              probe.programmaticClickInvoked = true;
+              probe.ariaExpandedBeforeControllerSample = toggle.getAttribute('aria-expanded');
+              probe.menuOpenBeforeControllerSample = navigation.classList.contains('is-open');
+
+              const controllerCallback = heldControllerCallback;
+              heldControllerCallback = null;
+              probe.releasedAt = performance.now();
+              nativeRequestAnimationFrame(timestamp => {
+                probe.firstSampleStartedAt = performance.now();
+                probe.firstSampleScrollY = window.scrollY;
+                controllerCallback(timestamp);
+                const headerRect = header.getBoundingClientRect();
+                const navigationRect = navigation.getBoundingClientRect();
+                probe.firstSampleState = {
+                  compact: header.classList.contains('is-compact'),
+                  headerHeight: headerRect.height,
+                  headerBottom: headerRect.bottom,
+                  menuTop: navigationRect.top,
+                  menuLeft: navigationRect.left,
+                  menuRight: navigationRect.right,
+                  viewportWidth: window.innerWidth,
+                  ariaExpanded: toggle.getAttribute('aria-expanded'),
+                  activeElementInsideMenu: navigation.contains(document.activeElement),
+                  activeElement: document.activeElement ? {
+                    tagName: document.activeElement.tagName,
+                    id: document.activeElement.id || null,
+                    className: typeof document.activeElement.className === 'string' ? document.activeElement.className : null,
+                    href: document.activeElement.getAttribute?.('href') ?? null,
+                  } : null,
+                };
+              });
+            }, { once: true });
+          });
+
+          await animationPage.goto(base + 'service.html');
+          await animationPage.waitForFunction(() => {
+            const probe = window.__earlyHeaderAnimationProbe;
+            return Boolean(probe && (probe.unsupportedReason || probe.firstSampleStartedAt !== null));
+          }, null, { timeout: 1500 }).catch(() => {});
+          const probe = await animationPage.evaluate(() => window.__earlyHeaderAnimationProbe);
+          if (!probe?.controllerRafQueued || !probe?.queuedWhileDocumentLoading || !probe?.domContentLoadedAt || !probe?.firstSampleStartedAt) {
+            const pending = {
+              name: 'early restored-scroll header/menu sample',
+              status: 'not-verified',
+              reason: probe?.unsupportedReason || 'The test hook could not verify that the controller first sample ran after DOMContentLoaded.',
+              evidence: probe ?? null,
+              inputSource: probe?.inputSource ?? 'programmatic focus()/click(); not human input',
+              nodeVmEvidence: 'The previously recorded site-header-controller VM covers the early menu case; it is not browser animation evidence.',
+            };
+            report.interactions.push(pending);
+            return { __checkStatus: 'Pending', value: pending };
+          }
+
+          const evidence = {
+            controllerRafQueued: probe.controllerRafQueued,
+            queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
+            controllerRafQueuedAtMs: probe.controllerRafQueuedAt,
+            domContentLoadedAtMs: probe.domContentLoadedAt,
+            releasedAtMs: probe.releasedAt,
+            firstSampleStartedAtMs: probe.firstSampleStartedAt,
+            firstSampleObservedAfterDOMContentLoaded: probe.firstSampleStartedAt > probe.domContentLoadedAt,
+            humanInput: false,
+            inputSource: probe.inputSource,
+            programmaticFocusInvoked: probe.programmaticFocusInvoked,
+            programmaticClickInvoked: probe.programmaticClickInvoked,
+            clickIsTrusted: probe.clickIsTrusted,
+            scrollYBeforeControllerSample: probe.scrollYBeforeControllerSample,
+            firstSampleScrollY: probe.firstSampleScrollY,
+            ariaExpandedBeforeControllerSample: probe.ariaExpandedBeforeControllerSample,
+            menuOpenBeforeControllerSample: probe.menuOpenBeforeControllerSample,
+            firstSampleState: probe.firstSampleState,
+          };
+          report.interactions.push({ name: 'early restored-scroll header/menu sample', status: 'observed', ...evidence });
+          assert(evidence.firstSampleObservedAfterDOMContentLoaded, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticFocusInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticClickInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.clickIsTrusted, false, JSON.stringify(evidence));
+          assert(evidence.scrollYBeforeControllerSample >= 500, JSON.stringify(evidence));
+          assert(evidence.firstSampleScrollY >= 500, JSON.stringify(evidence));
+          assert.equal(evidence.ariaExpandedBeforeControllerSample, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.menuOpenBeforeControllerSample, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.compact, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.ariaExpanded, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.activeElementInsideMenu, true, JSON.stringify(evidence));
+          assert(evidence.firstSampleState.menuTop >= evidence.firstSampleState.headerBottom - 0.5, JSON.stringify(evidence));
+          assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
+        });
+      } finally {
+        await animationPage.close();
+        diagnosticPage = page;
+      }
+    }
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
       const toggle = page.locator('.menu-toggle');
@@ -740,7 +1111,7 @@ try {
   } else {
     report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
   }
-  report.status = report.failures.length ? 'Failed' : targetSizeMode === 'capture-pending' ? 'Pending' : 'Passed';
+  report.status = report.failures.length ? 'Failed' : report.checks.some(item => item.status === 'Pending') ? 'Pending' : 'Passed';
   await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
     schema: 'wcag22aa-target-size-report/v1',
     source: { headSha: process.env.GITHUB_SHA ?? null },
