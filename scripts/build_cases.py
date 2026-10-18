@@ -10,6 +10,7 @@ from achievement_metadata import facts_html, is_public, partner_text, search_tex
 from validate_achievements import validate
 from case_context import render_case_context
 from case_overview import render_overview
+from case_paragraph_dedupe import ParagraphDeduper
 from case_media import render as render_media
 R=Path(__file__).resolve().parents[1]
 E=lambda s:html.escape(str(s),quote=True)
@@ -75,7 +76,7 @@ for old in R.glob('achievement-*.html'):
  if old.name not in expected_pages: old.unlink()
 for c in public_items:
  single_event=len(c['history'])==1
- h=''.join(f'<li><time>{E(x["date"])}</time><div><h3>{E(x["title"])}</h3><p>{E(x["text"])}</p></div></li>' for x in c['history'])
+ paragraph_deduper=ParagraphDeduper()
  photos=''
  if c['images'] or c.get('media'):
   figures=[]
@@ -90,11 +91,22 @@ for c in public_items:
   photos='<div class="case-photos" id="case-media">'+''.join(figures)+'</div>'
  location=('、'.join(c['villages']) or c['scope'])
  info=facts_html(c,village_by_key)
- content=('<details class="case-background"><summary id="case-overview">背景與說明</summary>'+''.join('<p>'+E(p)+'</p>' for p in c['paragraphs'])+'</details>') if c['paragraphs'] else ''
+ overview=render_overview(c,R,paragraph_deduper)
+ latest=latest_history_event(c['history'])
+ latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
+ evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
+ latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
+ narrative='<p>'+E(latest['text'])+'</p>' if latest and paragraph_deduper.keep(latest['text']) else ''
+ boundary='陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。'
+ boundary_html='<p class="record-boundary">'+E(boundary)+'</p>' if latest and paragraph_deduper.keep(boundary) else ''
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}{boundary_html}</section>') if latest else ''
+ if single_event: current='<div id="case-history">'+current+'</div>'
+ context=render_case_context(c['id'],R,paragraph_deduper)
+ remaining_paragraphs=[p for p in c['paragraphs'] if paragraph_deduper.keep(p)]
+ content=('<details class="case-background"><summary id="case-overview">背景與說明</summary>'+''.join('<p>'+E(p)+'</p>' for p in remaining_paragraphs)+'</details>') if remaining_paragraphs else ''
+ h=''.join(f'<li><time>{E(x["date"])}</time><div><h3>{E(x["title"])}</h3>'+('<p>'+E(x["text"])+'</p>' if paragraph_deduper.keep(x['text']) else '')+'</div></li>' for x in c['history'])
  history=('<section class="history-section" id="case-history"><p class="eyebrow">推動歷程</p><h2>重要進度</h2><ol class="case-timeline">'+h+'</ol></section>') if h and not single_event else ''
  sources=('<section class="case-sources" id="case-sources"><h2>資料來源</h2><ul class="source-links">'+''.join('<li>'+(f'<time>{E(source["sourceDate"])}</time> · ' if source.get('sourceDate') else '')+source_link(source)+'</li>' for source in c['sources'])+'</ul></section>') if c['sources'] else ''
- context=render_case_context(c['id'],R)
- overview=render_overview(c,R)
  taxonomy=('<div class="case-taxonomy"><p class="case-taxonomy-label">主題與分類</p><div class="case-tags">'+main_tags(c)+'</div><div class="case-subtags">'+sub_tags(c)+'</div></div>') if c.get('categories') or c.get('subcategories') else ''
  section_order=c.get('sectionOrder',['overview','media','history','sources'])
  sections={'overview':content,'media':photos,'history':history,'sources':sources}
@@ -105,13 +117,6 @@ for c in public_items:
  if c['related']:
   related_ids=[id for id in c['related'] if id in byid]
   if related_ids: related='<section class="section wrap"><p class="eyebrow">RELATED STORIES</p><h2>相關專題</h2><div class="related-cases">'+''.join(card(byid[id]) for id in related_ids)+'</div></section>'
- latest=latest_history_event(c['history'])
- latest_sources=[source for source in c['sources'] if latest and source.get('sourceDate')==latest['date']]
- evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
- latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
- narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}<p class="record-boundary">陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。</p></section>') if latest else ''
- if single_event: current='<div id="case-history">'+current+'</div>'
  section_links={'overview':('case-overview','重點說明',bool(content)), 'media':('case-media','照片與影片',bool(photos)),
                 'history':('case-history','推動歷程',bool(h)), 'sources':('case-sources','資料來源',bool(c['sources']))}
  reading_links=[('case-context','議題導讀',bool(context))]+[section_links[key] for key in section_order]
@@ -120,7 +125,8 @@ for c in public_items:
  if context:
   latest_day=latest['date'] if latest else '未載明'
   source_labels=''.join('<li>'+E(source.get('sourceDate',''))+' '+E(source['title'])+'</li>' for source in c['sources'])
-  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>最新收錄紀錄 · {E(latest_day)}</h2>{narrative}<p>摘要呈現所列日期的辦理情形；最新工程、政策與服務資訊，請見主管機關公告。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。推動歷程、議題導讀、資料來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
+  print_narrative='<p>'+E(latest['text'])+'</p>' if latest else ''
+  print_sheet=f'<section class="case-print-sheet" aria-label="列印用專題摘要"><p>陳慧文官網 · 公開紀錄摘要</p><h2 class="print-title">{E(c["title"])}</h2><p>{E(c["summary"])}</p><h2>最新收錄紀錄 · {E(latest_day)}</h2>{print_narrative}<p>摘要呈現所列日期的辦理情形；最新工程、政策與服務資訊，請見主管機關公告。</p><h2>本文引用來源</h2><ul>{source_labels}</ul><p class="print-source">紀錄整理日期：{E(c["updated"])}。推動歷程、議題導讀、資料來源及後續補充：<br><a class="latest-url" href="{BASE+href(c["id"])}">{BASE+href(c["id"])}</a></p></section>'
   body=body.replace('</nav>','</nav><div class="wrap print-toolbar"><button class="button button-green print-page" type="button" hidden>列印單頁摘要</button><span>含資料日期與完整紀錄網址</span></div>')+print_sheet
  organization={'@type':'Organization','@id':BASE+'#organization','name':'陳慧文服務處','url':BASE,'logo':{'@type':'ImageObject','url':BASE+'assets/favicon.svg'}}
  structured={'@context':'https://schema.org','@type':'WebPage','@id':BASE+href(c['id'])+'#webpage','url':BASE+href(c['id']),'name':c['title'],'description':description,'inLanguage':'zh-Hant-TW','dateModified':c['updated'],'author':organization,'image':BASE+'assets/og/achievement-'+c['id']+'.png'}
