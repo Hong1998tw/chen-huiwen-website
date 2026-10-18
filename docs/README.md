@@ -35,3 +35,7 @@ GitHub `main` 是程式碼、內容 source、build 與 generated output 的正�
 4. 緊急 hosting rollback 僅依既有授權採用已驗證的前一 hostname route；後續以 reviewed PR 對齊 `data/deployment-target.json` 與 delivery／verification workflow。
 5. Pages workflow 是手動回復工具；Pages 成功不等於 Cloudflare receipt。不可用舊 HTML 覆蓋 source，也不可停用 Access／WAF 取得假通過。
 6. 若症狀在 edge，參照[Cloudflare edge runbook](CLOUDFLARE-EDGE-RUNBOOK.md)，並以當前 native runtime 狀態確認，不把歷史快照當現況。
+
+## 外部連結檢查報告
+
+[A07 外部連結可達性報告候選](maintenance-candidates/a07-external-link-audit.md)記錄既有手動檢查器的離線報告行為與限制；候選內容不等於已排程或已啟用。
