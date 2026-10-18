@@ -101,7 +101,6 @@ jobs:
       - name: Fetch and verify only the pull request base commit for A-05 reference capture
         id: base_reference
         if: github.event_name == 'pull_request'
-        continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BASE_ROOT: ${{ runner.temp }}/a05-main-reference
@@ -120,7 +119,8 @@ jobs:
           fi
           git worktree add --detach "$BASE_ROOT" "$BASE_SHA"
           actual_sha="$(git -C "$BASE_ROOT" rev-parse --verify HEAD)"
-          if [[ "$actual_sha" != "$BASE_SHA" ]] || [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+          worktree_status="$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)"
+          if [[ "$actual_sha" != "$BASE_SHA" ]] || [[ -n "$worktree_status" ]]; then
             echo 'A-05 independent reference worktree failed the exact-HEAD or clean-worktree check.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -162,7 +162,7 @@ jobs:
               reference_status=1
             fi
           else
-            echo '- A-05 independent base: no pull-request base is available for this run.' >> "$GITHUB_STEP_SUMMARY"
+            echo '- A-05 independent base: NOT_APPLICABLE; this non-PR event has no pull-request base.' >> "$GITHUB_STEP_SUMMARY"
           fi
           node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
           local_capture_status=$?
@@ -170,7 +170,11 @@ jobs:
           cloudflare_capture_status=$?
           {
             echo '## A-05 visual QA'
-            echo "- Independent base-reference capture exit: ${reference_status}; its site SHA and capture-tool SHA are recorded separately."
+            if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+              echo "- Independent base-reference capture exit: ${reference_status}; its site SHA and capture-tool SHA are recorded separately."
+            else
+              echo '- Independent base-reference capture: NOT_APPLICABLE for this non-PR event.'
+            fi
             echo '- On PR base-reference captures, the source records exact HEAD, clean status, tracked-byte digest, and read-only mode digest before capture, then rechecks HEAD, clean status, and tracked bytes before reporting the source SHA.'
             echo '- This read-only mode protection deters writes by the reviewed capture tool; same-UID code can change modes, so it is not a strong sandbox.'
             echo "- Local capture exit: ${local_capture_status}"

@@ -36,6 +36,16 @@ class PlaywrightCiInstallTests(unittest.TestCase):
         browser = self.workflow_job(workflow, "browser")
         visual_qa = self.workflow_job(workflow, "visual-qa")
         lighthouse = self.workflow_job(workflow, "lighthouse")
+        base_reference_start = visual_qa.index("      - name: Fetch and verify only the pull request base commit for A-05 reference capture")
+        base_reference_end = visual_qa.index("      - uses:", base_reference_start)
+        base_reference = visual_qa[base_reference_start:base_reference_end]
+        self.assertIn("if: github.event_name == 'pull_request'", base_reference)
+        self.assertIn("set -euo pipefail", base_reference)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', base_reference)
+        self.assertIn("git worktree add --detach \"$BASE_ROOT\" \"$BASE_SHA\"", base_reference)
+        self.assertIn('worktree_status="$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)"', base_reference)
+        self.assertIn('[[ -n "$worktree_status" ]]', base_reference)
+        self.assertNotIn("continue-on-error:", base_reference)
 
         for name, job, minutes in (
             ("browser", browser, 18),
@@ -56,6 +66,8 @@ class PlaywrightCiInstallTests(unittest.TestCase):
         self.assertIn("run: python -m unittest discover -s tests -p 'test_visual_qa_baseline_archive.py'", visual_qa)
         self.assertIn("      - run: npm run test:visual-qa --prefix tests/donation", visual_qa)
         self.assertIn("Capture A-05 local screenshots and live Cloudflare measurements", visual_qa)
+        self.assertIn("A-05 independent base: NOT_APPLICABLE; this non-PR event has no pull-request base.", visual_qa)
+        self.assertIn("Independent base-reference capture: NOT_APPLICABLE for this non-PR event.", visual_qa)
         self.assertIn("node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed", visual_qa)
         self.assertIn("node tests/donation/visual-qa.mjs capture --environment cloudflare-production", visual_qa)
         self.assertIn("Compare local captures with the committed Git baseline or record baseline pending", visual_qa)
