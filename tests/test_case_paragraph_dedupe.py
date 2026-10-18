@@ -54,6 +54,35 @@ class CaseParagraphDedupeTests(unittest.TestCase):
             self.assertTrue(all(details.select('p') for details in soup.select('details.case-background')))
         self.assertEqual(duplicates, [], '\n'.join(f'{name}: {text[:120]}' for name, text in duplicates[:10]))
 
+    def test_dade_action_paragraph_is_preserved_once_with_source_and_date(self):
+        records = json.loads((ROOT / 'data/achievements.json').read_text())
+        record = next(row for row in records if row['id'] == 'dade-park-road-opening')
+        paragraph = next(text for text in record['paragraphs'] if '用地取得與工程經費' in text)
+        soup = BeautifulSoup((ROOT / 'achievement-dade-park-road-opening.html').read_text(), 'html.parser')
+        overview = soup.select_one('#case-overview-summary')
+        self.assertIsNotNone(overview)
+        action = next(
+            block for block in overview.select('.case-overview-grid > div')
+            if block.select_one('h3').get_text(' ', strip=True) == '慧文的行動'
+        )
+        self.assertEqual(action.select_one('p').get_text(' ', strip=True), paragraph)
+
+        body_paragraphs = [
+            re.sub(r'\s+', ' ', node.get_text(' ', strip=True)).strip()
+            for node in soup.select('main p')
+            if not node.find_parent(class_='case-print-sheet')
+        ]
+        self.assertEqual(body_paragraphs.count(paragraph), 1)
+
+        source_items = soup.select('#case-sources li')
+        self.assertEqual(len(source_items), len(record['sources']))
+        source_text = ' '.join(node.get_text(' ', strip=True) for node in source_items)
+        for source in record['sources']:
+            self.assertIn(source['title'], source_text)
+            if source.get('sourceDate'):
+                self.assertIn(source['sourceDate'], source_text)
+        self.assertEqual(soup.select_one('.case-latest time')['datetime'], record['history'][-1]['date'])
+
     def test_generated_page_keeps_first_copy_and_its_source_links(self):
         soup = BeautifulSoup((ROOT / 'achievement-after-school-care.html').read_text(), 'html.parser')
         text = '照顧名額、開課週數與每日結束時間能否配合家庭需要，是 2023 年議會紀錄提出的問題。即使有開班，假期中仍可能有照顧空窗。'
@@ -65,6 +94,19 @@ class CaseParagraphDedupeTests(unittest.TestCase):
         self.assertIn('陳慧文於預算審查期間督促教育局落實特教課後照顧專案補助', latest.get_text(' ', strip=True))
         latest_event = next(node for node in soup.select('#case-history li') if '持續追蹤特教專班預算編列' in node.get_text(' ', strip=True))
         self.assertIsNone(latest_event.find('p'))
+
+    def test_print_summary_and_body_are_checked_as_separate_representations(self):
+        records = json.loads((ROOT / 'data/achievements.json').read_text())
+        record = next(row for row in records if row['id'] == 'after-school-care')
+        soup = BeautifulSoup((ROOT / 'achievement-after-school-care.html').read_text(), 'html.parser')
+        print_sheet = soup.select_one('.case-print-sheet')
+        self.assertIsNotNone(print_sheet)
+        print_text = print_sheet.get_text(' ', strip=True)
+        self.assertIn(record['summary'], print_text)
+        self.assertIn(record['history'][-1]['date'], print_text)
+        self.assertIn(record['updated'], print_text)
+        for source in record['sources']:
+            self.assertIn(source['title'], print_text)
 
 
 if __name__ == '__main__':
