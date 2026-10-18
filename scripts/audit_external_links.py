@@ -21,7 +21,8 @@ def forbidden_image_source_host(raw):
         host = (parsed.hostname or '').lower().rstrip('.')
     except (TypeError, ValueError):
         return None
-    if parsed.scheme not in ('http', 'https') or not host:
+    is_remote = parsed.scheme in ('http', 'https') or (not parsed.scheme and bool(parsed.netloc))
+    if not is_remote or not host:
         return None
     return next((domain for domain in FORBIDDEN_IMAGE_SOURCE_DOMAINS
                  if host == domain or host.endswith('.' + domain)), None)
