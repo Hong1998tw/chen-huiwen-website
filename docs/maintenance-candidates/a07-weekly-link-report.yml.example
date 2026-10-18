@@ -12,7 +12,7 @@ permissions:
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -22,18 +22,35 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Install report and contract-test dependencies
-        run: python -m pip install --disable-pip-version-check beautifulsoup4==4.13.5 PyYAML==6.0.3
-      - name: Validate the candidate workflow contract
+      - name: Install pinned public-packager and report dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          beautifulsoup4==4.13.5 html5lib==1.1
+          'fonttools[woff]==4.66.1' brotli==1.2.0 zopfli==0.4.3 PyYAML==6.0.3
+      - name: Validate the inactive candidate contract with local fixtures
         run: python -m unittest discover -s tests -p test_a07_weekly_candidate_contract.py
-      - name: Create bounded external-link report
+      - name: Build the exact public artifact once
+        run: python scripts/build_public.py --output "$RUNNER_TEMP/a07-public-artifact"
+      - name: Attach the canonical source and artifact receipt without rebuilding
+        run: >-
+          python scripts/build_cloudflare_public.py
+          --wrap-existing-artifact "$RUNNER_TEMP/a07-public-artifact"
+          --source-commit "$GITHUB_SHA"
+      - name: Create bounded report from manifest-listed public HTML and JSON
         shell: bash
-        run: timeout --signal=TERM --kill-after=10s 900s python3 scripts/audit_external_links.py external-links.json --timeout 1 --attempts 2 --interval 0.5
-      - name: Summarize report
+        run: >-
+          timeout --signal=TERM --kill-after=10s 900s
+          python3 scripts/audit_external_links.py external-links.json
+          --public-artifact "$RUNNER_TEMP/a07-public-artifact"
+          --source-sha "$GITHUB_SHA"
+          --timeout 8 --attempts 2 --interval 0.5
+      - name: Summarize and validate report
         if: always()
         env:
           REPORT_PATH: external-links.json
+          PUBLIC_ARTIFACT_PATH: ${{ runner.temp }}/a07-public-artifact
           SOURCE_SHA: ${{ github.sha }}
+          SUMMARY_ARTIFACT_PATH: external-link-summary.md
         run: |
           python - <<'PY'
           import json
@@ -42,66 +59,97 @@ jobs:
           from collections import Counter
           from pathlib import Path
 
-          from scripts.audit_external_links import inventory
+          from scripts.audit_external_links import inventory_public_artifact, url_fingerprint
 
-          report_path = Path(os.environ['REPORT_PATH'])
           summary_path = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          saved_summary = Path(os.environ['SUMMARY_ARTIFACT_PATH'])
+
+          def write_summary(lines):
+              body = '\n'.join(lines) + '\n'
+              summary_path.write_text(body, encoding='utf-8')
+              saved_summary.write_text(body, encoding='utf-8')
+
           try:
+              source_sha = os.environ['SOURCE_SHA']
+              public_urls, artifact = inventory_public_artifact(
+                  Path(os.environ['PUBLIC_ARTIFACT_PATH']), source_sha,
+              )
+              report_path = Path(os.environ['REPORT_PATH'])
               report = json.loads(report_path.read_text(encoding='utf-8'))
               state = report.get('state')
               checked_at = report.get('checkedAt')
               links = report.get('links')
               if state not in ('running', 'complete') or not isinstance(checked_at, str):
                   raise ValueError('report state or checkedAt is missing or invalid')
+              if report.get('probeMode') != 'public_artifact_http_get':
+                  raise ValueError('report was not produced in verified public-artifact probe mode')
+              if report.get('publicArtifact') != artifact:
+                  raise ValueError('report source SHA or publication-manifest digest does not match the artifact')
               if not isinstance(links, list):
                   raise ValueError('report links must be a list')
 
               statuses = ('PASS', 'FAIL', 'BLOCKED', 'NOT_RUN')
               counts = Counter()
+              seen = set()
               for row in links:
-                  status = row.get('status') if isinstance(row, dict) else None
+                  if not isinstance(row, dict):
+                      raise ValueError('report row must be an object')
+                  status = row.get('status')
+                  url = row.get('url')
                   if status not in statuses:
                       raise ValueError(f'unknown report status: {status!r}')
+                  if url not in public_urls or url in seen:
+                      raise ValueError('report row is duplicated or absent from the verified public artifact')
+                  if row.get('files') != sorted(public_urls[url]):
+                      raise ValueError('report row source files differ from the public artifact inventory')
+                  if row.get('fingerprint') != url_fingerprint(url):
+                      raise ValueError('report URL fingerprint is invalid')
+                  seen.add(url)
                   counts[status] += 1
 
-              total = len(inventory(Path.cwd()))
+              total = len(public_urls)
               if len(links) > total:
-                  raise ValueError('report contains more rows than the source inventory')
+                  raise ValueError('report contains more rows than the public artifact inventory')
               if state == 'complete':
-                  if len(links) != total or report.get('summary') != dict(counts):
-                      raise ValueError('complete report does not match the source inventory')
+                  if seen != set(public_urls) or report.get('summary') != dict(counts):
+                      raise ValueError('complete report does not match the full public artifact inventory')
                   if not isinstance(report.get('finishedAt'), str):
                       raise ValueError('complete report is missing finishedAt')
+              elif 'finishedAt' in report or 'summary' in report:
+                  raise ValueError('partial report cannot carry a complete-run marker or summary')
 
-              recorded = len(links)
               lines = [
                   '# A07 外部連結報告',
-                  f"- 來源 SHA：{os.environ['SOURCE_SHA']}",
+                  f'- 來源 SHA：{artifact["sourceCommit"]}',
+                  f'- 公開 artifact manifest SHA-256：{artifact["publicArtifactDigest"]}',
                   f'- 開始時間（UTC）：{checked_at}',
                   f'- 報告狀態：{state}',
-                  f'- 盤點連結總數：{total}',
-                  f'- 已記錄結果：{recorded}/{total}',
+                  f'- 公開 artifact 外連總數：{total}',
+                  f'- 已記錄結果：{len(links)}/{total}',
               ]
               if state == 'complete':
                   lines.append(f"- 完成時間（UTC）：{report['finishedAt']}")
               else:
-                  lines.append('- 部分報告：狀態仍為 running；下列數量只涵蓋已寫入的結果。')
+                  lines.append('- 部分報告：狀態仍為 running；數量只涵蓋已記錄結果。')
+              if total == 0:
+                  lines.append('- 公開 artifact 沒有外連；沒有 HTTP 探測，也不推定 PASS。')
+              elif not links:
+                  lines.append('- 尚無 HTTP 結果；未探測的連結不計為 PASS。')
               lines.extend(f'- {status}：{counts[status]}' for status in statuses)
               lines.append('- JSON artifact 僅保存報告，不代表連結全數 PASS。')
-              summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+              write_summary(lines)
           except Exception as error:
-              summary_path.write_text(
-                  f'# A07 外部連結報告\n- 報告無法驗證：{error}\n',
-                  encoding='utf-8',
-              )
+              write_summary(['# A07 外部連結報告', f'- 報告無法驗證：{error}'])
               print(f'::error::External-link report could not be verified: {error}', file=sys.stderr)
               raise SystemExit(1)
           PY
-      - name: Preserve JSON report
+      - name: Preserve report and summary for 30 days
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: external-link-report-${{ github.sha }}
-          path: external-links.json
+          path: |
+            external-links.json
+            external-link-summary.md
           if-no-files-found: warn
           retention-days: 30

@@ -1,10 +1,13 @@
 """The Cloudflare candidate never adds a request-time Worker or private data."""
+import hashlib
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
+import build_cloudflare_public
 from verify_cloudflare_delivery import check_receipt, verify
 from unittest.mock import MagicMock, patch
 from verify_cloudflare_assets import public_request, error_summary
@@ -29,6 +32,26 @@ class StaticDeliveryTests(unittest.TestCase):
         for key,value in [('provider','github-pages'),('sourceCommit','c'*40),('publicArtifactDigest','d'*64),('schemaVersion',2)]:
             self.assertFalse(check_receipt({**good,key:value},sha,digest))
         self.assertFalse(check_receipt(None,sha,digest))
+    def test_existing_artifact_receipt_uses_manifest_digest_without_rebuilding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifact=Path(directory)/'public'
+            artifact.mkdir()
+            page=b'<html><body>public fixture</body></html>'
+            (artifact/'index.html').write_bytes(page)
+            manifest={'version':1,'publicRecordCount':0,
+                      'files':{'index.html':hashlib.sha256(page).hexdigest()}}
+            encoded=(json.dumps(manifest,ensure_ascii=False,separators=(',',':'))+'\n').encode()
+            publication=artifact/'publication-manifest.json'
+            publication.write_bytes(encoded)
+            sha='a'*40
+            with patch.object(build_cloudflare_public.build_public,'build') as build:
+                receipt=build_cloudflare_public.add_delivery_metadata(artifact,sha)
+            build.assert_not_called()
+            self.assertEqual(receipt['sourceCommit'],sha)
+            self.assertEqual(receipt['publicArtifactDigest'],hashlib.sha256(encoded).hexdigest())
+            self.assertEqual(receipt['publicFileCount'],1)
+            self.assertEqual(json.loads((artifact/'deployment.json').read_text()),receipt)
+            self.assertEqual((artifact/'_headers').read_text(),build_cloudflare_public.render_headers())
     def test_asset_checks_use_one_explicit_automation_identity(self):
         for path in ['/', '/index.html', '/mktexp26/', '/data/case-context.json']:
             request = public_request('https://example.test' + path)

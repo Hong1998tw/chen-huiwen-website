@@ -37,6 +37,35 @@ def render_headers():
     return ''.join(path + '\n' + ''.join(f'  {name}: {value}\n' for name, value in headers)
                    for path, headers in rules)
 
+
+def add_delivery_metadata(destination, source_commit):
+    """Attach the canonical deployment identity to an already-built public artifact."""
+    destination = Path(destination).resolve()
+    if not re.fullmatch(r'[a-f0-9]{40}', str(source_commit)):
+        raise ValueError('A full Git source commit is required')
+    publication = destination / 'publication-manifest.json'
+    if not publication.is_file() or publication.is_symlink():
+        raise ValueError('A built publication-manifest.json is required')
+    manifest = json.loads(publication.read_text(encoding='utf-8'))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get('files'), dict):
+        raise ValueError('The publication manifest is invalid')
+    # Explicit internal rewrites preserve the existing index and directory URLs.
+    aliases = ['/ /index.html 200']
+    aliases.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
+                   for path in build_public.LEGACY_PAGES)
+    (destination / '_redirects').write_text('\n'.join(aliases) + '\n', encoding='utf-8')
+    (destination / '_headers').write_text(render_headers(), encoding='utf-8')
+    receipt = {'schemaVersion':1, 'provider':'cloudflare-static-assets',
+               'sourceCommit':source_commit,
+               'publicArtifactDigest':hashlib.sha256(publication.read_bytes()).hexdigest(),
+               'publicFileCount':len(manifest['files']),
+               'publicRecordCount':manifest.get('publicRecordCount')}
+    (destination / 'deployment.json').write_text(
+        json.dumps(receipt, sort_keys=True, separators=(',',':')) + '\n', encoding='utf-8'
+    )
+    return receipt
+
+
 def build(root=ROOT, destination=None, source_commit=None):
     root = Path(root).resolve()
     destination = Path(destination or root / '_site').resolve()
@@ -44,28 +73,25 @@ def build(root=ROOT, destination=None, source_commit=None):
     if not re.fullmatch(r'[a-f0-9]{40}', revision):
         raise ValueError('A full Git source commit is required')
     result = build_public.build(root, destination)
-    publication = destination / 'publication-manifest.json'
-    manifest = json.loads(publication.read_text())
-    # Explicit internal rewrites preserve the existing index and directory URLs.
-    aliases = ['/ /index.html 200']
-    aliases.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
-                   for path in build_public.LEGACY_PAGES)
-    (destination / '_redirects').write_text('\n'.join(aliases) + '\n')
-    (destination / '_headers').write_text(render_headers())
-    receipt = {'schemaVersion':1, 'provider':'cloudflare-static-assets',
-               'sourceCommit':revision,
-               'publicArtifactDigest':hashlib.sha256(publication.read_bytes()).hexdigest(),
-               'publicFileCount':len(manifest['files']),
-               'publicRecordCount':manifest['publicRecordCount']}
-    (destination / 'deployment.json').write_text(json.dumps(receipt, sort_keys=True, separators=(',',':')) + '\n')
+    receipt = add_delivery_metadata(destination, revision)
     return {**result, 'sourceCommit':revision, 'provider':receipt['provider']}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--output', type=Path)
+    mode.add_argument('--wrap-existing-artifact', type=Path,
+                      help='add canonical deployment metadata without rebuilding the public artifact')
+    parser.add_argument('--source-commit')
     args = parser.parse_args()
     try:
-        print(json.dumps(build(destination=args.output), ensure_ascii=False))
+        if args.wrap_existing_artifact:
+            revision = args.source_commit or subprocess.check_output(
+                ['git','rev-parse','HEAD'], cwd=ROOT, text=True
+            ).strip()
+            print(json.dumps(add_delivery_metadata(args.wrap_existing_artifact, revision), ensure_ascii=False))
+            return 0
+        print(json.dumps(build(destination=args.output, source_commit=args.source_commit), ensure_ascii=False))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(str(error), file=sys.stderr)
         return 1
