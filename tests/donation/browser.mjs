@@ -456,7 +456,8 @@ try {
       await leadLocator.scrollIntoViewIfNeeded();
       const lead = await leadLocator.boundingBox();
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。/);
+      assert.equal(await page.locator('.case-latest .record-boundary').count(), 0);
+      assert.match(await page.locator('.case-latest').innerText(), /市府將串聯鳳山火車站納入可行性評估/);
       await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
       const sources = page.locator('#case-sources');
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);

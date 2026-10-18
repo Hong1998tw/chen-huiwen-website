@@ -30,7 +30,7 @@ def render_overview(record, root, paragraph_deduper=None):
     status = record.get('status', '')
     if context:
         status += '。' + context['governmentRole']['text'].rstrip('。')
-    points.append(('目前辦理階段', status + '。陳慧文議員與服務處持續追蹤辦理進度，落實地方建設與民生服務。'))
+    points.append(('目前辦理階段', status))
     heading = 'case-overview-summary-heading'
     body = (f'<section class="case-overview-summary" id="case-overview-summary" aria-labelledby="{heading}">'
             f'<p class="case-overview-meta"><span>{e(category)}</span><span>地區：{e(region)}</span>'

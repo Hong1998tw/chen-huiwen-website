@@ -97,9 +97,7 @@ for c in public_items:
  evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 ↓</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
  narrative='<p>'+E(latest['text'])+'</p>' if latest and paragraph_deduper.keep(latest['text']) else ''
- boundary='陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。'
- boundary_html='<p class="record-boundary">'+E(boundary)+'</p>' if latest and paragraph_deduper.keep(boundary) else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}{boundary_html}</section>') if latest else ''
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}</section>') if latest else ''
  if single_event: current='<div id="case-history">'+current+'</div>'
  context=render_case_context(c['id'],R,paragraph_deduper)
  remaining_paragraphs=[p for p in c['paragraphs'] if paragraph_deduper.keep(p)]
