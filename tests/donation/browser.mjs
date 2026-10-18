@@ -93,6 +93,12 @@ try {
       await writeFile(new URL(`axe-g07-region-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
       assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
 
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      });
+      assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BODY');
+      await page.keyboard.press('Tab');
+      assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
       await page.keyboard.press('Tab');
       assert(await page.locator('a[href="tel:+88678212536"]').first().evaluate(el => el === document.activeElement));
     });
