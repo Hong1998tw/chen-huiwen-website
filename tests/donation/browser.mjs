@@ -248,18 +248,23 @@ async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, com
     };
   }, { label, targetScrollY, compact });
 
-  for (const sample of evidence.samples) {
-    Object.assign(sample, evaluateMenuAnchor(sample.headerBottomForAnchor, sample.menuTopForAnchor));
+  for (const [index, sample] of evidence.samples.entries()) {
+    const anchor = evaluateMenuAnchor(sample.headerBottomForAnchor, sample.menuTopForAnchor);
+    sample.expectedMenuTop = anchor.expectedMenuTop;
+    sample.anchorDelta = anchor.anchorDelta;
+    if (index === 0 || index === evidence.samples.length - 1) sample.anchorWithinTolerance = anchor.withinTolerance;
     delete sample.headerBottomForAnchor;
     delete sample.menuTopForAnchor;
   }
+  evidence.initial = evidence.samples[0];
+  evidence.final = evidence.samples.at(-1);
   const intermediateSamples = evidence.samples.filter(sample => sample.isIntermediate);
   const maxAbsoluteAnchorDelta = Math.max(0, ...evidence.samples.map(sample => Math.abs(sample.anchorDelta)));
   const intermediateMaxAbsoluteAnchorDelta = Math.max(0, ...intermediateSamples.map(sample => Math.abs(sample.anchorDelta)));
   evidence.anchorAudit = {
     tolerancePx: MENU_ANCHOR_TOLERANCE_PX,
-    startWithinTolerance: evidence.initial.withinTolerance,
-    endWithinTolerance: evidence.final.withinTolerance,
+    startWithinTolerance: evidence.initial.anchorWithinTolerance,
+    endWithinTolerance: evidence.final.anchorWithinTolerance,
     maxAbsoluteAnchorDelta,
     intermediateMaxAbsoluteAnchorDelta,
   };
@@ -566,6 +571,7 @@ try {
                 probe.firstSampleStartedAt = performance.now();
                 probe.firstSampleScrollY = window.scrollY;
                 controllerCallback(timestamp);
+                // site.js dispatches its initial layout-change event synchronously for this nonzero-scroll sample.
                 const headerRect = header.getBoundingClientRect();
                 const navigationRect = navigation.getBoundingClientRect();
                 probe.firstSampleState = {
@@ -610,12 +616,18 @@ try {
             return { __checkStatus: 'Pending', value: pending };
           }
 
+          const {
+            headerBottomForAnchor,
+            menuTopForAnchor,
+            ...firstSampleGeometry
+          } = probe.firstSampleState;
+          const firstSampleAnchor = evaluateMenuAnchor(headerBottomForAnchor, menuTopForAnchor);
           const firstSampleState = {
-            ...probe.firstSampleState,
-            ...evaluateMenuAnchor(probe.firstSampleState.headerBottomForAnchor, probe.firstSampleState.menuTopForAnchor),
+            ...firstSampleGeometry,
+            expectedMenuTop: firstSampleAnchor.expectedMenuTop,
+            anchorDelta: firstSampleAnchor.anchorDelta,
+            anchorWithinTolerance: firstSampleAnchor.withinTolerance,
           };
-          delete firstSampleState.headerBottomForAnchor;
-          delete firstSampleState.menuTopForAnchor;
 
           const evidence = {
             controllerRafQueued: probe.controllerRafQueued,
@@ -648,7 +660,7 @@ try {
           assert.equal(evidence.firstSampleState.compact, true, JSON.stringify(evidence));
           assert.equal(evidence.firstSampleState.ariaExpanded, 'true', JSON.stringify(evidence));
           assert.equal(evidence.firstSampleState.activeElementInsideMenu, true, JSON.stringify(evidence));
-          assert.equal(evidence.firstSampleState.withinTolerance, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.anchorWithinTolerance, true, JSON.stringify(evidence));
           assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
         }, { required: true });
       } finally {
