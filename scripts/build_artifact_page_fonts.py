@@ -10,7 +10,7 @@ from __future__ import annotations
 from python_guard import require_supported_python
 require_supported_python()
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from hashlib import sha256
 from html import unescape
 from io import BytesIO
@@ -44,7 +44,7 @@ TC_REL = "assets/fonts/huiwen-site-sans/huiwen-site-sans-tc-20261007.woff2"
 JP_REL = "assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2"
 LICENSE_REL = "assets/fonts/huiwen-site-sans/LICENSE.txt"
 MANIFEST_NAME = "page-font-manifest.json"
-MANIFEST_SCHEMA = 1
+MANIFEST_SCHEMA = 2
 QUALITY = 9
 EXPECTED_TC_SHA256 = "04b42051aaae0a7927a00fbf125b67c29f9c2eacc5f54e2c53073c0a59b8960f"
 EXPECTED_MODULE_SHA256 = {
@@ -63,6 +63,7 @@ DELTA_UNIQUE_ID = "Huiwen Sans TC Page Delta; q9; 1"
 WHOLE_PAGE_FAMILY = "Huiwen Sans TC Page Core"
 WHOLE_PAGE_UNIQUE_ID = "Huiwen Sans TC Page Core; 1.0"
 ROUTE_RE = re.compile(r"^(?:achievement|news)-[a-z0-9-]+\.html$")
+LEGACY_REDIRECT_REASON = "legacy-meta-refresh-without-full-tc-font"
 STYLE_MARKER = "data-huiwen-font-page-artifact"
 PRELOAD_MARKER = "data-huiwen-font-page-preload"
 OPTIONS = {"flavor": "woff2", "layout_features": ["*"], "retain_gids": False}
@@ -71,6 +72,8 @@ CJK_RANGES = (
     (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
     (0x20000, 0x2FA1F), (0x30000, 0x323AF),
 )
+KERN_SCRIPT_TAGS = {"DFLT", "latn", "hani", "kana", "grek", "cyrl"}
+COMMON_CLOSURE_ALGORITHM = "route-intersection+source-ascii-latin-combining+default-kern-connected-components-v1"
 SCRIPT_DYNAMIC_TEXT = (
     "搜尋⌕⌘ K天 Ctrl K 搜尋陳慧文官網 關閉搜尋 全站搜尋 "
     "搜尋政績、新聞、政見、里別…… 搜尋資料載入中… "
@@ -198,13 +201,35 @@ class Q9TTFont(TTFont):
         return writer.reordersTables()
 
 
+def unicode_cmap(font: TTFont) -> dict[int, str]:
+    """Return every valid Unicode scalar mapping, preferring getBestCmap on conflicts."""
+    mappings = {}
+    for table in font["cmap"].tables:
+        if not table.isUnicode():
+            continue
+        table_cmap = getattr(table, "cmap", None)
+        if not isinstance(table_cmap, dict):
+            continue
+        for codepoint, glyph_name in table_cmap.items():
+            if (
+                type(codepoint) is int
+                and 0 <= codepoint <= 0x10FFFF
+                and not 0xD800 <= codepoint <= 0xDFFF
+                and glyph_name
+            ):
+                mappings.setdefault(codepoint, glyph_name)
+    mappings.update(font.getBestCmap() or {})
+    return dict(sorted(mappings.items()))
+
+
 def font_info(payload: bytes, *, include_tables: bool = False) -> dict:
     if not isinstance(payload, bytes) or payload[:4] != b"wOF2":
         raise ValueError("FONT_PAYLOAD_NOT_WOFF2")
     try:
         font = TTFont(BytesIO(payload), recalcBBoxes=False, recalcTimestamp=False)
         result = {
-            "codepoints": sorted((font.getBestCmap() or {}).keys()),
+            "codepoints": list(unicode_cmap(font)),
+            "tableTags": sorted(font.reader.keys()),
             "wght": [],
             "families": [],
         }
@@ -261,6 +286,8 @@ def validate_compiled_font(payload: bytes, expected: tuple[int, ...], family: st
         raise ValueError("FONT_Q9_CMAP_NOT_EXACT")
     if info["wght"] != axes or axes != [{"tag": "wght", "min": 250.0, "default": 250.0, "max": 900.0}]:
         raise ValueError("FONT_Q9_WGHT_AXIS_MISMATCH")
+    if not {"CFF2", "fvar"}.issubset(info["tableTags"]):
+        raise ValueError("FONT_Q9_VARIABLE_CFF2_TABLES_MISSING")
     if family not in info["families"]:
         raise ValueError("FONT_Q9_FAMILY_MISMATCH")
     return info
@@ -489,13 +516,25 @@ def extract_page_spec(root: Path, route: str, tc_cmap: dict[int, str], jp_allowe
     path = root / route
     if not path.is_file() or path.is_symlink():
         raise ValueError(f"FONT_ROUTE_MISSING_OR_UNSAFE: {route}")
-    raw = path.read_bytes()
+    return _page_spec_from_bytes(root, route, path.read_bytes(), tc_cmap, jp_allowed, jp_cmap, require_unmarked=True)
+
+
+def _page_spec_from_bytes(
+    root: Path,
+    route: str,
+    raw: bytes,
+    tc_cmap: dict[int, str],
+    jp_allowed: set[int],
+    jp_cmap: dict[int, str],
+    *,
+    require_unmarked: bool,
+) -> dict:
     soup = BeautifulSoup(raw, "html5lib")
     if soup.html is None or soup.head is None or soup.body is None:
         raise ValueError(f"FONT_ROUTE_MALFORMED_HTML: {route}")
     if soup.html.get("data-huiwen-font-page"):
         raise ValueError(f"FONT_EXISTING_ROUTE_MUST_BE_SKIPPED: {route}")
-    if soup.html.get("data-huiwen-font-artifact-route") or STYLE_MARKER in raw.decode("utf-8", "replace"):
+    if require_unmarked and (soup.html.get("data-huiwen-font-artifact-route") or STYLE_MARKER in raw.decode("utf-8", "replace")):
         raise ValueError(f"FONT_ARTIFACT_ROUTE_ALREADY_MARKED: {route}")
     text_parts = []
     for node in soup.find_all(string=True):
@@ -543,8 +582,64 @@ def extract_page_spec(root: Path, route: str, tc_cmap: dict[int, str], jp_allowe
     }
 
 
-def candidate_routes(source_root: Path, artifact_root: Path, public_paths) -> tuple[list[str], list[str]]:
+def _safe_public_html_route(route: str) -> bool:
+    if not isinstance(route, str) or not route or "\\" in route:
+        return False
+    path = PurePosixPath(route)
+    return (
+        not path.is_absolute()
+        and path.suffix.lower() == ".html"
+        and ".." not in path.parts
+        and "." not in path.parts
+        and path.as_posix() == route
+    )
+
+
+def _uses_full_tc_font(root: Path, route: str, raw: bytes, soup) -> bool:
+    stylesheet_paths, _ = linked_css(root, route, soup)
+    css = [
+        (root / relative).read_text(encoding="utf-8")
+        for relative in stylesheet_paths
+    ]
+    css.extend(str(style.string or style.decode_contents()) for style in soup.find_all("style"))
+    css.extend(str(node.get("style", "")) for node in soup.find_all(attrs={"style": True}))
+    source = raw.decode("utf-8", "replace")
+    if "huiwen-site-sans-tc-20261007.woff2" in source:
+        return True
+    return bool(re.search(
+        r"(?:font-family|font)\s*:[^{};]*[\"']Huiwen Sans TC[\"']",
+        "\n".join(css),
+        flags=re.I,
+    ))
+
+
+def _legacy_redirect_target(soup, public_html_routes: set[str]) -> str | None:
+    refresh = [
+        node for node in soup.find_all("meta")
+        if str(node.get("http-equiv", "")).strip().lower() == "refresh"
+    ]
+    body_text = soup.body.get_text(" ", strip=True) if soup.body else ""
+    if len(refresh) != 1 or not body_text.startswith("頁面已搬移至"):
+        return None
+    content = str(refresh[0].get("content", ""))
+    match = re.fullmatch(r"\s*0(?:\.0+)?\s*;\s*url\s*=\s*(.+?)\s*", content, flags=re.I)
+    if not match:
+        return None
+    target = match.group(1).strip().strip("\"'")
+    parsed = urlsplit(target)
+    if parsed.scheme != "https" or parsed.netloc.lower() not in {"huiwen.tw", "www.huiwen.tw"} or parsed.query or parsed.fragment:
+        return None
+    relative = unquote(parsed.path).lstrip("/")
+    target_routes = {relative, relative.rstrip("/") + "/index.html"}
+    return target if target_routes.intersection(public_html_routes) else None
+
+
+def public_html_route_inventory(source_root: Path, artifact_root: Path, public_paths):
     paths = sorted(set(public_paths))
+    html_routes = sorted(path for path in paths if PurePosixPath(path).suffix.lower() == ".html")
+    unsafe = [route for route in html_routes if not _safe_public_html_route(route)]
+    if unsafe:
+        raise ValueError("FONT_PUBLIC_HTML_ROUTE_UNSAFE: " + ", ".join(unsafe[:20]))
     inactive = set()
     state_path = source_root / "data/page-content.json"
     if state_path.is_file():
@@ -559,16 +654,10 @@ def candidate_routes(source_root: Path, artifact_root: Path, public_paths) -> tu
         row.get("id") for row in json.loads((source_root / "data/achievements-public.json").read_text(encoding="utf-8"))
         if isinstance(row, dict) and isinstance(row.get("id"), str)
     }
-    nested_candidates = [
-        path for path in paths
-        if ROUTE_RE.fullmatch(PurePosixPath(path).name) and path != PurePosixPath(path).name
-    ]
-    if nested_candidates:
-        raise ValueError("FONT_NESTED_DETAIL_ROUTE_NOT_SUPPORTED: " + ", ".join(nested_candidates[:20]))
-    routes = [path for path in paths if path == PurePosixPath(path).name and ROUTE_RE.fullmatch(path)]
-    stale = [path for path in routes if path in inactive]
+    detail_routes = [path for path in html_routes if path == PurePosixPath(path).name and ROUTE_RE.fullmatch(path)]
+    stale = [path for path in detail_routes if path in inactive]
     stale.extend(
-        path for path in routes
+        path for path in detail_routes
         if PurePosixPath(path).name.startswith("achievement-")
         and PurePosixPath(path).stem.removeprefix("achievement-") not in public_ids
     )
@@ -576,27 +665,355 @@ def candidate_routes(source_root: Path, artifact_root: Path, public_paths) -> tu
         raise ValueError("FONT_UNPUBLISHED_OR_UNPROJECTED_ROUTE_IN_PUBLIC_PATHS: " + ", ".join(sorted(set(stale))[:20]))
     eligible = []
     skipped = []
-    for route in routes:
+    excluded = []
+    public_route_set = set(html_routes)
+    for route in html_routes:
         output = artifact_root / route
         if not output.is_file() or output.is_symlink():
-            raise ValueError(f"FONT_PUBLIC_ROUTE_MISSING_FROM_ARTIFACT: {route}")
-        soup = BeautifulSoup(output.read_bytes(), "html5lib")
+            raise ValueError(f"FONT_PUBLIC_HTML_MISSING_FROM_ARTIFACT: {route}")
+        raw = output.read_bytes()
+        soup = BeautifulSoup(raw, "html5lib")
+        if soup.html is None:
+            raise ValueError(f"FONT_PUBLIC_HTML_MALFORMED: {route}")
         if soup.html and soup.html.get("data-huiwen-font-page"):
             skipped.append(route)
-        else:
+        elif _uses_full_tc_font(artifact_root, route, raw, soup):
             eligible.append(route)
+        else:
+            target = _legacy_redirect_target(soup, public_route_set)
+            if target is None:
+                raise ValueError(f"FONT_PUBLIC_HTML_NON_TC_ROUTE_UNCLASSIFIED: {route}")
+            excluded.append({"route": route, "reason": LEGACY_REDIRECT_REASON, "target": target})
+    return eligible, skipped, excluded
+
+
+def candidate_routes(source_root: Path, artifact_root: Path, public_paths) -> tuple[list[str], list[str]]:
+    eligible, skipped, _excluded = public_html_route_inventory(source_root, artifact_root, public_paths)
     return eligible, skipped
 
 
 def source_glyphs(source_bytes: bytes) -> tuple[dict[int, str], list[dict]]:
     font = TTFont(BytesIO(source_bytes), recalcBBoxes=False, recalcTimestamp=False)
-    cmap = font.getBestCmap() or {}
+    cmap = unicode_cmap(font)
     axes = [
         {"tag": axis.axisTag, "min": axis.minValue, "default": axis.defaultValue, "max": axis.maxValue}
         for axis in font["fvar"].axes
     ] if "fvar" in font else []
     font.close()
     return cmap, axes
+
+
+def _value_record_activity(value, variation_store) -> tuple[bool, bool]:
+    if value is None:
+        return False, False
+    base = any(
+        getattr(value, field, 0) not in (None, 0)
+        for field in ("XPlacement", "YPlacement", "XAdvance", "YAdvance")
+    )
+    variation = False
+    for field in ("XPlaDevice", "YPlaDevice", "XAdvDevice", "YAdvDevice"):
+        device = getattr(value, field, None)
+        if device is None:
+            continue
+        delta_format = getattr(device, "DeltaFormat", None)
+        if delta_format == 0x8000:
+            if variation_store is None:
+                raise ValueError("FONT_KERN_VARIATION_INDEX_WITHOUT_VARSTORE")
+            outer = getattr(device, "StartSize", None)
+            inner = getattr(device, "EndSize", None)
+            var_data = getattr(variation_store, "VarData", None) or []
+            if type(outer) is not int or type(inner) is not int or not 0 <= outer < len(var_data):
+                raise ValueError("FONT_KERN_VARIATION_INDEX_OUT_OF_RANGE")
+            items = getattr(var_data[outer], "Item", None) or []
+            if not 0 <= inner < len(items):
+                raise ValueError("FONT_KERN_VARIATION_INDEX_OUT_OF_RANGE")
+            variation = variation or any(delta != 0 for delta in items[inner])
+        elif delta_format in {1, 2, 3}:
+            deltas = getattr(device, "DeltaValue", None) or []
+            variation = variation or any(delta != 0 for delta in deltas)
+        else:
+            raise ValueError(f"FONT_KERN_DEVICE_FORMAT_UNSUPPORTED: {delta_format}")
+    return base, variation
+
+
+def source_default_kern_evidence(font, cmap: dict[int, str] | None = None) -> dict:
+    """Resolve active default `kern` PairPos edges, including variation-only records."""
+    cmap = unicode_cmap(font) if cmap is None else cmap
+    if "GPOS" not in font:
+        return {
+            "scriptTags": [], "featureIndices": [], "lookupIndices": [], "subtables": [],
+            "pairEdges": set(), "baseEdges": set(), "variationEdges": set(),
+            "classZeroEdges": set(), "participantGlyphs": set(), "participantCodepoints": set(),
+            "encodedPairEdges": set(), "encodedBaseEdges": set(), "encodedVariationEdges": set(),
+            "encodedClassZeroEdges": set(),
+        }
+    gpos = font["GPOS"].table
+    feature_records = getattr(getattr(gpos, "FeatureList", None), "FeatureRecord", None) or []
+    script_records = getattr(getattr(gpos, "ScriptList", None), "ScriptRecord", None) or []
+    feature_indices = set()
+    script_tags = set()
+    for script_record in script_records:
+        script_tag = getattr(script_record, "ScriptTag", None)
+        script = getattr(script_record, "Script", None)
+        lang_sys = getattr(script, "DefaultLangSys", None)
+        if script_tag not in KERN_SCRIPT_TAGS or lang_sys is None:
+            continue
+        indices = list(getattr(lang_sys, "FeatureIndex", None) or [])
+        required = getattr(lang_sys, "ReqFeatureIndex", 0xFFFF)
+        if required != 0xFFFF:
+            indices.append(required)
+        active = {index for index in indices if type(index) is int and 0 <= index < len(feature_records)
+                  and getattr(feature_records[index], "FeatureTag", None) == "kern"}
+        if active:
+            feature_indices.update(active)
+            script_tags.add(script_tag)
+
+    lookup_indices = set()
+    for index in feature_indices:
+        feature = getattr(feature_records[index], "Feature", None)
+        lookup_indices.update(getattr(feature, "LookupListIndex", None) or [])
+
+    # Include variable FeatureTableSubstitution alternatives for enabled default kern features.
+    feature_variations = getattr(gpos, "FeatureVariations", None)
+    variation_records = getattr(feature_variations, "FeatureVariationRecord", None) or []
+    for variation_record in variation_records:
+        substitution = getattr(variation_record, "FeatureTableSubstitution", None)
+        for item in getattr(substitution, "SubstitutionRecord", None) or []:
+            if getattr(item, "FeatureIndex", None) not in feature_indices:
+                continue
+            alternate = getattr(item, "Feature", None)
+            lookup_indices.update(getattr(alternate, "LookupListIndex", None) or [])
+
+    lookup_list = getattr(getattr(gpos, "LookupList", None), "Lookup", None) or []
+    if any(type(index) is not int or not 0 <= index < len(lookup_list) for index in lookup_indices):
+        raise ValueError("FONT_KERN_LOOKUP_INDEX_OUT_OF_RANGE")
+    variation_store = getattr(getattr(font.get("GDEF").table, "VarStore", None), "VarData", None) if "GDEF" in font else None
+    if variation_store is not None:
+        variation_store = font["GDEF"].table.VarStore
+
+    pair_edges = set()
+    base_edges = set()
+    variation_edges = set()
+    class_zero_edges = set()
+    participants = set()
+    subtable_metrics = []
+    glyph_order = list(font.getGlyphOrder())
+
+    for lookup_index in sorted(lookup_indices):
+        lookup = lookup_list[lookup_index]
+        lookup_type = getattr(lookup, "LookupType", None)
+        for subtable_index, outer in enumerate(getattr(lookup, "SubTable", None) or []):
+            if lookup_type == 2:
+                subtable = outer
+            elif lookup_type == 9 and getattr(outer, "ExtensionLookupType", None) == 2:
+                subtable = getattr(outer, "ExtSubTable", None)
+            else:
+                raise ValueError(f"FONT_KERN_LOOKUP_UNSUPPORTED: lookup={lookup_index} type={lookup_type}")
+            fmt = getattr(subtable, "Format", None)
+            if fmt not in {1, 2}:
+                raise ValueError(f"FONT_KERN_PAIRPOS_FORMAT_UNSUPPORTED: lookup={lookup_index} format={fmt}")
+            local_pairs = set()
+            local_base = set()
+            local_variation = set()
+            local_class_zero = set()
+            if fmt == 1:
+                coverage = list(getattr(getattr(subtable, "Coverage", None), "glyphs", None) or [])
+                pair_sets = list(getattr(subtable, "PairSet", None) or [])
+                if len(coverage) != len(pair_sets):
+                    raise ValueError("FONT_KERN_PAIRSET_COVERAGE_LENGTH_MISMATCH")
+                for first, pair_set in zip(coverage, pair_sets):
+                    for pair in getattr(pair_set, "PairValueRecord", None) or []:
+                        first_activity = _value_record_activity(getattr(pair, "Value1", None), variation_store)
+                        second_activity = _value_record_activity(getattr(pair, "Value2", None), variation_store)
+                        has_base = first_activity[0] or second_activity[0]
+                        has_variation = first_activity[1] or second_activity[1]
+                        if not (has_base or has_variation):
+                            continue
+                        edge = (first, pair.SecondGlyph)
+                        local_pairs.add(edge)
+                        if has_base:
+                            local_base.add(edge)
+                        if has_variation:
+                            local_variation.add(edge)
+            else:
+                coverage = set(getattr(getattr(subtable, "Coverage", None), "glyphs", None) or [])
+                class1 = getattr(getattr(subtable, "ClassDef1", None), "classDefs", None) or {}
+                class2 = getattr(getattr(subtable, "ClassDef2", None), "classDefs", None) or {}
+                left_groups = defaultdict(set)
+                right_groups = defaultdict(set)
+                for glyph in coverage:
+                    left_groups[class1.get(glyph, 0)].add(glyph)
+                for glyph in glyph_order:
+                    right_groups[class2.get(glyph, 0)].add(glyph)
+                for first_class, row in enumerate(getattr(subtable, "Class1Record", None) or []):
+                    for second_class, cell in enumerate(getattr(row, "Class2Record", None) or []):
+                        first_activity = _value_record_activity(getattr(cell, "Value1", None), variation_store)
+                        second_activity = _value_record_activity(getattr(cell, "Value2", None), variation_store)
+                        has_base = first_activity[0] or second_activity[0]
+                        has_variation = first_activity[1] or second_activity[1]
+                        if not (has_base or has_variation):
+                            continue
+                        for first in left_groups.get(first_class, ()):
+                            for second in right_groups.get(second_class, ()):
+                                edge = (first, second)
+                                local_pairs.add(edge)
+                                if has_base:
+                                    local_base.add(edge)
+                                if has_variation:
+                                    local_variation.add(edge)
+                                if first_class == 0 or second_class == 0:
+                                    local_class_zero.add(edge)
+            pair_edges.update(local_pairs)
+            base_edges.update(local_base)
+            variation_edges.update(local_variation)
+            class_zero_edges.update(local_class_zero)
+            participants.update(glyph for edge in local_pairs for glyph in edge)
+            subtable_metrics.append({
+                "lookupIndex": lookup_index,
+                "subtableIndex": subtable_index,
+                "format": fmt,
+                "activeGlyphPairCount": len(local_pairs),
+                "nonZeroBasePairCount": len(local_base),
+                "nonEmptyVariationPairCount": len(local_variation),
+                "classZeroPairCount": len(local_class_zero),
+            })
+
+    aliases = defaultdict(set)
+    for codepoint, glyph in cmap.items():
+        aliases[glyph].add(codepoint)
+    participant_codepoints = {cp for glyph in participants for cp in aliases.get(glyph, ())}
+    def encoded_pairs(edges):
+        return {
+            (first_cp, second_cp)
+            for first, second in edges
+            for first_cp in aliases.get(first, ())
+            for second_cp in aliases.get(second, ())
+        }
+
+    encoded_pair_edges = encoded_pairs(pair_edges)
+    encoded_base_edges = encoded_pairs(base_edges)
+    encoded_variation_edges = encoded_pairs(variation_edges)
+    encoded_class_zero_edges = encoded_pairs(class_zero_edges)
+    return {
+        "scriptTags": sorted(script_tags),
+        "featureIndices": sorted(feature_indices),
+        "lookupIndices": sorted(lookup_indices),
+        "subtables": subtable_metrics,
+        "pairEdges": pair_edges,
+        "baseEdges": base_edges,
+        "variationEdges": variation_edges,
+        "classZeroEdges": class_zero_edges,
+        "participantGlyphs": participants,
+        "participantCodepoints": participant_codepoints,
+        "encodedPairEdges": encoded_pair_edges,
+        "encodedBaseEdges": encoded_base_edges,
+        "encodedVariationEdges": encoded_variation_edges,
+        "encodedClassZeroEdges": encoded_class_zero_edges,
+    }
+
+
+def _source_seed_codepoints(cmap: dict[int, str]) -> set[int]:
+    """Seed common with encoded ASCII/Latin and combining marks."""
+    return {
+        codepoint for codepoint in cmap
+        if codepoint < 0x250
+        or 0x1E00 <= codepoint <= 0x1EFF
+        or unicodedata.category(chr(codepoint)).startswith("M")
+    }
+
+
+def build_common_closure(source_bytes: bytes, route_codepoint_sets) -> dict:
+    route_sets = [set(values) for values in route_codepoint_sets]
+    if not route_sets or any(not values for values in route_sets):
+        raise ValueError("FONT_ROUTE_CLOSURE_EMPTY")
+    route_intersection = set(route_sets[0])
+    for values in route_sets[1:]:
+        route_intersection.intersection_update(values)
+    font = TTFont(BytesIO(source_bytes), recalcBBoxes=False, recalcTimestamp=False)
+    cmap = unicode_cmap(font)
+    evidence = source_default_kern_evidence(font, cmap)
+    aliases = defaultdict(set)
+    for codepoint, glyph in cmap.items():
+        aliases[glyph].add(codepoint)
+    seeds = route_intersection | _source_seed_codepoints(cmap)
+    if not seeds.issubset(cmap):
+        raise ValueError("FONT_ROUTE_INTERSECTION_NOT_IN_SOURCE_CMAP")
+    adjacency = defaultdict(set)
+    for first, second in evidence["pairEdges"]:
+        adjacency[first].add(second)
+        adjacency[second].add(first)
+    closure_glyphs = {cmap[codepoint] for codepoint in seeds}
+    pending = list(closure_glyphs)
+    while pending:
+        glyph = pending.pop()
+        for neighbor in adjacency.get(glyph, ()):
+            if neighbor not in closure_glyphs:
+                closure_glyphs.add(neighbor)
+                pending.append(neighbor)
+    common = set(seeds)
+    common.update(codepoint for glyph in closure_glyphs for codepoint in aliases.get(glyph, ()))
+    kern_participants = evidence["participantCodepoints"]
+    kern_glyph_names = sorted(evidence["participantGlyphs"])
+    result = {
+        "algorithm": COMMON_CLOSURE_ALGORITHM,
+        "routeIntersectionCodepoints": sorted(route_intersection),
+        "routeIntersectionGlyphsetSha256": glyphset_sha256(sorted(route_intersection)),
+        "sourceSeedCodepoints": sorted(_source_seed_codepoints(cmap)),
+        "sourceSeedGlyphsetSha256": glyphset_sha256(sorted(_source_seed_codepoints(cmap))),
+        "kernParticipantCodepoints": sorted(kern_participants),
+        "kernParticipantGlyphsetSha256": glyphset_sha256(sorted(kern_participants)),
+        "kernParticipantGlyphCount": len(evidence["participantGlyphs"]),
+        "kernParticipantGlyphNamesSha256": sha256_bytes(canonical_json(kern_glyph_names)),
+        "kernEvidence": {
+            "scriptTags": evidence["scriptTags"],
+            "featureIndices": evidence["featureIndices"],
+            "lookupIndices": evidence["lookupIndices"],
+            "subtables": evidence["subtables"],
+            "activeGlyphPairCount": len(evidence["pairEdges"]),
+            "encodedPairCount": len(evidence["encodedPairEdges"]),
+            "nonZeroBaseGlyphPairCount": len(evidence["baseEdges"]),
+            "nonZeroBaseEncodedPairCount": len(evidence["encodedBaseEdges"]),
+            "nonEmptyVariationGlyphPairCount": len(evidence["variationEdges"]),
+            "nonEmptyVariationEncodedPairCount": len(evidence["encodedVariationEdges"]),
+            "variationOnlyGlyphPairCount": len(evidence["variationEdges"] - evidence["baseEdges"]),
+            "variationOnlyEncodedPairCount": len(evidence["encodedVariationEdges"] - evidence["encodedBaseEdges"]),
+            "classZeroGlyphPairCount": len(evidence["classZeroEdges"]),
+            "classZeroEncodedPairCount": len(evidence["encodedClassZeroEdges"]),
+        },
+        "commonCodepoints": sorted(common),
+        "commonGlyphsetSha256": glyphset_sha256(sorted(common)),
+    }
+    font.close()
+    return result
+
+
+def source_provenance(source_bytes: bytes, license_bytes: bytes) -> dict:
+    font = TTFont(BytesIO(source_bytes), recalcBBoxes=False, recalcTimestamp=False)
+    family_names = sorted({
+        record.toUnicode()
+        for record in font["name"].names
+        if record.nameID in {1, 4, 16, 21}
+    }) if "name" in font else []
+    cmap = unicode_cmap(font)
+    axes = [
+        {"tag": axis.axisTag, "min": axis.minValue, "default": axis.defaultValue, "max": axis.maxValue}
+        for axis in font["fvar"].axes
+    ] if "fvar" in font else []
+    result = {
+        "fontPath": TC_REL,
+        "fontSha256": sha256_bytes(source_bytes),
+        "fontBytes": len(source_bytes),
+        "familyNames": family_names,
+        "tables": sorted(font.keys()),
+        "sourceCodepointCount": len(cmap),
+        "sourceCodepointGlyphsetSha256": glyphset_sha256(sorted(cmap)),
+        "axes": axes,
+        "licensePath": LICENSE_REL,
+        "licenseSha256": sha256_bytes(license_bytes),
+        "licenseBytes": len(license_bytes),
+    }
+    font.close()
+    return result
 
 
 def _woff_path(path: str, role: str) -> bool:
@@ -613,10 +1030,15 @@ def make_style(route: str, common_path: str, delta_path: str) -> tuple[str, list
         f'<link rel="preload" href="/{path}" as="font" type="font/woff2" crossorigin="anonymous" {PRELOAD_MARKER}="{role}">'
         for role, path in (("common", common_path), ("delta", delta_path))
     )
+    offline_body_override = (
+        f':root[data-huiwen-font-artifact-route="{route}"] body{{font-family:var(--huiwen-font-family)}}'
+        if route == "offline.html" else ""
+    )
     style = (
         f'@font-face{{font-family:"{CORE_FAMILY}";src:url("/{common_path}") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}}'
         f'@font-face{{font-family:"{DELTA_FAMILY}";src:url("/{delta_path}") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}}'
         f':root[data-huiwen-font-artifact-route="{route}"]{{--huiwen-font-family:"{DELTA_FAMILY}","{CORE_FAMILY}","Huiwen Sans TC","Huiwen Sans JP Support",sans-serif}}'
+        f'{offline_body_override}'
         ':root[data-huiwen-font-artifact-preview="1"]{--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif}'
     )
     return links + f'<style {STYLE_MARKER}="1">{style}</style>', preloads
@@ -643,7 +1065,7 @@ def inject_page(source: bytes, route: str, common_path: str, delta_path: str) ->
 
 
 def _set_route_marker(opening: str, route: str) -> str:
-    if not re.fullmatch(r"(?:achievement|news)-[a-z0-9-]+\.html", route):
+    if not _safe_public_html_route(route):
         raise ValueError("FONT_ROUTE_ATTRIBUTE_INVALID")
     opening = re.sub(r"\sdata-huiwen-font-artifact-route=(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", "", opening, flags=re.I)
     return opening[:-1] + f' data-huiwen-font-artifact-route="{route}">'
@@ -653,7 +1075,15 @@ def _wght_contract(info: dict) -> bool:
     return info.get("wght") == [{"tag": "wght", "min": 250.0, "default": 250.0, "max": 900.0}]
 
 
-def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str], inactive_routes=None, public_ids=None) -> None:
+def validate_manifest(
+    artifact_root: Path,
+    manifest: dict,
+    candidates: list[str],
+    inactive_routes=None,
+    public_ids=None,
+    *,
+    route_inventory=None,
+) -> None:
     if manifest.get("schemaVersion") != MANIFEST_SCHEMA or manifest.get("sourceFontSha256") != EXPECTED_TC_SHA256:
         raise ValueError("FONT_MANIFEST_HEADER_INVALID")
     compiler = manifest.get("compiler")
@@ -671,12 +1101,75 @@ def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str]
     routes = manifest.get("routes")
     if not isinstance(fonts, dict) or not isinstance(routes, dict) or set(routes) != set(candidates):
         raise ValueError("FONT_MANIFEST_ROUTE_SET_INVALID")
+    inventory = manifest.get("routeInventory")
+    expected_inventory_shape = {"candidateRoutes", "skippedExistingFontRoutes", "excludedRoutes"}
+    if not isinstance(inventory, dict) or set(inventory) != expected_inventory_shape:
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_INVALID")
+    if inventory.get("candidateRoutes") != sorted(set(candidates)):
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_CANDIDATES_INVALID")
+    if route_inventory is not None and inventory != route_inventory:
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_SOURCE_MISMATCH")
+    skipped_routes = inventory.get("skippedExistingFontRoutes")
+    excluded_routes = inventory.get("excludedRoutes")
+    if (
+        not isinstance(skipped_routes, list)
+        or skipped_routes != sorted(set(skipped_routes))
+        or not isinstance(excluded_routes, list)
+        or excluded_routes != sorted(excluded_routes, key=lambda row: row.get("route", "") if isinstance(row, dict) else "")
+    ):
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_ORDER_INVALID")
+    excluded_names = [row.get("route") for row in excluded_routes if isinstance(row, dict)]
+    if len(excluded_names) != len(excluded_routes) or len(excluded_names) != len(set(excluded_names)):
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_EXCLUSIONS_INVALID")
+    if set(candidates).intersection(skipped_routes) or set(candidates).intersection(excluded_names) or set(skipped_routes).intersection(excluded_names):
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_OVERLAP")
+    all_public_html_routes = set(candidates) | set(skipped_routes) | set(excluded_names)
+    if any(not _safe_public_html_route(route) for route in all_public_html_routes):
+        raise ValueError("FONT_MANIFEST_ROUTE_INVENTORY_PATH_INVALID")
+    for route in skipped_routes:
+        path = artifact_root / route
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"FONT_MANIFEST_SKIPPED_ROUTE_MISSING: {route}")
+        soup = BeautifulSoup(path.read_bytes(), "html5lib")
+        if soup.html is None or not soup.html.get("data-huiwen-font-page"):
+            raise ValueError(f"FONT_MANIFEST_SKIPPED_ROUTE_MARKER_INVALID: {route}")
+    for row in excluded_routes:
+        route = row.get("route")
+        path = artifact_root / route
+        if row.get("reason") != LEGACY_REDIRECT_REASON or not path.is_file() or path.is_symlink():
+            raise ValueError(f"FONT_MANIFEST_EXCLUDED_ROUTE_INVALID: {route}")
+        raw = path.read_bytes()
+        soup = BeautifulSoup(raw, "html5lib")
+        if soup.html is None or _uses_full_tc_font(artifact_root, route, raw, soup):
+            raise ValueError(f"FONT_MANIFEST_EXCLUDED_ROUTE_USES_TC_FONT: {route}")
+        if _legacy_redirect_target(soup, all_public_html_routes) != row.get("target"):
+            raise ValueError(f"FONT_MANIFEST_EXCLUDED_ROUTE_REDIRECT_INVALID: {route}")
+    source_path = artifact_root / TC_REL
+    license_path = artifact_root / LICENSE_REL
+    if not source_path.is_file() or source_path.is_symlink() or not license_path.is_file() or license_path.is_symlink():
+        raise ValueError("FONT_MANIFEST_SOURCE_PROVENANCE_ASSET_MISSING")
+    source_bytes = source_path.read_bytes()
+    license_bytes = license_path.read_bytes()
+    if sha256_bytes(source_bytes) != EXPECTED_TC_SHA256:
+        raise ValueError("FONT_MANIFEST_SOURCE_FONT_HASH_MISMATCH")
+    if manifest.get("sourceProvenance") != source_provenance(source_bytes, license_bytes):
+        raise ValueError("FONT_MANIFEST_SOURCE_PROVENANCE_INVALID")
+    tc_cmap, _axes = source_glyphs(source_bytes)
+    styles_path = artifact_root / "styles.css"
+    if not styles_path.is_file() or styles_path.is_symlink():
+        raise ValueError("FONT_MANIFEST_STYLESHEET_MISSING")
+    jp_allowed, jp_cmap = parse_jp_face(artifact_root, styles_path.read_text(encoding="utf-8"))
     inactive_routes = set(inactive_routes or ())
     public_ids = None if public_ids is None else set(public_ids)
     for route in routes:
-        if route != PurePosixPath(route).name or not ROUTE_RE.fullmatch(route) or route in inactive_routes:
+        if not _safe_public_html_route(route) or route in inactive_routes:
             raise ValueError(f"FONT_MANIFEST_ROUTE_NOT_PUBLIC: {route}")
-        if route.startswith("achievement-") and public_ids is not None and PurePosixPath(route).stem.removeprefix("achievement-") not in public_ids:
+        if (
+            route == PurePosixPath(route).name
+            and route.startswith("achievement-")
+            and public_ids is not None
+            and PurePosixPath(route).stem.removeprefix("achievement-") not in public_ids
+        ):
             raise ValueError(f"FONT_MANIFEST_ACHIEVEMENT_NOT_PROJECTED: {route}")
     decoded = {}
     for path, row in fonts.items():
@@ -702,12 +1195,20 @@ def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str]
         info = font_info(payload)
         if info["codepoints"] != codepoints or not _wght_contract(info) or expected_family not in info["families"]:
             raise ValueError(f"FONT_MANIFEST_ASSET_CMAP_OR_AXIS_MISMATCH: {path}")
+        if not {"CFF2", "fvar"}.issubset(info["tableTags"]):
+            raise ValueError(f"FONT_MANIFEST_ASSET_VARIABLE_CFF2_TABLES_MISSING: {path}")
+        if role == "common":
+            compiled_font = TTFont(BytesIO(payload), recalcBBoxes=False, recalcTimestamp=False)
+            compiled_kern = source_default_kern_evidence(compiled_font)
+            compiled_font.close()
+            if not compiled_kern["featureIndices"] or not compiled_kern["pairEdges"] or not compiled_kern["variationEdges"]:
+                raise ValueError("FONT_MANIFEST_COMMON_KERN_FEATURE_OR_VARIATION_MISSING")
         decoded[path] = set(codepoints)
     common_paths = [path for path in fonts if _woff_path(path, "common")]
     if len(common_paths) != 1:
         raise ValueError("FONT_MANIFEST_COMMON_ASSET_COUNT_INVALID")
     common_path = common_paths[0]
-    expected_common = None
+    actual_route_codepoints = {}
     for route, row in routes.items():
         if not isinstance(row, dict):
             raise ValueError(f"FONT_MANIFEST_ROUTE_ENTRY_INVALID: {route}")
@@ -720,19 +1221,29 @@ def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str]
             raise ValueError(f"FONT_MANIFEST_ROUTE_GLYPHSET_INVALID: {route}")
         common_set = decoded[common]
         delta_set = decoded[delta]
-        if common_set.intersection(delta_set) or common_set.union(delta_set) != set(route_codepoints):
-            raise ValueError(f"FONT_MANIFEST_ROUTE_CMAP_CLOSURE_INVALID: {route}")
-        if expected_common is None:
-            expected_common = set(route_codepoints)
-        else:
-            expected_common.intersection_update(route_codepoints)
+        if row.get("commonGlyphsetSha256") != fonts[common].get("glyphsetSha256"):
+            raise ValueError(f"FONT_MANIFEST_ROUTE_COMMON_GLYPHSET_INVALID: {route}")
+        if row.get("deltaGlyphsetSha256") != fonts[delta].get("glyphsetSha256"):
+            raise ValueError(f"FONT_MANIFEST_ROUTE_DELTA_GLYPHSET_INVALID: {route}")
         preloads = row.get("preloads")
         if preloads != [common, delta] or len(preloads) > 2:
             raise ValueError(f"FONT_MANIFEST_PRELOAD_CLOSURE_INVALID: {route}")
         page_path = artifact_root / route
-        soup = BeautifulSoup(page_path.read_bytes(), "html5lib")
+        if not page_path.is_file() or page_path.is_symlink():
+            raise ValueError(f"FONT_MANIFEST_ROUTE_HTML_MISSING: {route}")
+        page_bytes = page_path.read_bytes()
+        soup = BeautifulSoup(page_bytes, "html5lib")
         if soup.html is None or soup.html.get("data-huiwen-font-artifact-route") != route:
             raise ValueError(f"FONT_MANIFEST_HTML_ROUTE_MARKER_INVALID: {route}")
+        actual_spec = _page_spec_from_bytes(
+            artifact_root, route, page_bytes, tc_cmap, jp_allowed, jp_cmap,
+            require_unmarked=False,
+        )
+        if list(actual_spec["codepoints"]) != route_codepoints:
+            raise ValueError(f"FONT_MANIFEST_ROUTE_TEXT_GLYPHSET_MISMATCH: {route}")
+        if row.get("jpFallbackCodepoints") != actual_spec["jpFallback"]:
+            raise ValueError(f"FONT_MANIFEST_ROUTE_FALLBACK_MISMATCH: {route}")
+        actual_route_codepoints[route] = set(route_codepoints)
         styles = soup.find_all("style", attrs={STYLE_MARKER: "1"})
         if len(styles) != 1:
             raise ValueError(f"FONT_MANIFEST_STYLE_CLOSURE_INVALID: {route}")
@@ -744,6 +1255,8 @@ def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str]
         expected_style = expected_soup.find("style", attrs={STYLE_MARKER: "1"})
         if style != str(expected_style.string or expected_style.decode_contents()):
             raise ValueError(f"FONT_MANIFEST_STYLE_CONTENT_INVALID: {route}")
+        if row.get("styleBytes") != len(expected_block.encode("utf-8")):
+            raise ValueError(f"FONT_MANIFEST_STYLE_BYTES_INVALID: {route}")
         preload_tags = soup.find_all("link", attrs={PRELOAD_MARKER: True})
         all_font_preloads = soup.select('link[rel~="preload"][as="font"]')
         preloads_in_html = {
@@ -755,8 +1268,23 @@ def validate_manifest(artifact_root: Path, manifest: dict, candidates: list[str]
     referenced_fonts = {common_path} | {row["deltaFont"] for row in routes.values()}
     if set(fonts) != referenced_fonts:
         raise ValueError("FONT_MANIFEST_UNREFERENCED_ASSET")
-    if expected_common != decoded[common_path]:
-        raise ValueError("FONT_MANIFEST_COMMON_IS_NOT_ROUTE_INTERSECTION")
+    expected_closure = build_common_closure(source_bytes, [actual_route_codepoints[route] for route in sorted(actual_route_codepoints)])
+    if manifest.get("routeClosure") != expected_closure:
+        raise ValueError("FONT_MANIFEST_ROUTE_CLOSURE_INVALID")
+    common_set = decoded[common_path]
+    if common_set != set(expected_closure["commonCodepoints"]):
+        raise ValueError("FONT_MANIFEST_COMMON_GLYPHSET_INVALID")
+    if fonts[common_path].get("glyphsetSha256") != expected_closure["commonGlyphsetSha256"]:
+        raise ValueError("FONT_MANIFEST_COMMON_GLYPHSET_HASH_INVALID")
+    for route, row in routes.items():
+        route_set = actual_route_codepoints[route]
+        delta_set = decoded[row["deltaFont"]]
+        if common_set.intersection(delta_set):
+            raise ValueError(f"FONT_MANIFEST_ROUTE_CMAP_OVERLAP: {route}")
+        if delta_set != route_set - common_set:
+            raise ValueError(f"FONT_MANIFEST_ROUTE_DELTA_NOT_EXACT: {route}")
+        if not route_set.issubset(common_set | delta_set):
+            raise ValueError(f"FONT_MANIFEST_ROUTE_CMAP_COVERAGE_INVALID: {route}")
 
 
 def _inactive_and_public_ids(source_root: Path) -> tuple[set[str], set[str]]:
@@ -798,13 +1326,12 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
     styles_path = artifact_root / "styles.css"
     styles_css = styles_path.read_text(encoding="utf-8")
     jp_allowed, jp_cmap = parse_jp_face(artifact_root, styles_css)
-    routes, skipped = candidate_routes(source_root, artifact_root, paths)
+    routes, skipped, excluded = public_html_route_inventory(source_root, artifact_root, paths)
     specs = [extract_page_spec(artifact_root, route, tc_cmap, jp_allowed, jp_cmap) for route in routes]
     if not specs:
         raise ValueError("FONT_NO_PUBLIC_DETAIL_CANDIDATES")
-    common = set(specs[0]["codepoints"])
-    for spec in specs[1:]:
-        common.intersection_update(spec["codepoints"])
+    common_closure = build_common_closure(source_bytes, [spec["codepoints"] for spec in specs])
+    common = set(common_closure["commonCodepoints"])
     common_glyphs = tuple(sorted(common))
     if not common_glyphs:
         raise ValueError("FONT_COMMON_CORE_EMPTY")
@@ -857,6 +1384,8 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
             "deltaFont": delta_path,
             "codepoints": list(spec["codepoints"]),
             "glyphsetSha256": spec["glyphsetSha256"],
+            "commonGlyphsetSha256": common_closure["commonGlyphsetSha256"],
+            "deltaGlyphsetSha256": glyphset_sha256(list(delta)),
             "preloads": preloads,
             "styleSha256": sha256_bytes(style_text.encode("utf-8")),
             "styleBytes": len(style_block.encode("utf-8")),
@@ -886,6 +1415,13 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
     manifest = {
         "schemaVersion": MANIFEST_SCHEMA,
         "sourceFontSha256": source_digest,
+        "sourceProvenance": source_provenance(source_bytes, (artifact_root / LICENSE_REL).read_bytes()),
+        "routeInventory": {
+            "candidateRoutes": routes,
+            "skippedExistingFontRoutes": skipped,
+            "excludedRoutes": excluded,
+        },
+        "routeClosure": common_closure,
         "compiler": compiler_info,
         "fonts": {path: fonts[path] for path in sorted(fonts)},
         "routes": {route: route_manifest[route] for route in sorted(route_manifest)},
@@ -893,7 +1429,14 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
     manifest_bytes = canonical_json(manifest) + b"\n"
     (artifact_root / MANIFEST_NAME).write_bytes(manifest_bytes)
     inactive, public_ids = _inactive_and_public_ids(source_root)
-    validate_manifest(artifact_root, manifest, routes, inactive, public_ids)
+    validate_manifest(
+        artifact_root, manifest, routes, inactive, public_ids,
+        route_inventory={
+            "candidateRoutes": routes,
+            "skippedExistingFontRoutes": skipped,
+            "excludedRoutes": excluded,
+        },
+    )
     elapsed_wall = time.perf_counter() - started_wall
     elapsed_cpu = time.process_time() - started_cpu
     return {
@@ -902,11 +1445,13 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
         "manifestSha256": sha256_bytes(manifest_bytes),
         "routes": routes,
         "skippedExistingRoutes": skipped,
+        "excludedRoutes": excluded,
         "specs": specs,
         "perPageFontBytes": per_page_bytes,
         "uniqueFontAssetCount": len(written_payloads),
         "uniqueFontAssetBytes": sum(len(payload) for payload in written_payloads.values()),
         "commonCodepoints": list(common_glyphs),
+        "commonClosure": common_closure,
         "compileStats": {
             "hits": compiler.hits - before_hits,
             "misses": compiler.misses - before_misses,
@@ -916,7 +1461,7 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
     }
 
 
-def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[dict], skipped_routes=()) -> None:
+def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[dict], skipped_routes=(), excluded_routes=()) -> None:
     for spec in specs:
         target = warm_artifact / spec["route"]
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -926,7 +1471,7 @@ def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[di
             target = warm_artifact / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(source.read_bytes())
-    for route in skipped_routes:
+    for route in (*skipped_routes, *(row["route"] for row in excluded_routes)):
         source = source_artifact / route
         target = warm_artifact / route
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -967,7 +1512,10 @@ def build(source_root: Path, artifact_root: Path, public_paths, *, compiler: Pro
     with tempfile.TemporaryDirectory(prefix=".page-font-warm-", dir=artifact_root.parent) as warm_name:
         warm_artifact = Path(warm_name) / "site"
         warm_artifact.mkdir()
-        _copy_warm_inputs(artifact_root, warm_artifact, cold["specs"], cold["skippedExistingRoutes"])
+        _copy_warm_inputs(
+            artifact_root, warm_artifact, cold["specs"],
+            cold["skippedExistingRoutes"], cold["excludedRoutes"],
+        )
         warm = _build_once(source_root, warm_artifact, public_paths, compiler, source_bytes)
         if warm["manifestBytes"] != cold["manifestBytes"]:
             raise ValueError("FONT_WARM_MANIFEST_NOT_IDENTICAL")
@@ -980,6 +1528,7 @@ def build(source_root: Path, artifact_root: Path, public_paths, *, compiler: Pro
         "sourceFontSha256": cold["manifest"]["sourceFontSha256"],
         "candidateRoutes": len(cold["routes"]),
         "skippedExistingFontRoutes": cold["skippedExistingRoutes"],
+        "excludedLegacyRedirectRoutes": cold["excludedRoutes"],
         "compiler": cold["manifest"]["compiler"],
         "commonGlyphCount": len(cold["commonCodepoints"]),
         "commonGlyphsetSha256": glyphset_sha256(cold["commonCodepoints"]),
@@ -1032,9 +1581,8 @@ def compare_common_delta_samples(source_root: Path, artifact_root: Path, public_
     by_route = {spec["route"]: spec for spec in specs}
     if not set(sample_routes).issubset(by_route):
         raise ValueError(f"FONT_SAMPLE_ROUTE_NOT_PUBLIC: {sorted(set(sample_routes) - set(by_route))}")
-    common = set(specs[0]["codepoints"])
-    for spec in specs[1:]:
-        common.intersection_update(spec["codepoints"])
+    closure = build_common_closure(source_bytes, [spec["codepoints"] for spec in specs])
+    common = set(closure["commonCodepoints"])
     common_glyphs = tuple(sorted(common))
     common_payload, _ = compiler.compile(source_bytes, common_glyphs, CORE_FAMILY, CORE_UNIQUE_ID)
     results = []
@@ -1062,6 +1610,9 @@ def compare_common_delta_samples(source_root: Path, artifact_root: Path, public_
         "candidateRouteCount": len(specs),
         "commonGlyphCount": len(common_glyphs),
         "commonGlyphsetSha256": glyphset_sha256(common_glyphs),
+        "routeIntersectionGlyphCount": len(closure["routeIntersectionCodepoints"]),
+        "commonClosureExtraGlyphCount": len(common - set(closure["routeIntersectionCodepoints"])),
+        "commonClosure": closure,
         "samples": results,
         "allUnderTenPercentThreshold": all(row["underTenPercentThreshold"] for row in results),
     }
