@@ -20,6 +20,13 @@ import {
 import { startStaticServer } from './static-server.mjs';
 import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
+import {
+  combineCaptureAndSourceIntegrityErrors,
+  createMetadataPathRegistry,
+  invalidateSourceMetadata,
+  prepareCaptureOutput,
+  writeCaptureMetadata,
+} from './visual-qa-source-integrity.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runnerVersion = '1.0.0';
@@ -102,13 +109,12 @@ function captureId(route, viewport) {
   return `${route.id}-${viewport.width}`;
 }
 
-async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
+async function captureOne({ browser, route, viewport, baseUrl, policy, environment, runOutput, metadataRegistry, playwrightVersion, siteSourceSHA, captureToolSHA, deploymentAtStart }) {
   const id = captureId(route, viewport);
   const screenshotEnabled = environment === 'local-http-uncompressed';
   const screenshotPath = screenshotEnabled ? `${id}.png` : null;
   const metadataPath = `${id}.json`;
   const absoluteScreenshotPath = screenshotEnabled ? resolve(runOutput, screenshotPath) : null;
-  const absoluteMetadataPath = resolve(runOutput, metadataPath);
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: policy.capture.deviceScaleFactor,
@@ -392,45 +398,10 @@ async function captureOne({ browser, route, viewport, baseUrl, policy, environme
     network: requestRecords
   };
   record.captureQuality = evaluateCaptureQuality(record, { expectedHttpStatus, screenshotRequired: screenshotEnabled });
-  const metadataBytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
-  await writeFile(absoluteMetadataPath, metadataBytes);
-  record.metadataSha256 = sha256(metadataBytes);
+  record.metadataSha256 = await writeCaptureMetadata({ registry: metadataRegistry, id, metadataPath, record });
   await cdp.detach().catch(() => {});
   await context.close();
   return record;
-}
-
-async function markSiteSourceUnverified(captures, runOutput, expectedHeadSha, reason) {
-  const errors = [];
-  try {
-    await mkdir(runOutput, { recursive: true });
-  } catch (error) {
-    errors.push(error);
-  }
-  for (const capture of captures) {
-    capture.sourceSHA = null;
-    capture.siteSourceSHA = null;
-    capture.siteSourceIntegrityStatus = 'FAILED';
-    delete capture.metadataSha256;
-    try {
-      const metadataBytes = Buffer.from(`${JSON.stringify(capture, null, 2)}\n`);
-      await writeFile(resolve(runOutput, capture.metadataPath), metadataBytes);
-      capture.metadataSha256 = sha256(metadataBytes);
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  try {
-    await writeFile(resolve(runOutput, 'site-source-integrity-failure.json'), `${JSON.stringify({
-      status: 'FAILED',
-      expectedHeadSha,
-      siteSourceSHA: null,
-      reason: String(reason?.message ?? reason),
-    }, null, 2)}\n`);
-  } catch (error) {
-    errors.push(error);
-  }
-  return errors;
 }
 
 async function runCapture(options) {
@@ -455,6 +426,9 @@ async function runCapture(options) {
     outputDir: options['output-dir'],
     defaultOutput,
   });
+  const outputRoot = identity.outputRoot;
+  const runOutput = resolve(outputRoot, environment);
+  const metadataRegistry = createMetadataPathRegistry({ runOutput, outputRoot });
   const sourceGuard = identity.independentSiteSource && process.env.BASE_ROOT
     ? await protectReadOnlyBaseSource({
       root: identity.siteRoot,
@@ -465,16 +439,14 @@ async function runCapture(options) {
   if (identity.independentSiteSource && process.env.GITHUB_EVENT_NAME === 'pull_request' && !sourceGuard) {
     throw new Error('A-05 PR base capture requires the verified RUNNER_TEMP/a05-main-reference source guard.');
   }
-  const outputRoot = identity.outputRoot;
-  const runOutput = resolve(outputRoot, environment);
   const captures = [];
   let captureError = null;
   try {
     if (sourceGuard && sourceGuard.initialState.headSha !== identity.siteSourceSHA) {
       throw new Error(`A-05 PR base changed between identity capture (${identity.siteSourceSHA}) and read-only protection (${sourceGuard.initialState.headSha}).`);
     }
+    await prepareCaptureOutput(metadataRegistry);
     const policy = await readPolicy();
-    await mkdir(runOutput, { recursive: true });
     let server = null;
     let baseUrl;
     if (environment === 'local-http-uncompressed') {
@@ -504,6 +476,7 @@ async function runCapture(options) {
             policy,
             environment,
             runOutput,
+            metadataRegistry,
             playwrightVersion: packageJson.devDependencies.playwright,
             siteSourceSHA,
             captureToolSHA: identity.captureToolSHA,
@@ -532,9 +505,12 @@ async function runCapture(options) {
         capture.environmentVerification.status = responseVerified && deploymentWindow.status === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED';
         capture.captureQuality = evaluateCaptureQuality(capture, { expectedHttpStatus: capture.expectedHttpStatus, screenshotRequired: false });
         delete capture.metadataSha256;
-        const metadataBytes = Buffer.from(`${JSON.stringify(capture, null, 2)}\n`);
-        await writeFile(resolve(runOutput, capture.metadataPath), metadataBytes);
-        capture.metadataSha256 = sha256(metadataBytes);
+        capture.metadataSha256 = await writeCaptureMetadata({
+          registry: metadataRegistry,
+          id: capture.id,
+          metadataPath: capture.metadataPath,
+          record: capture,
+        });
       }
     }
     let siteSourceIntegrity = null;
@@ -542,14 +518,14 @@ async function runCapture(options) {
       try {
         siteSourceIntegrity = await sourceGuard.verifyAndRestore();
       } catch (sourceIntegrityError) {
-        const reportErrors = await markSiteSourceUnverified(captures, runOutput, identity.siteSourceSHA, sourceIntegrityError);
-        if (reportErrors.length) {
-          throw new AggregateError(
-            [sourceIntegrityError, ...reportErrors],
-            `A-05 source integrity failed (${sourceIntegrityError.message}); source identity invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')}).`,
-          );
-        }
-        throw sourceIntegrityError;
+        const reportErrors = await invalidateSourceMetadata({
+          registry: metadataRegistry,
+          captures,
+          expectedHeadSha: identity.siteSourceSHA,
+          claimedSourceSHAAtStart: identity.siteSourceSHA,
+          reason: sourceIntegrityError,
+        });
+        throw combineCaptureAndSourceIntegrityErrors(null, sourceIntegrityError, reportErrors);
       }
     }
     const verificationFailures = captures.filter(item => item.environmentVerification.status !== 'VERIFIED');
@@ -637,20 +613,15 @@ async function runCapture(options) {
       try {
         await sourceGuard.verifyAndRestore();
       } catch (sourceIntegrityError) {
-        const reportErrors = await markSiteSourceUnverified(captures, runOutput, identity.siteSourceSHA, sourceIntegrityError);
-        if (captureError) {
-          throw new AggregateError(
-            [captureError, sourceIntegrityError, ...reportErrors],
-            `A-05 capture failed (${captureError.message}); source integrity verification or mode restoration also failed (${sourceIntegrityError.message})${reportErrors.length ? `; source identity invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')})` : ''}.`,
-          );
-        }
-        if (reportErrors.length) {
-          throw new AggregateError(
-            [sourceIntegrityError, ...reportErrors],
-            `A-05 source integrity failed (${sourceIntegrityError.message}); source identity invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')}).`,
-          );
-        }
-        throw sourceIntegrityError;
+        const reportErrors = await invalidateSourceMetadata({
+          registry: metadataRegistry,
+          captures,
+          expectedHeadSha: identity.siteSourceSHA,
+          claimedSourceSHAAtStart: identity.siteSourceSHA,
+          reason: sourceIntegrityError,
+          captureError,
+        });
+        throw combineCaptureAndSourceIntegrityErrors(captureError, sourceIntegrityError, reportErrors);
       }
     }
   }

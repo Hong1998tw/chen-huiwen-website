@@ -194,7 +194,12 @@ async function inspectProtectedPath(repositoryRoot, relativePath) {
 
 async function restoreModes(changedModes, repositoryRoot) {
   const errors = [];
-  const ordered = [...changedModes].reverse();
+  const ordered = [...changedModes].sort((first, second) => {
+    const depthDifference = first.relativePath.split('/').length - second.relativePath.split('/').length;
+    if (depthDifference) return depthDifference;
+    if (first.kind !== second.kind) return first.kind === 'directory' ? -1 : 1;
+    return first.relativePath.localeCompare(second.relativePath);
+  });
   for (const entry of ordered) {
     try {
       const { path, info } = await inspectProtectedPath(repositoryRoot, entry.relativePath);
@@ -202,12 +207,34 @@ async function restoreModes(changedModes, repositoryRoot) {
       if (!expectedType) {
         throw new Error(`Cannot safely restore source mode for replaced path: ${entry.relativePath}`);
       }
-      await chmod(path, entry.originalMode);
+      if ((info.mode & 0o7777) !== entry.originalMode) {
+        await chmod(path, entry.originalMode);
+        const { info: restoredInfo } = await inspectProtectedPath(repositoryRoot, entry.relativePath);
+        if ((restoredInfo.mode & 0o7777) !== entry.originalMode) {
+          throw new Error(`Source mode restoration did not persist for path: ${entry.relativePath}`);
+        }
+      }
     } catch (error) {
       errors.push(error);
     }
   }
   return errors;
+}
+
+async function protectedModeRows(repositoryRoot, protectedEntries) {
+  const rows = [];
+  const writablePaths = [];
+  for (const entry of protectedEntries) {
+    const { info } = await inspectProtectedPath(repositoryRoot, entry.relativePath);
+    const expectedType = entry.kind === 'directory' ? info.isDirectory() : info.isFile();
+    if (!expectedType) {
+      throw new Error(`A-05 PR base protected path changed type: ${entry.relativePath}`);
+    }
+    const actualMode = info.mode & 0o7777;
+    if ((actualMode & 0o222) !== 0) writablePaths.push({ relativePath: entry.relativePath, mode: actualMode });
+    rows.push([entry.relativePath, entry.kind, modeString(actualMode)]);
+  }
+  return { rows, writablePaths };
 }
 
 export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) {
@@ -230,8 +257,9 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
   }
 
   const { targets, skippedSymlinkCount } = await trackedProtectionTargets(source.root);
-  const changedModes = [];
   const modeRows = [];
+  const protectedEntries = [];
+  let expectedProtectedDigest = null;
   const orderedTargets = [...targets.entries()].sort(([first], [second]) => first.localeCompare(second));
   try {
     for (const [relativePath, target] of orderedTargets) {
@@ -242,17 +270,23 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
       const originalMode = info.mode & 0o7777;
       const readOnlyMode = originalMode & ~0o222;
       modeRows.push([relativePath, modeString(originalMode), modeString(readOnlyMode)]);
+      const entry = { relativePath, kind: target.kind, originalMode, protectedMode: readOnlyMode };
+      protectedEntries.push(entry);
       if (readOnlyMode !== originalMode) {
         await chmod(protectedPath, readOnlyMode);
-        changedModes.push({ relativePath, kind: target.kind, originalMode });
       }
       const { info: protectedInfo } = await inspectProtectedPath(source.root, relativePath);
-      if ((protectedInfo.mode & 0o222) !== 0) {
+      if ((protectedInfo.mode & 0o7777) !== readOnlyMode || (protectedInfo.mode & 0o222) !== 0) {
         throw new Error(`A-05 PR base path remained writable after protection: ${relativePath}`);
       }
     }
+    const initialProtectedModes = await protectedModeRows(source.root, protectedEntries);
+    if (initialProtectedModes.writablePaths.length) {
+      throw new Error(`A-05 PR base paths remained writable after protection: ${initialProtectedModes.writablePaths.map(item => `${item.relativePath} (${modeString(item.mode)})`).join(', ')}.`);
+    }
+    expectedProtectedDigest = hashJsonLines(initialProtectedModes.rows);
   } catch (error) {
-    const restoreErrors = await restoreModes(changedModes, source.root);
+    const restoreErrors = await restoreModes(protectedEntries, source.root);
     if (restoreErrors.length) {
       throw new AggregateError([error, ...restoreErrors], `A-05 PR base protection failed (${error.message}) and mode restoration also failed (${restoreErrors.map(item => item.message).join('; ')}).`);
     }
@@ -270,6 +304,7 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
       protectedDirectoryCount: [...targets.values()].filter(item => item.kind === 'directory').length,
       skippedSymlinkCount,
       sha256: modeDigest,
+      expectedProtectedDigest,
       sameUidThreatModel: 'Mode bits deter accidental writes by the reviewed capture tool; same-UID code can change them, so this is not a strong sandbox.',
     },
     get completed() { return completed; },
@@ -277,6 +312,19 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
       if (completed) throw new Error('A-05 PR base protection was already finalized.');
       const errors = [];
       let after = null;
+      let postCaptureModeDigest = null;
+      try {
+        const postCaptureModes = await protectedModeRows(source.root, protectedEntries);
+        postCaptureModeDigest = hashJsonLines(postCaptureModes.rows);
+        if (postCaptureModeDigest !== expectedProtectedDigest) {
+          errors.push(new Error(`A-05 PR base protected mode digest changed during capture (expected ${expectedProtectedDigest}, received ${postCaptureModeDigest}).`));
+        }
+        for (const entry of postCaptureModes.writablePaths) {
+          errors.push(new Error(`A-05 PR base protected path became writable during capture: ${entry.relativePath} (${modeString(entry.mode)}).`));
+        }
+      } catch (error) {
+        errors.push(error);
+      }
       try {
         after = await readSourceState(source.root);
         if (after.headSha !== before.headSha) errors.push(new Error(`A-05 PR base HEAD changed from ${before.headSha} to ${after.headSha}.`));
@@ -285,7 +333,7 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
       } catch (error) {
         errors.push(error);
       }
-      const restoreErrors = await restoreModes(changedModes, source.root);
+      const restoreErrors = await restoreModes(protectedEntries, source.root);
       errors.push(...restoreErrors);
       completed = true;
       if (errors.length) {
@@ -297,7 +345,7 @@ export async function protectReadOnlyBaseSource({ root, runnerTemp, baseRoot }) 
         cleanAfterCapture: after.clean,
         trackedContentSha256Before: before.trackedContentSha256,
         trackedContentSha256After: after.trackedContentSha256,
-        readOnlyMode: this.modeRecord,
+        readOnlyMode: { ...this.modeRecord, postCaptureModeDigest },
       };
     },
   };
