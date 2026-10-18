@@ -22,13 +22,33 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   if (!header) return;
   const mobile = window.matchMedia('(max-width: 780px)');
   let lastY = window.scrollY;
+  let direction = 0;
+  let directionStartY = lastY;
   let queued = false;
   const update = () => {
     queued = false;
     const y = window.scrollY;
-    if (!mobile.matches || y <= 8) header.classList.remove('is-compact');
-    else if (y > lastY + 1) header.classList.add('is-compact');
-    else if (y < lastY - 1) header.classList.remove('is-compact');
+    const movement = Math.sign(y - lastY);
+    if (!mobile.matches || y <= 8) {
+      header.classList.remove('is-compact');
+      direction = 0;
+      directionStartY = y;
+    } else if (movement) {
+      if (movement !== direction) {
+        direction = movement;
+        directionStartY = lastY;
+      }
+      // The 64px/52px header moves centered controls by up to 6px. Wait for
+      // cumulative 8px movement so that small scroll-anchor corrections do
+      // not reverse the user's scroll direction and toggle the header back.
+      if (direction > 0 && y - directionStartY >= 8) {
+        header.classList.add('is-compact');
+        directionStartY = y;
+      } else if (direction < 0 && directionStartY - y >= 8) {
+        header.classList.remove('is-compact');
+        directionStartY = y;
+      }
+    }
     lastY = y;
   };
   const onScroll = () => {
@@ -40,6 +60,8 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   window.addEventListener('scroll', onScroll, {passive:true});
   mobile.addEventListener('change', () => {
     lastY = window.scrollY;
+    direction = 0;
+    directionStartY = lastY;
     header.classList.remove('is-compact');
   });
 })();
