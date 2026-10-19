@@ -81,6 +81,9 @@ SCRIPT_DYNAMIC_TEXT = (
     "開啟選單 開啟主要選單 關閉主要選單 關閉選單 2026選舉 律師時間表 "
     "分享這一頁 網址已複製 複製分享網址 請選取並複製下方網址。 分享網址 關閉"
 )
+FINGERPRINTED_DYNAMIC_SCRIPTS = re.compile(
+    r"(?P<alias>digital|news|civic|legal-calendar)\.(?P<digest>[a-f0-9]{64})\.js\Z"
+)
 CASE_DYNAMIC_TEXT = (
     "延伸閱讀 延伸探索 依里別與共同主題串連政績、新聞與政見，方便一次閱讀相關內容。 "
     "政績 × 新聞 × 政見 → 探索 分享這一頁"
@@ -525,7 +528,16 @@ def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
     for tag in soup.find_all("script", src=True):
         parsed = urlsplit(str(tag["src"]))
         if not parsed.scheme and not parsed.netloc:
-            script_names.add(PurePosixPath(unquote(parsed.path)).name)
+            script_path = PurePosixPath(unquote(parsed.path))
+            script_name = script_path.name
+            match = FINGERPRINTED_DYNAMIC_SCRIPTS.fullmatch(script_name)
+            if match and script_path.as_posix().lstrip("/") == script_name:
+                artifact_script = _safe_artifact_path(root, parsed.path)
+                if sha256_file(artifact_script) != match.group("digest"):
+                    raise ValueError("FONT_DYNAMIC_SCRIPT_FILENAME_HASH_MISMATCH: " + script_name)
+                script_names.add(match.group("alias") + ".js")
+            else:
+                script_names.add(script_name)
     pieces = [SCRIPT_DYNAMIC_TEXT]
     press_runtime = _active_press_runtime(soup)
     if press_runtime is not None:
