@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import re
@@ -13,6 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 FILTERED_RESPONSE_HEADERS = {
     "content-length", "content-encoding", "speculation-rules", "report-to", "nel",
 }
+FINGERPRINTED_ASSET = re.compile(r"^(?P<prefix>.+)\.(?P<sha256>[0-9a-f]{64})(?P<suffix>\.[^/]+)$")
 
 
 def normalize_edge_html(body: bytes) -> tuple[bytes, bool]:
@@ -57,6 +59,47 @@ def content_type(path: Path) -> str:
     return guessed or "application/octet-stream"
 
 
+def resolve_snapshot_asset(
+    root: Path,
+    relative: str,
+    verified_paths: set[str] | frozenset[str],
+) -> tuple[Path, bytes] | None:
+    if (
+        not relative
+        or "\\" in relative
+        or Path(relative).is_absolute()
+        or any(part in {"", ".", ".."} for part in relative.split("/"))
+    ):
+        raise ValueError("invalid snapshot path")
+
+    expected_sha256 = None
+    match = FINGERPRINTED_ASSET.fullmatch(relative)
+    snapshot_path = relative
+    if match:
+        expected_sha256 = match.group("sha256")
+        alias = f"{match.group('prefix')}{match.group('suffix')}"
+        if relative not in verified_paths:
+            if alias not in verified_paths:
+                return None
+            snapshot_path = alias
+    elif relative not in verified_paths:
+        return None
+
+    resolved_root = root.resolve()
+    candidate = (resolved_root / snapshot_path).resolve()
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError:
+        return None
+    if not candidate.is_file():
+        return None
+
+    body = candidate.read_bytes()
+    if expected_sha256 and hashlib.sha256(body).hexdigest() != expected_sha256:
+        return None
+    return candidate, body
+
+
 def build_server(hostname: str, snapshot_dir: Path, bind: str, port: int) -> ThreadingHTTPServer:
     root = snapshot_dir.resolve()
     manifest_path = root / "_snapshot.json"
@@ -65,6 +108,10 @@ def build_server(hostname: str, snapshot_dir: Path, bind: str, port: int) -> Thr
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("status") != "Passed":
         raise RuntimeError("live snapshot was not produced by a Passed HTTP parity check")
+    manifest_paths = manifest.get("paths")
+    if not isinstance(manifest_paths, list) or any(not isinstance(path, str) for path in manifest_paths):
+        raise RuntimeError("live snapshot manifest has no valid verified path list")
+    verified_paths = frozenset(manifest_paths)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "HuiwenLiveSnapshot/1.0"
@@ -100,20 +147,16 @@ def build_server(hostname: str, snapshot_dir: Path, bind: str, port: int) -> Thr
                 return
 
             relative = parsed.path.lstrip("/") or "index.html"
-            if not relative or any(part in {"", ".", ".."} for part in Path(relative).parts):
-                self._send(403, b"invalid path")
-                return
-            candidate = (root / relative).resolve()
             try:
-                candidate.relative_to(root)
+                resolved = resolve_snapshot_asset(root, relative, verified_paths)
             except ValueError:
                 self._send(403, b"invalid path")
                 return
-            if not candidate.is_file():
+            if resolved is None:
                 self._send(404, b"snapshot path missing")
                 return
 
-            body = candidate.read_bytes()
+            candidate, body = resolved
             normalized = False
             if candidate.suffix.lower() == ".html":
                 body, normalized = normalize_edge_html(body)
