@@ -141,6 +141,7 @@ try {
     firstSample:null,
     afterFirstSample:null,
     settledGeometry:null,
+    geometryFailure:null,
   };
   await check(earlyMenuCheck, async()=>{
     const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'no-preference'});
@@ -156,6 +157,76 @@ try {
           document.documentElement.style.scrollBehavior='auto';
           window.scrollTo({top:250,behavior:'instant'});
           const nativeRequestAnimationFrame=window.requestAnimationFrame.bind(window);
+          const observedHeader=document.querySelector('.site-header');
+          const observedNavWrap=document.querySelector('.site-header .nav-wrap');
+          const observedNavigation=document.querySelector('#navigation');
+          const observedToggle=document.querySelector('.menu-toggle');
+          const transitionEvents=[];
+          const readRect=element=>{
+            if(!element)return null;
+            const {top,bottom,left,right,width,height}=element.getBoundingClientRect();
+            return {top,bottom,left,right,width,height};
+          };
+          const readGeometry=()=>{
+            const active=document.activeElement;
+            const headerRect=readRect(observedHeader);
+            const navWrapRect=readRect(observedNavWrap);
+            const navigationRect=readRect(observedNavigation);
+            const inlineMenuTop=observedNavigation?.style.getPropertyValue('--menu-top')||'';
+            const expectedMenuTop=headerRect?Math.ceil(headerRect.bottom+12):null;
+            const headerStyle=observedHeader?getComputedStyle(observedHeader):null;
+            const navWrapStyle=observedNavWrap?getComputedStyle(observedNavWrap):null;
+            return {
+              compact:observedHeader?.classList.contains('is-compact')===true,
+              headerRect,
+              navWrapRect,
+              navigationRect,
+              inlineMenuTop,
+              computedMenuTop:observedNavigation?getComputedStyle(observedNavigation).getPropertyValue('--menu-top'):null,
+              expectedMenuTop,
+              originalHeightPredicate:headerRect!==null&&Math.abs(headerRect.height-52)<=0.5,
+              originalAnchorPredicate:expectedMenuTop!==null&&Number.parseFloat(inlineMenuTop)===expectedMenuTop,
+              headerMinHeight:headerStyle?.minHeight||null,
+              navWrapMinHeight:navWrapStyle?.minHeight||null,
+              scrollY:window.scrollY,
+              menuExpanded:observedToggle?.getAttribute('aria-expanded')==='true',
+              focus:{insideMenu:observedNavigation?.contains(active)===true,tagName:active?.tagName||null,id:active?.id||'',className:typeof active?.className==='string'?active.className:''},
+              classes:{header:observedHeader?[...observedHeader.classList]:[],navWrap:observedNavWrap?[...observedNavWrap.classList]:[],navigation:observedNavigation?[...observedNavigation.classList]:[],body:[...document.body.classList]},
+              media:{mobile:matchMedia('(max-width: 780px)').matches,desktop:matchMedia('(min-width: 781px)').matches},
+              transitionEventCount:transitionEvents.length,
+            };
+          };
+          for(const type of ['transitionrun','transitionstart','transitionend','transitioncancel']){
+            document.addEventListener(type,event=>{
+              if(event.target!==observedHeader&&event.target!==observedNavWrap)return;
+              if(transitionEvents.length===32)transitionEvents.shift();
+              transitionEvents.push({
+                type,atMs:performance.now(),target:event.target===observedHeader?'header':'nav-wrap',propertyName:event.propertyName,
+                headerHeight:readRect(observedHeader)?.height??null,headerBottom:readRect(observedHeader)?.bottom??null,
+                navWrapHeight:readRect(observedNavWrap)?.height??null,
+                inlineMenuTop:observedNavigation?.style.getPropertyValue('--menu-top')||'',
+              });
+            },true);
+          }
+          window.__earlyMenuGeometrySnapshot=()=>({...readGeometry(),transitionEvents:transitionEvents.slice()});
+          window.__sampleEarlyMenuGeometry=({frameLimit=16,budgetMs=2000}={})=>new Promise(resolve=>{
+            const samples=[];
+            let finished=false;
+            const finish=status=>{
+              if(finished)return;
+              finished=true;
+              window.clearTimeout(timer);
+              resolve({status,samples,transitionEvents:transitionEvents.slice()});
+            };
+            const timer=window.setTimeout(()=>finish('time-budget-exhausted'),budgetMs);
+            const sample=timestamp=>{
+              if(finished)return;
+              samples.push({frame:samples.length+1,atMs:timestamp,...readGeometry()});
+              if(samples.length>=frameLimit)finish('frame-limit-reached');
+              else nativeRequestAnimationFrame(sample);
+            };
+            nativeRequestAnimationFrame(sample);
+          });
           window.__waitForStableRestoredLayout=async()=>{
             await document.fonts.ready;
             const images=[...document.images].filter(image=>{
@@ -234,14 +305,26 @@ try {
         compact:document.querySelector('.site-header').classList.contains('is-compact'),
         menuOpened:document.querySelector('.menu-toggle').getAttribute('aria-expanded')==='true',
       }));
-      await page.waitForFunction(()=>{
-        const header=document.querySelector('.site-header');
-        const navigation=document.querySelector('#navigation');
-        const menuTop=Number.parseFloat(navigation.style.getPropertyValue('--menu-top'));
-        return header.classList.contains('is-compact')&&
-          Math.abs(header.getBoundingClientRect().height-52)<=0.5&&
-          menuTop===Math.ceil(header.getBoundingClientRect().bottom+12);
-      });
+      try {
+        await page.waitForFunction(()=>{
+          const header=document.querySelector('.site-header');
+          const navigation=document.querySelector('#navigation');
+          const menuTop=Number.parseFloat(navigation.style.getPropertyValue('--menu-top'));
+          return header.classList.contains('is-compact')&&
+            Math.abs(header.getBoundingClientRect().height-52)<=0.5&&
+            menuTop===Math.ceil(header.getBoundingClientRect().bottom+12);
+        },null,{timeout:2000});
+      } catch(error) {
+        try {
+          // Preserve the exact end state before taking a short native-RAF trace.
+          const terminal=await page.evaluate(()=>window.__earlyMenuGeometrySnapshot());
+          const trace=await page.evaluate(()=>window.__sampleEarlyMenuGeometry({frameLimit:16,budgetMs:2000}));
+          earlyMenuDiagnostics.geometryFailure={waitError:String(error),terminal,samples:trace.samples,sampleStatus:trace.status,transitionEventsAfterSample:trace.transitionEvents};
+        } catch(captureError) {
+          earlyMenuDiagnostics.geometryFailure={waitError:String(error),captureError:String(captureError)};
+        }
+        throw error;
+      }
       earlyMenuDiagnostics.settledGeometry=await page.evaluate(()=>{
         const header=document.querySelector('.site-header');
         const navigation=document.querySelector('#navigation');
