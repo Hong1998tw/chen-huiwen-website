@@ -17,6 +17,7 @@ from public_artifact_fixture import (
     _build_cloudflare_fixture,
     _cloudflare_input_identity,
     _module_state,
+    _stable_value,
     _UNSUPPORTED,
     build_fixture_key,
     hash_input_paths,
@@ -25,6 +26,16 @@ from public_artifact_fixture import (
 
 
 class ArtifactTemplateCacheTests(unittest.TestCase):
+    def test_function_code_identity_stays_stable_after_adaptive_execution(self):
+        def builder(items):
+            return sum(item['value'] for item in items)
+
+        before = _stable_value(builder)
+        self.assertIsNot(before, _UNSUPPORTED)
+        for _ in range(100):
+            builder([{'value': value} for value in range(4)])
+        self.assertEqual(_stable_value(builder), before)
+
     def test_real_cloudflare_builder_pair_shares_one_immutable_fixture(self):
         root = Path(__file__).resolve().parents[1]
         scripts = str(root / 'scripts')

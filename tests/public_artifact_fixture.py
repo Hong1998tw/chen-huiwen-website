@@ -4,7 +4,6 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
-import marshal
 import os
 from pathlib import Path
 import re
@@ -96,6 +95,69 @@ def _builder_inputs_clean(root):
 _UNSUPPORTED = object()
 
 
+def _stable_code_constant(value, active):
+    if isinstance(value, types.CodeType):
+        return _stable_code(value, active)
+    if value is None or type(value) in (bool, int, str):
+        return value
+    if type(value) is float:
+        return {'floatBits': struct.pack('!d', value).hex()}
+    if type(value) is complex:
+        return {'complexBits': struct.pack('!dd', value.real, value.imag).hex()}
+    if isinstance(value, bytes):
+        return {'bytesSha256': hashlib.sha256(value).hexdigest(), 'length': len(value)}
+    if value is Ellipsis:
+        return {'ellipsis': True}
+    if type(value) is tuple:
+        values = [_stable_code_constant(item, active) for item in value]
+        return _UNSUPPORTED if any(item is _UNSUPPORTED for item in values) else {'tuple': values}
+    if type(value) is frozenset:
+        values = [_stable_code_constant(item, active) for item in value]
+        if any(item is _UNSUPPORTED for item in values):
+            return _UNSUPPORTED
+        values.sort(key=lambda item: json.dumps(
+            item, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+        ))
+        return {'frozenset': values}
+    return _UNSUPPORTED
+
+
+def _stable_code(code, active=None):
+    """Fingerprint source code fields without CPython's adaptive quickening state."""
+    if active is None:
+        active = set()
+    identity = id(code)
+    if identity in active:
+        return _UNSUPPORTED
+    active.add(identity)
+    try:
+        constants = [_stable_code_constant(value, active) for value in code.co_consts]
+        if any(value is _UNSUPPORTED for value in constants):
+            return _UNSUPPORTED
+        return {
+            'argcount': code.co_argcount,
+            'posonlyargcount': code.co_posonlyargcount,
+            'kwonlyargcount': code.co_kwonlyargcount,
+            'nlocals': code.co_nlocals,
+            'stacksize': code.co_stacksize,
+            'flags': code.co_flags,
+            'bytecodeSha256': hashlib.sha256(code.co_code).hexdigest(),
+            'constants': constants,
+            'names': code.co_names,
+            'varnames': code.co_varnames,
+            'freevars': code.co_freevars,
+            'cellvars': code.co_cellvars,
+            'filename': code.co_filename,
+            'name': code.co_name,
+            'qualname': code.co_qualname,
+            'firstlineno': code.co_firstlineno,
+            'linetableSha256': hashlib.sha256(code.co_linetable).hexdigest(),
+            'exceptiontableSha256': hashlib.sha256(code.co_exceptiontable).hexdigest(),
+        }
+    finally:
+        active.remove(identity)
+
+
 def _stable_value(value, active=None, seen=None):
     try:
         return _stable_value_impl(value, active, seen)
@@ -150,7 +212,12 @@ def _stable_value_impl(value, active=None, seen=None):
                 kwdefaults = _stable_value(value.__kwdefaults__, active, seen)
                 if defaults is _UNSUPPORTED or kwdefaults is _UNSUPPORTED:
                     return _UNSUPPORTED
-                code_digest = hashlib.sha256(marshal.dumps(value.__code__)).hexdigest()
+                code_state = _stable_code(value.__code__)
+                if code_state is _UNSUPPORTED:
+                    return _UNSUPPORTED
+                code_digest = hashlib.sha256(json.dumps(
+                    code_state, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                ).encode()).hexdigest()
             except (AttributeError, TypeError, ValueError, RecursionError):
                 return _UNSUPPORTED
             return {
