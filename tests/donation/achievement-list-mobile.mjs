@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {withTimeout} from './page-font-artifact-lifecycle.mjs';
 import {startStaticServer} from './static-server.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
@@ -37,13 +38,13 @@ const waitForFilterDialogClosed=async action=>{
     &&document.activeElement===trigger;
   },null,{timeout:FILTER_DIALOG_CLOSE_TIMEOUT_MS});
  }catch(error){
-  const state=await page.evaluate(()=>{
+  const state=await withTimeout(page.evaluate(()=>{
    const dialog=document.querySelector('#case-filter-dialog'),trigger=document.querySelector('#case-filter-open');
    return{open:dialog?.open??null,ariaExpanded:trigger?.getAttribute('aria-expanded')??null,
     htmlOpenClass:document.documentElement.classList.contains('case-filter-dialog-open'),
     bodyOpenClass:document.body.classList.contains('case-filter-dialog-open'),
     focusReturned:document.activeElement===trigger,activeElement:{tag:document.activeElement?.tagName.toLowerCase()||null,id:document.activeElement?.id||''}};
-  }).catch(diagnosticError=>({captureError:String(diagnosticError)}));
+  }),750,`${action} close-state diagnostic`).catch(diagnosticError=>({captureError:String(diagnosticError)}));
   throw new Error(`${action} did not reach the complete closed state within ${FILTER_DIALOG_CLOSE_TIMEOUT_MS}ms; observed ${JSON.stringify(state)}; wait error: ${String(error)}`);
  }
 };
