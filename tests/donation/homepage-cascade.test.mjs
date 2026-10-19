@@ -130,7 +130,11 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const caption = ruleFor(rules, '#main.home-redesign .hero-portrait figcaption', 'max-width: 780px');
   const frame = ruleFor(rules, '#main.home-redesign .portrait-frame');
   const baseImage = ruleFor(rules, '#main.home-redesign .portrait-frame img');
+  const desktopHero = ruleFor(rules, '#main.home-redesign .hero', 'min-width: 781px');
+  const desktopNarrowHero = ruleFor(rules, '#main.home-redesign .hero', 'max-width: 900px');
+  const desktopFrame = ruleFor(rules, '#main.home-redesign .portrait-frame', 'min-width: 781px');
   const desktopImage = ruleFor(rules, '#main.home-redesign .portrait-frame img', 'min-width: 781px');
+  const desktopCaption = ruleFor(rules, '#main.home-redesign .hero-portrait figcaption', 'min-width: 781px');
   const mobileImageRules = rules.filter(rule => rule.selectors.includes('#main.home-redesign .portrait-frame img')
     && rule.media.join(' ').includes('max-width: 780px'));
   const compactHero = ruleFor(rules, '#main.home-redesign .hero', 'max-height: 800px');
@@ -148,6 +152,8 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     display: 'grid',
     'grid-template-rows': 'auto auto auto',
     'grid-template-areas': '"copy portrait" "tasks tasks" "lawyer lawyer"',
+    gap: 'clamp(24px, 4vw, 54px) clamp(32px, 7vw, 88px)',
+    'padding-top': 'clamp(30px, 4vw, 54px)',
   }, 'desktop hero');
   assertDeclarations(baseCopy, {
     display: 'block',
@@ -206,11 +212,34 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'justify-self': 'end',
     'align-self': 'start',
   }, 'mobile portrait reset');
-  assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'desktop portrait frame keeps its established ratio');
-  assert.equal(frame.declarations.get('overflow'), 'hidden', 'desktop portrait frame keeps the image crop clipped');
-  assert.equal(baseImage.declarations.get('object-fit'), 'contain', 'desktop zoom scales the contain-fitted source image');
-  assertDeclarations(desktopImage, { transform: 'scale(3)', 'transform-origin': '50% 44%', 'object-position': '50% 50%' }, 'desktop portrait close-up');
+  assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'mobile portrait frame keeps the established authored ratio before its mobile override');
+  assertDeclarations(desktopHero, {
+    '--hero-portrait-reference-base': 'calc(42.78vw - 29.44px)',
+    '--hero-portrait-reference-width': 'min(380px, var(--hero-portrait-reference-base))',
+    '--hero-portrait-frame-width': 'min(602.3px, calc(66.4545vw - 33.73px))',
+    'grid-template-columns': 'minmax(0, 1fr) minmax(0, var(--hero-portrait-frame-width))',
+    'row-gap': 'clamp(16px, 2vw, 28px)',
+    'column-gap': 'clamp(24px, 3.75vw, 54px)',
+    'padding-top': 'clamp(16px, 2vw, 30px)',
+  }, 'desktop natural-silhouette reference geometry');
+  assertDeclarations(desktopNarrowHero, { 'column-gap': '18px' }, 'desktop 781-900px title column stays wide enough for the full first line');
+  assertDeclarations(desktopFrame, { 'aspect-ratio': '1.047', 'border-radius': '0', background: 'transparent' }, 'desktop portrait silhouette frame');
+  assert.equal(frame.declarations.get('overflow'), 'hidden', 'portrait frame clips only the permitted lower image area');
+  assert.equal(baseImage.declarations.get('object-fit'), 'contain', 'mobile still displays the complete contain-fitted source image');
+  assertDeclarations(desktopImage, {
+    position: 'absolute',
+    top: '0',
+    left: '0',
+    width: 'var(--hero-portrait-reference-width)',
+    height: 'auto',
+    'aspect-ratio': '1.04',
+    transform: 'translate(calc(-69.1695% + 6px), calc(-31.8725% + 6px)) scale(3)',
+    'transform-origin': '0 0',
+    'object-position': '50% 50%',
+  }, 'desktop three-times source-content portrait close-up');
+  assertDeclarations(desktopCaption, { position: 'absolute', 'clip-path': 'inset(50%)' }, 'desktop caption remains accessible without a visual color band');
   assert.equal(mobileImageRules.some(rule => rule.declarations.has('transform')), false, 'mobile portrait stays unscaled');
+  assertDeclarations(baseImage, { width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none' }, 'mobile image dimensions stay tied to the original portrait frame');
   assert.equal(ruleFor(rules, '#main.home-redesign .portrait-frame', 'max-width: 780px')?.declarations.get('aspect-ratio'), '2 / 3', 'mobile portrait frame uses the source portrait ratio');
   assertDeclarations(caption, { display: 'block', position: 'absolute', 'clip-path': 'inset(50%)' }, 'mobile caption remains visually hidden but available to assistive technology');
   assertDeclarations(narrowHero, {
@@ -218,8 +247,8 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'grid-template-areas': '"eyebrow" "title" "portrait" "intro" "actions" "tasks" "lawyer"',
   }, 'narrow text-zoom reflow');
   assertDeclarations(narrowPortrait, { width: 'min(100%, 260px)', 'max-width': '260px', 'justify-self': 'center' }, 'narrow portrait reflow');
-  assertDeclarations(compactHero, { 'row-gap': '20px', 'padding-top': '24px' }, 'short desktop hero');
-  assertDeclarations(compactPortrait, { width: 'min(100%, 320px)' }, 'short desktop portrait');
+  assertDeclarations(compactHero, { '--hero-portrait-reference-width': 'min(320px, var(--hero-portrait-reference-base))', '--hero-portrait-frame-width': '513.1px', 'row-gap': '12px', 'padding-top': '12px' }, 'short desktop hero uses its historical compact reference');
+  assertDeclarations(compactPortrait, { width: 'var(--hero-portrait-frame-width)', 'max-width': 'none' }, 'short desktop portrait keeps the natural silhouette width');
   assertDeclarations(compactMobileHero, { 'row-gap': '12px', 'padding-top': '12px' }, 'short mobile hero');
   assertDeclarations(compactMobilePortrait, {
     width: 'min(100%, 100px)',
