@@ -1,5 +1,7 @@
 """Derive byte-addressed CSS/JS paths inside the reviewed public artifact only."""
 from __future__ import annotations
+from python_guard import require_supported_python
+require_supported_python()
 
 import hashlib
 from html.parser import HTMLParser
