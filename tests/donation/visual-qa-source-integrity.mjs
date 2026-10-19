@@ -147,6 +147,7 @@ export async function invalidateSourceMetadata({
   claimedSourceSHAAtStart,
   reason,
   captureError = null,
+  integrityKind = 'site-source',
 }) {
   const errors = [];
   try {
@@ -181,8 +182,21 @@ export async function invalidateSourceMetadata({
       ...baseRecord,
       sourceSHA: null,
       siteSourceSHA: null,
+      sourceGitSHA: null,
+      siteSourceKind: 'invalidated',
+      servedRootRole: null,
       claimedSourceSHAAtStart: claimedAtStart,
       siteSourceIntegrityStatus: 'FAILED',
+      captureIntegrityStatus: 'FAILED',
+      environmentVerification: baseRecord.environmentVerification && typeof baseRecord.environmentVerification === 'object'
+        ? { ...baseRecord.environmentVerification, status: 'NOT_VERIFIED', integrityStatus: 'FAILED' }
+        : baseRecord.environmentVerification,
+      captureQuality: baseRecord.captureQuality && typeof baseRecord.captureQuality === 'object'
+        ? { ...baseRecord.captureQuality, status: 'INVALIDATED', integrityStatus: 'FAILED' }
+        : baseRecord.captureQuality,
+      publicationArtifact: baseRecord.publicationArtifact && typeof baseRecord.publicationArtifact === 'object'
+        ? { ...baseRecord.publicationArtifact, status: 'FAILED' }
+        : null,
       sourceIntegrity: {
         status: 'FAILED',
         expectedHeadSha: expectedHeadSha ?? null,
@@ -210,6 +224,7 @@ export async function invalidateSourceMetadata({
 
   const failureReport = {
     status: 'FAILED',
+    integrityKind,
     sourceSHA: null,
     siteSourceSHA: null,
     claimedSourceSHAAtStart: claimedSourceSHAAtStart ?? null,
@@ -227,7 +242,12 @@ export async function invalidateSourceMetadata({
     invalidationFailures: errors.map(error => String(error?.message ?? error)),
   };
   try {
-    const reportPath = assertMetadataPath(registry.runOutput, 'site-source-integrity-failure.json', 'site-source-integrity-failure');
+    const reportId = integrityKind === 'publication-artifact'
+      ? 'publication-artifact-integrity-failure'
+      : integrityKind === 'capture-integrity'
+        ? 'capture-integrity-failure'
+        : 'site-source-integrity-failure';
+    const reportPath = assertMetadataPath(registry.runOutput, `${reportId}.json`, reportId);
     const reportBytes = Buffer.from(`${JSON.stringify(failureReport, null, 2)}\n`);
     await writeFileWithoutFollowingSymlinks(reportPath, reportBytes);
   } catch (error) {
@@ -242,5 +262,17 @@ export function combineCaptureAndSourceIntegrityErrors(captureError, sourceInteg
   const message = captureError
     ? `A-05 capture failed (${captureError.message}); source integrity verification or mode restoration also failed (${sourceIntegrityError.message})${reportErrors.length ? `; source identity invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')})` : ''}.`
     : `A-05 source integrity failed (${sourceIntegrityError.message})${reportErrors.length ? `; source identity invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')})` : ''}.`;
+  return new AggregateError(errors, message);
+}
+
+export function combineCaptureAndIntegrityErrors(captureError, integrityError, reportErrors = [], integrityKind = 'capture') {
+  if (!captureError && reportErrors.length === 0) return integrityError;
+  const errors = captureError ? [captureError, integrityError, ...reportErrors] : [integrityError, ...reportErrors];
+  const label = integrityKind === 'publication-artifact'
+    ? 'publication artifact'
+    : integrityKind === 'capture-integrity' ? 'capture inputs' : 'site-source';
+  const message = captureError
+    ? `A-05 capture failed (${captureError.message}); ${label} integrity verification also failed (${integrityError.message})${reportErrors.length ? `; metadata invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')})` : ''}.`
+    : `A-05 ${label} integrity failed (${integrityError.message})${reportErrors.length ? `; metadata invalidation reporting also failed (${reportErrors.map(error => error.message).join('; ')})` : ''}.`;
   return new AggregateError(errors, message);
 }

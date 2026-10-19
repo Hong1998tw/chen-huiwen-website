@@ -129,6 +129,34 @@ async function readSourceState(sourceRoot) {
   };
 }
 
+export async function snapshotGitSource(sourceRoot, expectedHeadSha) {
+  const state = await readSourceState(sourceRoot);
+  if (state.headSha !== expectedHeadSha || !state.clean) {
+    throw new Error('Site source must match its actual Git HEAD and have a clean worktree before capture.');
+  }
+  return { root: resolve(sourceRoot), ...state };
+}
+
+export async function verifyGitSourceSnapshot(snapshot) {
+  const after = await readSourceState(snapshot.root);
+  const errors = [];
+  if (after.headSha !== snapshot.headSha) {
+    errors.push(new Error(`Site source HEAD changed from ${snapshot.headSha} to ${after.headSha}.`));
+  }
+  if (!after.clean) errors.push(new Error(`Site source worktree is no longer clean: ${after.status.trim() || 'status unavailable'}.`));
+  if (after.trackedContentSha256 !== snapshot.trackedContentSha256) {
+    errors.push(new Error('Site source tracked content changed during capture.'));
+  }
+  if (errors.length) throw new AggregateError(errors, `Site source integrity failed: ${errors.map(error => error.message).join('; ')}`);
+  return {
+    headSha: after.headSha,
+    cleanBeforeCapture: snapshot.clean,
+    cleanAfterCapture: after.clean,
+    trackedContentSha256Before: snapshot.trackedContentSha256,
+    trackedContentSha256After: after.trackedContentSha256,
+  };
+}
+
 async function trackedProtectionTargets(repositoryRoot) {
   const rawEntries = execFileSync('git', ['-C', repositoryRoot, 'ls-files', '--stage', '-z'], {
     encoding: 'buffer',
@@ -386,7 +414,7 @@ export async function readGitCheckoutIdentity(repositoryPath, label = 'repositor
   return { root: canonicalRoot, headSha: headSha.toLowerCase() };
 }
 
-export async function resolveCaptureRoots({ runnerRoot, siteRoot, outputDir, defaultOutput }) {
+export async function resolveCaptureRoots({ runnerRoot, siteRoot, publicArtifact, outputDir, defaultOutput }) {
   const runner = await readGitCheckoutIdentity(runnerRoot, 'capture tool');
   const runnerStatus = runGit(runner.root, ['status', '--porcelain=v1', '-uall']);
   if (runnerStatus) throw new Error('Capture tool worktree must be clean before capture.');
@@ -435,19 +463,43 @@ export async function resolveCaptureRoots({ runnerRoot, siteRoot, outputDir, def
     }
   }
 
+  let publicArtifactRoot = null;
+  if (publicArtifact != null) {
+    if (typeof publicArtifact !== 'string' || !publicArtifact.trim()) {
+      throw new Error('--public-artifact requires a built publication directory path.');
+    }
+    const requestedArtifact = isAbsolute(publicArtifact) ? resolve(publicArtifact) : resolve(runner.root, publicArtifact);
+    const requestedArtifactInfo = await lstat(requestedArtifact);
+    if (requestedArtifactInfo.isSymbolicLink() || !requestedArtifactInfo.isDirectory()) {
+      throw new Error('--public-artifact must name an existing real publication directory.');
+    }
+    publicArtifactRoot = await realpath(requestedArtifact);
+    const artifactInfo = await lstat(publicArtifactRoot);
+    if (artifactInfo.isSymbolicLink() || !artifactInfo.isDirectory()) {
+      throw new Error('--public-artifact must name an existing real publication directory.');
+    }
+    if (pathsOverlap(publicArtifactRoot, site.root) || pathsOverlap(publicArtifactRoot, runner.root)) {
+      throw new Error('Publication artifact must be separate from both Git source roots.');
+    }
+    if (pathsOverlap(publicArtifactRoot, outputRoot)) {
+      throw new Error('Publication artifact and capture output directories must be separate.');
+    }
+  }
+
   return {
     runnerRoot: runner.root,
     siteRoot: site.root,
     siteSourceSHA: site.headSha,
     captureToolSHA: runner.headSha,
     outputRoot,
+    publicArtifactRoot,
     independentSiteSource: site.root !== runner.root,
   };
 }
 
 export function assertAllowedOptions(command, options) {
   const allowed = command === 'capture'
-    ? new Set(['environment', 'base-url', 'site-root', 'output-dir'])
+    ? new Set(['environment', 'base-url', 'site-root', 'public-artifact', 'output-dir'])
     : command === 'cross-compare'
       ? new Set(['candidate-manifest', 'reference-manifest', 'output-dir'])
     : command === 'compare'

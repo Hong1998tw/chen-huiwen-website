@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -21,12 +21,17 @@ import {
 import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 import {
+  combineCaptureAndIntegrityErrors,
   combineCaptureAndSourceIntegrityErrors,
   createMetadataPathRegistry,
   invalidateSourceMetadata,
   prepareCaptureOutput,
   writeCaptureMetadata,
 } from './visual-qa-source-integrity.mjs';
+import {
+  assertSamePublicationArtifact,
+  validatePublicationArtifact,
+} from './visual-qa-publication.mjs';
 
 function png(width, height, color) {
   const image = new PNG({ width, height });
@@ -37,6 +42,14 @@ function png(width, height, color) {
     image.data[index + 3] = color[3] ?? 255;
   }
   return PNG.sync.write(image);
+}
+
+function stableStringifyFixture(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringifyFixture).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringifyFixture(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function approvedManifest(overrides = {}) {
@@ -86,6 +99,33 @@ async function initRepositoryFixture(repositoryRoot) {
 function commitFixtureRepository(repositoryRoot) {
   gitAtFixture(repositoryRoot, ['add', '.']);
   gitAtFixture(repositoryRoot, ['commit', '-q', '-m', 'fixture checkout']);
+}
+
+async function createMinimalPublicationArtifact(artifactRoot, sourceSHA, payloads = { 'index.html': '<main>published</main>\n' }, options = {}) {
+  await mkdir(artifactRoot, { recursive: true });
+  const payloadHashes = {};
+  for (const [path, value] of Object.entries(payloads)) {
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
+    const target = join(artifactRoot, ...path.split('/'));
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+    payloadHashes[path] = sha256(bytes);
+  }
+  const publication = { version: 1, publicRecordCount: 1, files: payloadHashes };
+  const manifestBytes = Buffer.from(`${JSON.stringify(publication, null, 2)}\n`);
+  await writeFile(join(artifactRoot, 'publication-manifest.json'), manifestBytes);
+  const deployment = {
+    schemaVersion: 1,
+    provider: 'cloudflare-static-assets',
+    sourceCommit: options.sourceCommit ?? sourceSHA,
+    publicArtifactDigest: options.publicArtifactDigest ?? sha256(manifestBytes),
+    publicFileCount: options.publicFileCount ?? Object.keys(payloadHashes).length,
+    publicRecordCount: 1,
+  };
+  await writeFile(join(artifactRoot, 'deployment.json'), `${JSON.stringify(deployment)}\n`);
+  await writeFile(join(artifactRoot, '_headers'), '/*\n  X-Content-Type-Options: nosniff\n');
+  await writeFile(join(artifactRoot, '_redirects'), '/ /index.html 200\n');
+  return { publication, deployment, manifestBytes };
 }
 
 async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40), captureToolSHA = sourceSHA) {
@@ -162,7 +202,7 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40), capt
   return { baselineRoot, releaseDirectory, manifestPath, manifest, selection };
 }
 
-async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { candidate = false } = {}) {
+async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { candidate = false, siteSourceKind = 'git-canonical-root' } = {}) {
   const policy = JSON.parse(await readFile(new URL('./visual-qa-policy.json', import.meta.url), 'utf8'));
   const toolVersions = {
     visualQaRunner: '1.0.0',
@@ -171,6 +211,33 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
     pixelmatch: '6.0.0',
     chromium: '140.0.7339.186',
   };
+  const publicationPayloads = siteSourceKind === 'publication'
+    ? [{ path: 'index.html', sha256: 'b'.repeat(64), bytes: 3 }]
+    : null;
+  const wrapperFiles = siteSourceKind === 'publication'
+    ? Object.fromEntries([
+      ['deployment.json', { sha256: '1'.repeat(64), bytes: 20 }],
+      ['_headers', { sha256: '2'.repeat(64), bytes: 30 }],
+      ['_redirects', { sha256: '3'.repeat(64), bytes: 40 }],
+      ['publication-manifest.json', { sha256: '4'.repeat(64), bytes: 50 }],
+    ])
+    : null;
+  const publicationArtifact = siteSourceKind === 'publication'
+    ? {
+      status: 'VERIFIED',
+      servedRootRole: 'publication-artifact',
+      sourceGitSHA: sourceSHA,
+      deploymentSourceCommit: sourceSHA,
+      publicArtifactDigest: sourceSHA[0].repeat(64),
+      rawManifestSha256: sourceSHA[0].repeat(64),
+      publicFileCount: publicationPayloads.length,
+      payloadFileCount: publicationPayloads.length,
+      payloadBytes: publicationPayloads.reduce((sum, item) => sum + item.bytes, 0),
+      payloadInventorySha256: sha256(Buffer.from(stableStringifyFixture(publicationPayloads))),
+      wrapperInventorySha256: sha256(Buffer.from(stableStringifyFixture(wrapperFiles))),
+      wrapperFiles,
+    }
+    : null;
   const baselinePolicy = {
     viewportCount: policy.viewports.length,
     routeCount: policy.routes.length,
@@ -212,6 +279,11 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
         measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
         sourceSHA,
         siteSourceSHA: sourceSHA,
+        sourceGitSHA: sourceSHA,
+        siteSourceKind,
+        servedRootRole: siteSourceKind === 'publication' ? 'publication-artifact' : 'git-canonical-root',
+        publicationArtifact,
+        ...(publicationPayloads ? { publicationPayloads } : {}),
         captureToolSHA,
         checkoutSHA: captureToolSHA,
         liveDeployment: null,
@@ -281,6 +353,11 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
     baseUrl: 'http://127.0.0.1:8765',
     sourceSHA,
     siteSourceSHA: sourceSHA,
+    sourceGitSHA: sourceSHA,
+    siteSourceKind,
+    servedRootRole: siteSourceKind === 'publication' ? 'publication-artifact' : 'git-canonical-root',
+    publicationArtifact,
+    ...(publicationPayloads ? { publicationPayloads } : {}),
     captureToolSHA,
     checkoutSHA: captureToolSHA,
     capturedAt: '2026-10-19T00:00:00.000Z',
@@ -331,6 +408,23 @@ test('A-05 resolves site and capture-tool Git identities separately and rejects 
     assert.equal(result.captureToolSHA, toolSha);
     assert.notEqual(result.siteSourceSHA, result.captureToolSHA);
     assert.equal(result.independentSiteSource, true);
+    const publicationRoot = join(directory, 'publication-output');
+    await mkdir(publicationRoot);
+    const publicationIdentity = await resolveCaptureRoots({
+      runnerRoot,
+      siteRoot,
+      publicArtifact: publicationRoot,
+      outputDir: join(directory, 'publication-capture-output'),
+      defaultOutput,
+    });
+    assert.equal(publicationIdentity.publicArtifactRoot, await realpath(publicationRoot));
+    await assert.rejects(resolveCaptureRoots({
+      runnerRoot,
+      siteRoot,
+      publicArtifact: siteRoot,
+      outputDir: join(directory, 'overlapping-publication-capture'),
+      defaultOutput,
+    }), /separate from both Git source roots/);
 
     const siteAlias = join(directory, 'site-source-alias');
     await symlink(siteRoot, siteAlias, 'dir');
@@ -345,6 +439,82 @@ test('A-05 resolves site and capture-tool Git identities separately and rejects 
     await writeFile(join(runnerRoot, 'runner.mjs'), 'export const runnerFixture = false;\n');
     await assert.rejects(resolveCaptureRoots({ runnerRoot, siteRoot, outputDir: join(directory, 'dirty-tool-output'), defaultOutput }), /Capture tool worktree must be clean/);
     assert.throws(() => assertAllowedOptions('capture', { environment: 'local-http-uncompressed', 'source-sha': siteSha }), /Unsupported capture option/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('A-05 publication identity verifies a real Git source and exact public artifact bytes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-publication-artifact-'));
+  const sourceRoot = join(directory, 'git-source');
+  const artifactRoot = join(directory, 'public-artifact');
+  try {
+    await initRepositoryFixture(sourceRoot);
+    await writeFile(join(sourceRoot, 'index.html'), '<main>canonical source</main>\n');
+    commitFixtureRepository(sourceRoot);
+    const sourceSHA = gitAtFixture(sourceRoot, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    await createMinimalPublicationArtifact(artifactRoot, sourceSHA, {
+      'index.html': '<main>published projection</main>\n',
+      'assets/site.css': 'body{font-family:system-ui}\n',
+      '.nojekyll': '',
+    });
+
+    const attestation = await validatePublicationArtifact({ artifactRoot, sourceRoot, sourceGitSHA: sourceSHA });
+    assert.equal(attestation.status, 'VERIFIED');
+    assert.equal(attestation.servedRootRole, 'publication-artifact');
+    assert.equal(attestation.sourceGitSHA, sourceSHA);
+    assert.equal(attestation.deploymentSourceCommit, sourceSHA);
+    assert.equal(attestation.rawManifestSha256, attestation.publicArtifactDigest);
+    assert.equal(attestation.publicFileCount, 3);
+    assert.equal(attestation.payloadFileCount, 3);
+    assert.equal(attestation.payloads.length, 3);
+    assert(attestation.payloads.some(item => item.path === 'assets/site.css' && item.bytes > 0));
+
+    const changedRoot = join(directory, 'changed-artifact');
+    await createMinimalPublicationArtifact(changedRoot, sourceSHA, { 'index.html': 'before\n' });
+    const before = await validatePublicationArtifact({ artifactRoot: changedRoot, sourceRoot, sourceGitSHA: sourceSHA });
+    await writeFile(join(changedRoot, 'index.html'), 'changed\n');
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: changedRoot, sourceRoot, sourceGitSHA: sourceSHA }), /payload SHA-256 mismatch/);
+    const rebuiltRoot = join(directory, 'rebuilt-artifact');
+    await createMinimalPublicationArtifact(rebuiltRoot, sourceSHA, { 'index.html': 'after\n' });
+    const rebuilt = await validatePublicationArtifact({ artifactRoot: rebuiltRoot, sourceRoot, sourceGitSHA: sourceSHA });
+    assert.throws(() => assertSamePublicationArtifact(before, rebuilt), /integrity changed/);
+
+    const wrongSourceRoot = join(directory, 'wrong-source-artifact');
+    await createMinimalPublicationArtifact(wrongSourceRoot, sourceSHA, { 'index.html': 'wrong source\n' }, { sourceCommit: '0'.repeat(40) });
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: wrongSourceRoot, sourceRoot, sourceGitSHA: sourceSHA }), /sourceCommit does not match/);
+    await assert.rejects(validatePublicationArtifact({ artifactRoot, sourceRoot, sourceGitSHA: 'f'.repeat(40) }), /clean site-source Git HEAD/);
+
+    const privateRoot = join(directory, 'private-artifact');
+    await createMinimalPublicationArtifact(privateRoot, sourceSHA, { 'data/private/record.json': '{"public":true}\n' });
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: privateRoot, sourceRoot, sourceGitSHA: sourceSHA }), /private path/);
+
+    const missingRoot = join(directory, 'missing-artifact');
+    await createMinimalPublicationArtifact(missingRoot, sourceSHA, { 'index.html': 'expected\n' });
+    await unlink(join(missingRoot, 'index.html'));
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: missingRoot, sourceRoot, sourceGitSHA: sourceSHA }), /file set differs|missing required wrapper/);
+
+    const externalPayload = join(directory, 'outside-public-payload.txt');
+    await writeFile(externalPayload, 'outside payload\n');
+    const symlinkRoot = join(directory, 'symlink-artifact');
+    await createMinimalPublicationArtifact(symlinkRoot, sourceSHA, { 'index.html': 'outside payload\n' });
+    await unlink(join(symlinkRoot, 'index.html'));
+    await symlink(externalPayload, join(symlinkRoot, 'index.html'));
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: symlinkRoot, sourceRoot, sourceGitSHA: sourceSHA }), /symlink/);
+
+    const hardlinkRoot = join(directory, 'hardlink-artifact');
+    await createMinimalPublicationArtifact(hardlinkRoot, sourceSHA, { 'index.html': 'outside payload\n' });
+    await unlink(join(hardlinkRoot, 'index.html'));
+    await link(externalPayload, join(hardlinkRoot, 'index.html'));
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: hardlinkRoot, sourceRoot, sourceGitSHA: sourceSHA }), /hard-linked file/);
+
+    const badDigestRoot = join(directory, 'bad-digest-artifact');
+    await createMinimalPublicationArtifact(badDigestRoot, sourceSHA, { 'index.html': 'digest\n' }, { publicArtifactDigest: 'd'.repeat(64) });
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: badDigestRoot, sourceRoot, sourceGitSHA: sourceSHA }), /digest does not match/);
+
+    const secretRoot = join(directory, 'secret-artifact');
+    await createMinimalPublicationArtifact(secretRoot, sourceSHA, { 'content.json': '{"api_key":"fixture-secret-value-123456"}\n' });
+    await assert.rejects(validatePublicationArtifact({ artifactRoot: secretRoot, sourceRoot, sourceGitSHA: sourceSHA }), /secret-like value/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -586,6 +756,73 @@ test('source integrity invalidates every registered on-disk metadata file outsid
   }
 });
 
+test('publication artifact failure invalidates every partial capture identity and rejects verified metadata', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'publication-metadata-invalidation-'));
+  const canonicalRoot = await realpath(directory);
+  const outputRoot = join(canonicalRoot, 'artifacts');
+  const runOutput = join(outputRoot, 'local-http-uncompressed');
+  const registry = createMetadataPathRegistry({ runOutput, outputRoot });
+  const sourceSHA = 'a'.repeat(40);
+  const capture = {
+    id: 'home-390',
+    metadataPath: 'home-390.json',
+    sourceSHA,
+    siteSourceSHA: sourceSHA,
+    sourceGitSHA: sourceSHA,
+    siteSourceKind: 'publication',
+    servedRootRole: 'publication-artifact',
+    publicationArtifact: {
+      status: 'VERIFIED',
+      publicArtifactDigest: 'b'.repeat(64),
+      rawManifestSha256: 'b'.repeat(64),
+    },
+    environmentVerification: { status: 'VERIFIED', encodingValid: true },
+    captureQuality: { status: 'COMPLETE' },
+  };
+  try {
+    capture.metadataSha256 = await writeCaptureMetadata({
+      registry,
+      id: capture.id,
+      metadataPath: capture.metadataPath,
+      record: capture,
+    });
+    const failure = new Error('Publication artifact payload changed after capture.');
+    const captureFailure = new Error('Capture failed after writing partial metadata.');
+    const errors = await invalidateSourceMetadata({
+      registry,
+      captures: [capture],
+      expectedHeadSha: sourceSHA,
+      claimedSourceSHAAtStart: sourceSHA,
+      reason: failure,
+      captureError: captureFailure,
+      integrityKind: 'publication-artifact',
+    });
+    assert.deepEqual(errors, []);
+    const combined = combineCaptureAndIntegrityErrors(captureFailure, failure, errors, 'publication-artifact');
+    assert(combined instanceof AggregateError);
+    assert.equal(combined.errors[0], captureFailure);
+    assert.equal(combined.errors[1], failure);
+    const metadata = JSON.parse(await readFile(join(runOutput, 'home-390.json'), 'utf8'));
+    assert.equal(metadata.sourceSHA, null);
+    assert.equal(metadata.siteSourceSHA, null);
+    assert.equal(metadata.sourceGitSHA, null);
+    assert.equal(metadata.siteSourceKind, 'invalidated');
+    assert.equal(metadata.servedRootRole, null);
+    assert.equal(metadata.publicationArtifact.status, 'FAILED');
+    assert.equal(metadata.environmentVerification.status, 'NOT_VERIFIED');
+    assert.equal(metadata.captureQuality.status, 'INVALIDATED');
+    assert.equal(metadata.captureIntegrityStatus, 'FAILED');
+    const report = JSON.parse(await readFile(join(runOutput, 'publication-artifact-integrity-failure.json'), 'utf8'));
+    assert.equal(report.status, 'FAILED');
+    assert.equal(report.integrityKind, 'publication-artifact');
+    assert.equal(report.captureFailure, captureFailure.message);
+    assert.equal(report.invalidatedMetadata.length, 1);
+    await assert.rejects(readFile(join(runOutput, 'site-source-integrity-failure.json')));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('source metadata invalidation refuses a symlink path and leaves its outside target untouched', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'source-metadata-symlink-'));
   const canonicalRoot = await realpath(directory);
@@ -664,6 +901,28 @@ test('A-05 cross-source review verifies both capture bundles and emits review di
     assert.equal(report.captures[0].pixelReview.withinConfiguredThreshold, false);
     assert.equal(report.captures[0].metrics[0].delta, 1);
     assert.equal((await readFile(join(reviewOutput, report.captures[0].pixelReview.diffPath))).length > 0, true);
+    const publicationReference = await writeCrossSourceBundle(
+      join(directory, 'publication-reference'), referenceSourceSha, runnerSha, { siteSourceKind: 'publication' }
+    );
+    const publicationCandidate = await writeCrossSourceBundle(
+      join(directory, 'publication-candidate'), candidateSourceSha, runnerSha,
+      { candidate: true, siteSourceKind: 'publication' }
+    );
+    const publicationReview = await createCrossSourceReview({
+      referenceManifestPath: publicationReference.manifestPath,
+      candidateManifestPath: publicationCandidate.manifestPath,
+      outputDir: join(directory, 'publication-review'),
+    });
+    assert.equal(publicationReview.status, 'CROSS_SOURCE_REVIEW');
+    assert.equal(publicationReview.pass, null);
+    assert.equal(publicationReview.approval, null);
+    assert.equal(publicationReview.source.reference.siteSourceKind, 'publication');
+    assert.equal(publicationReview.source.candidate.servedRootRole, 'publication-artifact');
+    await assert.rejects(createCrossSourceReview({
+      referenceManifestPath: reference.manifestPath,
+      candidateManifestPath: publicationCandidate.manifestPath,
+      outputDir: join(directory, 'mixed-source-kind-review'),
+    }), /cannot mix Git canonical-root captures with publication-artifact captures/);
     await assert.rejects(createCrossSourceReview({
       referenceManifestPath: reference.manifestPath,
       candidateManifestPath: candidate.manifestPath,
@@ -819,6 +1078,42 @@ test('compare CLI fails closed when Git and explicit baseline selectors are supp
     assert.equal(report.status, 'REJECTED');
     assert.equal(report.reason, 'BASELINE_SOURCE_CONFLICT');
     assert.equal(report.comparisonPerformed, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('compare CLI refuses to compare publication captures against a Git canonical-root baseline', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-baseline-source-kind-mismatch-'));
+  try {
+    const candidatePath = join(directory, 'candidate.json');
+    const baselinePath = join(directory, 'canonical-baseline.json');
+    const comparisonPath = join(directory, 'comparison.json');
+    const baseline = approvedManifest();
+    const baselineBytes = Buffer.from(JSON.stringify(baseline));
+    await writeFile(baselinePath, baselineBytes);
+    await writeFile(candidatePath, JSON.stringify({
+      schemaVersion: 3,
+      status: 'CAPTURE_ONLY',
+      sourceSHA: 'c'.repeat(40),
+      siteSourceSHA: 'c'.repeat(40),
+      sourceGitSHA: 'c'.repeat(40),
+      siteSourceKind: 'publication',
+      servedRootRole: 'publication-artifact',
+    }));
+    const script = fileURLToPath(new URL('./visual-qa.mjs', import.meta.url));
+    const result = spawnSync(process.execPath, [
+      script,
+      'compare',
+      '--candidate-manifest', candidatePath,
+      '--baseline-manifest', baselinePath,
+      '--baseline-sha256', sha256(baselineBytes),
+      '--baseline-source-sha', baseline.sourceSHA,
+      '--output', comparisonPath,
+    ], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /BASELINE_SITE_SOURCE_KIND_MISMATCH/);
+    await assert.rejects(readFile(comparisonPath));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

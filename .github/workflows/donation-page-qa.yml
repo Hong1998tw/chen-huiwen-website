@@ -131,12 +131,62 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Install the pinned source-native publication builder dependencies
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
+      - name: Build the independent PR base with its own publication source
+        id: base_publication
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+          BASE_PUBLIC: ${{ runner.temp }}/a05-main-reference-public
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git -C "$BASE_ROOT" rev-parse --verify 'HEAD^{commit}')"
+          if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ || "$actual_sha" != "$BASE_SHA" ]]; then
+            echo 'A-05 base publication requires the exact full PR base commit.' >&2
+            exit 1
+          fi
+          if [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 base publication requires a clean base worktree.' >&2
+            exit 1
+          fi
+          (cd "$BASE_ROOT" && python scripts/build_cloudflare_public.py --output "$BASE_PUBLIC")
+          post_sha="$(git -C "$BASE_ROOT" rev-parse --verify 'HEAD^{commit}')"
+          if [[ "$post_sha" != "$BASE_SHA" ]] || [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 base source changed during its source-native publication build.' >&2
+            exit 1
+          fi
+          echo "Built the PR base publication artifact from $post_sha at $BASE_PUBLIC."
+      - name: Build the candidate with this checkout's publication source
+        id: candidate_publication
+        env:
+          CANDIDATE_PUBLIC: ${{ runner.temp }}/a05-candidate-public
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [[ ! "$candidate_sha" =~ ^[a-f0-9]{40}$ ]] || [[ -n "$(git status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 candidate publication requires a full Git HEAD and clean candidate checkout.' >&2
+            exit 1
+          fi
+          python scripts/build_cloudflare_public.py --output "$CANDIDATE_PUBLIC"
+          post_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [[ "$post_sha" != "$candidate_sha" ]] || [[ -n "$(git status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 candidate source changed during its source-native publication build.' >&2
+            exit 1
+          fi
+          echo "Built the candidate publication artifact from $post_sha at $CANDIDATE_PUBLIC."
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Verify A-05 archive safety fixtures
         run: python -m unittest discover -s tests -p 'test_visual_qa_baseline_archive.py'
       - run: node --check tests/donation/visual-qa.mjs
       - run: node --check tests/donation/visual-qa-lib.mjs
       - run: node --check tests/donation/visual-qa-identity.mjs
+      - run: node --check tests/donation/visual-qa-publication.mjs
+      - run: node --check tests/donation/visual-qa-cross-compare.mjs
+      - run: node --check tests/donation/visual-qa-source-integrity.mjs
       - run: node --check tests/donation/visual-qa-check.mjs
       - run: node --check tests/donation/download-visual-qa-baseline.mjs
       - run: npm run test:visual-qa --prefix tests/donation
@@ -147,6 +197,8 @@ jobs:
         shell: bash
         env:
           BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+          BASE_PUBLIC: ${{ runner.temp }}/a05-main-reference-public
+          CANDIDATE_PUBLIC: ${{ runner.temp }}/a05-candidate-public
         run: |
           set +e
           reference_status=0
@@ -155,6 +207,7 @@ jobs:
               node tests/donation/visual-qa.mjs capture \
                 --environment local-http-uncompressed \
                 --site-root "$BASE_ROOT" \
+                --public-artifact "$BASE_PUBLIC" \
                 --output-dir tests/donation/results/visual-qa/main-reference
               reference_status=$?
             else
@@ -164,7 +217,9 @@ jobs:
           else
             echo '- A-05 independent base: NOT_APPLICABLE; this non-PR event has no pull-request base.' >> "$GITHUB_STEP_SUMMARY"
           fi
-          node tests/donation/visual-qa.mjs capture --environment local-http-uncompressed
+          node tests/donation/visual-qa.mjs capture \
+            --environment local-http-uncompressed \
+            --public-artifact "$CANDIDATE_PUBLIC"
           local_capture_status=$?
           node tests/donation/visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/
           cloudflare_capture_status=$?
