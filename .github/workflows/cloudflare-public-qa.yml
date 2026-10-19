@@ -41,7 +41,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_public_security_headers.py
       - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
       - name: Verify page-font failure report lifecycle
-        run: node --unhandled-rejections=strict --test tests/donation/page-font-artifact-lifecycle.test.mjs tests/donation/page-font-artifact-preflight.test.mjs tests/donation/page-font-artifact-visual.test.mjs
+        run: node --unhandled-rejections=strict --test tests/donation/page-font-artifact-lifecycle.test.mjs tests/donation/page-font-artifact-network-gate.test.mjs tests/donation/page-font-artifact-preflight.test.mjs tests/donation/page-font-artifact-visual.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh

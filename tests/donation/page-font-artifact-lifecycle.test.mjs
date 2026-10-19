@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 import {
   gotoObservedWithTimeout,
   observePendingResult,
@@ -7,6 +8,17 @@ import {
   requireObservedValue,
   withTimeout,
 } from './page-font-artifact-lifecycle.mjs';
+
+test('CMS browser diagnostics retain source paths while redacting credentials and query values', () => {
+  const diagnostic = safeBrowserDiagnosticText(
+    'SecurityError at https://admin.huiwen.tw/api/page-preview?path=achievement-example.html&session=session-secret:52:8 assertion=assertion-secret Cookie: cookie-secret',
+    ['session-secret', 'assertion-secret', 'cookie-secret'],
+  );
+  assert.match(diagnostic, /https:\/\/admin\.huiwen\.tw\/api\/page-preview:52:8/);
+  assert.doesNotMatch(diagnostic, /session-secret|assertion-secret|cookie-secret|session=/);
+  assert.match(diagnostic, /assertion=\[redacted\]/);
+  assert.match(diagnostic, /Cookie=\[redacted\]/);
+});
 
 test('a pending response rejection during cleanup does not replace the primary failure', async () => {
   let rejectResponseWait;

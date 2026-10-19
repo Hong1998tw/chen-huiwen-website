@@ -14,6 +14,7 @@ import {
 import {
   buildFinalFontNetworkSnapshot,
   buildTrustedClickCaptureScript,
+  expectedSharedFallbackFontsForRoute,
   hashResponseBody,
   INITIAL_RENDER_TIMEOUT_MS,
   NETWORK_SETTLE_TIMEOUT_MS,
@@ -23,10 +24,13 @@ import {
   waitForTrackedNetworkQuiet,
 } from './page-font-artifact-network-gate.mjs';
 import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
+import { redactBrowserDiagnosticText, safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
   buildVisualCaptureRecord,
+  buildVisualFontProbeRequests,
+  classifyVisibleGlyphDiagnostics,
   selectVisualRoutes,
   SYSTEM_FALLBACK_CODEPOINTS,
   validateArtifactIdentity,
@@ -34,6 +38,7 @@ import {
   validateVisualTypography,
   visualPngMatchesHash,
   visualPngPath,
+  cssFontWeightRange,
 } from './page-font-artifact-visual.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
@@ -48,6 +53,8 @@ let publication;
 let fontManifest;
 let fullTcSha;
 let artifactIdentity;
+let sharedJpFallbackFont;
+let cmsDiagnosticSecrets = [];
 
 function urlPath(value) {
   try {
@@ -83,6 +90,46 @@ function browserMessageCategory(message) {
   return 'other-browser-error';
 }
 
+function safeBrowserError(error, secretValues = []) {
+  const message = safeBrowserDiagnosticText(error?.message, secretValues);
+  const stack = safeBrowserDiagnosticText(error?.stack, secretValues).split('\n').slice(0, 10);
+  return {
+    name: String(error?.name || 'Error').slice(0, 100),
+    category: browserMessageCategory(message),
+    message,
+    stack,
+  };
+}
+
+function sanitizeThrownError(error, secretValues = []) {
+  if (!(error instanceof Error)) return new Error(redactBrowserDiagnosticText(error, secretValues));
+  try {
+    error.message = redactBrowserDiagnosticText(error.message, secretValues);
+    if (typeof error.stack === 'string') error.stack = redactBrowserDiagnosticText(error.stack, secretValues);
+    return error;
+  } catch {
+    const sanitized = new Error(redactBrowserDiagnosticText(error.message, secretValues));
+    sanitized.name = String(error.name || 'Error');
+    if (typeof error.stack === 'string') sanitized.stack = redactBrowserDiagnosticText(error.stack, secretValues);
+    return sanitized;
+  }
+}
+
+async function resolveSharedJpFallbackFont() {
+  const stylesheet = await readFile(resolve(artifact, 'styles.css'), 'utf8');
+  const face = [...stylesheet.matchAll(/@font-face\s*\{([^}]*)\}/gi)]
+    .map((match) => match[1])
+    .find((rule) => /font-family\s*:\s*["']Huiwen Sans JP Support["']/i.test(rule));
+  assert.ok(face, 'published CSS is missing the shared JP fallback font face');
+  const source = face.match(/\bsrc\s*:\s*url\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/i);
+  const path = source?.[1] ?? source?.[2] ?? source?.[3];
+  assert.match(path || '', /^\/assets\/fonts\/huiwen-site-sans\/generated\/huiwen-cjk-support-[a-f0-9]{12}\.woff2$/,
+    'published shared JP fallback font path is invalid');
+  const sha256 = publication.files[path.slice(1)];
+  assert.match(sha256 || '', /^[a-f0-9]{64}$/, 'published shared JP fallback font has no manifest digest');
+  return { path, sha256 };
+}
+
 function waitForCmsPreviewNavigation(page, timeout = 15000) {
   return page.waitForEvent('framenavigated', {
     predicate: (frame) => {
@@ -98,7 +145,8 @@ function waitForCmsPreviewNavigation(page, timeout = 15000) {
   }).then((frame) => ({ frame }), (error) => ({ error }));
 }
 
-function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyResponses, blockedReasons, messages }) {
+function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyResponses, blockedReasons, messages,
+  handshake, handshakeReadError }) {
   return {
     frameURLs: page.frames().map((frame) => ({
       ...safeUrlSummary(frame.url()),
@@ -111,6 +159,8 @@ function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyRe
     proxyResponses: proxyResponses.slice(0, 20),
     blockedReasons: [...new Set(blockedReasons)].slice(0, 20),
     messages: messages.slice(0, 20),
+    handshake: Array.isArray(handshake) ? handshake.slice(0, 30) : [],
+    ...(handshakeReadError ? { handshakeReadError } : {}),
   };
 }
 
@@ -135,18 +185,15 @@ function requestInitiator(initiator) {
 async function collectVisibleFontDiagnostics(page, route, row) {
   const expectedFonts = [row.commonFont, row.deltaFont].map((path) => {
     const face = fontManifest.fonts[path];
-    return { path, family: face.family, weight: face.wght, sha256: face.sha256,
+    return { path, family: face.family, weight: cssFontWeightRange(face.wght), sha256: face.sha256,
+      weightAxis: { min: face.wght.min, default: face.wght.default, max: face.wght.max },
       codepoints: face.codepoints };
   });
-  expectedFonts.jpFallbackCodepoints = row.jpFallbackCodepoints || [];
-  expectedFonts.systemFallbackCodepoints = SYSTEM_FALLBACK_CODEPOINTS;
-  return withTimeout(page.evaluate(({ routeName, expectedPreloads, expectedFonts }) => {
+  const diagnostics = await withTimeout(page.evaluate(({ routeName, expectedPreloads, expectedFonts }) => {
     const covered = new Set(expectedFonts.flatMap((font) => font.codepoints));
-    const jpFallback = new Set(expectedFonts.jpFallbackCodepoints);
-    const systemFallback = new Set(expectedFonts.systemFallbackCodepoints);
     const codepoints = new Set();
     const owners = new Map();
-    const uncovered = new Map();
+    const rawTcUnsupportedGlyphOwners = new Map();
     let visibleTextCharacterCount = 0;
     let visibleTextSample = '';
     const selectorFor = (element) => {
@@ -186,13 +233,14 @@ async function collectVisibleFontDiagnostics(page, route, row) {
       owner.textNodes += 1;
       if (owner.sample.length < 120) owner.sample += `${text} `.slice(0, 120 - owner.sample.length);
       owners.set(key, owner);
-      const missing = cps.filter((cp) => !covered.has(cp) && !jpFallback.has(cp) && !systemFallback.has(cp));
-      if (missing.length) {
-        const gap = uncovered.get(key) || { selector, fontFamily: style.fontFamily,
+      const rawUnsupported = cps.filter((cp) => !covered.has(cp));
+      if (rawUnsupported.length) {
+        const unsupportedOwner = rawTcUnsupportedGlyphOwners.get(key) || { selector, fontFamily: style.fontFamily,
           fontWeight: style.fontWeight, fontStyle: style.fontStyle, codepoints: new Set(), sample: '' };
-        missing.forEach((cp) => gap.codepoints.add(cp));
-        if (gap.sample.length < 120) gap.sample += `${text} `.slice(0, 120 - gap.sample.length);
-        uncovered.set(key, gap);
+        rawUnsupported.forEach((cp) => unsupportedOwner.codepoints.add(cp));
+        if (unsupportedOwner.sample.length < 120)
+          unsupportedOwner.sample += `${text} `.slice(0, 120 - unsupportedOwner.sample.length);
+        rawTcUnsupportedGlyphOwners.set(key, unsupportedOwner);
       }
     };
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -234,15 +282,14 @@ async function collectVisibleFontDiagnostics(page, route, row) {
       visibleTextSample: visibleTextSample.trim(),
       visibleCodepoints: [...codepoints].sort((a, b) => a - b),
       visibleCodepointsTruncated: codepoints.size > 4096,
-      uncoveredVisibleGlyphCount: [...uncovered.values()].reduce((count, owner) => count + owner.codepoints.size, 0),
-      uncoveredVisibleGlyphs: [...uncovered.values()].slice(0, 32).map((owner) => ({
+      rawTcUnsupportedGlyphOwners: [...rawTcUnsupportedGlyphOwners.values()].slice(0, 32).map((owner) => ({
         selector: owner.selector, fontFamily: owner.fontFamily, fontWeight: owner.fontWeight,
         fontStyle: owner.fontStyle,
         codepoints: [...owner.codepoints].sort((a, b) => a - b).slice(0, 32), sample: owner.sample.trim(),
       })),
       computedFontOwners: [...owners.values()].slice(0, 24),
-      expectedFonts: expectedFonts.map(({ path, family, weight, sha256, codepoints }) => ({
-        path, family, weight, sha256, codepointCount: codepoints.length,
+      expectedFonts: expectedFonts.map(({ path, family, weight, weightAxis, sha256, codepoints }) => ({
+        path, family, weight, weightAxis, sha256, codepointCount: codepoints.length,
       })),
       fontFaces,
       expectedPreloads,
@@ -254,6 +301,15 @@ async function collectVisibleFontDiagnostics(page, route, row) {
     expectedPreloads: row.preloads.map((path) => `/${path}`).sort(),
     expectedFonts,
   }), INITIAL_RENDER_TIMEOUT_MS, `${route}: visible font diagnostics`);
+  return {
+    ...diagnostics,
+    ...classifyVisibleGlyphDiagnostics({
+      expectedFonts,
+      visibleCodepoints: diagnostics.visibleCodepoints,
+      routeFallbacks: { jp: row.jpFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS },
+      rawTcUnsupportedGlyphOwners: diagnostics.rawTcUnsupportedGlyphOwners,
+    }),
+  };
 }
 
 function expectedVisualFonts(routeRow) {
@@ -263,29 +319,41 @@ function expectedVisualFonts(routeRow) {
   ].map(({ role, path }) => {
     const face = fontManifest.fonts[path];
     assert.ok(face, `schema-2 ${role} face is missing from the parsed font manifest: ${path}`);
-    return { role, path, family: face.family, weight: face.wght,
+    return { role, path, family: face.family, weight: cssFontWeightRange(face.wght),
+      weightAxis: { min: face.wght.min, default: face.wght.default, max: face.wght.max },
       bytes: face.bytes, sha256: face.sha256, codepoints: face.codepoints };
   });
 }
 
 async function collectVisualTypography(page, route, expectedFonts, visibleDiagnostics) {
-  return withTimeout(page.evaluate(async ({ routeName, faces, visibleTextDiagnostics }) => {
+  const computedWeights = await withTimeout(page.evaluate(() => {
     const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
-    const fontChecks = await Promise.all(faces.map(async (face) => {
-      const probeCodepoint = face.probeCodepoint;
+    return {
+      body: getComputedStyle(document.body).fontWeight,
+      heading: getComputedStyle(heading).fontWeight,
+    };
+  }), INITIAL_RENDER_TIMEOUT_MS, `${route}: computed body and heading font weights`);
+  const fontProbeRequests = buildVisualFontProbeRequests(expectedFonts, computedWeights);
+  return withTimeout(page.evaluate(async ({ routeName, faces, fontProbeRequests, visibleTextDiagnostics }) => {
+    const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
+    const fontChecks = await Promise.all(fontProbeRequests.map(async (probe) => {
+      const probeCodepoint = probe.probeCodepoint;
       if (!Number.isInteger(probeCodepoint)) return {
-        role: face.role, family: face.family, probeCodepoint: null,
+        role: probe.role, family: probe.family,
+        descriptorWeight: probe.descriptorWeight, computedWeight: probe.computedWeight,
+        fontSpec: probe.fontSpec, probeCodepoint: null,
         checkResult: false, loadedFaces: [],
       };
       const probeText = String.fromCodePoint(probeCodepoint);
-      const familySyntax = `"${face.family.replace(/["\\]/g, '\\$&')}"`;
-      const fontSpec = `${face.weight} 16px ${familySyntax}`;
-      const loadedFaces = await document.fonts.load(fontSpec, probeText);
+      const loadedFaces = await document.fonts.load(probe.fontSpec, probeText);
       return {
-        role: face.role,
-        family: face.family,
+        role: probe.role,
+        family: probe.family,
+        descriptorWeight: probe.descriptorWeight,
+        computedWeight: probe.computedWeight,
+        fontSpec: probe.fontSpec,
         probeCodepoint,
-        checkResult: document.fonts.check(fontSpec, probeText),
+        checkResult: document.fonts.check(probe.fontSpec, probeText),
         loadedFaces: loadedFaces.map((fontFace) => ({
           family: fontFace.family, weight: fontFace.weight, status: fontFace.status,
         })),
@@ -297,9 +365,16 @@ async function collectVisualTypography(page, route, expectedFonts, visibleDiagno
       artifactRoute: document.documentElement.dataset.huiwenFontArtifactRoute || null,
       documentFontsStatus: document.fonts.status,
       bodyFontFamily: getComputedStyle(document.body).fontFamily,
+      bodyFontWeight: getComputedStyle(document.body).fontWeight,
       headingFontFamily: getComputedStyle(heading).fontFamily,
+      headingFontWeight: getComputedStyle(heading).fontWeight,
       visibleCodepoints: visibleTextDiagnostics.visibleCodepoints,
       visibleCodepointsTruncated: visibleTextDiagnostics.visibleCodepointsTruncated,
+      rawTcUnsupportedCodepoints: visibleTextDiagnostics.rawTcUnsupportedCodepoints,
+      rawTcUnsupportedGlyphOwners: visibleTextDiagnostics.rawTcUnsupportedGlyphOwners,
+      fallbackCodepoints: visibleTextDiagnostics.fallbackCodepoints,
+      unexpectedGlyphCount: visibleTextDiagnostics.unexpectedGlyphCount,
+      unexpectedGlyphs: visibleTextDiagnostics.unexpectedGlyphs,
       uncoveredVisibleGlyphCount: visibleTextDiagnostics.uncoveredVisibleGlyphCount,
       uncoveredVisibleGlyphs: visibleTextDiagnostics.uncoveredVisibleGlyphs,
       fontFaces: [...document.fonts]
@@ -312,12 +387,18 @@ async function collectVisualTypography(page, route, expectedFonts, visibleDiagno
   }, {
     routeName: route,
     faces: expectedFonts.map((font) => ({
-      role: font.role, family: font.family, weight: font.weight,
+      role: font.role, family: font.family, weight: font.weight, weightAxis: font.weightAxis,
       probeCodepoint: font.probeCodepoint,
     })),
+    fontProbeRequests,
     visibleTextDiagnostics: {
       visibleCodepoints: visibleDiagnostics.visibleCodepoints,
       visibleCodepointsTruncated: visibleDiagnostics.visibleCodepointsTruncated,
+      rawTcUnsupportedCodepoints: visibleDiagnostics.rawTcUnsupportedCodepoints,
+      rawTcUnsupportedGlyphOwners: visibleDiagnostics.rawTcUnsupportedGlyphOwners,
+      fallbackCodepoints: visibleDiagnostics.fallbackCodepoints,
+      unexpectedGlyphCount: visibleDiagnostics.unexpectedGlyphCount,
+      unexpectedGlyphs: visibleDiagnostics.unexpectedGlyphs,
       uncoveredVisibleGlyphCount: visibleDiagnostics.uncoveredVisibleGlyphCount,
       uncoveredVisibleGlyphs: visibleDiagnostics.uncoveredVisibleGlyphs,
     },
@@ -533,11 +614,11 @@ function captureRunFailure(error, source = null) {
   const merged = preservePrimaryError(runError, error);
   runError = merged.primaryError;
   if (merged.secondaryError) results.execution.secondaryErrors.push({
-    ...(source ? { source } : {}), ...errorRecord(merged.secondaryError),
+    ...(source ? { source } : {}), ...errorRecord(merged.secondaryError, cmsDiagnosticSecrets),
   });
   if (!results.execution.primaryError) {
-    results.fatalError = errorRecord(runError);
-    results.execution.primaryError = errorRecord(runError);
+    results.fatalError = errorRecord(runError, cmsDiagnosticSecrets);
+    results.execution.primaryError = errorRecord(runError, cmsDiagnosticSecrets);
     if (source) results.execution.primarySource = source;
   }
   results.execution.status = 'failed';
@@ -546,7 +627,7 @@ function captureRunFailure(error, source = null) {
     const phase = results.execution.phases[phaseName];
     if (phase.status === 'running') {
       phase.status = 'failed';
-      phase.error = errorRecord(runError);
+      phase.error = errorRecord(runError, cmsDiagnosticSecrets);
     }
   }
 }
@@ -605,7 +686,7 @@ function createFontRouteState(route) {
   };
 }
 
-async function captureFontOnlyRoute(state) {
+async function captureFontOnlyRoute(state, visualRouteSet) {
   const { route, routeRow, routeRecord, routeNetwork } = state;
   try {
     state.routeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -724,7 +805,8 @@ async function captureFontOnlyRoute(state) {
             assert.equal(response.base64Encoded, true,
               `CDP did not return a base64-encoded binary page-font response body for ${record.path}`);
             const bytes = Buffer.from(response.body, 'base64');
-            Object.assign(record, hashResponseBody(bytes));
+            const digest = hashResponseBody(bytes);
+            Object.assign(record, { bodyBytes: digest.bytes, bodySha256: digest.sha256 });
             return { bytes: record.bodyBytes, sha256: record.bodySha256 };
           })
           .catch((error) => {
@@ -788,10 +870,13 @@ async function captureFontOnlyRoute(state) {
       });
       assert.equal(routeRecord.visibleFontDiagnostics.visibleCodepointsTruncated, false,
         `${route}: initial visible glyph capture was truncated`);
-      assert.equal(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphCount, 0,
-        `${route}: initial route has uncovered visible glyphs`);
-      assert.deepEqual(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphs, [],
-        `${route}: initial route has nonempty uncovered glyph diagnostics`);
+      assert.equal(routeRecord.visibleFontDiagnostics.unexpectedGlyphCount, 0,
+        `${route}: initial route has unexpected visible glyphs`);
+      assert.deepEqual(routeRecord.visibleFontDiagnostics.unexpectedGlyphs, [],
+        `${route}: initial route has nonempty unexpected glyph diagnostics`);
+      assert.equal(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphCount,
+        routeRecord.visibleFontDiagnostics.unexpectedGlyphCount,
+        `${route}: uncovered glyph count differs from unexpected glyph count`);
     } catch (error) {
       routeRecord.observationErrors.push({ kind: 'font-dom-diagnostic', ...errorRecord(error) });
     }
@@ -837,10 +922,10 @@ async function captureFontOnlyRoute(state) {
         });
         assert.equal(afterDiagnostics.visibleCodepointsTruncated, false,
           `${route}: post-screenshot visible glyph capture was truncated`);
-        assert.equal(afterDiagnostics.uncoveredVisibleGlyphCount, 0,
-          `${route}: post-screenshot route has uncovered visible glyphs`);
-        assert.deepEqual(afterDiagnostics.uncoveredVisibleGlyphs, [],
-          `${route}: post-screenshot route has nonempty uncovered glyph diagnostics`);
+        assert.equal(afterDiagnostics.unexpectedGlyphCount, 0,
+          `${route}: post-screenshot route has unexpected visible glyphs`);
+        assert.deepEqual(afterDiagnostics.unexpectedGlyphs, [],
+          `${route}: post-screenshot route has nonempty unexpected glyph diagnostics`);
         const fontStateAfter = await collectVisualTypography(state.routePage, route, expectedFonts, afterDiagnostics);
         validateVisualTypography({ route, routeCodepoints: routeRow.codepoints,
           expectedFonts, typography: fontStateAfter, stage: 'after screenshot', routeFallbacks });
@@ -1007,6 +1092,7 @@ async function finalizeFontOnlyRoute(state) {
         assert.ok(font, `${route}: route preload font is missing from the producer manifest: ${path}`);
         return { path: `/${path}`, bytes: font.bytes, sha256: font.sha256 };
       }),
+      expectedSharedFallbackFonts: expectedSharedFallbackFontsForRoute(routeRow, sharedJpFallbackFont),
       fullTcPath: `/${fullTcPath}`,
       routeOrigin: new URL(base).origin,
       observationClosed,
@@ -1155,6 +1241,7 @@ try {
   publication = preflight.publication;
   fontManifest = preflight.fontManifest;
   fullTcSha = preflight.fullTcSha;
+  sharedJpFallbackFont = await resolveSharedJpFallbackFont();
   const [publicationBytes, deploymentBytes] = await Promise.all([
     readFile(resolve(artifact, 'publication-manifest.json')),
     readFile(resolve(artifact, 'deployment.json')),
@@ -1308,7 +1395,7 @@ try {
   let visualCaptureAttempts = 0;
   for (const route of fontOnlyRoutes) {
     const state = createFontRouteState(route);
-    await captureFontOnlyRoute(state);
+    await captureFontOnlyRoute(state, visualRouteSet);
     if (visualRouteSet.has(route)) visualCaptureAttempts += 1;
     if (route === 'service.html') deferredServiceState = state;
     else await finalizeFontOnlyRoute(state);
@@ -1451,6 +1538,7 @@ try {
   const session = 'g02-ci-page-preview-nonce';
   const accessAssertion = 'g02-ci-fixture-verified-owner-access-assertion';
   const nonce = 'g02-ci-preview-nonce';
+  cmsDiagnosticSecrets = [session, accessAssertion, nonce];
   async function fetchPublishedPreview(timeoutMs = 15000) {
     assert.ok(Number.isFinite(timeoutMs) && timeoutMs > 0 && timeoutMs <= 15000,
       'published preview fetch timeout must be finite and no greater than 15000ms');
@@ -1504,7 +1592,35 @@ try {
         const previewPath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
         const evilFrame = mode === 'unauthorized-message' ? '<iframe title="untrusted sender" src="https://evil.test/send"></iframe>' : '';
         const handshake = ['valid', 'wrong-cms-edit'].includes(mode)
-          ? `const sendInit=()=>frame.contentWindow.postMessage({type:'huiwen-cms-init',nonce:'${nonce}'},'*');frame.onload=sendInit;window.addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.origin!=='null')return;if(event.data?.type==='huiwen-cms-hello')sendInit();if(event.data?.type==='huiwen-cms-ready'&&event.data?.nonce==='${nonce}'&&!window.__draftSent){window.__draftSent=true;frame.contentWindow.postMessage({type:'huiwen-cms-case-preview',nonce:'${nonce}',case:{title:'CI草稿',updated:'2026-10-19',paragraphs:['CI草稿新增字：${draftChar}'],history:[],media:[]}},'*');}});`
+          ? `
+            window.__g02CmsHandshake = [];
+            const note = (step, details = {}) => {
+              if (window.__g02CmsHandshake.length < 30) window.__g02CmsHandshake.push({ step, ...details });
+            };
+            const sendInit = () => {
+              note('init-sent');
+              frame.contentWindow.postMessage({ type: 'huiwen-cms-init', nonce: '${nonce}' }, '*');
+            };
+            frame.onload = () => { note('frame-load'); sendInit(); };
+            window.addEventListener('message', (event) => {
+              const data = event.data;
+              const sourceMatches = event.source === frame.contentWindow;
+              const origin = event.origin === 'null' ? 'opaque'
+                : event.origin === 'https://admin.huiwen.tw' ? 'admin' : 'other';
+              const type = ['huiwen-cms-hello', 'huiwen-cms-ready', 'huiwen-cms-error'].includes(data?.type)
+                ? data.type : 'other';
+              const nonceMatches = data?.nonce === '${nonce}';
+              note('message', { sourceMatches, origin, type, nonceMatches });
+              if (!sourceMatches || event.origin !== 'null') return;
+              if (type === 'huiwen-cms-hello') sendInit();
+              if (type === 'huiwen-cms-ready' && nonceMatches && !window.__draftSent) {
+                window.__draftSent = true;
+                note('draft-sent');
+                frame.contentWindow.postMessage({ type: 'huiwen-cms-case-preview', nonce: '${nonce}',
+                  case: { title: 'CI草稿', updated: '2026-10-19',
+                    paragraphs: ['CI草稿新增字：${draftChar}'], history: [], media: [] } }, '*');
+              }
+            });`
           : '';
         return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html><body>
           <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
@@ -1556,11 +1672,14 @@ try {
   });
   cmsPage.on('console', (message) => {
     if (!['error', 'warning'].includes(message.type())) return;
-    cmsBrowserMessages.push({ type: message.type(), category: browserMessageCategory(message.text()) });
+    const location = message.location();
+    cmsBrowserMessages.push({ type: message.type(), category: browserMessageCategory(message.text()),
+      message: safeBrowserDiagnosticText(message.text(), cmsDiagnosticSecrets),
+      source: { path: urlPath(location.url), lineNumber: location.lineNumber ?? null,
+        columnNumber: location.columnNumber ?? null } });
   });
   cmsPage.on('pageerror', (error) => {
-    cmsBrowserMessages.push({ type: 'pageerror', name: error?.name || 'Error',
-      category: browserMessageCategory(error?.message) });
+    cmsBrowserMessages.push({ type: 'pageerror', ...safeBrowserError(error, cmsDiagnosticSecrets) });
   });
   cmsFullFontResponseWait = observePendingResult(cmsPage.waitForResponse((response) =>
     new URL(response.url()).pathname === `/${fullTcPath}` && response.status() === 200,
@@ -1589,8 +1708,26 @@ try {
     assert.ok(proxyResponse, 'CMS proxy frame navigation produced no response');
     assert.equal(proxyResponse.status, 200, 'authenticated CMS proxy route was denied or failed');
     await cmsProxyFrame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
-    await cmsProxyFrame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
+    await cmsProxyFrame.waitForFunction((text) =>
+      document.querySelector('.case-background')?.textContent.includes(text), draftChar, { timeout: 15000 });
+    await cmsProxyFrame.locator('.case-background summary').click({ timeout: 15000 });
+    await cmsProxyFrame.waitForFunction((text) => {
+      const details = document.querySelector('.case-background');
+      const paragraph = [...(details?.querySelectorAll('p') || [])]
+        .find((item) => item.textContent.includes(text));
+      return details?.open === true && details.innerText.includes(text)
+        && paragraph?.innerText.includes(text) && paragraph.getClientRects().length > 0;
+    }, draftChar, { timeout: 15000 });
   } catch (error) {
+    let handshake = [];
+    let handshakeReadError = null;
+    try {
+      handshake = await withTimeout(cmsPage.evaluate(() => Array.isArray(window.__g02CmsHandshake)
+        ? window.__g02CmsHandshake.slice(0, 30) : []), INITIAL_RENDER_TIMEOUT_MS,
+      'read sanitized CMS fixture handshake');
+    } catch (snapshotError) {
+      handshakeReadError = safeBrowserError(snapshotError, cmsDiagnosticSecrets);
+    }
     results.cmsPreview.failureSnapshot = cmsFailureSnapshot({
       page: cmsPage,
       hostNavigationStatus: cmsHostResponse?.status() ?? null,
@@ -1598,6 +1735,8 @@ try {
       proxyResponses: cmsProxyResponses,
       blockedReasons: cmsProxyBlockedReasons,
       messages: cmsBrowserMessages,
+      handshake,
+      handshakeReadError,
     });
     throw error;
   }
@@ -1610,28 +1749,39 @@ try {
   };
   const fullFontResponseOutcome = await cmsFullFontResponseWait;
   results.cmsPreview.fullFontResponseWait = { status: fullFontResponseOutcome.status,
-    error: fullFontResponseOutcome.status === 'rejected' ? errorRecord(fullFontResponseOutcome.error) : null };
+    error: fullFontResponseOutcome.status === 'rejected'
+      ? errorRecord(fullFontResponseOutcome.error, cmsDiagnosticSecrets) : null };
   const loadedFullFont = requireObservedValue(fullFontResponseOutcome);
   const loadedBytes = await withTimeout(loadedFullFont.body(), INITIAL_RENDER_TIMEOUT_MS,
     'read CMS full-TC response body');
   assert.equal(createHash('sha256').update(loadedBytes).digest('hex'), fullTcSha, 'CMS proxy did not download the published full TC font bytes');
   const cmsState = await withTimeout(frame.evaluate((text) => {
     const main = document.querySelector('.case-background');
-    const family = getComputedStyle(main.querySelector('p')).fontFamily;
+    const paragraph = [...main.querySelectorAll('p')].find((item) => item.textContent.includes(text));
+    const style = getComputedStyle(paragraph);
+    const family = style.fontFamily;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    context.font = `16px ${family}`;
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${family}`;
     return {
       marker: document.documentElement.dataset.huiwenFontArtifactPreview,
+      detailsOpen: main.open,
       text: main.innerText,
+      paragraphText: paragraph.innerText,
+      paragraphVisible: paragraph.getClientRects().length > 0,
       family,
-      fontLoaded: document.fonts.check('16px "Huiwen Sans TC"', text),
+      fontWeight: style.fontWeight,
+      fullTcFontSpec: `${style.fontWeight} 16px "Huiwen Sans TC"`,
+      fontLoaded: document.fonts.check(`${style.fontWeight} 16px "Huiwen Sans TC"`, text),
       glyphWidth: context.measureText(text).width,
-      tofu: /[\uFFFD\u25A1]/.test(main.innerText),
+      tofu: /[\uFFFD\u25A1]/.test(paragraph.innerText),
     };
   }, draftChar), INITIAL_RENDER_TIMEOUT_MS, 'read authenticated CMS preview frame state');
   assert.equal(cmsState.marker, '1');
+  assert.equal(cmsState.detailsOpen, true, 'CMS draft details were not expanded by a real summary click');
+  assert.equal(cmsState.paragraphVisible, true, 'CMS draft paragraph is not visible after expansion');
   assert.ok(cmsState.text.includes(draftChar), 'CMS draft-only TC glyph was dropped');
+  assert.ok(cmsState.paragraphText.includes(draftChar), 'visible CMS draft paragraph omitted its draft-only TC glyph');
   assert.match(cmsState.family, /Huiwen Sans TC/);
   assert.equal(cmsState.fontLoaded, true);
   assert.ok(cmsState.glyphWidth > 0);
@@ -1818,19 +1968,19 @@ try {
 } finally {
   if (browser) {
     try { await browser.close(); } catch (error) {
-      results.browserCloseError = errorRecord(error);
+      results.browserCloseError = errorRecord(error, cmsDiagnosticSecrets);
       captureRunFailure(error, 'browser-close');
     }
   }
   if (cmsFullFontResponseWait) {
     const outcome = await cmsFullFontResponseWait;
     results.cmsPreview.fullFontResponseWait = { status: outcome.status,
-      error: outcome.status === 'rejected' ? errorRecord(outcome.error) : null };
+      error: outcome.status === 'rejected' ? errorRecord(outcome.error, cmsDiagnosticSecrets) : null };
     if (outcome.status === 'rejected') captureRunFailure(outcome.error, 'cms-full-font-response-wait');
   }
   if (results.cmsPreview.status === 'running') {
     results.cmsPreview.status = runError ? 'failed' : 'incomplete';
-    if (runError) results.cmsPreview.error = errorRecord(runError);
+    if (runError) results.cmsPreview.error = errorRecord(runError, cmsDiagnosticSecrets);
   }
   if (results.initialFontNetwork.status === 'running') {
     results.initialFontNetwork.status = runError ? 'failed' : 'incomplete';
@@ -1838,20 +1988,22 @@ try {
   for (const phase of Object.values(results.execution.phases)) {
     if (phase.status === 'running') {
       phase.status = runError ? 'failed' : 'incomplete';
-      if (runError) phase.error ||= errorRecord(runError);
+      if (runError) phase.error ||= errorRecord(runError, cmsDiagnosticSecrets);
     }
   }
   results.execution.currentPhase = results.execution.currentPhase || null;
   results.execution.status = runError ? 'failed' : 'passed';
-  if (runError && !results.execution.primaryError) results.execution.primaryError = errorRecord(runError);
+  if (runError && !results.execution.primaryError) {
+    results.execution.primaryError = errorRecord(runError, cmsDiagnosticSecrets);
+  }
   try {
-    await writePageFontArtifactReport(reportPath, results);
+    await writePageFontArtifactReport(reportPath, results, cmsDiagnosticSecrets);
   } catch (error) {
-    results.reportWriteError = errorRecord(error);
+    results.reportWriteError = errorRecord(error, cmsDiagnosticSecrets);
     if (!runError) runError = error;
   }
 }
-if (runError) throw runError;
+if (runError) throw sanitizeThrownError(runError, cmsDiagnosticSecrets);
 console.log(JSON.stringify({ samples: results.samples.length, schemaRoutes: results.schemaRoutes.length,
   allRouteFontChecks: results.initialFontNetwork.routesChecked,
   allRouteFontSeconds: results.initialFontNetwork.durationSeconds,

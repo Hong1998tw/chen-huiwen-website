@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { runPageFontArtifactPreflight } from './page-font-artifact-preflight.mjs';
+import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
+import { safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 
 const fontPath = 'assets/fonts/huiwen-site-sans/huiwen-site-sans-tc-20261007.woff2';
 
@@ -138,4 +139,64 @@ test('font size mismatch writes a terminal preflight report with the assertion e
       [fontPath]: sha, 'page-font-manifest.json': pageFontManifestSha,
     } }));
   }, { name: 'AssertionError', message: /strictly equal|Expected values/ });
+});
+
+test('CMS diagnostic redaction removes secret values before truncation and strips URL queries', () => {
+  const session = 'synthetic-session-boundary-value';
+  const acrossBoundary = `${'x'.repeat(3998)}${session} must not leave a prefix`;
+  const safeBoundary = safeBrowserDiagnosticText(acrossBoundary, [session]);
+  assert.ok(safeBoundary.length <= 4000);
+  assert.equal(safeBoundary.includes(session), false);
+  assert.equal(safeBoundary.includes(session.slice(0, 8)), false);
+
+  const url = `CMS error at https://admin.huiwen.tw/api/page-preview?path=news.html&session=${session}&cmsEdit=1`;
+  const safeUrl = safeBrowserDiagnosticText(url, [session]);
+  assert.match(safeUrl, /https:\/\/admin\.huiwen\.tw\/api\/page-preview/);
+  assert.equal(safeUrl.includes('?path='), false);
+  assert.equal(safeUrl.includes(session), false);
+
+  const errorBoundary = errorRecord(new Error(`${'y'.repeat(1198)}${session}`), [session]);
+  assert.equal(errorBoundary.message.includes(session.slice(0, 8)), false);
+});
+
+test('primary CMS error records are redacted in report bytes while type, stack, and failure state remain', async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), 'page-font-cms-diagnostics-'));
+  const reportPath = join(tempRoot, 'report.json');
+  const session = 'synthetic-cms-session-value';
+  const accessAssertion = 'synthetic-cms-access-assertion-value';
+  const nonce = 'synthetic-cms-handshake-nonce-value';
+  const secrets = [session, accessAssertion, nonce];
+  const message = `CMS handshake failed: ${session}; ${accessAssertion}; ${nonce}; https://admin.huiwen.tw/api/page-preview?path=news.html&session=${session}&cmsEdit=1`;
+  const thrown = new TypeError(message);
+  thrown.stack = `TypeError: ${message}\n    at readHandshake (/repo/tests/donation/page-font-artifact.mjs:42:7)`;
+  const record = errorRecord(thrown);
+  const results = {
+    fatalError: record,
+    cmsPreview: { status: 'failed', error: record, handshake: { step: 'ready', nonce } },
+    negativeGuards: { unauthenticated: { status: 'failed', error: record } },
+    execution: {
+      status: 'failed', primarySource: 'cmsPreview', primaryError: record,
+      phases: { cmsPreview: { status: 'failed', error: record } },
+    },
+  };
+
+  try {
+    await writePageFontArtifactReport(reportPath, results, secrets);
+    const bytes = await readFile(reportPath);
+    const serialized = bytes.toString('utf8');
+    for (const secret of secrets) assert.equal(serialized.includes(secret), false);
+    assert.equal(serialized.includes('?path='), false);
+    assert.match(serialized, /https:\/\/admin\.huiwen\.tw\/api\/page-preview/);
+    assert.match(serialized, /page-font-artifact\.mjs:42:7/);
+
+    const report = JSON.parse(serialized);
+    assert.equal(report.fatalError.name, 'TypeError');
+    assert.match(report.execution.primaryError.message, /CMS handshake failed/);
+    assert.match(report.execution.primaryError.stack, /page-font-artifact\.mjs:42:7/);
+    assert.equal(report.execution.status, 'failed');
+    assert.equal(report.cmsPreview.status, 'failed');
+    assert.equal(report.negativeGuards.unauthenticated.status, 'failed');
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });

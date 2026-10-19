@@ -11,6 +11,43 @@ export const VISUAL_CAPTURE_SEED = 'huiwen-g02-20261018';
 export const VISUAL_CAPTURE_COUNT = 20;
 export const SYSTEM_FALLBACK_CODEPOINTS = Object.freeze([0x2630, 0x2733]);
 
+export function cssFontWeightRange(axis) {
+  assert.ok(axis && Number.isFinite(axis.min) && Number.isFinite(axis.default)
+    && Number.isFinite(axis.max), 'variable font weight axis is incomplete');
+  assert.ok(axis.min >= 1 && axis.min <= axis.default && axis.default <= axis.max && axis.max <= 1000,
+    'variable font weight axis range is invalid');
+  return `${axis.min} ${axis.max}`;
+}
+
+export function buildVisualFontProbeRequests(expectedFonts, computedWeights) {
+  const expectedByRole = validateExpectedFonts(expectedFonts);
+  const actualWeights = {
+    common: computedWeights?.body,
+    delta: computedWeights?.heading,
+  };
+  return FONT_ROLES.map((role) => {
+    const face = expectedByRole[role];
+    assert.ok(face.weightAxis, `${role}: variable font weight axis is missing from the manifest evidence`);
+    const descriptorWeight = cssFontWeightRange(face.weightAxis);
+    assert.equal(String(face.weight), descriptorWeight,
+      `${role}: FontFace descriptor weight differs from its manifest axis`);
+    const computedWeight = Number(actualWeights[role]);
+    assert.ok(Number.isFinite(computedWeight) && computedWeight >= 1 && computedWeight <= 1000,
+      `${role}: computed CSS font weight is invalid`);
+    assert.ok(computedWeight >= face.weightAxis.min && computedWeight <= face.weightAxis.max,
+      `${role}: computed CSS font weight ${computedWeight} is outside the manifest axis ${descriptorWeight}`);
+    const familySyntax = `"${face.family.replace(/["\\]/g, '\\$&')}"`;
+    return {
+      role,
+      family: face.family,
+      descriptorWeight,
+      computedWeight: String(computedWeight),
+      probeCodepoint: face.probeCodepoint ?? null,
+      fontSpec: `${computedWeight} 16px ${familySyntax}`,
+    };
+  });
+}
+
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -122,6 +159,10 @@ function validateExpectedFonts(expectedFonts) {
     assert.ok((typeof font.weight === 'number' && Number.isFinite(font.weight))
       || (typeof font.weight === 'string' && font.weight.trim().length > 0),
     `${font.role}: expected font weight is missing`);
+    if (font.weightAxis !== undefined) {
+      assert.equal(String(font.weight), cssFontWeightRange(font.weightAxis),
+        `${font.role}: expected FontFace descriptor differs from its manifest weight axis`);
+    }
     assert.match(font.sha256 || '', SHA256, `${font.role}: expected font digest is invalid`);
     assert.ok(Number.isInteger(font.bytes) && font.bytes > 0,
       `${font.role}: expected font byte length is invalid`);
@@ -158,6 +199,67 @@ function validateFallbackCodepoints(routeFallbacks) {
   assert.deepEqual([...jp].filter((codepoint) => system.includes(codepoint)), [],
     'JP and system fallback contracts overlap');
   return { jp: [...jp], system: [...system] };
+}
+
+export function classifyVisibleGlyphDiagnostics({
+  expectedFonts,
+  visibleCodepoints,
+  routeFallbacks = {},
+  rawTcUnsupportedGlyphOwners = [],
+}) {
+  const expectedByRole = validateExpectedFonts(expectedFonts);
+  assert.ok(Array.isArray(visibleCodepoints), 'visible user-text codepoints are missing');
+  assert.ok(visibleCodepoints.every((codepoint) => Number.isInteger(codepoint)
+    && codepoint >= 0 && codepoint <= 0x10ffff
+    && !(codepoint >= 0xd800 && codepoint <= 0xdfff)),
+  'visible user text contains an invalid Unicode scalar');
+  assert.equal(new Set(visibleCodepoints).size, visibleCodepoints.length,
+    'visible user text contains duplicate codepoints');
+  assert.ok(Array.isArray(rawTcUnsupportedGlyphOwners),
+    'raw TC unsupported glyph owner diagnostics are missing');
+
+  const fontCovered = new Set([
+    ...expectedByRole.common.codepoints,
+    ...expectedByRole.delta.codepoints,
+  ]);
+  const fallback = validateFallbackCodepoints(routeFallbacks);
+  const jpFallback = new Set(fallback.jp);
+  const systemFallback = new Set(fallback.system);
+  const rawTcUnsupportedCodepoints = visibleCodepoints
+    .filter((codepoint) => !fontCovered.has(codepoint))
+    .sort((left, right) => left - right);
+  const rawUnsupportedSet = new Set(rawTcUnsupportedCodepoints);
+  const owners = rawTcUnsupportedGlyphOwners.map((owner) => {
+    assert.ok(owner && typeof owner === 'object', 'raw TC unsupported glyph owner is invalid');
+    assert.ok(Array.isArray(owner.codepoints), 'raw TC unsupported glyph owner codepoints are missing');
+    return {
+      ...owner,
+      codepoints: [...new Set(owner.codepoints.filter((codepoint) => rawUnsupportedSet.has(codepoint)))]
+        .sort((left, right) => left - right),
+    };
+  }).filter((owner) => owner.codepoints.length > 0);
+  const unexpectedCodepoints = rawTcUnsupportedCodepoints
+    .filter((codepoint) => !jpFallback.has(codepoint) && !systemFallback.has(codepoint));
+  const unexpectedGlyphs = unexpectedCodepoints.map((codepoint) => ({
+    codepoint,
+    owners: owners.filter((owner) => owner.codepoints.includes(codepoint)).map((owner) => ({
+      selector: owner.selector,
+      fontFamily: owner.fontFamily,
+      fontWeight: owner.fontWeight,
+      fontStyle: owner.fontStyle,
+      sample: owner.sample,
+    })),
+  }));
+
+  return {
+    rawTcUnsupportedCodepoints,
+    rawTcUnsupportedGlyphOwners: owners,
+    fallbackCodepoints: fallback,
+    unexpectedGlyphCount: unexpectedGlyphs.length,
+    unexpectedGlyphs,
+    uncoveredVisibleGlyphCount: unexpectedGlyphs.length,
+    uncoveredVisibleGlyphs: unexpectedGlyphs,
+  };
 }
 
 export function validateVisibleCodepointCoverage({
@@ -249,7 +351,7 @@ function assertFontStackPrefix({ route, label, stack, expectedPrefix, needsSyste
   assert.deepEqual(families.slice(0, expectedPrefix.length), expectedPrefix,
     `${route}: ${label} must begin with producer-contract family order ${expectedPrefix.join(' → ')}`);
   if (needsSystemFallback) {
-    const systemFallback = families.slice(1).some((family) =>
+    const systemFallback = families.slice(expectedPrefix.length).some((family) =>
       ['sans-serif', 'system-ui', 'serif', 'monospace'].includes(family.toLowerCase()));
     assert.ok(systemFallback,
       `${route}: ${label} has no generic system fallback after ${expectedPrefix.join(' → ')}`);
@@ -276,14 +378,12 @@ export function validateVisualTypography({
     `${route}: ${label} document.fonts status is not loaded`);
   assert.ok(typeof typography.bodyFontFamily === 'string' && typeof typography.headingFontFamily === 'string',
     `${route}: ${label} computed font stacks are missing`);
+  assert.ok(typeof typography.bodyFontWeight === 'string' && typeof typography.headingFontWeight === 'string',
+    `${route}: ${label} computed body or heading font weight is missing`);
   assert.ok(Array.isArray(typography.visibleCodepoints),
     `${route}: ${label} visible user-text codepoints are missing`);
   assert.equal(typography.visibleCodepointsTruncated, false,
     `${route}: ${label} visible codepoint capture was truncated`);
-  assert.equal(typography.uncoveredVisibleGlyphCount, 0,
-    `${route}: ${label} has uncovered visible glyphs`);
-  assert.deepEqual(typography.uncoveredVisibleGlyphs, [],
-    `${route}: ${label} uncovered visible glyph diagnostics are not empty`);
   const coverage = validateVisibleCodepointCoverage({
     route,
     routeCodepoints,
@@ -291,9 +391,35 @@ export function validateVisualTypography({
     visibleCodepoints: typography.visibleCodepoints,
     routeFallbacks,
   });
+  const glyphDiagnostics = classifyVisibleGlyphDiagnostics({
+    expectedFonts,
+    visibleCodepoints: typography.visibleCodepoints,
+    routeFallbacks,
+    rawTcUnsupportedGlyphOwners: typography.rawTcUnsupportedGlyphOwners,
+  });
+  assert.deepEqual(typography.rawTcUnsupportedCodepoints, glyphDiagnostics.rawTcUnsupportedCodepoints,
+    `${route}: ${label} raw TC unsupported glyph evidence is incomplete`);
+  assert.deepEqual(typography.rawTcUnsupportedGlyphOwners, glyphDiagnostics.rawTcUnsupportedGlyphOwners,
+    `${route}: ${label} raw TC unsupported glyph owners changed`);
+  assert.deepEqual(typography.fallbackCodepoints, glyphDiagnostics.fallbackCodepoints,
+    `${route}: ${label} fallback codepoint evidence differs from the route manifest`);
+  assert.equal(typography.unexpectedGlyphCount, glyphDiagnostics.unexpectedGlyphCount,
+    `${route}: ${label} unexpected glyph count differs from visible text`);
+  assert.deepEqual(typography.unexpectedGlyphs, glyphDiagnostics.unexpectedGlyphs,
+    `${route}: ${label} unexpected glyph evidence differs from visible text`);
+  assert.equal(typography.uncoveredVisibleGlyphCount, glyphDiagnostics.unexpectedGlyphCount,
+    `${route}: ${label} uncovered glyph count differs from unexpected glyphs`);
+  assert.deepEqual(typography.uncoveredVisibleGlyphs, glyphDiagnostics.unexpectedGlyphs,
+    `${route}: ${label} uncovered glyph diagnostics differ from unexpected glyphs`);
+  assert.equal(glyphDiagnostics.unexpectedGlyphCount, 0,
+    `${route}: ${label} has unexpected visible glyphs`);
+  const expectedProbeRequests = new Map(buildVisualFontProbeRequests(
+    expectedFonts.map((font) => ({ ...font, probeCodepoint: null })),
+    { body: typography.bodyFontWeight, heading: typography.headingFontWeight },
+  ).map((probe) => [probe.role, probe]));
   const fallbackVisible = coverage.coverage.jpFallback + coverage.coverage.systemFallback > 0;
   assertFontStackPrefix({ route, label: `${label} body stack`, stack: typography.bodyFontFamily,
-    expectedPrefix: [expectedByRole.common.family, expectedByRole.delta.family],
+    expectedPrefix: [expectedByRole.delta.family, expectedByRole.common.family],
     needsSystemFallback: fallbackVisible });
   assertFontStackPrefix({ route, label: `${label} heading stack`, stack: typography.headingFontFamily,
     expectedPrefix: [expectedByRole.delta.family, expectedByRole.common.family],
@@ -312,6 +438,17 @@ export function validateVisualTypography({
     assert.ok(check, `${route}: ${label} ${role} document.fonts check is missing`);
     assert.equal(check.family, expected.family,
       `${route}: ${label} ${role} check is bound to a different manifest family`);
+    assert.equal(String(check.descriptorWeight), String(expected.weight),
+      `${route}: ${label} ${role} check lost its FontFace descriptor weight range`);
+    const expectedComputedWeight = role === 'common' ? typography.bodyFontWeight : typography.headingFontWeight;
+    assert.equal(String(check.computedWeight), String(expectedComputedWeight),
+      `${route}: ${label} ${role} check did not use the actual computed element weight`);
+    assert.equal(check.fontSpec, expectedProbeRequests.get(role).fontSpec,
+      `${route}: ${label} ${role} FontFaceSet query is not the computed-weight shorthand`);
+    assert.ok(expected.weightAxis && Number.isFinite(Number(check.computedWeight))
+      && Number(check.computedWeight) >= expected.weightAxis.min
+      && Number(check.computedWeight) <= expected.weightAxis.max,
+    `${route}: ${label} ${role} computed weight is outside its manifest axis`);
     assert.ok(Number.isInteger(check.probeCodepoint)
       && typography.visibleCodepoints.includes(check.probeCodepoint)
       && expected.codepoints.includes(check.probeCodepoint),
