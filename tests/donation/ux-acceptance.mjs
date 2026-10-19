@@ -44,6 +44,62 @@ async function assertNoOverflow(expectedWidth) {
   report.viewports.push({ path: new URL(page.url()).pathname, width: expectedWidth, scrollWidth: result.document });
   return result;
 }
+async function waitForHomepageLayout() {
+  return page.evaluate(async () => {
+    const bounded = promise => new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 5000);
+      Promise.resolve(promise).then(() => { clearTimeout(timer); resolve(true); }, () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+    const portrait = document.querySelector('.hero-portrait img');
+    const [fontsReady, portraitDecoded] = await Promise.all([
+      bounded(document.fonts.ready),
+      portrait ? bounded(portrait.decode()) : Promise.resolve(false),
+    ]);
+    const rect = element => {
+      if (!element) return null;
+      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+      return { left, top, right, bottom, width, height };
+    };
+    const snapshot = () => {
+      const heading = document.querySelector('.home-task-paths strong');
+      const headingStyle = heading ? getComputedStyle(heading) : null;
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        readyState: document.readyState,
+        document: { scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight },
+        fonts: {
+          status: document.fonts.status,
+          ready: fontsReady,
+          taskFontLoaded: headingStyle ? document.fonts.check(`${headingStyle.fontWeight} ${headingStyle.fontSize} ${headingStyle.fontFamily}`) : false,
+        },
+        portrait: portrait ? { complete: portrait.complete, naturalWidth: portrait.naturalWidth, decoded: portraitDecoded } : null,
+        header: rect(document.querySelector('.site-header')),
+        hero: rect(document.querySelector('#main.home-redesign .hero')),
+        taskBoxes: [...document.querySelectorAll('.home-task-paths a')].map(rect),
+      };
+    };
+    let current = snapshot();
+    let stableFrames = 0;
+    const layoutKey = value => JSON.stringify({
+      viewport: value.viewport,
+      scrollWidth: value.document.scrollWidth,
+      header: value.header,
+      hero: value.hero,
+      taskBoxes: value.taskBoxes,
+    });
+    for (let frame = 0; frame < 8; frame++) {
+      await new Promise(requestAnimationFrame);
+      const next = snapshot();
+      stableFrames = layoutKey(next) === layoutKey(current) ? stableFrames + 1 : 0;
+      current = next;
+      if (stableFrames >= 2) break;
+    }
+    return { ...current, stableFrames, layoutStable: stableFrames >= 2 };
+  });
+}
 
 try {
   await page.goto(base + 'index.html');
@@ -186,13 +242,22 @@ try {
     const height = width === 1180 ? 757 : 900;
     await page.setViewportSize({ width, height });
     await page.goto(base + 'index.html');
-    await page.locator('.home-task-paths a').first().waitFor();
+    const readiness = await waitForHomepageLayout();
+    if (width === 1180) {
+      report.homepage1180 = readiness;
+      await page.screenshot({ path: join(results, 'homepage-1180x757.png'), fullPage: false });
+    }
     await check(`homepage reflows at ${width}px with all three task links visible and no horizontal overflow`, async () => {
+      await page.locator('.home-task-paths a').first().waitFor({ state: 'visible', timeout: 5000 });
+      assert(readiness.fonts.ready, `homepage fonts did not become ready: ${JSON.stringify(readiness)}`);
+      assert(readiness.portrait?.decoded, `homepage portrait did not decode: ${JSON.stringify(readiness)}`);
+      assert(readiness.layoutStable, `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
       await assertNoOverflow(width);
-      const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
+      const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
       assert.equal(boxes.length,3);
-      assert(boxes.every(box=>box.left>=0&&box.right<=width&&box.width>=44&&box.height>=40));
-      assert(boxes.every(box=>box.bottom<=height));
+      assert(boxes.every(box=>box.left>=0&&box.top>=0&&box.right<=width&&box.bottom<=height&&box.width>=44&&box.height>=40),
+        `homepage task links must fit inside ${width}×${height}: ${JSON.stringify({ readiness, boxes })}`);
+      return { boxes, readiness };
     });
   }
 

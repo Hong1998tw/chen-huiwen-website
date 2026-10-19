@@ -119,6 +119,8 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const copyChildren = ruleFor(rules, '#main.home-redesign .hero-copy > *', 'max-width: 780px');
   const portrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-width: 780px');
   const frame = ruleFor(rules, '#main.home-redesign .portrait-frame');
+  const compactHero = ruleFor(rules, '#main.home-redesign .hero', 'max-height: 800px');
+  const compactPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-height: 800px');
 
   assertDeclarations(baseHero, {
     display: 'grid',
@@ -175,6 +177,8 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   assert.equal(portrait.declarations.get('justify-self'), 'center');
   assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'portrait frame keeps its established ratio');
   assert.equal(rules.find(rule => rule.selectors.includes('#main.home-redesign .hero-portrait figcaption') && rule.media.join(' ').includes('max-width: 780px'))?.declarations.get('display'), 'block');
+  assertDeclarations(compactHero, { 'row-gap': '20px', 'padding-top': '24px' }, 'short desktop hero');
+  assertDeclarations(compactPortrait, { width: 'min(100%, 320px)' }, 'short desktop portrait');
 });
 
 test('homepage selectors outrank every earlier legacy hero layout declaration', async () => {
