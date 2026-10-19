@@ -15,6 +15,7 @@ import {
   buildFinalFontNetworkSnapshot,
   buildTrustedClickCaptureScript,
   expectedSharedFallbackFontsForRoute,
+  filterCriticalRequestFailures,
   hashResponseBody,
   INITIAL_RENDER_TIMEOUT_MS,
   NETWORK_SETTLE_TIMEOUT_MS,
@@ -1014,7 +1015,8 @@ async function finalizeFontOnlyRoute(state) {
     routeRecord.navigationErrors.push(...routeNetwork.navigationRequests
       .filter((item) => item.response && item.response.status !== 200)
       .map((item) => ({ kind: 'document-response', path: item.path, status: item.response.status })));
-    routeRecord.criticalRequestFailures = routeNetwork.criticalRequestFailures;
+    routeRecord.criticalRequestFailures = filterCriticalRequestFailures(
+      routeNetwork.criticalRequestFailures, new URL(base).origin);
   }
 
   if (route === 'service.html') {

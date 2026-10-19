@@ -5,6 +5,7 @@ import {
   buildFinalFontNetworkSnapshot,
   classifyCdpRequestTimestamp,
   expectedSharedFallbackFontsForRoute,
+  filterCriticalRequestFailures,
   hashResponseBody,
   isNoncriticalThirdPartyDocument,
   validateServiceCardOnDemand,
@@ -141,9 +142,71 @@ test('a pending foreign child-frame Document stays auditable as unknown without 
     status: 200,
     terminal: 'pending',
     completeness: 'unknown',
+    failure: null,
   }]);
   assert.deepEqual(result.requestScope.noncriticalThirdPartyDocuments, result.noncriticalThirdPartyDocuments);
   assert.match(result.requestScope.criticalCompleteness, /tracked Document, Font, Stylesheet, and Script/);
+});
+
+test('final critical failures scope out only foreign child Documents and preserve their exact audit outcome', () => {
+  const abortedForeignChildDocument = trackedRequest('Document', {
+    path: '/plugins/post.php',
+    origin: 'https://www.facebook.com',
+    frameId: 'facebook-child-frame',
+    isMainFrame: false,
+    response: null,
+    terminal: 'failed',
+    failure: { errorText: 'net::ERR_ABORTED', canceled: true, blockedReason: null },
+  });
+  const criticalFailures = [
+    trackedRequest('Document', {
+      origin: routeOrigin, frameId: 'same-origin-child', isMainFrame: false,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+    trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: 'main-frame', isMainFrame: true,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+    trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: null, isMainFrame: false,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+    trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: 'unknown-frame', isMainFrame: null,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+    trackedRequest('Font', {
+      origin: 'https://www.facebook.com', frameId: 'facebook-child-frame', isMainFrame: false,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+    trackedRequest('Font', {
+      origin: 'https://www.facebook.com', frameId: 'main-frame', isMainFrame: true,
+      terminal: 'failed', failure: { errorText: 'net::ERR_FAILED', canceled: false, blockedReason: null },
+    }),
+  ];
+  const scopedFailures = filterCriticalRequestFailures(
+    [abortedForeignChildDocument, ...criticalFailures], routeOrigin);
+
+  assert.deepEqual(scopedFailures.map((item) => item.requestId),
+    criticalFailures.map((item) => item.requestId),
+    'own-origin, main-frame, unknown-frame, and every Font failure must remain critical');
+
+  const result = snapshot({ rawRequests: [...validRequests(), abortedForeignChildDocument] });
+  assert.equal(result.criticalTrackedRequests.some((item) =>
+    item.requestId === abortedForeignChildDocument.requestId), false);
+  assert.deepEqual(result.noncriticalThirdPartyDocuments, [{
+    requestId: abortedForeignChildDocument.requestId,
+    path: '/plugins/post.php',
+    origin: 'https://www.facebook.com',
+    requestType: 'Document',
+    frameId: 'facebook-child-frame',
+    isMainFrame: false,
+    status: null,
+    terminal: 'failed',
+    completeness: 'failed',
+    failure: { errorText: 'net::ERR_ABORTED', canceled: true, blockedReason: null },
+  }]);
+  assert.deepEqual(result.violations, []);
 });
 
 test('only positively classified foreign child Documents are exempt from critical request completeness', () => {
@@ -506,6 +569,7 @@ test('the browser runner wires the exercised shared gate after all initial captu
   assert.match(runner, /snapshotStage: 'after-context-close'/);
   assert.match(runner, /validateServiceCardOnDemand\(\{/);
   assert.match(runner, /Network\.getResponseBody/);
+  assert.match(runner, /routeRecord\.criticalRequestFailures\s*=\s*filterCriticalRequestFailures\(\s*routeNetwork\.criticalRequestFailures,\s*new URL\(base\)\.origin\s*\)/);
   assert.match(runner, /window\.removeEventListener\('click'/);
   assert.match(runner, /Debugger\.resume/);
   assert.match(runner, /Debugger\.setBreakpointsActive[\s\S]*Debugger\.disable/);

@@ -29,6 +29,11 @@ export function isNoncriticalThirdPartyDocument(request, routeOrigin) {
     && requestOrigin !== normalizedRouteOrigin;
 }
 
+export function filterCriticalRequestFailures(requestFailures, routeOrigin) {
+  assert.ok(Array.isArray(requestFailures), 'critical request failures must be an array');
+  return requestFailures.filter((request) => !isNoncriticalThirdPartyDocument(request, routeOrigin));
+}
+
 function auditThirdPartyDocument(request) {
   const terminal = request.terminal || 'pending';
   return {
@@ -41,6 +46,7 @@ function auditThirdPartyDocument(request) {
     status: request.status ?? request.response?.status ?? null,
     terminal,
     completeness: terminal === 'finished' ? 'complete' : terminal === 'failed' ? 'failed' : 'unknown',
+    failure: request.failure ? { ...request.failure } : null,
   };
 }
 
