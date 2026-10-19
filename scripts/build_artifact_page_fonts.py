@@ -81,6 +81,10 @@ SCRIPT_DYNAMIC_TEXT = (
     "開啟選單 開啟主要選單 關閉主要選單 關閉選單 2026選舉 律師時間表 "
     "分享這一頁 網址已複製 複製分享網址 請選取並複製下方網址。 分享網址 關閉"
 )
+FINGERPRINTED_DYNAMIC_SCRIPTS = re.compile(
+    r"(?P<alias>digital|news|civic|legal-calendar)\.(?P<digest>[a-f0-9]{64})\.js\Z"
+)
+FINGERPRINTED_PRESS_SCRIPT = re.compile(r"press\.(?P<digest>[a-f0-9]{64})\.js\Z")
 CASE_DYNAMIC_TEXT = (
     "延伸閱讀 延伸探索 依里別與共同主題串連政績、新聞與政見，方便一次閱讀相關內容。 "
     "政績 × 新聞 × 政見 → 探索 分享這一頁"
@@ -481,7 +485,8 @@ def _press_script_references(soup):
         raw = str(tag["src"])
         parsed = urlsplit(raw)
         decoded_path = unquote(parsed.path).replace("\\", "/")
-        if PurePosixPath(decoded_path).name == "press.js":
+        basename = PurePosixPath(decoded_path).name
+        if basename == "press.js" or FINGERPRINTED_PRESS_SCRIPT.fullmatch(basename):
             references.append((tag, parsed, decoded_path))
     return references
 
@@ -502,22 +507,29 @@ def _active_press_runtime(soup):
 
 def _press_script_source(root: Path, reference) -> Path:
     _tag, parsed, decoded_path = reference
-    if (
-        parsed.scheme or parsed.netloc or parsed.fragment
-        or decoded_path not in {"press.js", "/press.js"}
-    ):
+    if parsed.scheme or parsed.netloc:
         raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_PATH_UNSAFE")
     root = Path(root).resolve()
-    path = root / "press.js"
-    if path.is_symlink() or root not in path.resolve().parents:
-        raise ValueError("FONT_PRESS_PAGINATION_SOURCE_UNSAFE")
-    if not path.is_file():
-        raise ValueError("FONT_PRESS_PAGINATION_SOURCE_MISSING")
-    if parsed.query:
-        match = re.fullmatch(r"v=([a-f0-9]{12})", parsed.query)
-        if not match or not sha256_file(path).startswith(match.group(1)):
-            raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_VERSION_MISMATCH")
-    return path
+    normalized_path = PurePosixPath(decoded_path).as_posix().lstrip("/")
+    if normalized_path in {"press.js"} and not parsed.fragment:
+        path = root / "press.js"
+        if path.is_symlink() or root not in path.resolve().parents:
+            raise ValueError("FONT_PRESS_PAGINATION_SOURCE_UNSAFE")
+        if not path.is_file():
+            raise ValueError("FONT_PRESS_PAGINATION_SOURCE_MISSING")
+        if parsed.query:
+            match = re.fullmatch(r"v=([a-f0-9]{12})", parsed.query)
+            if not match or not sha256_file(path).startswith(match.group(1)):
+                raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_VERSION_MISMATCH")
+        return path
+
+    hashed = FINGERPRINTED_PRESS_SCRIPT.fullmatch(PurePosixPath(normalized_path).name)
+    if hashed and normalized_path == PurePosixPath(normalized_path).name:
+        path = _safe_artifact_path(root, parsed.path)
+        if sha256_file(path) != hashed.group("digest"):
+            raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_FILENAME_HASH_MISMATCH")
+        return path
+    raise ValueError("FONT_PRESS_PAGINATION_SCRIPT_PATH_UNSAFE")
 
 
 def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
@@ -525,7 +537,16 @@ def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
     for tag in soup.find_all("script", src=True):
         parsed = urlsplit(str(tag["src"]))
         if not parsed.scheme and not parsed.netloc:
-            script_names.add(PurePosixPath(unquote(parsed.path)).name)
+            script_path = PurePosixPath(unquote(parsed.path))
+            script_name = script_path.name
+            match = FINGERPRINTED_DYNAMIC_SCRIPTS.fullmatch(script_name)
+            if match and script_path.as_posix().lstrip("/") == script_name:
+                artifact_script = _safe_artifact_path(root, parsed.path)
+                if sha256_file(artifact_script) != match.group("digest"):
+                    raise ValueError("FONT_DYNAMIC_SCRIPT_FILENAME_HASH_MISMATCH: " + script_name)
+                script_names.add(match.group("alias") + ".js")
+            else:
+                script_names.add(script_name)
     pieces = [SCRIPT_DYNAMIC_TEXT]
     press_runtime = _active_press_runtime(soup)
     if press_runtime is not None:

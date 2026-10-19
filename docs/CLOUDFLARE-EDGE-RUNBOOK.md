@@ -21,7 +21,7 @@ python3 scripts/check_cloudflare_edge.py --expect-static-assets --expected-sha "
 
 ## 前台最小安全標頭（`_headers`）
 
-Static Assets 的 `_headers` 由 `scripts/build_cloudflare_public.py` 的 `SECURITY_HEADERS` 單一來源產生，`/*` 一條規則涵蓋 `/`、舊目錄 rewrite、HTML、JS、CSS、JSON、圖片與 404 頁；`/deployment.json` 保留 `Cache-Control: no-store`，`/page-font-manifest.json` 必須 revalidate。只有在 publication manifest 綁定、完整 64 位 SHA-256 檔名與實際 bytes、cmap/字重軸、公開 route/style/preload 閉包及 namespace 無旁檔都通過後，`page-core/*` 與 `page-delta/*` 才各套一條 immutable 規則。規則限定於 `assets/fonts/huiwen-site-sans/page-core/` 和 `page-delta/`；不擴大到其他字型路徑，也不按 445 個路由逐檔新增規則。總規則數仍須不超過 100。
+Static Assets 的 `_headers` 由 `scripts/build_cloudflare_public.py` 的 `SECURITY_HEADERS` 單一來源產生，`/*` 一條規則涵蓋 `/`、舊目錄 rewrite、HTML、JS、CSS、JSON、圖片與 404 頁；`/deployment.json` 保留 `Cache-Control: no-store`，`/page-font-manifest.json` 必須 revalidate。公開 artifact 會依精確 CSS／JS allowlist 產生 `<stem>.<完整 SHA-256>.css|js` 副本，並改寫 artifact 內的 HTML、CSS 與已盤點的執行期相依；未指紋化舊路徑保留原 bytes，繼續使用預設 revalidate。循環或 allowlist 以外的本機 CSS／JS 相依會 fail closed。只有 publication manifest、檔名與 bytes、cmap／字重軸、公開 route/style/preload 閉包及 namespace 無旁檔都通過後，逐一列出的指紋 CSS／JS、既有 CMS runtime，以及 `page-core/*`、`page-delta/*` 才套用 immutable。字型 namespace 規則限定於 `assets/fonts/huiwen-site-sans/page-core/` 和 `page-delta/`；不擴大到其他字型路徑，也不按路由逐檔新增規則。總規則數仍須不超過 100。
 
 | 標頭 | 值 | 理由 |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ python3 scripts/build_cloudflare_public.py
 python3 scripts/verify_security_headers.py --base-url https://www.huiwen.tw --artifact-root _site
 ```
 
-腳本逐一檢查 `/`、`/index.html`、`/about.html`、`/site.js`、`/styles.css`、`/data/search-index.json`、圖片、`/page-font-manifest.json`、`/mktexp26/`、`/deployment.json` 與 404 探針；另依本次本機建置的 `publication-manifest.json` 驗證舊 hash 資產及 page-core/page-delta 兩個 namespace 的實際 Cache-Control、SHA-256 bytes 與 WOFF2 cmap/字重軸。頁面字型 manifest 必須 revalidate。報告列出 URL、時間、狀態碼、重新導向、實際標頭及預期／觀察 hash；任一缺漏或異常 exit 1。本機可用 `wrangler dev --local` 對建好的 `_site` 預跑。回復：revert 該提交後依現行部署流程重新部署，或使用 Cloudflare Workers 的前一個 deployment。
+腳本逐一檢查 `/`、`/index.html`、`/about.html`、舊路徑 `/site.js`、`/styles.css`、`/data/search-index.json`、圖片、`/page-font-manifest.json`、`/mktexp26/`、`/deployment.json` 與 404 探針；另依本次本機建置的 `publication-manifest.json` 驗證所有指紋 CSS／JS、既有 hash 資產及 page-core/page-delta 兩個 namespace 的實際 Cache-Control、SHA-256 bytes 與 WOFF2 cmap／字重軸。舊 CSS／JS alias 必須維持可讀且不得收到 immutable；頁面字型 manifest 必須 revalidate。報告列出 URL、時間、狀態碼、重新導向、實際標頭及預期／觀察 hash；任一缺漏或異常 exit 1。本機可用 `wrangler dev --local` 對建好的 `_site` 預跑。回復：revert 該提交後依現行部署流程重新部署，或使用 Cloudflare Workers 的前一個 deployment。
 
 ## 2026-09-29 pre-change baseline
 

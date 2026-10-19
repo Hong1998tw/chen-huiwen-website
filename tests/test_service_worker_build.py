@@ -61,7 +61,8 @@ class _CompiledIndexResources(HTMLParser):
             return
         rel = set((values.get('rel') or '').lower().split())
         parsed = urlsplit(href)
-        if 'stylesheet' in rel and Path(parsed.path).name == 'styles.css':
+        if ('stylesheet' in rel and
+                re.fullmatch(r'styles(?:\.[a-f0-9]{64})?\.css', Path(parsed.path).name)):
             self.stylesheet = href
         if ('preload' in rel and values.get('as', '').lower() == 'font'
                 and values.get('type', '').lower() == 'font/woff2'
@@ -294,6 +295,7 @@ class ServiceWorkerArtifactTests(unittest.TestCase):
         source = inspect.getsource(build_public.build)
         positions = [
             source.index('artifact_page_fonts = build_artifact_page_fonts(root, staging, paths)'),
+            source.index('artifact_transform(staging, root, paths)'),
             source.index("write_publication_manifest(staging, len(records), exclude={'sw.js'})"),
             source.index('font_contract = validate_artifact_contract(staging, root)'),
             source.index('render_service_worker(staging,'),

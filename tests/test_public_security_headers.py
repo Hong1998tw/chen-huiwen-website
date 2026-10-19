@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_cloudflare_public as cloudflare
 import build_artifact_page_fonts as producer
+import public_asset_fingerprints
 import verify_security_headers as verifier
 
 FEATURES_DENIED = {'camera', 'microphone', 'geolocation', 'payment'}
@@ -139,11 +140,26 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= 2000 for line in self.text.splitlines()))
         self.assertTrue(self.text.endswith('\n'))
 
+    def test_cms_runtime_and_page_manifest_references_survive_artifact_rewrite(self):
+        runtimes = sorted(self.site.glob('cms-page-editor.*.js'))
+        self.assertEqual(len(runtimes), 1)
+        runtime = runtimes[0]
+        digest = hashlib.sha256(runtime.read_bytes()).hexdigest()
+        self.assertEqual(runtime.name, f'cms-page-editor.{digest[:12]}.js')
+        page = (self.site / 'achievements.html').read_text()
+        loader = re.search(r'data-cms-editor-src="(/cms-page-editor\.[a-f0-9]{12}\.js)"', page)
+        manifest = re.search(r'data-cms-manifest="(/cms-editor-manifests/achievements\.html\.[a-f0-9]{12}\.json)"', page)
+        self.assertIsNotNone(loader)
+        self.assertIsNotNone(manifest)
+        self.assertEqual(loader.group(1), '/' + runtime.name)
+        self.assertTrue((self.site / loader.group(1).lstrip('/')).is_file())
+        self.assertTrue((self.site / manifest.group(1).lstrip('/')).is_file())
+
     def test_unhashed_and_unknown_paths_do_not_receive_immutable_rules(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             names = ('assets/fonts/huiwen-site-sans/generated/unhashed.woff2',
-                     'cms-page-editor.js', '0', 'unknown/other-font.woff2')
+                     '0', 'unknown/other-font.woff2')
             files = {}
             for name in names:
                 path = root / name
@@ -160,9 +176,19 @@ class SecurityHeaderTests(unittest.TestCase):
             files[nested_path.relative_to(root).as_posix()] = digest
             publication = {'files': files}
             self.assertEqual(cloudflare.immutable_asset_records(root, publication), [])
-            self.assertEqual(cloudflare.immutable_asset_records(root, {'files': {0: '0' * 64}}), [])
+            with self.assertRaisesRegex(ValueError, 'publication path is unsafe'):
+                cloudflare.immutable_asset_records(root, {'files': {0: '0' * 64}})
             with self.assertRaisesRegex(ValueError, 'PAGE_FONT_MANIFEST_MISSING_OR_UNSAFE'):
                 cloudflare.render_headers(root, publication)
+
+            private = root / 'drafts' / ('private.' + 'a' * 64 + '.css')
+            private.parent.mkdir()
+            private.write_bytes(b'private draft CSS')
+            private_hash = hashlib.sha256(private.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, 'Unowned public CSS/JS artifact path'):
+                cloudflare.immutable_asset_records(root, {
+                    'files': {private.relative_to(root).as_posix(): private_hash},
+                })
 
     def test_wrong_filename_hash_and_tampered_bytes_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -198,22 +224,46 @@ class SecurityHeaderTests(unittest.TestCase):
             tampered = Path(directory) / 'tampered'
             shutil.copytree(self.site, tampered)
             (tampered / relative).write_bytes(original + b'tampered')
-            with self.assertRaisesRegex(ValueError, 'Manifest SHA-256'):
+            with self.assertRaisesRegex(ValueError, 'differs from bytes'):
                 cloudflare.render_headers(tampered, self.publication)
 
         changed = original + b'changed bytes'
         digest = hashlib.sha256(changed).hexdigest()
-        new_relative = re.sub(r'[a-f0-9]{12}(\.woff2|\.js)$', digest[:12] + r'\1', relative)
+        full_hash = re.search(r'\.[a-f0-9]{64}(\.(?:css|js))$', relative)
+        if full_hash:
+            new_relative = relative[:full_hash.start()] + '.' + digest + full_hash.group(1)
+        else:
+            new_relative = re.sub(r'[a-f0-9]{12}(\.woff2|\.js)$', digest[:12] + r'\1', relative)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            rotated_files = {}
+            for asset_path, asset_hash in self.publication['files'].items():
+                if (asset_path == relative or asset_path == 'sw.js'
+                        or Path(asset_path).suffix.lower() not in {'.css', '.js'}):
+                    continue
+                source = self.site / asset_path
+                target = root / asset_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                rotated_files[asset_path] = asset_hash
             path = root / new_relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(changed)
-            self.assertEqual(cloudflare.immutable_asset_records(root, {'files': {new_relative: digest}}),
-                             [(new_relative, digest)])
+            rotated_files[new_relative] = digest
+            rotated_records = cloudflare.immutable_asset_records(root, {'files': rotated_files})
+            self.assertIn((new_relative, digest), rotated_records)
 
         immutable_paths = {'/' + path for path, _ in assets}
         self.assertNotIn('/site.js', immutable_paths)
+        self.assertNotIn('/styles.css', immutable_paths)
+        for alias in public_asset_fingerprints.public_asset_source_paths():
+            self.assertNotIn('/' + alias, immutable_paths, alias)
+        fingerprinted_code = {
+            path for path in immutable_paths
+            if path.endswith(('.css', '.js')) and re.search(r'\.[a-f0-9]{64}\.(?:css|js)$', path)
+        }
+        self.assertGreaterEqual(len(fingerprinted_code), 2)
+        self.assertTrue(all(path.count('*') == 0 for path in fingerprinted_code))
 
     def test_too_many_immutable_paths_fail_instead_of_using_a_wildcard(self):
         with tempfile.TemporaryDirectory() as directory:
