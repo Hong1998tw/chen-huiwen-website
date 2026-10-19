@@ -8,6 +8,28 @@ import {resolve,extname} from 'node:path';
 import {createHash} from 'node:crypto';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 let failOptional=false,failRequired=false,disconnected=false;
+const report={checks:[],failures:[],stages:[],timeoutDiagnostics:[],cleanupFailures:[],startedAt:new Date().toISOString()};
+// The run used 8m40s before this script; cap it at 7m to leave time for report and artifact cleanup inside the existing 18m job.
+const suiteStartedAt=Date.now(),MAX_SUITE_MS=7*60*1000,CHECK_TIMEOUT_MS=30_000,WORKER_TIMEOUT_MS=15_000;
+let activeStage='initialization',base=null,browser=null;
+const diagnosticPages=new Map();
+const LEGACY_WORKER_VERSION='20260922-public-service-v11';
+function timeoutError(name,ms){const error=new Error(`Timed out after ${ms}ms at ${name}`);error.code='RUNTIME_MATURITY_TIMEOUT';error.stageName=name;error.timeoutMs=ms;return error;}
+async function raceTimeout(operation,name,ms){let timer;try{return await Promise.race([Promise.resolve().then(operation),new Promise((_,reject)=>{timer=setTimeout(()=>reject(timeoutError(name,ms)),ms);})]);}finally{clearTimeout(timer);}}
+async function stage(name,operation,timeoutMs=CHECK_TIMEOUT_MS,enforceSuite=true){
+ const previous=activeStage,started=Date.now(),startedAt=new Date().toISOString(),record={name,startedAt};report.stages.push(record);activeStage=name;
+ const remaining=MAX_SUITE_MS-(started-suiteStartedAt),limit=enforceSuite?Math.min(timeoutMs,remaining):timeoutMs;
+ console.log(JSON.stringify({event:'stage-start',name,at:startedAt,timeoutMs:limit}));
+ try{if(limit<=0)throw timeoutError(name,Math.max(0,limit));const value=await raceTimeout(operation,name,limit);record.status='PASS';return value;}
+ catch(value){const error=value instanceof Error?value:new Error(String(value));error.stageName??=name;record.status=error.code==='RUNTIME_MATURITY_TIMEOUT'?'TIMEOUT':'ERROR';record.error=String(error);throw error;}
+ finally{record.endedAt=new Date().toISOString();record.durationMs=Date.now()-started;console.log(JSON.stringify({event:'stage-end',name,at:record.endedAt,durationMs:record.durationMs,status:record.status??'ERROR',error:record.error}));activeStage=previous;}
+}
+function trackPage(name,page,defaultTimeout=8000){page.setDefaultTimeout(defaultTimeout);page.setDefaultNavigationTimeout(15_000);diagnosticPages.set(name,page);return page;}
+async function captureTimeoutDiagnostics(error){
+ const snapshot={at:new Date().toISOString(),stage:error.stageName??activeStage,timeoutMs:error.timeoutMs??null,elapsedMs:Date.now()-suiteStartedAt,pages:[]};
+ for(const [name,page] of diagnosticPages){const item={name,closed:page.isClosed()};if(!item.closed){item.url=page.url();try{item.runtime=await raceTimeout(()=>page.evaluate(()=>({readyState:document.readyState,serviceWorkerController:navigator.serviceWorker?.controller?.scriptURL??null,digitalAssets:performance.getEntriesByType('resource').map(entry=>entry.name).filter(url=>/digital\.(js|css)|sw\.js/.test(url)).slice(-8)})),`${name} timeout snapshot`,1500);}catch(snapshotError){item.runtimeError=String(snapshotError);}}snapshot.pages.push(item);}
+ report.timeoutDiagnostics.push(snapshot);console.error(JSON.stringify({event:'timeout-diagnostic',...snapshot}));
+}
 const server=createServer(async(req,res)=>{
   if(disconnected){req.socket.destroy();return;}
   const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
@@ -17,23 +39,25 @@ const server=createServer(async(req,res)=>{
   try{let data=await readFile(path);
     if(pathname==='/without-markers.html')data=Buffer.from(data.toString().replace(/ data-digital-civic="[^"]+"/g,''));
     // Reproduce an edge retaining the previous release under its old immutable URL.
-    if(pathname==='/digital.js'&&req.url.includes('v=20260922-public-service-v11'))data=Buffer.from(data.toString().replace(/const SERVICE_WORKER_VERSION = '[^']+'/,"const SERVICE_WORKER_VERSION = '20260922-public-service-v11'"));
-    if(pathname==='/sw.js'&&req.url.includes('v=20260922-public-service-v11'))data=Buffer.from("self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));");
+    if(pathname==='/digital.js'&&req.url.includes(`v=${LEGACY_WORKER_VERSION}`))data=Buffer.from(data.toString().replace(/const SERVICE_WORKER_VERSION = '[^']+'/,`const SERVICE_WORKER_VERSION = '${LEGACY_WORKER_VERSION}'`));
+    if(pathname==='/sw.js'&&req.url.includes(`v=${LEGACY_WORKER_VERSION}`))data=Buffer.from("self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));");
     res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'})[extname(path)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}
   catch{res.writeHead(404,{'Content-Type':'text/html'});res.end('<h1>Not found</h1>');}
 });
-await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const base=`http://127.0.0.1:${server.address().port}/`;
-const browser=await chromium.launch();
-const report={checks:[],failures:[]};
-async function check(name,fn){try{await fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:String(e)});}}
-const records=JSON.parse(await readFile(resolve(root,'data/achievements-public.json'),'utf8'));
-const expected=records.filter(x=>['持續追蹤','爭取規劃','政策實施'].includes(x.status)&&x.sources.length).length;
+async function check(name,fn){try{await stage(name,fn,CHECK_TIMEOUT_MS);report.checks.push({name,status:'PASS'});}catch(value){const error=value instanceof Error?value:new Error(String(value));report.failures.push({name,error:String(error)});if(error.code==='RUNTIME_MATURITY_TIMEOUT'){error.failureRecorded=true;try{await captureTimeoutDiagnostics(error);}catch(snapshotError){report.timeoutDiagnostics.push({at:new Date().toISOString(),stage:error.stageName,snapshotError:String(snapshotError)});console.error(JSON.stringify({event:'timeout-diagnostic-error',stage:error.stageName,error:String(snapshotError)}));}throw error;}}}
 try{
- const context=await browser.newContext({viewport:{width:390,height:844}});
- await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
- const page=await context.newPage();page.setDefaultTimeout(8000);await page.clock.setFixedTime(new Date('2026-09-22T12:00:00+08:00'));
- await page.goto(base+'election.html');await page.waitForFunction(()=>window.HuiwenElection?.ready);
+ await stage('fixture server listen',()=>new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);}),10_000);
+ base=`http://127.0.0.1:${server.address().port}/`;
+ browser=await stage('launch Chromium',()=>chromium.launch({timeout:20_000}),30_000);
+ const records=JSON.parse(await stage('read expected public records',()=>readFile(resolve(root,'data/achievements-public.json'),'utf8'),5000));
+ const expected=records.filter(x=>['持續追蹤','爭取規劃','政策實施'].includes(x.status)&&x.sources.length).length;
+ const initial=await stage('initial election page setup',async()=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
+  const page=trackPage('election',await context.newPage());await page.clock.setFixedTime(new Date('2026-09-22T12:00:00+08:00'));
+  await page.goto(base+'election.html');await page.waitForFunction(()=>window.HuiwenElection?.ready);return{context,page};
+ },45_000);
+ const {context,page}=initial;
  await check('complete tracking search finds Wen-De beyond initial eight',async()=>{
   assert.equal(await page.locator('.campaign-tracking-card').count(),expected);
   assert.equal(await page.locator('.campaign-tracking-card:visible').count(),8);
@@ -88,15 +112,20 @@ try{
    assert.equal(await page.locator('#navigation a[href="election.html"]').count(),1);
   });
  }
- const nojs=await browser.newContext({javaScriptEnabled:false});const plain=await nojs.newPage();
- await check('JavaScript disabled retains platform tracking and event records',async()=>{await plain.goto(base+'election.html');assert.equal(await plain.locator('.campaign-tracking-card:visible').count(),expected);assert.equal(await plain.locator('#campaign-platforms li').count(),13);assert((await plain.locator('#campaign-events article').count())>0);});await nojs.close();await context.close();
+ const nojs=await stage('create JavaScript-disabled context',()=>browser.newContext({javaScriptEnabled:false}),10_000);const plain=trackPage('javascript-disabled',await stage('create JavaScript-disabled page',()=>nojs.newPage(),10_000));
+ await check('JavaScript disabled retains platform tracking and event records',async()=>{await plain.goto(base+'election.html');assert.equal(await plain.locator('.campaign-tracking-card:visible').count(),expected);assert.equal(await plain.locator('#campaign-platforms li').count(),13);assert((await plain.locator('#campaign-events article').count())>0);});await stage('close JavaScript-disabled context',()=>nojs.close(),8000,false);await stage('close election context',()=>context.close(),8000,false);
+ await check('legacy immutable worker fixture is reachable at its old URL',async()=>{
+  const fetchText=async path=>{const response=await fetch(new URL(path,base),{signal:AbortSignal.timeout(10_000)});assert.equal(response.status,200);return response.text();};
+  const [legacyScript,legacyWorker]=await Promise.all([fetchText(`digital.js?v=${LEGACY_WORKER_VERSION}`),fetchText(`sw.js?v=${LEGACY_WORKER_VERSION}`)]);
+  assert(legacyScript.includes(`const SERVICE_WORKER_VERSION = '${LEGACY_WORKER_VERSION}'`));assert.match(legacyWorker,/skipWaiting/);
+ });
  // Real secure-context SW tests, isolated storage; no production registration or mutation.
- const sw=await browser.newContext();const client=await sw.newPage();
+ const sw=await stage('create offline worker context',()=>browser.newContext(),10_000);const client=trackPage('offline-worker',await stage('create offline worker page',()=>sw.newPage(),10_000));
  await check('partial optional shell failure still installs required offline document; upgrade purges old raw cache',async()=>{
   await client.goto(base+'offline.html');
   await client.evaluate(async()=>{const c=await caches.open('huiwen-digital-v11-fixture');await c.put('data/achievements.json',new Response('[{"id":"fixture-unpublished"}]'));});
   failOptional=true;
-  await client.evaluate(async()=>{await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;});
+  await stage('offline worker registration and ready',()=>client.evaluate(async()=>{await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;}),WORKER_TIMEOUT_MS);
   await client.waitForFunction(()=>!!navigator.serviceWorker.controller);failOptional=false;
   const expectedCache=(await readFile(resolve(root,'sw.js'),'utf8')).match(/const CACHE='([^']+)'/)[1];
   const keys=await client.evaluate(()=>caches.keys());assert.deepEqual(keys,[expectedCache]);
@@ -109,19 +138,19 @@ try{
  await check('uncached detail offline shows dedicated document without masquerading as homepage',async()=>{
   await client.goto(base+'achievement-never-cached-fixture.html');assert.match(await client.locator('h1').innerText(),/這一頁尚未儲存/);assert.equal(await client.locator('.hero-portrait').count(),0);assert.match(client.url(),/achievement-never-cached-fixture\.html$/);
  });
- disconnected=false;await sw.setOffline(false);await sw.close();
+ disconnected=false;await stage('restore online and close offline worker context',async()=>{await sw.setOffline(false);await sw.close();},8000,false);
  await check('required offline failure prevents installation; previous cache survives',async()=>{
-  const broken=await browser.newContext(),p=await broken.newPage();await p.goto(base+'index.html');
+  const broken=await stage('create required failure context',()=>browser.newContext(),10_000),p=trackPage('required-offline-failure',await stage('create required failure page',()=>broken.newPage(),10_000));await p.goto(base+'index.html');
   await p.evaluate(async()=>{const c=await caches.open('huiwen-digital-v11-fixture');await c.put('index.html',new Response('previous usable cache'));});
   failRequired=true;
-  await p.evaluate(async()=>{const r=await navigator.serviceWorker.register('sw.js');const w=r.installing;if(!w)return;await new Promise(resolve=>{w.addEventListener('statechange',()=>{if(w.state==='redundant'||w.state==='activated')resolve();});});});
+  await stage('required failure worker statechange',()=>p.evaluate(async()=>{const r=await navigator.serviceWorker.register('sw.js');const w=r.installing;if(!w)return;await new Promise(resolve=>{const settle=()=>{if(w.state==='redundant'||w.state==='activated'){w.removeEventListener('statechange',settle);resolve();}};w.addEventListener('statechange',settle);settle();});}),WORKER_TIMEOUT_MS);
   assert.equal(await p.evaluate(()=>Boolean(navigator.serviceWorker.controller)),false);assert((await p.evaluate(()=>caches.keys())).includes('huiwen-digital-v11-fixture'));
-  failRequired=false;await broken.close();
+  failRequired=false;await stage('close required failure context',()=>broken.close(),8000,false);
  });
  await check('explicit and injected digital assets agree across navigation without worker downgrade',async()=>{
   // *.localhost is a secure loopback context, while exercising the production registration path.
   const nativeBase=base.replace('127.0.0.1','huiwen.localhost');
-  const native=await browser.newContext(),nativePage=await native.newPage();nativePage.setDefaultTimeout(12000);
+  const native=await browser.newContext(),nativePage=trackPage('native-hash-route',await native.newPage(),12_000);
   await native.route('**/*',route=>new URL(route.request().url()).origin===new URL(nativeBase).origin?route.continue():route.abort());
   await nativePage.addInitScript(()=>{window.registeredWorkerURLs=[];const original=navigator.serviceWorker.register.bind(navigator.serviceWorker);navigator.serviceWorker.register=(url,options)=>{window.registeredWorkerURLs.push(String(url));return original(url,options);};});
   const assets={};for(const asset of ['digital.js','digital.css'])assets[asset]=createHash('sha256').update(await readFile(resolve(root,asset))).digest('hex').slice(0,12);
@@ -129,7 +158,7 @@ try{
   for(const path of ['index.html','election.html','without-markers.html']){
    await nativePage.goto(nativeBase+path);
    await nativePage.waitForFunction(()=>window.registeredWorkerURLs.length>0);
-   await nativePage.evaluate(async()=>{await navigator.serviceWorker.ready;});
+   await stage(`${path} serviceWorker.ready`,()=>nativePage.evaluate(async()=>{await navigator.serviceWorker.ready;}),WORKER_TIMEOUT_MS);
    await nativePage.waitForFunction(()=>!!navigator.serviceWorker.controller);
    const state=await nativePage.evaluate(()=>({registered:window.registeredWorkerURLs,controller:navigator.serviceWorker.controller.scriptURL,scripts:[...document.scripts].map(s=>s.src).filter(src=>/\/digital\.js\?/.test(src)),styles:[...document.querySelectorAll('link[rel="stylesheet"]')].map(s=>s.href).filter(src=>/\/digital\.css\?/.test(src))}));
    assert.deepEqual(state.scripts,[nativeBase+'digital.js?v='+assets['digital.js']],path+' has exactly one current script');
@@ -139,8 +168,13 @@ try{
   }
   await native.close();
  });
-}finally{
- await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));
- const out=new URL('./results/runtime-maturity/',import.meta.url);await mkdir(out,{recursive:true});await writeFile(new URL('report.json',out),JSON.stringify(report,null,2));
- console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
+}catch(value){const error=value instanceof Error?value:new Error(String(value));report.primaryError={stage:error.stageName??activeStage,error:String(error)};if(!error.failureRecorded)report.failures.push({name:error.stageName??activeStage,error:String(error)});}
+finally{
+ if(browser){try{await stage('cleanup Chromium',()=>browser.close(),8000,false);}catch(error){report.cleanupFailures.push({name:'cleanup Chromium',error:String(error)});}}
+ server.closeAllConnections();
+ if(server.listening){try{await stage('cleanup fixture server',()=>new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())),8000,false);}catch(error){report.cleanupFailures.push({name:'cleanup fixture server',error:String(error)});}}
+ report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-suiteStartedAt;
+ const reportPath=new URL('./results/runtime-maturity/report.json',import.meta.url);
+ try{await raceTimeout(async()=>{await mkdir(new URL('./results/runtime-maturity/',import.meta.url),{recursive:true});await writeFile(reportPath,JSON.stringify(report,null,2));},'persist final report',5000);}catch(error){report.cleanupFailures.push({name:'persist final report',error:String(error)});}
+ console.log(JSON.stringify(report,null,2));if(report.failures.length||report.cleanupFailures.length)process.exitCode=1;
 }
