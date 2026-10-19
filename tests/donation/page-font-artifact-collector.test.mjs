@@ -35,7 +35,7 @@ const fontManifest = {
 const browserDiagnostics = {
   route: 'news/example.html',
   artifactRoute: 'news/example.html',
-  visibleCodepoints: [0x4e2d, 0x65e5],
+  visibleCodepoints: [0x4e2d, 0x65e5, 0x2304],
   visibleCodepointsTruncated: false,
   rawTcUnsupportedGlyphOwners: [{
     selector: 'p',
@@ -44,6 +44,10 @@ const browserDiagnostics = {
     fontStyle: 'normal',
     codepoints: [0x65e5],
     sample: '日',
+  }, {
+    selector: 'summary::after',
+    codepoints: [0x2304],
+    sample: '⌄⌄',
   }],
 };
 
@@ -79,11 +83,13 @@ test('collector sends producer-shaped route fonts through one role-complete JSON
     },
   ]);
   assert.deepEqual(serializedArguments.expectedPreloads, [`/${commonPath}`, `/${deltaPath}`]);
-  assert.deepEqual(result.rawTcUnsupportedCodepoints, [0x65e5]);
+  assert.deepEqual(result.rawTcUnsupportedCodepoints, [0x2304, 0x65e5]);
   assert.deepEqual(result.fallbackCodepoints.jp, [0x65e5]);
+  assert.deepEqual(result.fallbackCodepoints.system, [0x2304, 0x2630, 0x2733]);
   assert.equal(result.unexpectedGlyphCount, 0);
   assert.deepEqual(result.rawTcUnsupportedGlyphOwners.map(({ selector, codepoints }) => ({ selector, codepoints })), [
     { selector: 'p', codepoints: [0x65e5] },
+    { selector: 'summary::after', codepoints: [0x2304] },
   ]);
 
   assert.throws(() => validateVisibleCodepointCoverage({

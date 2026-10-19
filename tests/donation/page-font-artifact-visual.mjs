@@ -9,7 +9,7 @@ const FONT_ROLES = ['common', 'delta'];
 
 export const VISUAL_CAPTURE_SEED = 'huiwen-g02-20261018';
 export const VISUAL_CAPTURE_COUNT = 20;
-export const SYSTEM_FALLBACK_CODEPOINTS = Object.freeze([0x2630, 0x2733]);
+export const SYSTEM_FALLBACK_CODEPOINTS = Object.freeze([0x2304, 0x2630, 0x2733]);
 
 export function cssFontWeightRange(axis) {
   assert.ok(axis && Number.isFinite(axis.min) && Number.isFinite(axis.default)
