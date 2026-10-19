@@ -56,6 +56,11 @@ jobs:
       - run: node --check tests/donation/wcag22aa.test.mjs
       - run: node --check tests/donation/wcag22aa-baseline-proposal.mjs
       - run: node --test tests/donation/wcag22aa.test.mjs
+      - name: Verify runtime maturity worker contract with pure fixtures
+        run: |
+          node --check tests/donation/runtime-maturity-worker.mjs
+          node --check tests/donation/runtime-maturity-worker.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/runtime-maturity-worker.test.mjs
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
       - name: Run full-site candidate browser QA against the approved target-size baseline
