@@ -4,9 +4,10 @@ import {chromium} from 'playwright';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {fileURLToPath} from 'node:url';
-import {resolve,extname} from 'node:path';
+import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {waitForWorkerState} from './runtime-maturity-worker.mjs';
+import {resolveRuntimeMaturityFixtureResponse} from './runtime-maturity-fixture.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 let failOptional=false,failRequired=false,disconnected=false;
 const report={checks:[],failures:[],stages:[],stageDiagnostics:[],timeoutDiagnostics:[],cleanupFailures:[],startedAt:new Date().toISOString()};
@@ -14,20 +15,48 @@ const report={checks:[],failures:[],stages:[],stageDiagnostics:[],timeoutDiagnos
 const suiteStartedAt=Date.now(),MAX_SUITE_MS=7*60*1000,CHECK_TIMEOUT_MS=30_000,WORKER_TIMEOUT_MS=15_000;
 let activeStage='initialization',base=null,browser=null,activeDiagnosticPage=null;
 const diagnosticPages=new Map();
+const pageDiagnostics=new Map(),contextDiagnostics=new WeakMap();
 const LEGACY_WORKER_VERSION='20260922-public-service-v11';
 function timeoutError(name,ms){const error=new Error(`Timed out after ${ms}ms at ${name}`);error.code='RUNTIME_MATURITY_TIMEOUT';error.stageName=name;error.timeoutMs=ms;return error;}
 async function raceTimeout(operation,name,ms){let timer;try{return await Promise.race([Promise.resolve().then(operation),new Promise((_,reject)=>{timer=setTimeout(()=>reject(timeoutError(name,ms)),ms);})]);}finally{clearTimeout(timer);}}
 function safeURL(value){try{return new URL(value).origin;}catch{return '[unavailable]';}}
+function safeResourceURL(value){try{const url=new URL(value);return url.origin+url.pathname;}catch{return '[unavailable]';}}
 function safeText(value){
  return String(value)
   .replace(/((?:access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|cookie|session(?:id)?|csrf|secret|password)=)[^&\s,;]+/gi,'$1[REDACTED]')
   .replace(/https?:\/\/[^\s"'`<>]+/g,raw=>{const tail=raw.match(/[),.;]+$/)?.[0]??'',candidate=tail?raw.slice(0,-tail.length):raw;return safeURL(candidate)+tail;});
 }
+function safeDiagnosticText(value){
+ return String(value)
+  .replace(/((?:access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|cookie|session(?:id)?|csrf|secret|password)=)[^&\s,;]+/gi,'$1[REDACTED]')
+  .replace(/https?:\/\/[^\s"'`<>]+/g,raw=>{const tail=raw.match(/[),.;]+$/)?.[0]??'',candidate=tail?raw.slice(0,-tail.length):raw;return safeResourceURL(candidate)+tail;});
+}
 function installWorkerStateWaiter(page){return page.addInitScript(`window.__runtimeMaturityWaitForWorkerState=${waitForWorkerState.toString()};`);}
 function observeWorkerRegistrations(page){return page.addInitScript(()=>{
+ const scrub=value=>{try{const url=new URL(value,location.href);return url.origin+url.pathname;}catch{return null;}};
+ const snapshot=registration=>{
+  if(!registration)return null;
+  const worker=value=>value?{scriptURL:scrub(value.scriptURL),state:value.state}:null;
+  return{scope:scrub(registration.scope),installing:worker(registration.installing),waiting:worker(registration.waiting),active:worker(registration.active)};
+ };
  window.__runtimeMaturityRegistrationCalls=[];
  const original=navigator.serviceWorker.register.bind(navigator.serviceWorker);
- navigator.serviceWorker.register=function(url,options){const pending=original(url,options);window.__runtimeMaturityRegistrationCalls.push({url:String(url),pending});return pending;};
+ navigator.serviceWorker.register=function(url,options){
+  const call={url:String(url),status:'pending',startedAt:performance.now(),stateHistory:[]};
+  window.__runtimeMaturityRegistrationCalls.push(call);
+  let pending;
+  try{pending=original(url,options);}catch(error){call.status='rejected';call.error={name:error?.name??'Error',message:String(error?.message??error).slice(0,240)};call.elapsedMs=performance.now()-call.startedAt;throw error;}
+  call.pending=Promise.resolve(pending).then(registration=>{
+   call.status='resolved';call.elapsedMs=performance.now()-call.startedAt;call.registration=registration;
+   const seen=new WeakSet();
+   const record=()=>{call.stateHistory.push({elapsedMs:Math.round(performance.now()-call.startedAt),registration:snapshot(registration)});if(call.stateHistory.length>12)call.stateHistory.shift();};
+   const watch=worker=>{if(worker&&!seen.has(worker)){seen.add(worker);worker.addEventListener('statechange',record);}};
+   const watchCurrent=()=>{watch(registration.installing);watch(registration.waiting);watch(registration.active);record();};
+   registration.addEventListener('updatefound',watchCurrent);watchCurrent();
+   return registration;
+  },error=>{call.status='rejected';call.error={name:error?.name??'Error',message:String(error?.message??error).slice(0,240)};call.elapsedMs=performance.now()-call.startedAt;throw error;});
+  return call.pending;
+ };
 });}
 async function stage(name,operation,timeoutMs=CHECK_TIMEOUT_MS,enforceSuite=true){
  const previous=activeStage,started=Date.now(),startedAt=new Date().toISOString(),record={name,startedAt};report.stages.push(record);activeStage=name;
@@ -37,7 +66,36 @@ async function stage(name,operation,timeoutMs=CHECK_TIMEOUT_MS,enforceSuite=true
  catch(value){const error=value instanceof Error?value:new Error(String(value));error.stageName??=name;record.status=error.code==='RUNTIME_MATURITY_TIMEOUT'?'TIMEOUT':'ERROR';record.error=safeText(error);if(!error.diagnosticsCaptured){error.diagnosticsCaptured=true;await captureStageDiagnosticsSafely(error);}throw error;}
  finally{record.endedAt=new Date().toISOString();record.durationMs=Date.now()-started;console.log(JSON.stringify({event:'stage-end',name,at:record.endedAt,durationMs:record.durationMs,status:record.status??'ERROR',error:record.error}));activeStage=previous;}
 }
-function trackPage(name,page,defaultTimeout=8000){page.setDefaultTimeout(defaultTimeout);page.setDefaultNavigationTimeout(15_000);diagnosticPages.set(name,page);activeDiagnosticPage=name;return page;}
+function appendBounded(list,value,limit=40){list.push(value);if(list.length>limit)list.splice(0,list.length-limit);}
+function isFixtureURL(value){
+ try{const url=new URL(value),fixture=new URL(base);return url.port===fixture.port&&(url.hostname==='127.0.0.1'||url.hostname==='localhost'||url.hostname.endsWith('.localhost'));}catch{return false;}
+}
+function fixtureRequestDetails(request){return{url:safeResourceURL(request.url()),method:request.method(),resourceType:request.resourceType()};}
+function attachPageDiagnostics(page){
+ const diagnostics={consoleErrors:[],pageErrors:[]};pageDiagnostics.set(page,diagnostics);
+ page.on('console',message=>{if(message.type()==='error')appendBounded(diagnostics.consoleErrors,safeText(message.text()));});
+ page.on('pageerror',error=>appendBounded(diagnostics.pageErrors,safeText(error?.stack??error?.message??error)));
+ const context=page.context();let contextInfo=contextDiagnostics.get(context);
+ if(!contextInfo){
+  contextInfo={responses:[],requestFailures:[],inflight:new Map(),serviceWorkers:[]};contextDiagnostics.set(context,contextInfo);
+  context.on('request',request=>{if(isFixtureURL(request.url()))contextInfo.inflight.set(request,fixtureRequestDetails(request));});
+  context.on('response',response=>{
+   const request=response.request();if(!isFixtureURL(request.url()))return;
+   const entry={...fixtureRequestDetails(request),status:response.status(),cacheControl:null,contentType:null};appendBounded(contextInfo.responses,entry);
+   void response.allHeaders().then(headers=>{entry.cacheControl=headers['cache-control']??null;entry.contentType=headers['content-type']??null;}).catch(()=>{});
+  });
+  context.on('requestfinished',request=>contextInfo.inflight.delete(request));
+  context.on('requestfailed',request=>{
+   contextInfo.inflight.delete(request);if(!isFixtureURL(request.url()))return;
+   appendBounded(contextInfo.requestFailures,{...fixtureRequestDetails(request),failure:safeText(request.failure()?.errorText??'request failed')});
+  });
+  context.on('serviceworker',worker=>{
+   const info={url:safeResourceURL(worker.url()),console:[]};appendBounded(contextInfo.serviceWorkers,info,12);
+   if(typeof worker.on==='function')worker.on('console',message=>appendBounded(info.console,safeText(message.text()),20));
+  });
+ }
+}
+function trackPage(name,page,defaultTimeout=8000){page.setDefaultTimeout(defaultTimeout);page.setDefaultNavigationTimeout(15_000);diagnosticPages.set(name,page);activeDiagnosticPage=name;attachPageDiagnostics(page);return page;}
 async function captureStageDiagnostics(error){
  const recent=report.stages.at(-1),snapshot={at:new Date().toISOString(),stage:error.stageName??activeStage,recentStage:recent?{name:recent.name,status:recent.status??null,startedAt:recent.startedAt,endedAt:recent.endedAt??null,error:recent.error??null}:null,timeoutMs:error.timeoutMs??null,elapsedMs:Date.now()-suiteStartedAt,page:null,pages:[]};
  try{
@@ -46,7 +104,22 @@ async function captureStageDiagnostics(error){
    const item={name,closed};
    if(!closed){
     try{item.url=safeURL(page.url());}catch{item.url=null;}
-    try{item.runtime=await raceTimeout(()=>page.evaluate(()=>{const scrub=value=>{try{const url=new URL(value,location.href);return url.origin+url.pathname;}catch{return null;}};const controller=navigator.serviceWorker?.controller?.scriptURL??null;return{readyState:document.readyState,serviceWorkerController:controller?scrub(controller):null,digitalAssets:performance.getEntriesByType('resource').map(entry=>scrub(entry.name)).filter(url=>url&&/digital\.(js|css)|sw\.js/.test(url)).slice(-8)};}),`${name} stage snapshot`,1500);}catch(snapshotError){item.runtimeError=safeText(snapshotError);}
+    try{
+     item.runtime=await raceTimeout(()=>page.evaluate(async()=>{
+     const scrub=value=>{try{const url=new URL(value,location.href);return url.origin+url.pathname;}catch{return null;}};
+     const registration=value=>{if(!value)return null;const worker=item=>item?{scriptURL:scrub(item.scriptURL),state:item.state}:null;return{scope:scrub(value.scope),installing:worker(value.installing),waiting:worker(value.waiting),active:worker(value.active)};};
+     const calls=(window.__runtimeMaturityRegistrationCalls??[]).slice(-8).map(call=>({url:scrub(call.url),status:call.status,elapsedMs:Math.round(call.elapsedMs??(performance.now()-call.startedAt)),error:call.error??null,registration:registration(call.registration),stateHistory:(call.stateHistory??[]).slice(-8)}));
+     const probe=window.__runtimeMaturityOfflineProbe;
+     let currentRegistrations=[];try{currentRegistrations=await navigator.serviceWorker?.getRegistrations()??[];}catch{}
+     const controller=navigator.serviceWorker?.controller??null;
+     return{readyState:document.readyState,serviceWorkerController:controller?{scriptURL:scrub(controller.scriptURL),state:controller.state}:null,digitalAssets:performance.getEntriesByType('resource').map(entry=>scrub(entry.name)).filter(url=>url&&/digital\.(js|css)|sw\.js/.test(url)).slice(-8),registrationCalls:calls,registrations:currentRegistrations.map(registration),offlineProbe:probe?{registerStatus:probe.registerStatus,readyStatus:probe.readyStatus,registerError:probe.registerError??null,readyError:probe.readyError??null,registration:registration(probe.registration)}:null};
+    }),`${name} stage snapshot`,1500);
+     for(const call of item.runtime.registrationCalls??[])if(call.error?.message)call.error.message=safeDiagnosticText(call.error.message);
+     for(const key of ['registerError','readyError'])if(item.runtime.offlineProbe?.[key]?.message)item.runtime.offlineProbe[key].message=safeDiagnosticText(item.runtime.offlineProbe[key].message);
+    }catch(snapshotError){item.runtimeError=safeText(snapshotError);}
+    const observed=pageDiagnostics.get(page),contextInfo=contextDiagnostics.get(page.context());
+    if(observed||contextInfo)item.network={responses:contextInfo?.responses.slice(-40)??[],requestFailures:contextInfo?.requestFailures.slice(-20)??[],inflight:[...(contextInfo?.inflight.values()??[])].slice(-20),consoleErrors:observed?.consoleErrors.slice(-20)??[],pageErrors:observed?.pageErrors.slice(-10)??[]};
+    if(contextInfo)item.serviceWorkerConsole=contextInfo.serviceWorkers.slice(-12);
    }
    snapshot.pages.push(item);
   }
@@ -67,18 +140,9 @@ async function captureStageDiagnosticsSafely(error){
 const server=createServer(async(req,res)=>{
   if(disconnected){req.socket.destroy();return;}
   const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
-  if(failRequired&&pathname==='/offline.html'){setTimeout(()=>{if(!res.destroyed){res.writeHead(503);res.end('fixture unavailable');}},150);return;}
-  if(failOptional&&/\.(css|svg)$/.test(pathname)){res.writeHead(503);res.end('fixture unavailable');return;}
-  try{let data;
-    if(pathname==='/worker-upgrade-legacy.html')data=Buffer.from(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Legacy worker fixture</title><script defer src="digital.js?v=${LEGACY_WORKER_VERSION}"></script></head><body><main>Legacy worker upgrade fixture</main></body></html>`);
-    else if(pathname==='/worker-upgrade-current.html'){const digital=await readFile(resolve(root,'digital.js')),hash=createHash('sha256').update(digital).digest('hex').slice(0,12);data=Buffer.from(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>Current worker fixture</title><script defer src="digital.js?v=${hash}"></script></head><body><main>Current worker upgrade fixture</main></body></html>`);}
-    else{const path=resolve(root,'.'+(pathname==='/'||pathname==='/without-markers.html'?'/index.html':pathname));if(!path.startsWith(root)){res.writeHead(403);res.end();return;}data=await readFile(path);}
-    if(pathname==='/without-markers.html')data=Buffer.from(data.toString().replace(/ data-digital-civic="[^"]+"/g,''));
-    // Reproduce an edge retaining the previous release under its old immutable URL.
-    if(pathname==='/digital.js'&&req.url.includes(`v=${LEGACY_WORKER_VERSION}`))data=Buffer.from(data.toString().replace(/const SERVICE_WORKER_VERSION = '[^']+'/,`const SERVICE_WORKER_VERSION = '${LEGACY_WORKER_VERSION}'`));
-    if(pathname==='/sw.js'&&req.url.includes(`v=${LEGACY_WORKER_VERSION}`))data=Buffer.from("self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));");
-    res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'})[extname(pathname)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}
-  catch{res.writeHead(404,{'Content-Type':'text/html'});res.end('<h1>Not found</h1>');}
+  const fixture=await resolveRuntimeMaturityFixtureResponse({root,pathname,requestURL:req.url,failOptional,failRequired,legacyWorkerVersion:LEGACY_WORKER_VERSION});
+  const respond=()=>{if(!res.destroyed){res.writeHead(fixture.status,fixture.headers);res.end(fixture.body);}};
+  if(fixture.delayMs)setTimeout(respond,fixture.delayMs);else respond();
 });
 async function check(name,fn){try{await stage(name,fn,CHECK_TIMEOUT_MS);report.checks.push({name,status:'PASS'});}catch(value){const error=value instanceof Error?value:new Error(String(value));report.failures.push({name,error:safeText(error)});if(error.code==='RUNTIME_MATURITY_TIMEOUT'){error.failureRecorded=true;throw error;}}}
 try{
@@ -204,13 +268,20 @@ try{
   if(primaryError)throw primaryError;if(closeError)throw closeError;
  });
  // Remaining service worker cases use isolated browser contexts and storage.
- const sw=await stage('create offline worker context',()=>browser.newContext(),10_000);const client=trackPage('offline-worker',await stage('create offline worker page',()=>sw.newPage(),10_000));
+ const sw=await stage('create offline worker context',()=>browser.newContext(),10_000);const client=trackPage('offline-worker',await stage('create offline worker page',()=>sw.newPage(),10_000));await observeWorkerRegistrations(client);
  await check('partial optional shell failure still installs required offline document; upgrade purges old raw cache',async()=>{
   await client.goto(base+'offline.html');
   await client.evaluate(async()=>{const c=await caches.open('huiwen-digital-v11-fixture');await c.put('data/achievements.json',new Response('[{"id":"fixture-unpublished"}]'));});
   failOptional=true;
   try{
-   await stage('offline worker registration and ready',()=>client.evaluate(async()=>{await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;}),WORKER_TIMEOUT_MS);
+   await stage('offline worker registration and ready',()=>client.evaluate(async()=>{
+    const probe=window.__runtimeMaturityOfflineProbe={registerStatus:'pending',readyStatus:'not-started',startedAt:performance.now(),registration:null};
+    try{probe.registration=await navigator.serviceWorker.register('sw.js');probe.registerStatus='resolved';probe.registerElapsedMs=Math.round(performance.now()-probe.startedAt);}
+    catch(error){probe.registerStatus='rejected';probe.registerElapsedMs=Math.round(performance.now()-probe.startedAt);probe.registerError={name:error?.name??'Error',message:String(error?.message??error).slice(0,240)};throw error;}
+    probe.readyStatus='pending';probe.readyStartedAt=performance.now();
+    try{await navigator.serviceWorker.ready;probe.readyStatus='resolved';probe.readyElapsedMs=Math.round(performance.now()-probe.readyStartedAt);}
+    catch(error){probe.readyStatus='rejected';probe.readyElapsedMs=Math.round(performance.now()-probe.readyStartedAt);probe.readyError={name:error?.name??'Error',message:String(error?.message??error).slice(0,240)};throw error;}
+   }),WORKER_TIMEOUT_MS);
    await client.waitForFunction(()=>!!navigator.serviceWorker.controller);
    const expectedCache=(await readFile(resolve(root,'sw.js'),'utf8')).match(/const CACHE='([^']+)'/)[1];
    const keys=await client.evaluate(()=>caches.keys());assert.deepEqual(keys,[expectedCache]);
