@@ -128,6 +128,36 @@ class FingerprintedDynamicScriptTests(unittest.TestCase):
             private_text = fonts.dynamic_ui_text("404.html", private_page, root)
             self.assertNotIn("搜尋政績、新聞、歷屆政見、活動與服務資訊。", private_text)
 
+    def test_artifact_press_runtime_uses_verified_hash_for_pagination_text(self):
+        payload = b"const PAGE_SIZE = 1;"
+        digest = sha256(payload).hexdigest()
+        html = (
+            '<section data-press-index><span data-press-count></span>'
+            '<div data-press-grid><article data-news-categories></article>'
+            '<article data-news-categories></article></div>'
+            '<nav data-press-pagination></nav></section>'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script_name = f"press.{digest}.js"
+            (root / script_name).write_bytes(payload)
+            page = BeautifulSoup(f'<script src="/{script_name}"></script>{html}', "html5lib")
+            text = fonts.dynamic_ui_text("press.html", page, root)
+            self.assertIn("全部 · 2 筆 · 第 1/2 頁", text)
+            self.assertIn("新聞發稿第 2 頁", text)
+
+            mismatch_name = f"press.{'0' * 64}.js"
+            (root / mismatch_name).write_bytes(payload)
+            mismatch = BeautifulSoup(f'<script src="/{mismatch_name}"></script>{html}', "html5lib")
+            with self.assertRaisesRegex(ValueError, "FILENAME_HASH_MISMATCH"):
+                fonts.dynamic_ui_text("press.html", mismatch, root)
+
+            private_page = BeautifulSoup(
+                f'<script src="/drafts/{script_name}"></script>{html}', "html5lib",
+            )
+            with self.assertRaisesRegex(ValueError, "SCRIPT_PATH_UNSAFE"):
+                fonts.dynamic_ui_text("press.html", private_page, root)
+
 
 class Q9FontProducerTests(unittest.TestCase):
     @classmethod
