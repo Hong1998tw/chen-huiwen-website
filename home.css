@@ -318,9 +318,9 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
     width: 100%;
     height: auto;
     min-height: 0;
-    max-width: none;
+    max-width: 160px;
     margin: 0;
-    justify-self: stretch;
+    justify-self: end;
     align-self: start;
   }
   #main.home-redesign .portrait-frame { aspect-ratio: 2 / 3; }
@@ -414,6 +414,15 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
   body.homepage-v2 .footer-grid > div:first-child { grid-column: 1 / -1}
   body.homepage-v2 .footer-bottom { gap: 10px; margin-top: 16px; padding-top: 12px}
   body.homepage-v2 .footer-bottom > div { gap: 8px 12px}
+}
+
+@media (max-width: 780px) and (max-height: 360px) {
+  #main.home-redesign .hero { row-gap: 12px; padding-top: 12px; }
+  #main.home-redesign .hero-portrait {
+    width: min(100%, 100px);
+    max-width: 100px;
+    justify-self: end;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

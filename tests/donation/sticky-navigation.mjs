@@ -36,7 +36,8 @@ try {
       const box = await page.locator('.portrait-frame').boundingBox();
       assert(box && box.width > 0 && box.height > 0);
       assert(box.x >= 0 && box.x + box.width <= width);
-      assert(Math.abs(box.width / box.height - 1.04) < 0.02);
+      const expectedRatio = width <= 780 ? 2 / 3 : 1.04;
+      assert(Math.abs(box.width / box.height - expectedRatio) < 0.02);
       assert.equal(await page.locator('h1').count(),1);
       assert.equal(await page.locator('.hero-portrait img').getAttribute('loading'),'eager');
       await assertNoHorizontalOverflow(page,{directory:fileURLToPath(new URL('./results/sticky-navigation/'+engine+'/diagnostics/',import.meta.url)),label:`${width}-homepage-layout`});

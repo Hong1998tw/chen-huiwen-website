@@ -127,6 +127,12 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const frame = ruleFor(rules, '#main.home-redesign .portrait-frame');
   const compactHero = ruleFor(rules, '#main.home-redesign .hero', 'max-height: 800px');
   const compactPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-height: 800px');
+  const compactMobileHero = rules.find(rule => rule.selectors.includes('#main.home-redesign .hero')
+    && rule.media.join(' ').includes('max-width: 780px')
+    && rule.media.join(' ').includes('max-height: 360px'));
+  const compactMobilePortrait = rules.find(rule => rule.selectors.includes('#main.home-redesign .hero-portrait')
+    && rule.media.join(' ').includes('max-width: 780px')
+    && rule.media.join(' ').includes('max-height: 360px'));
   const narrowHero = ruleFor(rules, '#main.home-redesign .hero', 'max-width: 300px');
   const narrowPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-width: 300px');
 
@@ -187,9 +193,9 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     width: '100%',
     height: 'auto',
     'min-height': '0',
-    'max-width': 'none',
+    'max-width': '160px',
     margin: '0',
-    'justify-self': 'stretch',
+    'justify-self': 'end',
     'align-self': 'start',
   }, 'mobile portrait reset');
   assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'desktop portrait frame keeps its established ratio');
@@ -202,6 +208,12 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   assertDeclarations(narrowPortrait, { width: 'min(100%, 260px)', 'max-width': '260px', 'justify-self': 'center' }, 'narrow portrait reflow');
   assertDeclarations(compactHero, { 'row-gap': '20px', 'padding-top': '24px' }, 'short desktop hero');
   assertDeclarations(compactPortrait, { width: 'min(100%, 320px)' }, 'short desktop portrait');
+  assertDeclarations(compactMobileHero, { 'row-gap': '12px', 'padding-top': '12px' }, 'short mobile hero');
+  assertDeclarations(compactMobilePortrait, {
+    width: 'min(100%, 100px)',
+    'max-width': '100px',
+    'justify-self': 'end',
+  }, 'short mobile portrait remains right aligned');
 });
 
 test('canonical portrait sizes match the generated homepage image source', async () => {
@@ -209,7 +221,7 @@ test('canonical portrait sizes match the generated homepage image source', async
   const built = await read('index.html');
   const source = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<source\b[^>]*sizes="([^"]+)"/i)?.[1];
   const alt = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<img\b[^>]*alt="([^"]+)"/i)?.[1];
-  const expectedSizes = '(max-width: 300px) calc(100vw - 40px), (max-width: 620px) calc(38.3vw - 20px), (max-width: 780px) calc(38.3vw - 30px), 380px';
+  const expectedSizes = '(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(38.3vw - 20px), 160px), (max-width: 780px) min(calc(38.3vw - 30px), 160px), 380px';
 
   assert.equal(source(template), expectedSizes, 'canonical template describes the new mobile portrait width');
   assert.equal(source(built), expectedSizes, 'generated homepage uses the canonical mobile portrait width');
