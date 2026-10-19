@@ -40,10 +40,10 @@ try{
    const actions=page.locator('.hero-actions a');
    const actual=await actions.evaluateAll(rows=>rows.map(a=>({href:a.getAttribute('href'),label:a.innerText.trim()})));
    assert.deepEqual(actual,[
-    {href:'service.html#contact',label:'聯絡服務處'},
+    {href:'tel:+88678212536',label:'撥打服務處'},
     {href:'https://line.me/R/ti/p/@yve2766q',label:'LINE 官方帳號 ↗'}
    ]);
-   for(const href of ['service.html#contact','https://line.me/R/ti/p/@yve2766q']){
+   for(const href of ['tel:+88678212536','https://line.me/R/ti/p/@yve2766q']){
     const a=page.locator('.hero-actions a[href="'+href+'"]');assert(await a.isVisible());
     const b=await a.boundingBox();assert(b.y+b.height<844);
    }
