@@ -17,6 +17,7 @@ export async function resolveRuntimeMaturityFixtureResponse({
   requestURL,
   failOptional = false,
   failRequired = false,
+  noStore = false,
   legacyWorkerVersion,
   readFileImpl = readFile,
 }) {
@@ -57,7 +58,7 @@ export async function resolveRuntimeMaturityFixtureResponse({
         'Content-Type': CONTENT_TYPES[extname(pathname)] || 'application/octet-stream',
         // Match the repository's documented Cloudflare Static Assets default.
         // In particular, the production worker must be able to cache offline.html.
-        'Cache-Control': pathname === '/deployment.json' ? 'no-store' : STATIC_ASSET_CACHE_CONTROL,
+        'Cache-Control': pathname === '/deployment.json' || noStore ? 'no-store' : STATIC_ASSET_CACHE_CONTROL,
       },
       body: data,
     };

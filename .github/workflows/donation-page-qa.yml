@@ -58,6 +58,9 @@ jobs:
       - run: node --test tests/donation/wcag22aa.test.mjs
       - name: Verify runtime maturity worker contract with pure fixtures
         run: |
+          node --check tests/donation/runtime-maturity-fixture.mjs
+          node --check tests/donation/runtime-maturity-fixture.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/runtime-maturity-fixture.test.mjs
           node --check tests/donation/runtime-maturity-worker.mjs
           node --check tests/donation/runtime-maturity-worker.test.mjs
           node --unhandled-rejections=strict --test tests/donation/runtime-maturity-worker.test.mjs

@@ -24,6 +24,127 @@ const policyContext = {URL};
 vm.runInNewContext(policyBlock[1] + '\nglobalThis.__policyUnderTest = cachePolicy;', policyContext);
 const policy = policyContext.__policyUnderTest;
 const legacyWorkerVersion = '20260922-public-service-v11';
+const serviceWorkerScope = 'http://127.0.0.1/';
+
+class FakeCache {
+  constructor(name) {
+    this.name = name;
+    this.responses = new Map();
+  }
+
+  async put(request, response) {
+    this.responses.set(request.url, response.clone());
+  }
+
+  async match(request) {
+    const url = typeof request === 'string' ? new URL(request, serviceWorkerScope).href : request.url;
+    return this.responses.get(url)?.clone();
+  }
+
+  async keys() {
+    return [...this.responses.keys()].map(url => new Request(url));
+  }
+
+  async delete(request) {
+    const url = typeof request === 'string' ? new URL(request, serviceWorkerScope).href : request.url;
+    return this.responses.delete(url);
+  }
+}
+
+class FakeCacheStorage {
+  constructor() {
+    this.stores = new Map();
+  }
+
+  async open(name) {
+    if (!this.stores.has(name)) this.stores.set(name, new FakeCache(name));
+    return this.stores.get(name);
+  }
+
+  async keys() {
+    return [...this.stores.keys()];
+  }
+
+  async delete(name) {
+    return this.stores.delete(name);
+  }
+}
+
+async function createProductionInstall({failOptional = false, failRequired = false, noStore = false} = {}) {
+  const listeners = new Map();
+  const caches = new FakeCacheStorage();
+  const oldCacheName = 'huiwen-digital-v14-previous';
+  const oldOfflineURL = new URL('./offline.html', serviceWorkerScope).href;
+  const oldCache = await caches.open(oldCacheName);
+  await oldCache.put(new Request(oldOfflineURL), new Response('previous cache sentinel'));
+  const fetched = [];
+  const fixtureResponses = [];
+  let skipWaitingCalls = 0;
+  const self = {
+    registration: {scope: serviceWorkerScope},
+    addEventListener(type, listener) {
+      const handlers = listeners.get(type) || [];
+      handlers.push(listener);
+      listeners.set(type, handlers);
+    },
+    async skipWaiting() {
+      skipWaitingCalls += 1;
+    },
+    clients: {async claim() {}},
+  };
+  const fixtureFetch = async request => {
+    const url = new URL(request.url);
+    fetched.push(url.pathname);
+    const fixture = await resolveRuntimeMaturityFixtureResponse({
+      root,
+      pathname: url.pathname,
+      requestURL: request.url,
+      failOptional,
+      failRequired,
+      noStore,
+      legacyWorkerVersion,
+    });
+    fixtureResponses.push({pathname: url.pathname, status: fixture.status, cacheControl: fixture.headers['Cache-Control'] || null});
+    return new Response(fixture.body, {status: fixture.status, headers: fixture.headers});
+  };
+  const context = {
+    self,
+    caches,
+    fetch: fixtureFetch,
+    URL,
+    Request,
+    Response,
+    Headers,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+  };
+  const sourceWithContractReadback = `${workerSource}\n;globalThis.__workerContract = {cacheName: CACHE, offline: OFFLINE, shell: SHELL.slice(), requiredShell: REQUIRED_SHELL.slice()};`;
+  vm.runInNewContext(sourceWithContractReadback, context, {filename: 'sw.js', timeout: 1000});
+
+  const installHandlers = listeners.get('install') || [];
+  assert.equal(installHandlers.length, 1, 'the full production worker registers one install handler');
+  const waitUntilPromises = [];
+  installHandlers[0]({
+    waitUntil(promise) {
+      const tracked = Promise.resolve(promise);
+      tracked.catch(() => {});
+      waitUntilPromises.push(tracked);
+    },
+  });
+  assert.equal(waitUntilPromises.length, 1, 'the production install handler must extend install with waitUntil');
+
+  return {
+    caches,
+    contract: context.__workerContract,
+    fetched,
+    fixtureResponses,
+    installPromise: waitUntilPromises[0],
+    oldOfflineURL,
+    oldCacheName,
+    get skipWaitingCalls() { return skipWaitingCalls; },
+  };
+}
 
 function isCacheableOfflineResponse(fixture) {
   const request = new Request('http://127.0.0.1/offline.html');
@@ -110,4 +231,66 @@ test('legacy worker route remains isolated from the current production worker so
   ));
   assert.equal(legacyWorker.body.toString(), "self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));");
   assert.equal(currentWorker.body.toString(), workerSource);
+});
+
+test('the full production install handler caches its required offline document', async () => {
+  const runtime = await createProductionInstall();
+  assert.equal(runtime.contract.offline, './offline.html');
+  assert.deepEqual(Array.from(runtime.contract.requiredShell), [], 'production currently has no additional REQUIRED_SHELL assets');
+  assert(runtime.contract.shell.length > 0, 'SHELL assets remain a separate optional group');
+  await runtime.installPromise;
+
+  const offlineURL = new URL(runtime.contract.offline, serviceWorkerScope).href;
+  const cache = await runtime.caches.open(runtime.contract.cacheName);
+  const cachedOffline = await cache.match(offlineURL);
+  assert(cachedOffline, 'the real install handler must write offline.html to CacheStorage');
+  assert.equal(cachedOffline.headers.get('Cache-Control'), 'public, max-age=0, must-revalidate');
+  assert.match(await cachedOffline.text(), /這一頁尚未儲存/);
+  assert.equal(runtime.skipWaitingCalls, 1);
+  const preservedOldOffline = await (await runtime.caches.open(runtime.oldCacheName)).match(runtime.oldOfflineURL);
+  assert.equal(await preservedOldOffline.text(), 'previous cache sentinel', 'install must leave existing cache contents intact');
+});
+
+test('the full production install handler rejects no-store offline and preserves the old cache', async () => {
+  const runtime = await createProductionInstall({noStore: true});
+  await assert.rejects(runtime.installPromise, /Offline fallback unavailable/);
+
+  const offlineURL = new URL(runtime.contract.offline, serviceWorkerScope).href;
+  const cache = await runtime.caches.open(runtime.contract.cacheName);
+  assert.deepEqual(runtime.fixtureResponses[0], {
+    pathname: '/offline.html',
+    status: 200,
+    cacheControl: 'no-store',
+  });
+  assert.equal(await cache.match(offlineURL), undefined, 'no-store required offline response must not be written');
+  const preservedOldOffline = await (await runtime.caches.open(runtime.oldCacheName)).match(runtime.oldOfflineURL);
+  assert.equal(await preservedOldOffline.text(), 'previous cache sentinel', 'failed install must preserve prior cached content');
+  assert.equal(runtime.skipWaitingCalls, 0);
+});
+
+test('the full production install handler rejects an HTTP failure for required offline', async () => {
+  const runtime = await createProductionInstall({failRequired: true});
+  await assert.rejects(runtime.installPromise, /Offline fallback unavailable/);
+
+  const offlineURL = new URL(runtime.contract.offline, serviceWorkerScope).href;
+  const cache = await runtime.caches.open(runtime.contract.cacheName);
+  assert.equal(runtime.fixtureResponses[0].pathname, '/offline.html');
+  assert.equal(runtime.fixtureResponses[0].status, 503, 'the actual required response fixture must be HTTP 503');
+  assert.equal(await cache.match(offlineURL), undefined, '503 required offline response must not be written');
+  assert.equal(runtime.skipWaitingCalls, 0);
+});
+
+test('the full production install handler tolerates failed optional shell assets', async () => {
+  const runtime = await createProductionInstall({failOptional: true});
+  await runtime.installPromise;
+
+  const offlineURL = new URL(runtime.contract.offline, serviceWorkerScope).href;
+  const cache = await runtime.caches.open(runtime.contract.cacheName);
+  assert(await cache.match(offlineURL), 'the required offline document still installs');
+  for (const optionalPath of ['/digital.css', '/assets/favicon.svg']) {
+    assert(runtime.fetched.includes(optionalPath), `${optionalPath} must be fetched by the production SHELL pass`);
+    assert.equal(runtime.fixtureResponses.find(response => response.pathname === optionalPath)?.status, 503);
+    assert.equal(await cache.match(new URL(optionalPath, serviceWorkerScope).href), undefined, `${optionalPath} 503 must not be cached`);
+  }
+  assert.equal(runtime.skipWaitingCalls, 1, 'optional failures must not block successful installation');
 });
