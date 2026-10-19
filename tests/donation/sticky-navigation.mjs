@@ -129,7 +129,20 @@ try {
     }
     await context.close();
   }
-  await check('restored mobile scroll keeps an early menu focused and aligned after the first header sample', async()=>{
+  const earlyMenuCheck='restored mobile scroll keeps an early menu focused and aligned after the first header sample';
+  const earlyMenuDiagnostics={
+    requestedSeed:250,
+    fontStatus:null,
+    images:null,
+    actualSeed:null,
+    pendingCallbacksBeforeSample:null,
+    menuOpenedBeforeSample:null,
+    focusInsideMenuBeforeSample:null,
+    firstSample:null,
+    afterFirstSample:null,
+    settledGeometry:null,
+  };
+  await check(earlyMenuCheck, async()=>{
     const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'no-preference'});
     try {
       await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
@@ -143,29 +156,84 @@ try {
           document.documentElement.style.scrollBehavior='auto';
           window.scrollTo({top:250,behavior:'instant'});
           const nativeRequestAnimationFrame=window.requestAnimationFrame.bind(window);
+          window.__waitForStableRestoredLayout=async()=>{
+            await document.fonts.ready;
+            const images=[...document.images].filter(image=>{
+              const rect=image.getBoundingClientRect();
+              return image.loading!=='lazy'||image.complete||(rect.bottom>0&&rect.top<innerHeight);
+            });
+            const imageStates=await Promise.all(images.map(async image=>{
+              try { await image.decode(); } catch {}
+              return {complete:image.complete,naturalWidth:image.naturalWidth};
+            }));
+            await new Promise(resolve=>nativeRequestAnimationFrame(()=>nativeRequestAnimationFrame(resolve)));
+            return {fontStatus:document.fonts.status,imageCount:document.images.length,observedImages:imageStates};
+          };
           const pendingHeaderFrames=[];
           window.requestAnimationFrame=callback=>{pendingHeaderFrames.push(callback);return pendingHeaderFrames.length;};
           window.__pendingHeaderFrames=()=>pendingHeaderFrames.length;
           window.__flushHeaderFrames=()=>{
             const callbacks=pendingHeaderFrames.splice(0);
             window.requestAnimationFrame=nativeRequestAnimationFrame;
-            callbacks.forEach(callback=>callback(performance.now()));
-            return callbacks.length;
+            const toggle=document.querySelector('.menu-toggle');
+            const navigation=document.querySelector('#navigation');
+            const firstSample={
+              sampledAtMs:performance.now(),
+              scrollY:window.scrollY,
+              pendingCallbacks:callbacks.length,
+              menuOpenedBeforeSample:toggle?.getAttribute('aria-expanded')==='true',
+              focusInsideMenuBeforeSample:navigation?.contains(document.activeElement)===true,
+            };
+            window.__firstHeaderSample=firstSample;
+            callbacks.forEach(callback=>callback(firstSample.sampledAtMs));
+            return {callbackCount:callbacks.length,firstSample};
           };
         })();\n`;
         await route.fulfill({response,body:prelude+source});
       });
       await page.goto(base+'service.html');
       assert.equal(await page.evaluate(()=>typeof window.__flushHeaderFrames),'function');
-      assert.equal(await page.evaluate(()=>scrollY),250);
-      assert.equal(await page.evaluate(()=>window.__pendingHeaderFrames()),1);
+      const layoutReadiness=await page.evaluate(()=>window.__waitForStableRestoredLayout());
+      earlyMenuDiagnostics.fontStatus=layoutReadiness.fontStatus;
+      earlyMenuDiagnostics.images={
+        total:layoutReadiness.imageCount,
+        observed:layoutReadiness.observedImages.length,
+        states:layoutReadiness.observedImages,
+      };
+      assert.equal(layoutReadiness.fontStatus,'loaded',JSON.stringify(earlyMenuDiagnostics));
+      assert(layoutReadiness.observedImages.every(image=>image.complete),JSON.stringify(earlyMenuDiagnostics));
+      await page.evaluate(seed=>window.scrollTo({top:seed,behavior:'instant'}),earlyMenuDiagnostics.requestedSeed);
+      await page.waitForFunction(seed=>window.scrollY===seed,earlyMenuDiagnostics.requestedSeed,{polling:10});
+      const seededState=await page.evaluate(()=>({actualSeed:window.scrollY,pendingCallbacks:window.__pendingHeaderFrames()}));
+      earlyMenuDiagnostics.actualSeed=seededState.actualSeed;
+      assert.equal(earlyMenuDiagnostics.actualSeed,earlyMenuDiagnostics.requestedSeed,JSON.stringify(earlyMenuDiagnostics));
+      assert(earlyMenuDiagnostics.actualSeed>0,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(seededState.pendingCallbacks,1,JSON.stringify(earlyMenuDiagnostics));
       const toggle=await page.locator('.menu-toggle').boundingBox();
       assert(toggle);
       await page.mouse.click(toggle.x+toggle.width/2,toggle.y+toggle.height/2);
-      assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'),'true');
       await page.evaluate(()=>{window.__earlyMenuFocus=document.activeElement;});
-      assert(await page.evaluate(()=>document.querySelector('#navigation').contains(document.activeElement)));
-      assert.equal(await page.evaluate(()=>window.__flushHeaderFrames()),1);
+      const beforeSample=await page.evaluate(()=>({
+        menuOpened:document.querySelector('.menu-toggle').getAttribute('aria-expanded')==='true',
+        focusInsideMenu:document.querySelector('#navigation').contains(document.activeElement),
+        pendingCallbacks:window.__pendingHeaderFrames(),
+      }));
+      earlyMenuDiagnostics.menuOpenedBeforeSample=beforeSample.menuOpened;
+      earlyMenuDiagnostics.focusInsideMenuBeforeSample=beforeSample.focusInsideMenu;
+      earlyMenuDiagnostics.pendingCallbacksBeforeSample=beforeSample.pendingCallbacks;
+      assert.equal(beforeSample.menuOpened,true,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(beforeSample.focusInsideMenu,true,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(beforeSample.pendingCallbacks,1,JSON.stringify(earlyMenuDiagnostics));
+      const flush=await page.evaluate(()=>window.__flushHeaderFrames());
+      earlyMenuDiagnostics.firstSample=flush.firstSample;
+      assert.equal(flush.callbackCount,1,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(flush.firstSample.scrollY,earlyMenuDiagnostics.actualSeed,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(flush.firstSample.menuOpenedBeforeSample,true,JSON.stringify(earlyMenuDiagnostics));
+      assert.equal(flush.firstSample.focusInsideMenuBeforeSample,true,JSON.stringify(earlyMenuDiagnostics));
+      earlyMenuDiagnostics.afterFirstSample=await page.evaluate(()=>({
+        compact:document.querySelector('.site-header').classList.contains('is-compact'),
+        menuOpened:document.querySelector('.menu-toggle').getAttribute('aria-expanded')==='true',
+      }));
       await page.waitForFunction(()=>{
         const header=document.querySelector('.site-header');
         const navigation=document.querySelector('#navigation');
@@ -174,12 +242,28 @@ try {
           Math.abs(header.getBoundingClientRect().height-52)<=0.5&&
           menuTop===Math.ceil(header.getBoundingClientRect().bottom+12);
       });
+      earlyMenuDiagnostics.settledGeometry=await page.evaluate(()=>{
+        const header=document.querySelector('.site-header');
+        const navigation=document.querySelector('#navigation');
+        const headerBox=header.getBoundingClientRect();
+        return {
+          scrollY:window.scrollY,
+          compact:header.classList.contains('is-compact'),
+          headerHeight:headerBox.height,
+          menuTop:Number.parseFloat(navigation.style.getPropertyValue('--menu-top')),
+          expectedMenuTop:Math.ceil(headerBox.bottom+12),
+          menuOpened:document.querySelector('.menu-toggle').getAttribute('aria-expanded')==='true',
+          focusInsideMenu:navigation.contains(document.activeElement),
+        };
+      });
       assert(await page.evaluate(()=>document.querySelector('#navigation').contains(document.activeElement)));
       assert(await page.evaluate(()=>document.activeElement===window.__earlyMenuFocus));
     } finally {
       await context.close();
     }
   });
+  const earlyMenuRecord=report.checks.find(item=>item.name===earlyMenuCheck)||report.failures.find(item=>item.name===earlyMenuCheck);
+  if(earlyMenuRecord) earlyMenuRecord.diagnostics=earlyMenuDiagnostics;
   await check('no JavaScript navigation remains visible and scrolls normally', async()=>{
     const context=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
     const page=await context.newPage();
