@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import types
 
 
@@ -93,6 +94,53 @@ def _builder_inputs_clean(root):
 
 
 _UNSUPPORTED = object()
+
+# `_CLOUDFLARE_CACHE` is process-local and never persists keys. Keep a strong
+# reference for every class whose module binding contributes to a fixture key:
+# the reference prevents CPython from reusing its id for a replacement class.
+_CLASS_IDENTITY_LOCK = threading.Lock()
+_CLASS_IDENTITY_REFERENCES = {}
+_CLASS_IDENTITY_SEQUENCE = 0
+
+
+def _class_identity_token(value):
+    """Return a process-local token while retaining the class against id reuse."""
+    global _CLASS_IDENTITY_SEQUENCE
+    identity = id(value)
+    with _CLASS_IDENTITY_LOCK:
+        registered = _CLASS_IDENTITY_REFERENCES.get(identity)
+        if registered is not None:
+            if registered[0] is not value:
+                return _UNSUPPORTED
+            return registered[1]
+        _CLASS_IDENTITY_SEQUENCE += 1
+        token = _CLASS_IDENTITY_SEQUENCE
+        _CLASS_IDENTITY_REFERENCES[identity] = (value, token)
+        return token
+
+
+def _canonical_class_binding(value):
+    """Resolve a class's module/qualname without invoking dynamic attributes."""
+    module_name = type.__getattribute__(value, '__module__')
+    qualname = type.__getattribute__(value, '__qualname__')
+    if not isinstance(module_name, str) or not isinstance(qualname, str):
+        return _UNSUPPORTED
+    owner = sys.modules.get(module_name)
+    if owner is None:
+        return _UNSUPPORTED
+    parts = qualname.split('.')
+    if not parts or any(not part or part == '<locals>' for part in parts):
+        return _UNSUPPORTED
+    try:
+        current = types.ModuleType.__getattribute__(owner, '__dict__').get(parts[0], _UNSUPPORTED)
+        for part in parts[1:]:
+            if current is _UNSUPPORTED:
+                return _UNSUPPORTED
+            namespace = type.__getattribute__(current, '__dict__')
+            current = namespace.get(part, _UNSUPPORTED)
+    except (AttributeError, TypeError):
+        return _UNSUPPORTED
+    return (owner, module_name, qualname) if current is value else _UNSUPPORTED
 
 
 def _stable_code_constant(value, active):
@@ -305,13 +353,21 @@ def _module_field_state(value):
             return _UNSUPPORTED
         return {'module': identity}
     if isinstance(value, type):
-        owner = sys.modules.get(value.__module__)
-        if owner is None or not isinstance(value.__qualname__, str):
+        canonical = _canonical_class_binding(value)
+        if canonical is _UNSUPPORTED:
             return _UNSUPPORTED
+        owner, module_name, qualname = canonical
         identity = _module_source_identity(owner)
         if identity is _UNSUPPORTED:
             return _UNSUPPORTED
-        return {'class': f'{value.__module__}.{value.__qualname__}', 'moduleSource': identity}
+        class_identity = _class_identity_token(value)
+        if class_identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {
+            'class': f'{module_name}.{qualname}',
+            'classIdentity': class_identity,
+            'moduleSource': identity,
+        }
     if _is_lru_cache_wrapper(value):
         wrapped = _stable_value(value.__wrapped__)
         parameters = _stable_value(value.cache_parameters())

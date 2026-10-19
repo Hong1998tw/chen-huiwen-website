@@ -25,6 +25,14 @@ from public_artifact_fixture import (
 )
 
 
+def _path_binding_microbuilder(destination):
+    destination = Path(destination)
+    cloudflare = sys.modules['build_cloudflare_public']
+    (destination / 'result.txt').write_text(
+        str(cloudflare.Path('fixture-value')), encoding='utf-8',
+    )
+
+
 class ArtifactTemplateCacheTests(unittest.TestCase):
     def test_function_code_identity_stays_stable_after_adaptive_execution(self):
         def builder(items):
@@ -35,6 +43,123 @@ class ArtifactTemplateCacheTests(unittest.TestCase):
         for _ in range(100):
             builder([{'value': value} for value in range(4)])
         self.assertEqual(_stable_value(builder), before)
+
+    def test_real_module_key_stays_cacheable_after_50_canonical_class_calls(self):
+        root = Path(__file__).resolve().parents[1]
+        scripts = str(root / 'scripts')
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import build_cloudflare_public as cloudflare
+        import build_artifact_page_fonts as producer
+
+        before, revision, cacheable, reason = _cloudflare_input_identity(
+            root, cloudflare, producer,
+        )
+        repeated, repeated_revision, repeated_cacheable, repeated_reason = (
+            _cloudflare_input_identity(root, cloudflare, producer)
+        )
+        self.assertTrue(cacheable, reason)
+        self.assertTrue(repeated_cacheable, repeated_reason)
+        self.assertEqual((repeated, repeated_revision), (before, revision))
+
+        for _ in range(50):
+            self.assertEqual(str(cloudflare.Path('fixture-value')), 'fixture-value')
+
+        after, after_revision, after_cacheable, after_reason = _cloudflare_input_identity(
+            root, cloudflare, producer,
+        )
+        self.assertTrue(after_cacheable, after_reason)
+        self.assertEqual((after, after_revision), (before, revision))
+
+    def test_spoofed_original_class_binding_bypasses_cache_without_stale_output(self):
+        root = Path(__file__).resolve().parents[1]
+        scripts = str(root / 'scripts')
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import build_cloudflare_public as cloudflare
+        import build_artifact_page_fonts as producer
+
+        key, _revision, cacheable, reason = _cloudflare_input_identity(
+            root, cloudflare, producer,
+        )
+        self.assertTrue(cacheable, reason)
+        original_path = cloudflare.Path
+
+        class SpoofPath:
+            def __init__(self, value):
+                self.value = value
+
+            def __str__(self):
+                return 'spoof:' + str(self.value)
+
+        SpoofPath.__module__ = original_path.__module__
+        SpoofPath.__qualname__ = original_path.__qualname__
+
+        cache = ArtifactTemplateCache()
+        try:
+            with tempfile.TemporaryDirectory(prefix='fixture-class-binding-') as directory:
+                directory = Path(directory)
+                first = cache.copy_to(key, _path_binding_microbuilder, directory / 'before')
+                original_output = (first / 'result.txt').read_text(encoding='utf-8')
+                self.assertEqual(original_output, 'fixture-value')
+
+                cloudflare.Path = SpoofPath
+                spoof_key, _revision, spoof_cacheable, spoof_reason = (
+                    _cloudflare_input_identity(root, cloudflare, producer)
+                )
+                self.assertTrue(spoof_key != key or not spoof_cacheable)
+                events = StringIO()
+                with redirect_stderr(events):
+                    second = cache.copy_to(
+                        spoof_key, _path_binding_microbuilder, directory / 'after',
+                        cacheable=spoof_cacheable, bypass_reason=spoof_reason,
+                    )
+                self.assertEqual((second / 'result.txt').read_text(encoding='utf-8'),
+                                 'spoof:fixture-value')
+                self.assertNotIn('cache=hit', events.getvalue())
+        finally:
+            cloudflare.Path = original_path
+            cache.close()
+
+    def test_replacement_at_canonical_module_binding_changes_key(self):
+        root = Path(__file__).resolve().parents[1]
+        scripts = str(root / 'scripts')
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import build_cloudflare_public as cloudflare
+        import build_artifact_page_fonts as producer
+
+        before, revision, cacheable, reason = _cloudflare_input_identity(
+            root, cloudflare, producer,
+        )
+        self.assertTrue(cacheable, reason)
+        original_path = cloudflare.Path
+
+        class ReplacementPath:
+            def __init__(self, value):
+                self.value = value
+
+            def __str__(self):
+                return 'replacement:' + str(self.value)
+
+        ReplacementPath.__module__ = cloudflare.__name__
+        ReplacementPath.__qualname__ = 'Path'
+        try:
+            cloudflare.Path = ReplacementPath
+            after, after_revision, after_cacheable, after_reason = _cloudflare_input_identity(
+                root, cloudflare, producer,
+            )
+            self.assertTrue(after_cacheable, after_reason)
+            self.assertEqual(after_revision, revision)
+            self.assertNotEqual(after, before)
+        finally:
+            cloudflare.Path = original_path
+
+        restored, restored_revision, restored_cacheable, restored_reason = (
+            _cloudflare_input_identity(root, cloudflare, producer)
+        )
+        self.assertTrue(restored_cacheable, restored_reason)
+        self.assertEqual((restored, restored_revision), (before, revision))
 
     def test_real_cloudflare_builder_pair_shares_one_immutable_fixture(self):
         root = Path(__file__).resolve().parents[1]
