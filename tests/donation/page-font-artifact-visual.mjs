@@ -11,6 +11,14 @@ export const VISUAL_CAPTURE_SEED = 'huiwen-g02-20261018';
 export const VISUAL_CAPTURE_COUNT = 20;
 export const SYSTEM_FALLBACK_CODEPOINTS = Object.freeze([0x2630, 0x2733]);
 
+export function cssFontWeightRange(axis) {
+  assert.ok(axis && Number.isFinite(axis.min) && Number.isFinite(axis.default)
+    && Number.isFinite(axis.max), 'variable font weight axis is incomplete');
+  assert.ok(axis.min >= 1 && axis.min <= axis.default && axis.default <= axis.max && axis.max <= 1000,
+    'variable font weight axis range is invalid');
+  return `${axis.min} ${axis.max}`;
+}
+
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }

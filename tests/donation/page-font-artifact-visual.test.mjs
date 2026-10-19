@@ -5,6 +5,7 @@ import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
   buildVisualCaptureRecord,
+  cssFontWeightRange,
   pngPixelSize,
   selectVisualRoutes,
   sha256,
@@ -37,6 +38,11 @@ const expectedFonts = [
     weight: 500, bytes: 3072, sha256: 'd'.repeat(64), codepoints: [0x6587, 0x65b0] },
 ];
 const routeCodepoints = [0x4e2d, 0x6587, 0x65b0];
+
+test('converts the manifest variable weight axis to its CSS range descriptor', () => {
+  assert.equal(cssFontWeightRange({ min: 250, default: 250, max: 900 }), '250 900');
+  assert.throws(() => cssFontWeightRange({ min: 250, default: 900, max: 850 }), /axis range is invalid/);
+});
 
 function loadedTypography(route = visualRoute, overrides = {}) {
   const base = {

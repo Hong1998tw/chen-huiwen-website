@@ -23,6 +23,7 @@ import {
   waitForTrackedNetworkQuiet,
 } from './page-font-artifact-network-gate.mjs';
 import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
+import { safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
@@ -34,6 +35,7 @@ import {
   validateVisualTypography,
   visualPngMatchesHash,
   visualPngPath,
+  cssFontWeightRange,
 } from './page-font-artifact-visual.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
@@ -48,6 +50,7 @@ let publication;
 let fontManifest;
 let fullTcSha;
 let artifactIdentity;
+let sharedJpFallbackFont;
 
 function urlPath(value) {
   try {
@@ -83,6 +86,32 @@ function browserMessageCategory(message) {
   return 'other-browser-error';
 }
 
+function safeBrowserError(error, secretValues = []) {
+  const message = safeBrowserDiagnosticText(error?.message, secretValues);
+  const stack = safeBrowserDiagnosticText(error?.stack, secretValues).split('\n').slice(0, 10);
+  return {
+    name: String(error?.name || 'Error').slice(0, 100),
+    category: browserMessageCategory(message),
+    message,
+    stack,
+  };
+}
+
+async function resolveSharedJpFallbackFont() {
+  const stylesheet = await readFile(resolve(artifact, 'styles.css'), 'utf8');
+  const face = [...stylesheet.matchAll(/@font-face\s*\{([^}]*)\}/gi)]
+    .map((match) => match[1])
+    .find((rule) => /font-family\s*:\s*["']Huiwen Sans JP Support["']/i.test(rule));
+  assert.ok(face, 'published CSS is missing the shared JP fallback font face');
+  const source = face.match(/\bsrc\s*:\s*url\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/i);
+  const path = source?.[1] ?? source?.[2] ?? source?.[3];
+  assert.match(path || '', /^\/assets\/fonts\/huiwen-site-sans\/generated\/huiwen-cjk-support-[a-f0-9]{12}\.woff2$/,
+    'published shared JP fallback font path is invalid');
+  const sha256 = publication.files[path.slice(1)];
+  assert.match(sha256 || '', /^[a-f0-9]{64}$/, 'published shared JP fallback font has no manifest digest');
+  return { path, sha256 };
+}
+
 function waitForCmsPreviewNavigation(page, timeout = 15000) {
   return page.waitForEvent('framenavigated', {
     predicate: (frame) => {
@@ -98,7 +127,8 @@ function waitForCmsPreviewNavigation(page, timeout = 15000) {
   }).then((frame) => ({ frame }), (error) => ({ error }));
 }
 
-function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyResponses, blockedReasons, messages }) {
+function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyResponses, blockedReasons, messages,
+  handshake, handshakeReadError }) {
   return {
     frameURLs: page.frames().map((frame) => ({
       ...safeUrlSummary(frame.url()),
@@ -111,6 +141,8 @@ function cmsFailureSnapshot({ page, hostNavigationStatus, proxyRequests, proxyRe
     proxyResponses: proxyResponses.slice(0, 20),
     blockedReasons: [...new Set(blockedReasons)].slice(0, 20),
     messages: messages.slice(0, 20),
+    handshake: Array.isArray(handshake) ? handshake.slice(0, 30) : [],
+    ...(handshakeReadError ? { handshakeReadError } : {}),
   };
 }
 
@@ -135,7 +167,7 @@ function requestInitiator(initiator) {
 async function collectVisibleFontDiagnostics(page, route, row) {
   const expectedFonts = [row.commonFont, row.deltaFont].map((path) => {
     const face = fontManifest.fonts[path];
-    return { path, family: face.family, weight: face.wght, sha256: face.sha256,
+    return { path, family: face.family, weight: cssFontWeightRange(face.wght), sha256: face.sha256,
       codepoints: face.codepoints };
   });
   expectedFonts.jpFallbackCodepoints = row.jpFallbackCodepoints || [];
@@ -263,7 +295,7 @@ function expectedVisualFonts(routeRow) {
   ].map(({ role, path }) => {
     const face = fontManifest.fonts[path];
     assert.ok(face, `schema-2 ${role} face is missing from the parsed font manifest: ${path}`);
-    return { role, path, family: face.family, weight: face.wght,
+    return { role, path, family: face.family, weight: cssFontWeightRange(face.wght),
       bytes: face.bytes, sha256: face.sha256, codepoints: face.codepoints };
   });
 }
@@ -605,7 +637,7 @@ function createFontRouteState(route) {
   };
 }
 
-async function captureFontOnlyRoute(state) {
+async function captureFontOnlyRoute(state, visualRouteSet) {
   const { route, routeRow, routeRecord, routeNetwork } = state;
   try {
     state.routeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -724,7 +756,8 @@ async function captureFontOnlyRoute(state) {
             assert.equal(response.base64Encoded, true,
               `CDP did not return a base64-encoded binary page-font response body for ${record.path}`);
             const bytes = Buffer.from(response.body, 'base64');
-            Object.assign(record, hashResponseBody(bytes));
+            const digest = hashResponseBody(bytes);
+            Object.assign(record, { bodyBytes: digest.bytes, bodySha256: digest.sha256 });
             return { bytes: record.bodyBytes, sha256: record.bodySha256 };
           })
           .catch((error) => {
@@ -1007,6 +1040,7 @@ async function finalizeFontOnlyRoute(state) {
         assert.ok(font, `${route}: route preload font is missing from the producer manifest: ${path}`);
         return { path: `/${path}`, bytes: font.bytes, sha256: font.sha256 };
       }),
+      expectedSharedFallbackFonts: [sharedJpFallbackFont],
       fullTcPath: `/${fullTcPath}`,
       routeOrigin: new URL(base).origin,
       observationClosed,
@@ -1155,6 +1189,7 @@ try {
   publication = preflight.publication;
   fontManifest = preflight.fontManifest;
   fullTcSha = preflight.fullTcSha;
+  sharedJpFallbackFont = await resolveSharedJpFallbackFont();
   const [publicationBytes, deploymentBytes] = await Promise.all([
     readFile(resolve(artifact, 'publication-manifest.json')),
     readFile(resolve(artifact, 'deployment.json')),
@@ -1308,7 +1343,7 @@ try {
   let visualCaptureAttempts = 0;
   for (const route of fontOnlyRoutes) {
     const state = createFontRouteState(route);
-    await captureFontOnlyRoute(state);
+    await captureFontOnlyRoute(state, visualRouteSet);
     if (visualRouteSet.has(route)) visualCaptureAttempts += 1;
     if (route === 'service.html') deferredServiceState = state;
     else await finalizeFontOnlyRoute(state);
@@ -1504,7 +1539,35 @@ try {
         const previewPath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
         const evilFrame = mode === 'unauthorized-message' ? '<iframe title="untrusted sender" src="https://evil.test/send"></iframe>' : '';
         const handshake = ['valid', 'wrong-cms-edit'].includes(mode)
-          ? `const sendInit=()=>frame.contentWindow.postMessage({type:'huiwen-cms-init',nonce:'${nonce}'},'*');frame.onload=sendInit;window.addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.origin!=='null')return;if(event.data?.type==='huiwen-cms-hello')sendInit();if(event.data?.type==='huiwen-cms-ready'&&event.data?.nonce==='${nonce}'&&!window.__draftSent){window.__draftSent=true;frame.contentWindow.postMessage({type:'huiwen-cms-case-preview',nonce:'${nonce}',case:{title:'CI草稿',updated:'2026-10-19',paragraphs:['CI草稿新增字：${draftChar}'],history:[],media:[]}},'*');}});`
+          ? `
+            window.__g02CmsHandshake = [];
+            const note = (step, details = {}) => {
+              if (window.__g02CmsHandshake.length < 30) window.__g02CmsHandshake.push({ step, ...details });
+            };
+            const sendInit = () => {
+              note('init-sent');
+              frame.contentWindow.postMessage({ type: 'huiwen-cms-init', nonce: '${nonce}' }, '*');
+            };
+            frame.onload = () => { note('frame-load'); sendInit(); };
+            window.addEventListener('message', (event) => {
+              const data = event.data;
+              const sourceMatches = event.source === frame.contentWindow;
+              const origin = event.origin === 'null' ? 'opaque'
+                : event.origin === 'https://admin.huiwen.tw' ? 'admin' : 'other';
+              const type = ['huiwen-cms-hello', 'huiwen-cms-ready', 'huiwen-cms-error'].includes(data?.type)
+                ? data.type : 'other';
+              const nonceMatches = data?.nonce === '${nonce}';
+              note('message', { sourceMatches, origin, type, nonceMatches });
+              if (!sourceMatches || event.origin !== 'null') return;
+              if (type === 'huiwen-cms-hello') sendInit();
+              if (type === 'huiwen-cms-ready' && nonceMatches && !window.__draftSent) {
+                window.__draftSent = true;
+                note('draft-sent');
+                frame.contentWindow.postMessage({ type: 'huiwen-cms-case-preview', nonce: '${nonce}',
+                  case: { title: 'CI草稿', updated: '2026-10-19',
+                    paragraphs: ['CI草稿新增字：${draftChar}'], history: [], media: [] } }, '*');
+              }
+            });`
           : '';
         return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html><body>
           <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
@@ -1543,6 +1606,7 @@ try {
   const cmsProxyResponses = [];
   const cmsProxyBlockedReasons = [];
   const cmsBrowserMessages = [];
+  const cmsDiagnosticSecrets = [session, accessAssertion, nonce];
   cmsPage.on('request', (request) => {
     if (isCmsProxyUrl(request.url())) cmsProxyRequests.push({ method: request.method(), ...safeUrlSummary(request.url()) });
   });
@@ -1556,11 +1620,14 @@ try {
   });
   cmsPage.on('console', (message) => {
     if (!['error', 'warning'].includes(message.type())) return;
-    cmsBrowserMessages.push({ type: message.type(), category: browserMessageCategory(message.text()) });
+    const location = message.location();
+    cmsBrowserMessages.push({ type: message.type(), category: browserMessageCategory(message.text()),
+      message: safeBrowserDiagnosticText(message.text(), cmsDiagnosticSecrets),
+      source: { path: urlPath(location.url), lineNumber: location.lineNumber ?? null,
+        columnNumber: location.columnNumber ?? null } });
   });
   cmsPage.on('pageerror', (error) => {
-    cmsBrowserMessages.push({ type: 'pageerror', name: error?.name || 'Error',
-      category: browserMessageCategory(error?.message) });
+    cmsBrowserMessages.push({ type: 'pageerror', ...safeBrowserError(error, cmsDiagnosticSecrets) });
   });
   cmsFullFontResponseWait = observePendingResult(cmsPage.waitForResponse((response) =>
     new URL(response.url()).pathname === `/${fullTcPath}` && response.status() === 200,
@@ -1591,6 +1658,15 @@ try {
     await cmsProxyFrame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
     await cmsProxyFrame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
   } catch (error) {
+    let handshake = [];
+    let handshakeReadError = null;
+    try {
+      handshake = await withTimeout(cmsPage.evaluate(() => Array.isArray(window.__g02CmsHandshake)
+        ? window.__g02CmsHandshake.slice(0, 30) : []), INITIAL_RENDER_TIMEOUT_MS,
+      'read sanitized CMS fixture handshake');
+    } catch (snapshotError) {
+      handshakeReadError = safeBrowserError(snapshotError, cmsDiagnosticSecrets);
+    }
     results.cmsPreview.failureSnapshot = cmsFailureSnapshot({
       page: cmsPage,
       hostNavigationStatus: cmsHostResponse?.status() ?? null,
@@ -1598,6 +1674,8 @@ try {
       proxyResponses: cmsProxyResponses,
       blockedReasons: cmsProxyBlockedReasons,
       messages: cmsBrowserMessages,
+      handshake,
+      handshakeReadError,
     });
     throw error;
   }

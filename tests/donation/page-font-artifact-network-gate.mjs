@@ -137,6 +137,7 @@ export function buildFinalFontNetworkSnapshot({
   clickMarker = null,
   expectedPreloads,
   expectedFontArtifacts,
+  expectedSharedFallbackFonts = [],
   fullTcPath,
   routeOrigin,
   observationClosed,
@@ -149,6 +150,8 @@ export function buildFinalFontNetworkSnapshot({
     `${route}: expected page-font preloads are missing`);
   assert.ok(Array.isArray(expectedFontArtifacts) && expectedFontArtifacts.length === expectedPreloads.length,
     `${route}: expected page-font byte/hash artifacts are missing`);
+  assert.ok(Array.isArray(expectedSharedFallbackFonts),
+    `${route}: expected shared fallback-font artifacts are missing`);
   assert.ok(typeof fullTcPath === 'string' && fullTcPath.startsWith('/'), 'Full-TC request path is invalid');
   assert.ok(typeof routeOrigin === 'string' && routeOrigin.length > 0, `${route}: route origin is missing`);
 
@@ -187,8 +190,22 @@ export function buildFinalFontNetworkSnapshot({
 
   const fontRequests = requests.filter((request) => request.requestType === 'Font');
   const fullTcRequests = requests.filter((request) => request.path === fullTcPath);
-  const pageFontRequests = fontRequests.filter((request) => request.path !== fullTcPath);
   const expectedPaths = new Set(expectedPreloads);
+  const expectedSharedFallbackByPath = new Map(expectedSharedFallbackFonts.map((font) => [font.path, font]));
+  assert.equal(expectedSharedFallbackByPath.size, expectedSharedFallbackFonts.length,
+    `${route}: expected shared fallback-font artifacts contain duplicate paths`);
+  for (const font of expectedSharedFallbackFonts) {
+    assert.ok(typeof font.path === 'string' && font.path.startsWith('/'),
+      `${route}: expected shared fallback-font path is invalid`);
+    assert.ok(font.path !== fullTcPath && !expectedPaths.has(font.path),
+      `${route}: shared fallback-font paths must be separate from page subsets and Full-TC`);
+    assert.match(font.sha256 || '', SHA256,
+      `${route}: expected shared fallback-font digest is invalid`);
+  }
+  const sharedFallbackPaths = new Set(expectedSharedFallbackByPath.keys());
+  const pageFontRequests = fontRequests.filter((request) => request.path !== fullTcPath
+    && !sharedFallbackPaths.has(request.path));
+  const sharedFallbackFontRequests = fontRequests.filter((request) => sharedFallbackPaths.has(request.path));
   const expectedArtifacts = new Map(expectedFontArtifacts.map((artifact) => [artifact.path, artifact]));
   assert.equal(expectedArtifacts.size, expectedFontArtifacts.length,
     `${route}: expected page-font artifacts contain duplicate paths`);
@@ -223,6 +240,30 @@ export function buildFinalFontNetworkSnapshot({
     if (request.failure) pushViolation(violations, 'page-font-request-failed', request);
   }
 
+  for (const [path, artifact] of expectedSharedFallbackByPath) {
+    const matching = sharedFallbackFontRequests.filter((request) => request.path === path);
+    if (matching.length > 1) pushViolation(violations, 'shared-fallback-font-count', null,
+      { path, expected: 'at most one', observed: matching.length });
+    for (const request of matching) {
+      if (request.origin !== routeOrigin) pushViolation(violations, 'shared-fallback-font-origin-mismatch', request,
+        { expectedOrigin: routeOrigin, observedOrigin: request.origin });
+      if (request.isMainFrame !== true) pushViolation(violations, 'shared-fallback-font-not-main-frame', request);
+      if (request.phase !== 'initial') pushViolation(violations, 'shared-fallback-font-not-requested-during-initial-render', request);
+      if (request.method !== 'GET') pushViolation(violations, 'shared-fallback-font-method-mismatch', request);
+      if (request.status !== 200) pushViolation(violations, 'shared-fallback-font-http-status', request, { status: request.status });
+      if (request.terminal !== 'finished') pushViolation(violations, 'shared-fallback-font-not-finished', request);
+      if (!Number.isFinite(request.encodedDataLength) || request.encodedDataLength <= 0
+        || !Number.isInteger(request.bodyBytes) || request.bodyBytes <= 0) {
+        pushViolation(violations, 'shared-fallback-font-empty-response', request);
+      }
+      if (request.bodySha256 !== artifact.sha256) pushViolation(violations, 'shared-fallback-font-sha256', request,
+        { expected: artifact.sha256, observed: request.bodySha256 });
+      if (request.bodyError) pushViolation(violations, 'shared-fallback-font-body-read', request,
+        { message: request.bodyError });
+      if (request.failure) pushViolation(violations, 'shared-fallback-font-request-failed', request);
+    }
+  }
+
   for (const path of expectedPaths) {
     const matching = pageFontRequests.filter((request) => request.path === path);
     if (matching.length !== 1) pushViolation(violations, 'page-font-preload-count', null,
@@ -247,6 +288,7 @@ export function buildFinalFontNetworkSnapshot({
   const phaseCounts = Object.fromEntries(phaseNames.map((phase) => [phase, {
     fullTc: fullTcRequests.filter((request) => request.phase === phase).length,
     pageFont: pageFontRequests.filter((request) => request.phase === phase).length,
+    sharedFallbackFont: sharedFallbackFontRequests.filter((request) => request.phase === phase).length,
   }]));
 
   return {
@@ -258,9 +300,10 @@ export function buildFinalFontNetworkSnapshot({
     timingSource: 'CDP Network.timestamp compared with CDP Performance.getMetrics Timestamp',
     requestScope: {
       trackedResourceTypes: [...TRACKED_REQUEST_TYPES],
-      fontFrameScope: 'all frames; only declared same-origin main-frame page preloads are allowed',
+      fontFrameScope: 'all frames; only declared same-origin main-frame page preloads and explicit shared fallback fonts are allowed',
       expectedPageFontPaths: [...expectedPaths],
       expectedPageFontArtifacts: expectedFontArtifacts.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
+      expectedSharedFallbackFonts,
       fullTcPath,
       initialRenderCompleteness: renderCompleteness || null,
     },
@@ -275,6 +318,7 @@ export function buildFinalFontNetworkSnapshot({
     preOnDemandFullTcRequests: fullTcRequests.filter((request) => request.phase !== 'post-trigger'),
     postTriggerFullTcRequests: fullTcRequests.filter((request) => request.phase === 'post-trigger'),
     pageFontRequests,
+    sharedFallbackFontRequests,
     trackedRequests: requests.filter((request) => TRACKED_REQUEST_TYPES.has(request.requestType)),
     violations,
   };
