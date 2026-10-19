@@ -18,6 +18,8 @@ jobs:
         with:
           node-version: '24'
       - run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
+      - name: Verify public fingerprint dependency rewrites and Leaflet ownership
+        run: python -m unittest discover -s tests -p test_public_asset_fingerprints.py
       - name: Prepare artifact QA reports
         run: mkdir -p tests/donation/results/cloudflare-assets
       - name: Build and capture the single cold public artifact
@@ -42,10 +44,17 @@ jobs:
       - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
       - name: Verify page-font failure report lifecycle
         run: node --unhandled-rejections=strict --test tests/donation/page-font-artifact-lifecycle.test.mjs tests/donation/page-font-artifact-network-gate.test.mjs tests/donation/page-font-artifact-preflight.test.mjs tests/donation/page-font-artifact-visual.test.mjs
+      - name: Verify public asset runtime proof and negative cases
+        run: |
+          node --check tests/donation/public-asset-runtime-proof.mjs
+          node --check tests/donation/public-asset-runtime-smoke.mjs
+          node --test tests/donation/public-asset-runtime-proof.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - name: Install Playwright Chromium with bounded official dependency retries
         run: bash scripts/install_playwright_ci.sh
       - name: Verify exact assets, existing routes and private-path exclusion
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           npx --yes wrangler@4.143.1 dev --local --config wrangler.public.jsonc --port 8789 > /tmp/wrangler-public.log 2>&1 &
@@ -59,6 +68,7 @@ jobs:
           if [[ "$ready" != 1 ]]; then cat /tmp/wrangler-public.log; exit 1; fi
           python scripts/verify_cloudflare_assets.py --base-url http://127.0.0.1:8789 --report tests/donation/results/cloudflare-assets/report.json
           python scripts/verify_security_headers.py --base-url http://127.0.0.1:8789 --artifact-root _site --report tests/donation/results/cloudflare-assets/security-headers.json
+          BASE_URL=http://127.0.0.1:8789/ node tests/donation/public-asset-runtime-smoke.mjs
           BASE_URL=http://127.0.0.1:8789/ node tests/donation/page-font-artifact.mjs
           node --test tests/donation/service-worker-cache-policy.test.mjs
           BASE_URL=http://127.0.0.1:8789 node tests/donation/service-worker-artifact-browser.mjs
@@ -68,6 +78,7 @@ jobs:
           name: cloudflare-public-artifact-qa
           path: |
             tests/donation/results/cloudflare-assets/
+            tests/donation/results/public-asset-runtime/
             tests/donation/results/page-font-artifact/
             /tmp/wrangler-public.log
           retention-days: 14
