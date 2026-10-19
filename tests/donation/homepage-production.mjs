@@ -21,6 +21,7 @@ const browser=await chromium.launch();
 const report={base,method:'local generated source in Chromium; not Lighthouse; no external requests',checks:[],errors:[]};
 const viewportCases=[320,360,390,430,780,781,1180,1440].map(width=>({width,height:960}));
 viewportCases.push({width:1180,height:757});
+viewportCases.push({width:1440,height:900});
 try{
  if(!live)for(let n=0;n<60;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const {width,height} of viewportCases){
@@ -103,7 +104,7 @@ try{
    assert(portraitRendering.alpha.bottom>portraitRendering.frame.bottom,JSON.stringify(portraitRendering));
    assert(portraitRendering.face.left>=portraitRendering.frame.left-.5&&portraitRendering.face.right<=portraitRendering.frame.right+.5,JSON.stringify(portraitRendering));
    assert(portraitRendering.face.top>=portraitRendering.frame.top-.5&&portraitRendering.face.bottom<=portraitRendering.frame.bottom+.5,JSON.stringify(portraitRendering));
-   if(width===1180&&height===757)assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
+   if((width===1180&&height===757)||(width===1440&&height===900))assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
   }
   assert.equal(await page.locator('h1').count(),1);
   const main=page.locator('main.home-redesign');
@@ -243,7 +244,7 @@ try{
   assert(legalLayout.textRects.every(rect=>rect.left>=legalLayout.left&&rect.right<=legalLayout.right&&rect.top>=legalLayout.top&&rect.bottom<=legalLayout.bottom),JSON.stringify(legalLayout));
   assert(!['hidden','clip'].includes(legalLayout.overflowX)&&!['hidden','clip'].includes(legalLayout.overflowY),JSON.stringify(legalLayout));
   await page.screenshot({path:out+`home-${viewportTag}-text-200-top.png`});
-  report.checks.push({width,height,sourceParity:'PASS',portraitAlpha:'PASS',heroGeometry:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp,portrait:width>780?portraitRendering:null});
+  report.checks.push({width,height,sourceParity:'PASS',portraitAlpha:'PASS',heroGeometry:'PASS',heroMeasurements:heroGeometry,accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp,portrait:width>780?portraitRendering:null});
   await ctx.close();
  }
 

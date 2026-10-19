@@ -218,12 +218,13 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     '--hero-portrait-reference-width': 'min(380px, var(--hero-portrait-reference-base))',
     '--hero-portrait-frame-width': 'min(602.3px, calc(66.4545vw - 33.73px))',
     'grid-template-columns': 'minmax(0, 1fr) minmax(0, var(--hero-portrait-frame-width))',
-    'row-gap': 'clamp(16px, 2vw, 28px)',
+    'row-gap': '16px',
     'column-gap': 'clamp(24px, 3.75vw, 54px)',
-    'padding-top': 'clamp(16px, 2vw, 30px)',
+    'padding-top': '16px',
   }, 'desktop natural-silhouette reference geometry');
   assertDeclarations(desktopNarrowHero, { 'column-gap': '18px' }, 'desktop 781-900px title column stays wide enough for the full first line');
   assertDeclarations(desktopFrame, { 'aspect-ratio': '1.047', 'border-radius': '0', background: 'transparent' }, 'desktop portrait silhouette frame');
+  assert.equal(ruleFor(rules, '#main.home-redesign .portrait-frame', 'max-height: 800px')?.declarations.get('aspect-ratio'), '1.15', 'short desktop frame keeps the face ROI inside the viewport-safe silhouette crop');
   assert.equal(frame.declarations.get('overflow'), 'hidden', 'portrait frame clips only the permitted lower image area');
   assert.equal(baseImage.declarations.get('object-fit'), 'contain', 'mobile still displays the complete contain-fitted source image');
   assertDeclarations(desktopImage, {

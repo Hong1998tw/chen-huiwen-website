@@ -131,9 +131,9 @@
     --hero-portrait-reference-width: min(380px, var(--hero-portrait-reference-base));
     --hero-portrait-frame-width: min(602.3px, calc(66.4545vw - 33.73px));
     grid-template-columns: minmax(0, 1fr) minmax(0, var(--hero-portrait-frame-width));
-    row-gap: clamp(16px, 2vw, 28px);
+    row-gap: 16px;
     column-gap: clamp(24px, 3.75vw, 54px);
-    padding-top: clamp(16px, 2vw, 30px);
+    padding-top: 16px;
   }
   #main.home-redesign .hero-portrait {
     width: var(--hero-portrait-frame-width);
@@ -182,7 +182,7 @@
     row-gap: 12px;
     padding-top: 12px;
   }
-  #main.home-redesign .portrait-frame { aspect-ratio: 1.11; }
+  #main.home-redesign .portrait-frame { aspect-ratio: 1.15; }
 }
 #main.home-redesign .home-task-paths {
   grid-area: tasks;
