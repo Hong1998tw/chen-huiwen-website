@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -17,13 +18,20 @@ import types
 
 def build_fixture_key(source_commit, input_digest, builder_id, module_state):
     """Hash every identity component that can change a generated fixture."""
-    payload = {
+    payload = _stable_value({
         'sourceCommit': source_commit,
         'inputDigest': input_digest,
         'builder': builder_id,
         'moduleState': module_state,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+    })
+    if payload is _UNSUPPORTED:
+        return None
+    try:
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+        ).encode()
+    except (TypeError, ValueError, RecursionError):
+        return None
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -87,62 +95,111 @@ def _builder_inputs_clean(root):
 _UNSUPPORTED = object()
 
 
-def _stable_value(value):
-    if value is None or type(value) in (bool, int, float, str):
+def _stable_value(value, active=None, seen=None):
+    try:
+        return _stable_value_impl(value, active, seen)
+    except (OverflowError, RecursionError, TypeError, ValueError):
+        return _UNSUPPORTED
+
+
+def _stable_value_impl(value, active=None, seen=None):
+    """Return a deterministic JSON value, or reject state we cannot prove stable."""
+    if value is None or type(value) in (bool, int, str):
         return value
+    if type(value) is float:
+        return {'floatBits': struct.pack('!d', value).hex()}
     if isinstance(value, bytes):
-        return {'bytesSha256': hashlib.sha256(value).hexdigest()}
+        return {'bytesSha256': hashlib.sha256(value).hexdigest(), 'length': len(value)}
     if isinstance(value, Path):
-        return {'path': str(value)}
+        return {'path': os.fspath(value)}
     if isinstance(value, re.Pattern):
-        return {'regex': value.pattern, 'flags': value.flags}
-    if isinstance(value, types.FunctionType):
-        return {
-            'function': f'{value.__module__}.{value.__qualname__}',
-            'codeSha256': hashlib.sha256(marshal.dumps(value.__code__)).hexdigest(),
-            'defaults': _stable_value(value.__defaults__),
-            'kwdefaults': _stable_value(value.__kwdefaults__),
-        }
-    if isinstance(value, type):
-        members = {}
-        for name, member in value.__dict__.items():
-            if name.startswith('__'):
-                continue
-            normalized = _stable_value(member)
-            if normalized is not _UNSUPPORTED:
-                members[name] = normalized
-        return {
-            'class': f'{value.__module__}.{value.__qualname__}',
-            'members': members,
-        }
-    if isinstance(value, (tuple, list)):
-        values = [_stable_value(item) for item in value]
-        return _UNSUPPORTED if any(item is _UNSUPPORTED for item in values) else values
-    if isinstance(value, (set, frozenset)):
-        values = [_stable_value(item) for item in value]
-        if any(item is _UNSUPPORTED for item in values):
+        pattern = _stable_value(value.pattern, active, seen)
+        if pattern is _UNSUPPORTED:
             return _UNSUPPORTED
-        return sorted(values, key=lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False))
-    if isinstance(value, dict):
-        values = {}
-        for key, item in value.items():
-            normalized_key = _stable_value(key)
-            normalized_value = _stable_value(item)
-            if normalized_key is _UNSUPPORTED or normalized_value is _UNSUPPORTED:
+        return {'regex': pattern, 'flags': value.flags}
+    if isinstance(value, type) and type(value) is type and value.__module__ == 'builtins':
+        return {'builtinClass': f'{value.__module__}.{value.__qualname__}'}
+    if active is None:
+        active = set()
+    if seen is None:
+        seen = set()
+    identity = id(value)
+    if identity in active or identity in seen:
+        return _UNSUPPORTED
+    active.add(identity)
+    seen.add(identity)
+    try:
+        if isinstance(value, types.FunctionType):
+            try:
+                closure = []
+                for cell in value.__closure__ or ():
+                    try:
+                        captured = cell.cell_contents
+                    except ValueError:
+                        return _UNSUPPORTED
+                    normalized = _stable_value(captured, active, seen)
+                    if normalized is _UNSUPPORTED:
+                        return _UNSUPPORTED
+                    closure.append(normalized)
+                defaults = _stable_value(value.__defaults__, active, seen)
+                kwdefaults = _stable_value(value.__kwdefaults__, active, seen)
+                if defaults is _UNSUPPORTED or kwdefaults is _UNSUPPORTED:
+                    return _UNSUPPORTED
+                code_digest = hashlib.sha256(marshal.dumps(value.__code__)).hexdigest()
+            except (AttributeError, TypeError, ValueError, RecursionError):
                 return _UNSUPPORTED
-            values[json.dumps(normalized_key, sort_keys=True, ensure_ascii=False)] = normalized_value
-        return values
-    return _UNSUPPORTED
+            return {
+                'function': f'{value.__module__}.{value.__qualname__}',
+                'codeSha256': code_digest,
+                'defaults': defaults,
+                'kwdefaults': kwdefaults,
+                'closure': closure,
+            }
+        if isinstance(value, type):
+            return _UNSUPPORTED
+        if type(value) in (tuple, list):
+            values = [_stable_value(item, active, seen) for item in value]
+            if any(item is _UNSUPPORTED for item in values):
+                return _UNSUPPORTED
+            return {'tuple' if type(value) is tuple else 'list': values}
+        if type(value) in (set, frozenset):
+            values = [_stable_value(item, active, seen) for item in value]
+            if any(item is _UNSUPPORTED for item in values):
+                return _UNSUPPORTED
+            values.sort(key=lambda item: json.dumps(
+                item, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+            ))
+            return {'frozenset' if type(value) is frozenset else 'set': values}
+        if type(value) is dict:
+            values = {}
+            for key, item in value.items():
+                normalized_key = _stable_value(key, active, seen)
+                normalized_value = _stable_value(item, active, seen)
+                if normalized_key is _UNSUPPORTED or normalized_value is _UNSUPPORTED:
+                    return _UNSUPPORTED
+                encoded_key = json.dumps(
+                    normalized_key, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                )
+                if encoded_key in values:
+                    return _UNSUPPORTED
+                values[encoded_key] = normalized_value
+            return {'dict': values}
+        return _UNSUPPORTED
+    finally:
+        active.remove(identity)
 
 
-def _module_state(module):
+def _module_state(module, seen=None):
+    if seen is None:
+        seen = set()
     values = {}
     for name, value in vars(module).items():
         if name.startswith('__') or isinstance(value, types.ModuleType):
             continue
-        normalized = _stable_value(value)
-        if normalized is not _UNSUPPORTED:
-            values[name] = normalized
+        normalized = _stable_value(value, seen=seen)
+        if normalized is _UNSUPPORTED:
+            return _UNSUPPORTED
+        values[name] = normalized
     return {'name': module.__name__, 'path': getattr(module, '__file__', None), 'values': values}
 
 
@@ -176,18 +233,29 @@ def _cloudflare_input_identity(root, cloudflare, font_producer):
             module_path = Path(filename).resolve()
             if root in module_path.parents:
                 effective_paths.add(module_path.relative_to(root).as_posix())
+    module_state_seen = set()
+    module_states = [_module_state(module, module_state_seen) for module in runtime_modules]
     module_state = {
         'python': sys.version,
         'platform': sys.platform,
         'fontEnvironment': font_producer.verify_environment(),
-        'modules': [_module_state(module) for module in runtime_modules],
+        'modules': module_states,
     }
     revision = _source_commit(root)
     key = build_fixture_key(
         revision, input_digest, 'cloudflare-static-public-v1', module_state,
     )
     all_effective_inputs_tracked = effective_paths <= source_paths
-    return key, revision, _builder_inputs_clean(root) and all_effective_inputs_tracked
+    clean_inputs = _builder_inputs_clean(root) and all_effective_inputs_tracked
+    if any(state is _UNSUPPORTED for state in module_states):
+        reason = 'module_state_unsupported'
+    elif key is None:
+        reason = 'fixture_key_unsupported'
+    elif not clean_inputs:
+        reason = 'builder_inputs_dirty_or_untracked'
+    else:
+        reason = None
+    return key, revision, reason is None, reason
 
 
 def _assert_regular_tree(root):
@@ -230,36 +298,88 @@ class ArtifactTemplateCache:
         self._template = None
         self._key = None
 
-    def _build(self, builder):
+    def _build(self, builder, builder_args):
         temporary = tempfile.TemporaryDirectory(prefix='cloudflare-public-fixture-')
         template = Path(temporary.name) / 'site'
         template.mkdir()
         try:
-            builder(template)
+            builder(template, *builder_args)
             _assert_regular_tree(template)
         except BaseException:
             temporary.cleanup()
             raise
         return temporary, template
 
-    def copy_to(self, key, builder, destination, *, cacheable=True):
+    @staticmethod
+    def _diagnose(event, digest, reason):
+        label = digest[:16] if isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) else 'unavailable'
+        print(
+            f'public-artifact-fixture cache={event} digest={label} reason={reason}',
+            file=sys.stderr, flush=True,
+        )
+
+    def copy_to(self, key, builder, destination, *, cacheable=True, bypass_reason=None,
+                builder_args=()):
         destination = Path(destination)
         if destination.exists() or destination.is_symlink():
             raise ValueError('Artifact fixture copy destination already exists')
+        builder_state = _stable_value({'function': builder, 'args': builder_args})
+        if builder_state is _UNSUPPORTED:
+            cacheable = False
+            bypass_reason = 'builder_state_unsupported'
+        if key is None:
+            cacheable = False
+            bypass_reason = bypass_reason or 'fixture_key_unsupported'
+        if builder_state is _UNSUPPORTED or key is None:
+            effective_key = None
+        else:
+            identity = _stable_value({'inputKey': key, 'builderState': builder_state})
+            if identity is _UNSUPPORTED:
+                cacheable = False
+                bypass_reason = bypass_reason or 'fixture_key_unsupported'
+                effective_key = None
+            else:
+                effective_key = hashlib.sha256(json.dumps(
+                    identity, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                ).encode()).hexdigest()
+        if effective_key is None:
+            cacheable = False
+            bypass_reason = bypass_reason or 'fixture_key_unsupported'
         if not cacheable:
-            temporary, template = self._build(builder)
+            self._diagnose('bypass', effective_key, bypass_reason or 'inputs_not_cacheable')
+            temporary, template = self._build(builder, builder_args)
             try:
                 return copy_regular_tree(template, destination)
             finally:
                 temporary.cleanup()
-        if key != self._key:
+        if effective_key != self._key:
+            reason = 'template_empty' if self._key is None else 'identity_changed'
+            self._diagnose('miss', effective_key, reason)
             self.close()
-            self._temporary, self._template = self._build(builder)
-            self._key = key
+            temporary, template = self._build(builder, builder_args)
+            current_state = _stable_value({'function': builder, 'args': builder_args})
+            if current_state is _UNSUPPORTED or current_state != builder_state:
+                self._diagnose('bypass', None, 'builder_state_changed_during_build')
+                try:
+                    return copy_regular_tree(template, destination)
+                finally:
+                    temporary.cleanup()
+            self._temporary, self._template = temporary, template
+            self._key = effective_key
+        else:
+            self._diagnose('hit', effective_key, 'exact_identity')
         return copy_regular_tree(self._template, destination)
 
 
 _CLOUDFLARE_CACHE = ArtifactTemplateCache()
+
+
+def _build_cloudflare_fixture(path, root, revision, cloudflare_build):
+    """Build with explicit inputs instead of capturing the Cloudflare module."""
+    cloudflare_build(root, path, revision)
+    receipt = json.loads((path / 'deployment.json').read_text(encoding='utf-8'))
+    if receipt.get('sourceCommit') != revision:
+        raise ValueError('Cloudflare test fixture sourceCommit is not the current Git HEAD')
 
 
 def prepare_cloudflare_test_artifact(root, temporary_directory, cloudflare, font_producer):
@@ -269,15 +389,14 @@ def prepare_cloudflare_test_artifact(root, temporary_directory, cloudflare, font
     if external:
         return copy_regular_tree(Path(external).resolve(), destination)
 
-    key, revision, clean_inputs = _cloudflare_input_identity(root, cloudflare, font_producer)
-
-    def build(path):
-        cloudflare.build(root, path, revision)
-        receipt = json.loads((path / 'deployment.json').read_text(encoding='utf-8'))
-        if receipt.get('sourceCommit') != revision:
-            raise ValueError('Cloudflare test fixture sourceCommit is not the current Git HEAD')
-
-    result = _CLOUDFLARE_CACHE.copy_to(key, build, destination, cacheable=clean_inputs)
+    key, revision, clean_inputs, reason = _cloudflare_input_identity(
+        root, cloudflare, font_producer,
+    )
+    result = _CLOUDFLARE_CACHE.copy_to(
+        key, _build_cloudflare_fixture, destination,
+        cacheable=clean_inputs, bypass_reason=reason,
+        builder_args=(Path(root).resolve(), revision, cloudflare.build),
+    )
     receipt = json.loads((result / 'deployment.json').read_text(encoding='utf-8'))
     if receipt.get('sourceCommit') != revision:
         raise ValueError('Shared Cloudflare test fixture sourceCommit differs from its input key')
