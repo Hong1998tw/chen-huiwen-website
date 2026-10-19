@@ -174,6 +174,20 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'grid-column': 'tasks-start / tasks-end',
     'grid-row': 'tasks-start / tasks-end',
   }, 'desktop service cards');
+  const desktopTasks = ruleFor(rules, '#main.home-redesign .home-task-paths', 'min-width: 781px');
+  assertDeclarations(desktopTasks, { 'margin-top': '0' }, 'desktop task cards clear the legacy top margin');
+  const civicRules = parseRules(await read('civic.css'));
+  const legacyTaskMargins = civicRules.flatMap(rule => rule.selectors
+    .filter(selector => classesIn(selector).includes('home-task-paths'))
+    .filter(() => rule.declarations.has('margin-block') || rule.declarations.has('margin-top'))
+    .map(selector => ({rule, selector})));
+  const civicDefaultMargin = legacyTaskMargins.find(({rule}) => rule.declarations.get('margin-block') === '22px 8px');
+  const civicMobileMargin = legacyTaskMargins.find(({rule}) => rule.declarations.get('margin-top') === '14px'
+    && rule.media.join(' ').includes('max-width:780px'));
+  assert.ok(civicDefaultMargin, 'the earlier civic stylesheet has the 22px default task-card margin');
+  assert.ok(civicMobileMargin, 'the earlier civic mobile rule keeps its 14px task-card margin');
+  assert.ok(compareSpecificity(specificity(desktopTasks.selectors[0]), specificity(civicDefaultMargin.selector)) > 0,
+    `the scoped desktop override outranks prior civic rule ${civicDefaultMargin.selector}`);
   assertDeclarations(baseLawyer, {
     'grid-area': 'lawyer',
     'grid-column': 'lawyer-start / lawyer-end',

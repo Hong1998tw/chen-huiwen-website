@@ -36,13 +36,17 @@ try{
   page.on('pageerror',e=>report.errors.push(String(e)));
   await page.goto(base);await page.evaluate(()=>document.fonts.ready);
   for(const img of await page.locator('main img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(el=>el.decode());}
+  await page.evaluate(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
+  await page.waitForFunction(()=>window.scrollX===0&&window.scrollY===0);
   await page.waitForTimeout(250);
   const initial=await page.evaluate(()=>({lcp:window.__homeLcp.at(-1)||null,height:document.documentElement.scrollHeight}));
   await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${viewportTag}-layout`});
   const heroGeometry=await page.evaluate(()=>{
    const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-   return{hero:box('.hero'),kicker:box('.hero-copy .kicker'),title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portraitImage:box('.hero-portrait .portrait-frame img'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),actions:box('.hero-actions'),tasks:box('.home-task-paths'),lawyer:box('.home-lawyer-link'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+   return{hero:box('.hero'),kicker:box('.hero-copy .kicker'),title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portraitImage:box('.hero-portrait .portrait-frame img'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),actions:box('.hero-actions'),tasks:box('.home-task-paths'),lawyer:box('.home-lawyer-link'),scrollX:window.scrollX,scrollY:window.scrollY,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
   });
+  assert.equal(heroGeometry.scrollX,0,JSON.stringify(heroGeometry));
+  assert.equal(heroGeometry.scrollY,0,JSON.stringify(heroGeometry));
   const portraitRendering=await page.locator('.hero-portrait .portrait-frame img').evaluate(img=>{
    const style=getComputedStyle(img),image=img.getBoundingClientRect(),frame=document.querySelector('.hero-portrait .portrait-frame').getBoundingClientRect();
    const boxWidth=parseFloat(style.width),boxHeight=parseFloat(style.height),ratio=img.naturalWidth/img.naturalHeight;
@@ -104,7 +108,10 @@ try{
    assert(portraitRendering.alpha.bottom>portraitRendering.frame.bottom,JSON.stringify(portraitRendering));
    assert(portraitRendering.face.left>=portraitRendering.frame.left-.5&&portraitRendering.face.right<=portraitRendering.frame.right+.5,JSON.stringify(portraitRendering));
    assert(portraitRendering.face.top>=portraitRendering.frame.top-.5&&portraitRendering.face.bottom<=portraitRendering.frame.bottom+.5,JSON.stringify(portraitRendering));
-   if((width===1180&&height===757)||(width===1440&&height===900))assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
+   if((width===1180&&height===757)||(width===1440&&height===900)){
+    assert(heroGeometry.tasks.top>=0,JSON.stringify({heroGeometry,portraitRendering,height}));
+    assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
+   }
   }
   assert.equal(await page.locator('h1').count(),1);
   const main=page.locator('main.home-redesign');

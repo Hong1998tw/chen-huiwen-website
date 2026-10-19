@@ -193,6 +193,9 @@
   color: #fff;
   background: var(--ink);
 }
+@media (min-width: 781px) {
+  #main.home-redesign .home-task-paths { margin-top: 0; }
+}
 .home-redesign .home-task-paths a {
   display: grid;
   align-content: center;
