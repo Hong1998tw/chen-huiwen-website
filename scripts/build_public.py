@@ -457,7 +457,7 @@ def write_publication_manifest(staging, record_count, exclude=()):
     return manifest
 
 
-def build(root=ROOT, destination=None, *, include_font_contract=False):
+def build(root=ROOT, destination=None, *, include_font_contract=False, artifact_transform=None):
     root = root.resolve()
     destination = (destination or root / '_site').resolve()
     if destination == root or destination in root.parents:
@@ -484,6 +484,10 @@ def build(root=ROOT, destination=None, *, include_font_contract=False):
         # projections. Their route closure is included in the publication digest.
         from build_artifact_page_fonts import build as build_artifact_page_fonts
         artifact_page_fonts = build_artifact_page_fonts(root, staging, paths)
+        # Provider-specific derivatives belong to the isolated artifact and must
+        # exist before publication, page-font binding, and Service Worker closure.
+        if artifact_transform is not None:
+            artifact_transform(staging, root, paths)
         validate_artifact_links(staging, root)
         # The source-derived font contract requires a publication binding. Keep
         # the raw source worker out of this temporary manifest; the final manifest

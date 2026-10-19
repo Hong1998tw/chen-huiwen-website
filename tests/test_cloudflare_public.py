@@ -46,11 +46,14 @@ class StaticDeliveryTests(unittest.TestCase):
             sha='a'*40
             with patch.object(build_cloudflare_public.build_public,'build') as build:
                 with patch.object(build_cloudflare_public,'validate_artifact_contract',return_value={}) as validate, \
+                        patch.object(build_cloudflare_public,'validate_public_asset_fingerprints',return_value=[]) as validate_assets, \
                         patch.object(build_cloudflare_public,'page_font_namespace_records',return_value={}):
                     receipt=build_cloudflare_public.add_delivery_metadata(artifact,sha)
                     expected_headers=build_cloudflare_public.render_headers(artifact,manifest)
             build.assert_not_called()
             validate.assert_called_once_with(artifact.resolve(),build_cloudflare_public.ROOT.resolve())
+            self.assertEqual(validate_assets.call_args_list[0],
+                             ((artifact.resolve(),manifest),{'require_complete':True}))
             self.assertEqual(receipt['sourceCommit'],sha)
             self.assertEqual(receipt['publicArtifactDigest'],hashlib.sha256(encoded).hexdigest())
             self.assertEqual(receipt['publicFileCount'],1)

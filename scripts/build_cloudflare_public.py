@@ -9,6 +9,7 @@ import subprocess
 import sys
 import build_public
 from page_font_contract import FONT_PREFIXES, page_font_namespace_records, validate_artifact_contract
+from public_asset_fingerprints import derive_public_asset_fingerprints, validate_public_asset_fingerprints
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,10 +44,14 @@ def immutable_asset_records(root, publication):
     files = publication.get('files') if isinstance(publication, dict) else None
     if not isinstance(files, dict):
         raise ValueError('Public publication manifest has no files map')
+    fingerprinted_css_js = dict(validate_public_asset_fingerprints(root, publication))
 
     records = []
     for relative, declared_hash in sorted(files.items()):
         if not isinstance(relative, str) or '\\' in relative:
+            continue
+        if relative in fingerprinted_css_js:
+            records.append((relative, fingerprinted_css_js[relative]))
             continue
         name = Path(relative).name
         font_relative = relative.removeprefix(GENERATED_FONT_PREFIX)
@@ -138,6 +143,7 @@ def add_delivery_metadata(destination, source_commit, source_root=ROOT, font_con
     manifest = json.loads(publication.read_text(encoding='utf-8'))
     if not isinstance(manifest, dict) or not isinstance(manifest.get('files'), dict):
         raise ValueError('The publication manifest is invalid')
+    validate_public_asset_fingerprints(destination, manifest, require_complete=True)
     # Do not attach cache policy or a deployment receipt until the exact source-derived
     # route, font namespace, cmap, axis, and publication closure has been validated.
     if font_contract is None:
@@ -163,13 +169,46 @@ def add_delivery_metadata(destination, source_commit, source_root=ROOT, font_con
     return receipt
 
 
+def prepare_existing_artifact(destination, source_root=ROOT):
+    """Apply provider derivatives and rebind only the derived publication closure."""
+    destination = Path(destination).resolve()
+    source_root = Path(source_root).resolve()
+    publication_path = destination / 'publication-manifest.json'
+    if publication_path.is_symlink() or not publication_path.is_file():
+        raise ValueError('A built publication-manifest.json is required')
+    publication = json.loads(publication_path.read_text(encoding='utf-8'))
+    if (not isinstance(publication, dict) or not isinstance(publication.get('files'), dict)
+            or type(publication.get('publicRecordCount')) is not int):
+        raise ValueError('The public artifact is not a complete source-built publication')
+
+    derive_public_asset_fingerprints(
+        destination, source_root, build_public.public_paths(source_root),
+    )
+    # The font manifest binds to the temporary publication. Recompute it after the
+    # artifact-only HTML/CSS/JS rewrite, then derive the final worker and manifest.
+    build_public.write_publication_manifest(
+        destination, publication['publicRecordCount'], exclude={'sw.js'},
+    )
+    font_contract = validate_artifact_contract(destination, source_root)
+    from service_worker_artifact import render_service_worker
+    worker_path = destination / 'sw.js'
+    worker_path.write_bytes(
+        render_service_worker(destination, (source_root / 'sw.js').read_bytes(), font_contract),
+    )
+    build_public.write_publication_manifest(destination, publication['publicRecordCount'])
+    return font_contract
+
+
 def build(root=ROOT, destination=None, source_commit=None):
     root = Path(root).resolve()
     destination = Path(destination or root / '_site').resolve()
     revision = source_commit or subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip()
     if not re.fullmatch(r'[a-f0-9]{40}', revision):
         raise ValueError('A full Git source commit is required')
-    result = build_public.build(root, destination, include_font_contract=True)
+    result = build_public.build(
+        root, destination, include_font_contract=True,
+        artifact_transform=derive_public_asset_fingerprints,
+    )
     font_contract = result.pop('_fontContract')
     receipt = add_delivery_metadata(destination, revision, root, font_contract=font_contract)
     return {**result, 'sourceCommit':revision, 'provider':receipt['provider']}
@@ -187,7 +226,10 @@ def main():
             revision = args.source_commit or subprocess.check_output(
                 ['git','rev-parse','HEAD'], cwd=ROOT, text=True
             ).strip()
-            print(json.dumps(add_delivery_metadata(args.wrap_existing_artifact, revision), ensure_ascii=False))
+            font_contract = prepare_existing_artifact(args.wrap_existing_artifact, ROOT)
+            print(json.dumps(add_delivery_metadata(
+                args.wrap_existing_artifact, revision, ROOT, font_contract=font_contract,
+            ), ensure_ascii=False))
             return 0
         print(json.dumps(build(destination=args.output, source_commit=args.source_commit), ensure_ascii=False))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

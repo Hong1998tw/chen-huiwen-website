@@ -142,7 +142,10 @@ if (requiredShell.length) {
 
 // Optional shell failures do not block install; activation then removes old caches and raw source.
 {
-  const env = makeWorker({failOptionalPath: '/styles.css'});
+  const optionalCss = shell.find(url => /\.css(?:\?|$)/.test(url));
+  assert(optionalCss, 'worker SHELL must include a fingerprinted stylesheet');
+  const optionalCssPath = new URL(optionalCss, origin + '/sw.js').pathname;
+  const env = makeWorker({failOptionalPath: optionalCssPath});
   await env.caches.open(priorName);
   const oldUnrelated = await env.caches.open('unrelated-cache');
   await oldUnrelated.put(priorURL, new Response('unrelated cache stays'));
@@ -192,7 +195,7 @@ if (requiredShell.length) {
   for (const request of staleEntries) assert.equal(await active.match(request), undefined, request.url);
   assert.equal(await active.match(exactPublicQuery).then(response => response.text()), 'public exact query');
   assert((await active.match(origin + '/offline.html')));
-  const failedShellUrl = env.calls.find(url => new URL(url).pathname === '/styles.css');
+  const failedShellUrl = env.calls.find(url => new URL(url).pathname === optionalCssPath);
   assert(failedShellUrl, 'fixture exercised an optional shell request failure');
 
   // Sensitive requests are left to the browser's network path, even for fake 200 responses.
