@@ -6,8 +6,10 @@ import {
   classifyCdpRequestTimestamp,
   expectedSharedFallbackFontsForRoute,
   hashResponseBody,
+  isNoncriticalThirdPartyDocument,
   validateServiceCardOnDemand,
   validateTrustedClickMarker,
+  waitForTrackedNetworkQuiet,
 } from './page-font-artifact-network-gate.mjs';
 
 const route = 'service.html';
@@ -49,6 +51,21 @@ function request(path, timestamp, overrides = {}) {
     bodyError: null,
     ...overrides,
   };
+}
+
+function trackedRequest(requestType, overrides = {}) {
+  return request(overrides.path || `/tracked/${requestType.toLowerCase()}`, 1.4, {
+    requestType,
+    frameId: 'main-frame',
+    isMainFrame: true,
+    track: true,
+    terminal: null,
+    response: { status: 200, mimeType: 'text/plain' },
+    encodedDataLength: null,
+    bodyBytes: null,
+    bodySha256: null,
+    ...overrides,
+  });
 }
 
 function validRequests() {
@@ -96,6 +113,119 @@ test('the final network gate accepts one exact post-trigger service-card respons
   assert.equal(result.observationClosed, true);
   assert.equal(result.postTriggerFullTcRequests.length, 1);
   assert.equal(validCard(result).valid, true);
+});
+
+test('a pending foreign child-frame Document stays auditable as unknown without blocking font completeness', () => {
+  const foreignDocument = trackedRequest('Document', {
+    path: '/plugins/post.php',
+    origin: 'https://www.facebook.com',
+    frameId: 'facebook-child-frame',
+    isMainFrame: false,
+    terminal: null,
+  });
+  const result = snapshot({ rawRequests: [
+    ...validRequests().slice(0, 2), foreignDocument, validRequests()[2],
+  ] });
+
+  assert.deepEqual(result.violations, []);
+  assert.ok(result.trackedRequests.some((item) => item.requestId === foreignDocument.requestId),
+    'the original CDP request must remain in the full tracked audit snapshot');
+  assert.equal(result.criticalTrackedRequests.some((item) => item.requestId === foreignDocument.requestId), false);
+  assert.deepEqual(result.noncriticalThirdPartyDocuments, [{
+    requestId: foreignDocument.requestId,
+    path: '/plugins/post.php',
+    origin: 'https://www.facebook.com',
+    requestType: 'Document',
+    frameId: 'facebook-child-frame',
+    isMainFrame: false,
+    status: 200,
+    terminal: 'pending',
+    completeness: 'unknown',
+  }]);
+  assert.deepEqual(result.requestScope.noncriticalThirdPartyDocuments, result.noncriticalThirdPartyDocuments);
+  assert.match(result.requestScope.criticalCompleteness, /tracked Document, Font, Stylesheet, and Script/);
+});
+
+test('only positively classified foreign child Documents are exempt from critical request completeness', () => {
+  const cases = [
+    ['same-origin child Document', trackedRequest('Document', {
+      origin: routeOrigin, frameId: 'same-origin-child', isMainFrame: false,
+    })],
+    ['main-frame Document', trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: 'main-frame', isMainFrame: true,
+    })],
+    ['unknown frame ID', trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: null, isMainFrame: false,
+    })],
+    ['unknown frame classification', trackedRequest('Document', {
+      origin: 'https://www.facebook.com', frameId: 'unknown-frame', isMainFrame: null,
+    })],
+    ['unknown origin', trackedRequest('Document', {
+      origin: null, frameId: 'unknown-origin-frame', isMainFrame: false,
+    })],
+    ['own-origin Script', trackedRequest('Script', { origin: routeOrigin })],
+    ['own-origin Stylesheet', trackedRequest('Stylesheet', { origin: routeOrigin })],
+    ['foreign child Font', trackedRequest('Font', {
+      path: '/assets/fonts/foreign-child.woff2', origin: 'https://www.facebook.com',
+      frameId: 'facebook-child-frame', isMainFrame: false,
+    })],
+  ];
+
+  for (const [label, resource] of cases) {
+    assert.equal(isNoncriticalThirdPartyDocument(resource, routeOrigin), false, `${label} classification`);
+    const result = snapshot({ rawRequests: [...validRequests(), resource] });
+    assert.ok(result.criticalTrackedRequests.some((item) => item.requestId === resource.requestId),
+      `${label} must stay in the critical tracked set`);
+    assert.ok(result.violations.some((item) => item.kind === 'critical-tracked-request-pending'
+      && item.requestId === resource.requestId), `${label} must block final completeness`);
+    if (label === 'foreign child Font') {
+      for (const kind of ['page-font-not-finished', 'page-font-origin-mismatch',
+        'page-font-not-main-frame', 'unexpected-page-font-path']) {
+        assert.ok(result.violations.some((item) => item.kind === kind && item.requestId === resource.requestId),
+          `cross-frame Font must retain the existing ${kind} gate`);
+      }
+    }
+  }
+
+  assert.equal(isNoncriticalThirdPartyDocument(trackedRequest('Document', {
+    origin: 'https://www.facebook.com:443', frameId: 'frame', isMainFrame: false,
+  }), 'https://WWW.FACEBOOK.COM'), false,
+  'default ports and host casing must be normalized before comparing origins');
+});
+
+test('tracked-network quiet uses the same foreign-child Document classification and reports unknown state', async () => {
+  const foreignDocument = trackedRequest('Document', {
+    path: '/plugins/post.php', origin: 'https://www.facebook.com',
+    frameId: 'facebook-child-frame', isMainFrame: false,
+  });
+  const barrierSession = { async send(method) { assert.equal(method, 'Performance.getMetrics'); } };
+  const settled = await waitForTrackedNetworkQuiet({
+    routeNetwork: { requests: [foreignDocument], revision: 1 },
+    cdpSession: barrierSession,
+    routeOrigin,
+    timeoutMs: 100,
+    quietWindowMs: 0,
+    pollIntervalMs: 1,
+  });
+  assert.equal(settled.settled, true);
+  assert.deepEqual(settled.pending, []);
+  assert.equal(settled.noncriticalThirdPartyDocuments[0].completeness, 'unknown');
+  assert.equal(settled.noncriticalThirdPartyDocuments[0].terminal, 'pending');
+
+  const unknownFrameDocument = trackedRequest('Document', {
+    path: '/plugins/unknown-frame.php', origin: 'https://www.facebook.com',
+    frameId: null, isMainFrame: false,
+  });
+  const failClosed = await waitForTrackedNetworkQuiet({
+    routeNetwork: { requests: [unknownFrameDocument], revision: 1 },
+    cdpSession: barrierSession,
+    routeOrigin,
+    timeoutMs: 20,
+    quietWindowMs: 0,
+    pollIntervalMs: 2,
+  });
+  assert.equal(failClosed.settled, false);
+  assert.equal(failClosed.pending[0].requestId, unknownFrameDocument.requestId);
 });
 
 test('a CDP pre-trigger Full-TC request delivered after the click marker remains initial and fails', () => {

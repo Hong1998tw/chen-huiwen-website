@@ -9,6 +9,41 @@ export const SERVICE_CARD_SELECTOR = '[data-legal-view="card"]';
 const TRACKED_REQUEST_TYPES = new Set(['Document', 'Font', 'Stylesheet', 'Script']);
 const SHA256 = /^[a-f0-9]{64}$/;
 
+function normalizeHttpOrigin(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function isNoncriticalThirdPartyDocument(request, routeOrigin) {
+  if (request?.requestType !== 'Document' || request.isMainFrame !== false
+    || typeof request.frameId !== 'string' || !request.frameId.trim()) return false;
+  const requestOrigin = normalizeHttpOrigin(request.origin);
+  const normalizedRouteOrigin = normalizeHttpOrigin(routeOrigin);
+  return requestOrigin !== null && normalizedRouteOrigin !== null
+    && requestOrigin !== normalizedRouteOrigin;
+}
+
+function auditThirdPartyDocument(request) {
+  const terminal = request.terminal || 'pending';
+  return {
+    requestId: request.requestId || null,
+    path: request.path || null,
+    origin: request.origin || null,
+    requestType: request.requestType,
+    frameId: request.frameId || null,
+    isMainFrame: request.isMainFrame,
+    status: request.status ?? request.response?.status ?? null,
+    terminal,
+    completeness: terminal === 'finished' ? 'complete' : terminal === 'failed' ? 'failed' : 'unknown',
+  };
+}
+
 export function expectedSharedFallbackFontsForRoute(routeManifestRow, sharedJpFallbackFont) {
   const jpFallbackCodepoints = routeManifestRow?.jpFallbackCodepoints;
   const routeSourceCodepoints = routeManifestRow?.codepoints;
@@ -208,6 +243,16 @@ export function buildFinalFontNetworkSnapshot({
     return request;
   });
 
+  const trackedRequests = requests.filter((request) => TRACKED_REQUEST_TYPES.has(request.requestType));
+  const noncriticalThirdPartyDocuments = trackedRequests
+    .filter((request) => isNoncriticalThirdPartyDocument(request, routeOrigin))
+    .map(auditThirdPartyDocument);
+  const criticalTrackedRequests = trackedRequests
+    .filter((request) => !isNoncriticalThirdPartyDocument(request, routeOrigin));
+  for (const request of criticalTrackedRequests) {
+    if (request.terminal === 'pending') pushViolation(violations, 'critical-tracked-request-pending', request);
+  }
+
   const fontRequests = requests.filter((request) => request.requestType === 'Font');
   const fullTcRequests = requests.filter((request) => request.path === fullTcPath);
   const expectedPaths = new Set(expectedPreloads);
@@ -320,6 +365,9 @@ export function buildFinalFontNetworkSnapshot({
     timingSource: 'CDP Network.timestamp compared with CDP Performance.getMetrics Timestamp',
     requestScope: {
       trackedResourceTypes: [...TRACKED_REQUEST_TYPES],
+      criticalCompleteness: 'tracked Document, Font, Stylesheet, and Script requests must reach a terminal event; only positively classified foreign child-frame Documents are excluded',
+      noncriticalThirdPartyDocumentCriteria: 'Document request, isMainFrame=false, non-empty frameId, valid HTTP(S) origin different from the normalized route origin',
+      noncriticalThirdPartyDocuments,
       fontFrameScope: 'all frames; only declared same-origin main-frame page preloads and explicit shared fallback fonts are allowed',
       expectedPageFontPaths: [...expectedPaths],
       expectedPageFontArtifacts: expectedFontArtifacts.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
@@ -339,7 +387,9 @@ export function buildFinalFontNetworkSnapshot({
     postTriggerFullTcRequests: fullTcRequests.filter((request) => request.phase === 'post-trigger'),
     pageFontRequests,
     sharedFallbackFontRequests,
-    trackedRequests: requests.filter((request) => TRACKED_REQUEST_TYPES.has(request.requestType)),
+    criticalTrackedRequests,
+    noncriticalThirdPartyDocuments,
+    trackedRequests,
     violations,
   };
 }
@@ -400,6 +450,7 @@ export function validateServiceCardOnDemand({
 export async function waitForTrackedNetworkQuiet({
   routeNetwork,
   cdpSession,
+  routeOrigin,
   timeoutMs = NETWORK_SETTLE_TIMEOUT_MS,
   quietWindowMs = NETWORK_QUIET_WINDOW_MS,
   pollIntervalMs = 25,
@@ -409,16 +460,22 @@ export async function waitForTrackedNetworkQuiet({
   const startedAt = performance.now();
   let quietSince = null;
   let observedRevision = routeNetwork.revision;
+  const criticalPendingRequests = () => routeNetwork.requests.filter((request) => request.track
+    && !request.terminal && !isNoncriticalThirdPartyDocument(request, routeOrigin));
+  const thirdPartyDocumentAudit = () => routeNetwork.requests
+    .filter((request) => request.track && isNoncriticalThirdPartyDocument(request, routeOrigin))
+    .map(auditThirdPartyDocument);
 
   while (performance.now() - startedAt < timeoutMs) {
-    const pending = routeNetwork.requests.filter((request) => request.track && !request.terminal);
+    const pending = criticalPendingRequests();
     if (pending.length === 0 && observedRevision === routeNetwork.revision) {
       if (quietSince === null) quietSince = performance.now();
       if (performance.now() - quietSince >= quietWindowMs) {
         await cdpSession.send('Performance.getMetrics');
-        const afterBarrierPending = routeNetwork.requests.some((request) => request.track && !request.terminal);
-        if (!afterBarrierPending && observedRevision === routeNetwork.revision) {
-          return { settled: true, elapsedMs: Math.round(performance.now() - startedAt), pending: [] };
+        const afterBarrierPending = criticalPendingRequests();
+        if (afterBarrierPending.length === 0 && observedRevision === routeNetwork.revision) {
+          return { settled: true, elapsedMs: Math.round(performance.now() - startedAt), pending: [],
+            noncriticalThirdPartyDocuments: thirdPartyDocumentAudit() };
         }
         observedRevision = routeNetwork.revision;
         quietSince = null;
@@ -430,9 +487,12 @@ export async function waitForTrackedNetworkQuiet({
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
-  const pending = routeNetwork.requests.filter((request) => request.track && !request.terminal)
-    .map((request) => ({ requestId: request.requestId, path: request.path, requestType: request.requestType }));
-  return { settled: false, elapsedMs: Math.round(performance.now() - startedAt), pending };
+  const pending = criticalPendingRequests()
+    .map((request) => ({ requestId: request.requestId, path: request.path, requestType: request.requestType,
+      origin: request.origin || null, frameId: request.frameId || null, isMainFrame: request.isMainFrame,
+      terminal: request.terminal || 'pending' }));
+  return { settled: false, elapsedMs: Math.round(performance.now() - startedAt), pending,
+    noncriticalThirdPartyDocuments: thirdPartyDocumentAudit() };
 }
 
 export function hashResponseBody(bytes) {
