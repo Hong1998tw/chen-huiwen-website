@@ -15,21 +15,30 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
   }
 })();
-// Keep the native sticky header calm while scrolling: compact while moving down,
-// restore its accessible 64px height on the first meaningful upward movement.
+// Compact sticky mobile down; restore up.
 (() => {
   const header = document.querySelector('.site-header');
   if (!header) return;
   const mobile = window.matchMedia('(max-width: 780px)');
+  const isStickyMobile = () => mobile.matches && window.getComputedStyle(header).position === 'sticky';
   let lastY;
   let direction = 0;
   let directionStartY;
   let initialized = false;
   let pendingMediaReset = false;
   let queued = false;
+  let stickyMobile = isStickyMobile();
+  const resetMode = y => {
+    if (isStickyMobile() === stickyMobile) return;
+    stickyMobile = !stickyMobile;
+    header.classList.remove('is-compact');
+    if (!initialized) pendingMediaReset = true;
+    else { lastY = directionStartY = y ?? window.scrollY; direction = 0; }
+  };
   const update = () => {
     queued = false;
     const y = window.scrollY;
+    resetMode(y);
     if (!initialized) {
       initialized = true;
       lastY = y;
@@ -38,14 +47,15 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
       if (pendingMediaReset) {
         header.classList.remove('is-compact');
         pendingMediaReset = false;
-      } else if (mobile.matches && y > 8) {
+      } else if (stickyMobile && y > 8) {
         header.classList.add('is-compact');
         document.dispatchEvent(new Event('site:header-layout-change'));
       }
       return;
     }
+    if (!stickyMobile) return;
     const movement = Math.sign(y - lastY);
-    if (!mobile.matches || y <= 8) {
+    if (y <= 8) {
       header.classList.remove('is-compact');
       direction = 0;
       directionStartY = y;
@@ -54,9 +64,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
         direction = movement;
         directionStartY = lastY;
       }
-      // The 64px/52px header moves centered controls by up to 6px. Wait for
-      // cumulative 8px movement so that small scroll-anchor corrections do
-      // not reverse the user's scroll direction and toggle the header back.
+      // 64/52px shifts move controls 6px; 8px filters anchor jitter.
       if (direction > 0 && y - directionStartY >= 8) {
         header.classList.add('is-compact');
         directionStartY = y;
@@ -73,17 +81,8 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     window.requestAnimationFrame(update);
   };
   window.addEventListener('scroll', onScroll, {passive:true});
-  mobile.addEventListener('change', () => {
-    if (!initialized) {
-      pendingMediaReset = true;
-      header.classList.remove('is-compact');
-      return;
-    }
-    lastY = window.scrollY;
-    direction = 0;
-    directionStartY = lastY;
-    header.classList.remove('is-compact');
-  });
+  mobile.addEventListener('change', () => resetMode());
+  window.addEventListener('resize', () => resetMode());
   onScroll();
 })();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.

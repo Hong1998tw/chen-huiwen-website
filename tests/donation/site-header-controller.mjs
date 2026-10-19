@@ -8,7 +8,7 @@ import vm from 'node:vm';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = await readFile(resolve(root, 'site.js'), 'utf8');
-const compactMarker = '// Keep the native sticky header calm while scrolling:';
+const compactMarker = '// Compact sticky mobile down;';
 const menuMarker = '// Progressive enhancement: navigation remains usable when JavaScript is disabled.';
 const menuEndMarker = '\n(() => {\n  const search = document.getElementById(\'record-search\');';
 
@@ -83,6 +83,7 @@ class FakeElement extends FakeEventTarget {
     this.open = false;
     this.disabled = false;
     this.boxBottom = 65;
+    this.position = 'sticky';
     this.textContent = '';
   }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
@@ -153,6 +154,7 @@ function makeHarness({mobile = true, scrollY = 0} = {}) {
   const mobileQuery = new FakeMediaQuery('(max-width: 780px)', mobile);
   const desktopQuery = new FakeMediaQuery('(min-width: 781px)', !mobile);
   const window = new FakeEventTarget();
+  window.getComputedStyle = element => ({position:element.position});
   window.matchMedia = query => query === '(max-width: 780px)' ? mobileQuery : desktopQuery;
   window.requestAnimationFrame = callback => {
     registrationOrder.push('raf');
@@ -162,7 +164,7 @@ function makeHarness({mobile = true, scrollY = 0} = {}) {
   window.addEventListener = (type, listener, options) => {
     if (type === 'scroll') {
       registrationOrder.push(options?.passive ? 'scroll-passive' : 'scroll');
-    }
+    } else if (type === 'resize') registrationOrder.push('resize');
     FakeEventTarget.prototype.addEventListener.call(window, type, listener);
   };
   mobileQuery.addEventListener = (type, listener) => {
@@ -200,7 +202,7 @@ check('constructs without reading scrollY and coalesces startup plus early scrol
   const h = makeHarness({scrollY:250});
   h.runCompact();
   assert.equal(h.scrollReads, 0);
-  assert.deepEqual(h.registrationOrder, ['scroll-passive','media','raf']);
+  assert.deepEqual(h.registrationOrder, ['scroll-passive','media','resize','raf']);
   assert.equal(h.frames.length, 1);
   h.scroll(246);
   h.scroll(250);
@@ -275,6 +277,38 @@ check('ready media changes reset immediately and reseed direction from real scro
   assert.equal(h.scrollReads, 3);
   h.scroll(508); h.flushFrame();
   assert.equal(h.header.classList.contains('is-compact'), true);
+});
+
+check('short-height in-flow headers ignore alternating scroll and resize back into sticky mode from a fresh baseline', () => {
+  const h = makeHarness({scrollY:1486});
+  h.header.position = 'relative';
+  h.runCompact(); h.flushFrame();
+  assert.equal(h.header.classList.contains('is-compact'), false);
+  for (const y of [1498,1486,1498,1486,1498]) {
+    h.scroll(y); h.flushFrame();
+    assert.equal(h.header.classList.contains('is-compact'), false);
+  }
+
+  h.header.position = 'sticky';
+  h.window.dispatchEvent(new FakeEvent('resize'));
+  assert.equal(h.header.classList.contains('is-compact'), false);
+  h.scroll(1505); h.flushFrame();
+  assert.equal(h.header.classList.contains('is-compact'), false);
+  h.scroll(1506); h.flushFrame();
+  assert.equal(h.header.classList.contains('is-compact'), true);
+});
+
+check('switching a compact header into in-flow mode clears once and leaves scroll oscillation alone', () => {
+  const h = makeHarness({scrollY:250});
+  h.runCompact(); h.flushFrame();
+  assert.equal(h.header.classList.contains('is-compact'), true);
+  h.header.position = 'relative';
+  h.window.dispatchEvent(new FakeEvent('resize'));
+  assert.equal(h.header.classList.contains('is-compact'), false);
+  for (const y of [1486,1498,1486,1498]) {
+    h.scroll(y); h.flushFrame();
+    assert.equal(h.header.classList.contains('is-compact'), false);
+  }
 });
 
 check('early menu focus survives restored initialization and the header min-height end updates menu top after the child end', () => {
