@@ -8,7 +8,7 @@ No request-time main module, run_worker_first, Worker Caching, database, cron, n
 ## Normal publication
 1. Owner publishes through the existing standalone CMS.
 2. The same publisher opens a bounded PR; required checks, trusted path guard and native auto-merge remain mandatory.
-3. Main triggers Cloudflare Builds: install pinned validators, run quality.py, build_cloudflare_public.py, then pinned Wrangler with wrangler.public.jsonc.
+3. Main triggers Cloudflare Builds: install the pinned validators plus `Brotli==1.2.0` and `PyYAML==6.0.3`, run `quality.py`, build_cloudflare_public.py, then pinned Wrangler with wrangler.public.jsonc. The quality gate discovers the A07 YAML contract test, so its parser dependency is pinned in the build toolchain.
 4. The build copies only build_public.py output and adds deployment.json, with the exact sourceCommit and publication-manifest digest. Internal data, repository code, credentials and management files stay excluded.
 5. cloudflare-public.yml is read-only: it waits until the production origin serves that exact commit and artifact digest. Its successful receipt is the CMS deployed layer.
 6. production-verification.yml follows that successful exact-SHA receipt and retains independent HTTP, all-public-page, snapshot and native-browser checks. BLOCKED is never PASS.
