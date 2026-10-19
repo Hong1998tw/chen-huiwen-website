@@ -176,7 +176,8 @@ class SecurityHeaderTests(unittest.TestCase):
             files[nested_path.relative_to(root).as_posix()] = digest
             publication = {'files': files}
             self.assertEqual(cloudflare.immutable_asset_records(root, publication), [])
-            self.assertEqual(cloudflare.immutable_asset_records(root, {'files': {0: '0' * 64}}), [])
+            with self.assertRaisesRegex(ValueError, 'publication path is unsafe'):
+                cloudflare.immutable_asset_records(root, {'files': {0: '0' * 64}})
             with self.assertRaisesRegex(ValueError, 'PAGE_FONT_MANIFEST_MISSING_OR_UNSAFE'):
                 cloudflare.render_headers(root, publication)
 
@@ -223,19 +224,34 @@ class SecurityHeaderTests(unittest.TestCase):
             tampered = Path(directory) / 'tampered'
             shutil.copytree(self.site, tampered)
             (tampered / relative).write_bytes(original + b'tampered')
-            with self.assertRaisesRegex(ValueError, 'Manifest SHA-256'):
+            with self.assertRaisesRegex(ValueError, 'differs from bytes'):
                 cloudflare.render_headers(tampered, self.publication)
 
         changed = original + b'changed bytes'
         digest = hashlib.sha256(changed).hexdigest()
-        new_relative = re.sub(r'[a-f0-9]{12}(\.woff2|\.js)$', digest[:12] + r'\1', relative)
+        full_hash = re.search(r'\.[a-f0-9]{64}(\.(?:css|js))$', relative)
+        if full_hash:
+            new_relative = relative[:full_hash.start()] + '.' + digest + full_hash.group(1)
+        else:
+            new_relative = re.sub(r'[a-f0-9]{12}(\.woff2|\.js)$', digest[:12] + r'\1', relative)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            rotated_files = {}
+            for asset_path, asset_hash in self.publication['files'].items():
+                if (asset_path == relative or asset_path == 'sw.js'
+                        or Path(asset_path).suffix.lower() not in {'.css', '.js'}):
+                    continue
+                source = self.site / asset_path
+                target = root / asset_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                rotated_files[asset_path] = asset_hash
             path = root / new_relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(changed)
-            self.assertEqual(cloudflare.immutable_asset_records(root, {'files': {new_relative: digest}}),
-                             [(new_relative, digest)])
+            rotated_files[new_relative] = digest
+            rotated_records = cloudflare.immutable_asset_records(root, {'files': rotated_files})
+            self.assertIn((new_relative, digest), rotated_records)
 
         immutable_paths = {'/' + path for path, _ in assets}
         self.assertNotIn('/site.js', immutable_paths)

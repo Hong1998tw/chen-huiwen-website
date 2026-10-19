@@ -233,7 +233,8 @@ if (requiredShell.length) {
   assert((await active.match(publicJson)), 'public JSON must retain network-first caching');
 
   const exact = shell.find(url => url.startsWith('./home.js?'))
-    || shell.find(url => /\.(?:css|js)(?:\?|$)/.test(url));
+    || shell.find(url => /\.js(?:\?|$)/.test(url))
+    || shell.find(url => /\.css(?:\?|$)/.test(url));
   assert(exact, 'worker SHELL must include a CSS or JavaScript resource for exact cache-key checks');
   const exactURL = resolve(exact);
   const exactRequest = new Request(exactURL);
