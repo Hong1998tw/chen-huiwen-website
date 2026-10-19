@@ -392,7 +392,7 @@ test('rejects unrendered manifest fonts, wrong route binding, and failed capture
 });
 
 test('maps manifest JP fallback and only the explicit system-symbol fallback codepoints', () => {
-  const visible = [0x4e2d, 0x6587, 0x65b0, 0x65e5, 0x2630, 0x2733];
+  const visible = [0x4e2d, 0x6587, 0x65b0, 0x65e5, 0x2304, 0x2630, 0x2733];
   const result = validateVisibleCodepointCoverage({
     route: visualRoute,
     routeCodepoints,
@@ -400,7 +400,7 @@ test('maps manifest JP fallback and only the explicit system-symbol fallback cod
     visibleCodepoints: visible,
     routeFallbacks: { jp: [0x65e5] },
   });
-  assert.deepEqual(result.coverage, { common: 2, delta: 1, jpFallback: 1, systemFallback: 2 });
+  assert.deepEqual(result.coverage, { common: 2, delta: 1, jpFallback: 1, systemFallback: 3 });
   assert.deepEqual(result.fallbacks.system, SYSTEM_FALLBACK_CODEPOINTS);
   const glyphDiagnostics = classifyVisibleGlyphDiagnostics({
     expectedFonts,
@@ -411,12 +411,13 @@ test('maps manifest JP fallback and only the explicit system-symbol fallback cod
         codepoints: [0x2630, 0x2733], sample: '☰ ✳' },
       { selector: 'span::after', fontFamily: 'system-ui', fontWeight: '400', fontStyle: 'normal',
         codepoints: [0x2733], sample: '✳' },
+      { selector: 'summary::after', codepoints: [0x2304], sample: '⌄⌄' },
     ],
   });
-  assert.deepEqual(glyphDiagnostics.rawTcUnsupportedCodepoints, [0x2630, 0x2733, 0x65e5]);
-  assert.equal(glyphDiagnostics.rawTcUnsupportedGlyphOwners.length, 2);
+  assert.deepEqual(glyphDiagnostics.rawTcUnsupportedCodepoints, [0x2304, 0x2630, 0x2733, 0x65e5]);
+  assert.equal(glyphDiagnostics.rawTcUnsupportedGlyphOwners.length, 3);
   assert.deepEqual(glyphDiagnostics.fallbackCodepoints, {
-    jp: [0x65e5], system: SYSTEM_FALLBACK_CODEPOINTS,
+    jp: [0x65e5], system: [0x2304, 0x2630, 0x2733],
   });
   assert.equal(glyphDiagnostics.unexpectedGlyphCount, 0);
   assert.deepEqual(glyphDiagnostics.unexpectedGlyphs, []);
@@ -434,6 +435,27 @@ test('maps manifest JP fallback and only the explicit system-symbol fallback cod
     visibleCodepoints: [...visible, 0x1f600],
     routeFallbacks: { jp: [0x65e5] },
   }), /visible character U\+1F600 is outside the page manifest and explicit JP\/system fallback contracts/);
+  const unlistedSymbol = 0x2192;
+  const unexpectedSymbol = classifyVisibleGlyphDiagnostics({
+    expectedFonts,
+    visibleCodepoints: [...visible, unlistedSymbol],
+    routeFallbacks: { jp: [0x65e5] },
+  });
+  assert.deepEqual(unexpectedSymbol.unexpectedGlyphs.map(({ codepoint }) => codepoint), [unlistedSymbol]);
+  assert.throws(() => validateVisibleCodepointCoverage({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: [...visible, unlistedSymbol],
+    routeFallbacks: { jp: [0x65e5] },
+  }), /visible character U\+2192 is outside the page manifest and explicit JP\/system fallback contracts/);
+  assert.throws(() => validateVisibleCodepointCoverage({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: [...routeCodepoints, 0x65e5],
+    routeFallbacks: { jp: [] },
+  }), /visible character U\+65E5 is outside the page manifest and explicit JP\/system fallback contracts/);
   assert.throws(() => validateVisibleCodepointCoverage({
     route: visualRoute,
     routeCodepoints,
@@ -445,7 +467,7 @@ test('maps manifest JP fallback and only the explicit system-symbol fallback cod
 
 test('visible fallback glyphs still require the producer Delta/Common prefix and a system fallback', () => {
   const fallbackTypography = loadedTypography(visualRoute, {
-    visibleCodepoints: [...routeCodepoints, 0x2630],
+    visibleCodepoints: [...routeCodepoints, 0x2304, 0x2630],
     bodyFontFamily: '"Fixture Page Delta", "Fixture Page Common", system-ui',
     headingFontFamily: '"Fixture Page Delta", "Fixture Page Common", sans-serif',
   });
@@ -456,6 +478,14 @@ test('visible fallback glyphs still require the producer Delta/Common prefix and
     typography: fallbackTypography,
     stage: 'explicit symbol fallback',
   }), true);
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: { ...fallbackTypography,
+      bodyFontFamily: 'Arial, "Fixture Page Delta", "Fixture Page Common", system-ui' },
+    stage: 'symbol fallback before producer page-font prefix',
+  }), /must begin with producer-contract family order Fixture Page Delta → Fixture Page Common/);
   assert.throws(() => validateVisualTypography({
     route: visualRoute,
     routeCodepoints,
