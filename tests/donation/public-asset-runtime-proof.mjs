@@ -3,11 +3,36 @@ import { createHash } from 'node:crypto';
 
 export const PLAYWRIGHT_VERSION = '1.55.1';
 export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+export const LOCAL_CI_MODE = 'local-ci';
+export const PRODUCTION_LIVE_MODE = 'production-live';
+export const PRODUCTION_BASE_URL = 'https://www.huiwen.tw/';
 const SHA256 = /^[a-f0-9]{64}$/;
+const SHA40 = /^[a-f0-9]{40}$/;
 const FINGERPRINTED_PATH = /^(?:(?<directory>.*\/))?(?<stem>[^/]+)\.(?<digest>[a-f0-9]{64})(?<suffix>\.(?:css|js))$/;
 
 export function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+export function normalizeBaseUrl(value, mode = LOCAL_CI_MODE) {
+  assert.ok(mode === LOCAL_CI_MODE || mode === PRODUCTION_LIVE_MODE,
+    `PUBLIC_ASSET_RUNTIME_MODE is unsupported: ${mode}`);
+  assert.ok(value, mode === LOCAL_CI_MODE
+    ? 'BASE_URL from the existing Wrangler local step is required'
+    : 'BASE_URL from the production-live workflow step is required');
+  const url = new URL(value);
+  assert.ok(['http:', 'https:'].includes(url.protocol), 'BASE_URL must use HTTP or HTTPS');
+  assert.ok(!url.username && !url.password && !url.search && !url.hash,
+    'BASE_URL contains credentials or extra URL state');
+  if (mode === PRODUCTION_LIVE_MODE) {
+    assert.equal(value, PRODUCTION_BASE_URL,
+      `production-live BASE_URL must be exactly ${PRODUCTION_BASE_URL}`);
+    return url;
+  }
+  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname),
+    'BASE_URL must point to the existing loopback Wrangler instance');
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/`;
+  return url;
 }
 
 export function fingerprintAlias(relativePath) {
@@ -269,6 +294,150 @@ export function bindPublicArtifactProvenance({
       runId,
       runAttempt,
       artifactSourceCommit: deployment.sourceCommit,
+    },
+    publicManifest: {
+      sha256: sha256(publicationManifestBytes),
+      bytes: publicationManifestBytes.byteLength,
+      fileCount: Object.keys(publication.files).length,
+      publicRecordCount: publication.publicRecordCount,
+      deploymentDigest: deployment.publicArtifactDigest,
+    },
+    runtime,
+  };
+}
+
+export function bindProductionPublicArtifactProvenance({
+  eventName,
+  eventPayload,
+  githubSha,
+  githubRef,
+  checkoutSha,
+  deployment,
+  deploymentBytes,
+  liveDeploymentResponse,
+  publication,
+  publicationManifestBytes,
+  runtime,
+  runId = null,
+  runAttempt = null,
+}) {
+  assert.ok(eventName === 'workflow_run' || eventName === 'workflow_dispatch',
+    'production-live proof requires a native workflow_run or workflow_dispatch event');
+  assert.match(checkoutSha || '', SHA40, 'checked out Git HEAD is missing or invalid');
+
+  let expectedCheckoutSha;
+  let checkoutShaContract;
+  let eventRef = null;
+  if (eventName === 'workflow_run') {
+    expectedCheckoutSha = eventPayload?.workflow_run?.head_sha;
+    assert.match(expectedCheckoutSha || '', SHA40, 'native workflow_run.head_sha is missing or invalid');
+    checkoutShaContract = 'github.event.workflow_run.head_sha';
+  } else {
+    eventRef = eventPayload?.ref;
+    assert.ok(typeof eventRef === 'string' && eventRef.length > 0,
+      'native workflow_dispatch.ref is missing');
+    assert.equal(eventRef, githubRef,
+      'workflow_dispatch.ref differs from the native GITHUB_REF context');
+    expectedCheckoutSha = githubSha;
+    checkoutShaContract = 'GITHUB_SHA for the native workflow_dispatch ref';
+    assert.match(expectedCheckoutSha || '', SHA40, 'workflow_dispatch GITHUB_SHA is missing or invalid');
+  }
+  assert.equal(checkoutSha, expectedCheckoutSha,
+    `checked out Git HEAD differs from ${checkoutShaContract}`);
+
+  assert.equal(deployment?.provider, 'cloudflare-static-assets',
+    'local public artifact receipt provider is unexpected');
+  assert.equal(deployment?.schemaVersion, 1, 'local public artifact receipt schema version is unexpected');
+  assert.equal(deployment?.sourceCommit, checkoutSha,
+    'local public artifact source commit differs from the checked out Git HEAD');
+  assert.ok(deploymentBytes instanceof Uint8Array && deploymentBytes.byteLength > 0,
+    'local deployment receipt bytes are missing');
+  let localDeployment;
+  try {
+    localDeployment = JSON.parse(Buffer.from(deploymentBytes).toString('utf8'));
+  } catch {
+    throw new Error('_site deployment.json is not valid JSON');
+  }
+  assert.deepEqual(localDeployment, deployment,
+    'parsed local deployment receipt differs from the _site deployment.json bytes');
+  assert.ok(publicationManifestBytes instanceof Uint8Array && publicationManifestBytes.byteLength > 0,
+    'local publication manifest bytes are missing');
+  let localPublication;
+  try {
+    localPublication = JSON.parse(Buffer.from(publicationManifestBytes).toString('utf8'));
+  } catch {
+    throw new Error('_site publication-manifest.json is not valid JSON');
+  }
+  assert.deepEqual(localPublication, publication,
+    'parsed publication manifest differs from the _site publication-manifest.json bytes');
+  assert.equal(deployment?.publicArtifactDigest, sha256(publicationManifestBytes),
+    'local deployment receipt digest differs from the _site publication manifest bytes');
+  assert.ok(publication?.files && typeof publication.files === 'object' && !Array.isArray(publication.files),
+    'publication files map is missing');
+  assert.equal(deployment?.publicFileCount, Object.keys(publication.files).length,
+    'local deployment receipt file count differs from the publication manifest');
+  assert.equal(deployment?.publicRecordCount, publication.publicRecordCount,
+    'local deployment receipt record count differs from the publication manifest');
+
+  assert.ok(liveDeploymentResponse, 'live HTTP deployment receipt observation is missing');
+  const expectedReceiptUrl = `${PRODUCTION_BASE_URL}deployment.json`;
+  assert.equal(liveDeploymentResponse.requestedUrl, expectedReceiptUrl,
+    'live HTTP deployment receipt request differs from the fixed production origin');
+  assert.equal(liveDeploymentResponse.url, expectedReceiptUrl,
+    'live HTTP deployment receipt URL differs from the fixed production origin');
+  assert.equal(liveDeploymentResponse.status, 200,
+    `live HTTP deployment receipt expected HTTP 200, got ${liveDeploymentResponse.status}`);
+  const liveBytes = liveDeploymentResponse.body;
+  assert.ok(liveBytes instanceof Uint8Array && liveBytes.byteLength > 0,
+    'live HTTP deployment receipt body is missing');
+  assert.equal(sha256(liveBytes), sha256(deploymentBytes),
+    'live HTTP deployment receipt bytes differ from the checked out _site deployment.json');
+  let liveDeployment;
+  try {
+    liveDeployment = JSON.parse(Buffer.from(liveBytes).toString('utf8'));
+  } catch {
+    throw new Error('live HTTP deployment receipt is not valid JSON');
+  }
+  assert.equal(liveDeployment?.provider, deployment.provider,
+    'live HTTP deployment receipt provider differs from _site');
+  assert.equal(liveDeployment?.sourceCommit, checkoutSha,
+    'live HTTP deployment source commit differs from the checked out Git HEAD');
+  assert.equal(liveDeployment?.publicArtifactDigest, deployment.publicArtifactDigest,
+    'live HTTP deployment digest differs from the checked out _site publication manifest');
+  assert.deepEqual(liveDeployment, localDeployment,
+    'live HTTP deployment receipt fields differ from the checked out _site deployment.json');
+
+  assert.equal(runtime?.playwrightVersion, PLAYWRIGHT_VERSION,
+    'Playwright runtime version is not pinned');
+  assert.ok(typeof runtime?.chromiumVersion === 'string' && runtime.chromiumVersion.length > 0,
+    'Chromium runtime version is missing');
+  return {
+    mode: PRODUCTION_LIVE_MODE,
+    sourceCi: {
+      eventName,
+      githubSha: githubSha || null,
+      githubRef: githubRef || null,
+      checkoutSha,
+      checkoutShaContract,
+      eventRef,
+      workflowRunHeadSha: eventName === 'workflow_run' ? expectedCheckoutSha : null,
+      runId,
+      runAttempt,
+      artifactSourceCommit: deployment.sourceCommit,
+    },
+    localDeployment: {
+      sha256: sha256(deploymentBytes),
+      bytes: deploymentBytes.byteLength,
+      sourceCommit: deployment.sourceCommit,
+      publicArtifactDigest: deployment.publicArtifactDigest,
+    },
+    liveDeployment: {
+      url: liveDeploymentResponse.url,
+      status: liveDeploymentResponse.status,
+      sha256: sha256(liveBytes),
+      bytes: liveBytes.byteLength,
+      sourceCommit: liveDeployment.sourceCommit,
+      publicArtifactDigest: liveDeployment.publicArtifactDigest,
     },
     publicManifest: {
       sha256: sha256(publicationManifestBytes),

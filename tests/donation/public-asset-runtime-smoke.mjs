@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,10 +7,14 @@ import {
   assembleFingerprintInventory,
   assembleMutableAliasResource,
   assemblePublishedResource,
+  bindProductionPublicArtifactProvenance,
   bindPublicArtifactProvenance,
   fingerprintAlias,
+  LOCAL_CI_MODE,
+  normalizeBaseUrl,
   parseHeaderRules,
   PLAYWRIGHT_VERSION,
+  PRODUCTION_LIVE_MODE,
   selectSharedCommonFont,
   sha256,
   sha256 as digestBytes,
@@ -28,13 +33,26 @@ const RESOURCE_TIMEOUT_MS = 12000;
 const report = {
   schemaVersion: 1,
   status: 'RUNNING',
-  scope: 'Bounded native CI browser proof of public fingerprint caching and the published map runtime',
+  scope: 'Bounded native browser proof of public fingerprint caching and the published map runtime',
   startedAt: new Date().toISOString(),
+  mode: process.env.PUBLIC_ASSET_RUNTIME_MODE || LOCAL_CI_MODE,
   baseUrl: null,
+  proofConstraints: {
+    serviceWorkers: 'block',
+    requestRouting: false,
+    snapshotNormalization: false,
+    tlsVerification: 'runtime defaults; no bypass',
+    liveReceiptSource: process.env.PUBLIC_ASSET_RUNTIME_MODE === PRODUCTION_LIVE_MODE ? 'HTTP GET /deployment.json' : null,
+  },
   sourceCi: {
     eventName: process.env.GITHUB_EVENT_NAME || null,
     mergeSha: process.env.GITHUB_SHA || null,
     pullRequestHeadSha: process.env.PR_HEAD_SHA || null,
+    githubSha: process.env.GITHUB_SHA || null,
+    githubRef: process.env.GITHUB_REF || null,
+    nativeEventPath: process.env.GITHUB_EVENT_PATH || null,
+    checkoutSha: null,
+    checkoutShaContract: null,
     runId: process.env.GITHUB_RUN_ID || null,
     runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
   },
@@ -75,17 +93,6 @@ async function readArtifact(relative) {
     else assert.ok(stat.isFile(), `artifact file is missing: ${relative}`);
   }
   return readFile(target);
-}
-
-function normalizeBaseUrl(value) {
-  assert.ok(value, 'BASE_URL from the existing Wrangler local step is required');
-  const url = new URL(value);
-  assert.ok(['http:', 'https:'].includes(url.protocol), 'BASE_URL must use HTTP or HTTPS');
-  assert.ok(!url.username && !url.password && !url.search && !url.hash, 'BASE_URL contains credentials or extra URL state');
-  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname),
-    'BASE_URL must point to the existing loopback Wrangler instance');
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/`;
-  return url;
 }
 
 async function withTimeout(promise, timeoutMs, label) {
@@ -150,6 +157,7 @@ async function loadArtifactInputs() {
     publication,
     publicationManifestBytes,
     deployment,
+    deploymentBytes,
     fontManifest,
     headerRules,
     byteMap,
@@ -157,6 +165,33 @@ async function loadArtifactInputs() {
     cacheAssets: [...cacheAssets, commonFont],
     mapAssets,
     mutableAliases,
+  };
+}
+
+function readCheckoutSha() {
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  assert.match(sha, /^[a-f0-9]{40}$/, 'checked out Git HEAD is missing or invalid');
+  return sha;
+}
+
+async function observeLiveDeploymentReceipt(base) {
+  const requestedUrl = new URL('deployment.json', base).href;
+  const response = await fetch(requestedUrl, {
+    cache: 'no-store',
+    redirect: 'error',
+    headers: { 'Cache-Control': 'no-cache' },
+    signal: AbortSignal.timeout(12000),
+  });
+  return {
+    url: response.url,
+    requestedUrl,
+    status: response.status,
+    headers: safeHeaders(Object.fromEntries(response.headers.entries())),
+    body: Buffer.from(await response.arrayBuffer()),
   };
 }
 
@@ -556,23 +591,77 @@ let cacheRun;
 let mapRun;
 try {
   await mkdir(outputDir, { recursive: true });
-  const base = normalizeBaseUrl(process.env.BASE_URL);
+  const mode = process.env.PUBLIC_ASSET_RUNTIME_MODE || LOCAL_CI_MODE;
+  report.mode = mode;
+  report.proofConstraints = {
+    ...report.proofConstraints,
+    baseUrlPolicy: mode === PRODUCTION_LIVE_MODE
+      ? 'exactly https://www.huiwen.tw/; no credentials, query, hash, redirects, or alternate host'
+      : mode === LOCAL_CI_MODE
+        ? 'existing loopback Wrangler origin; HTTP or HTTPS; no credentials, query, or hash'
+        : 'unsupported mode; execution will fail without a fallback',
+    liveReceiptSource: mode === PRODUCTION_LIVE_MODE ? 'HTTP GET https://www.huiwen.tw/deployment.json' : null,
+  };
+  const base = normalizeBaseUrl(process.env.BASE_URL, mode);
   report.baseUrl = base.href;
   const inputs = await loadArtifactInputs();
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  assert.ok(eventPath, 'GITHUB_EVENT_PATH is required to bind this proof to the native pull_request event');
+  assert.ok(eventPath, 'GITHUB_EVENT_PATH is required to bind this proof to the native GitHub event');
   const eventPayload = JSON.parse(await readFile(eventPath, 'utf8'));
   report.sourceCi.pullRequestNumber = Number.isInteger(eventPayload.number) ? eventPayload.number : null;
   report.sourceCi.eventHeadSha = eventPayload.pull_request?.head?.sha || null;
+  report.sourceCi.workflowRunHeadSha = eventPayload.workflow_run?.head_sha || null;
+  report.sourceCi.dispatchRef = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? eventPayload.ref || null : null;
+  report.sourceCi.checkoutShaContract = process.env.GITHUB_EVENT_NAME === 'workflow_run'
+    ? 'github.event.workflow_run.head_sha'
+    : process.env.GITHUB_EVENT_NAME === 'workflow_dispatch'
+      ? 'GITHUB_SHA for the native workflow_dispatch ref'
+      : null;
   report.publicArtifact = {
     provider: inputs.deployment.provider || null,
     artifactSourceCommit: inputs.deployment.sourceCommit || null,
     deploymentManifestDigest: inputs.deployment.publicArtifactDigest || null,
+    localDeploymentReceiptSha256: digestBytes(inputs.deploymentBytes),
+    localDeploymentReceiptBytes: inputs.deploymentBytes.byteLength,
     publicationManifestSha256: digestBytes(inputs.publicationManifestBytes),
     publicationManifestBytes: inputs.publicationManifestBytes.byteLength,
     publicationFileCount: Object.keys(inputs.publication.files).length,
     publicRecordCount: inputs.publication.publicRecordCount ?? null,
+    liveDeploymentObservation: null,
   };
+  let checkoutSha = null;
+  let liveDeploymentResponse = null;
+  if (mode === PRODUCTION_LIVE_MODE) {
+    try {
+      checkoutSha = readCheckoutSha();
+      report.sourceCi.checkoutSha = checkoutSha;
+    } catch (error) {
+      report.failures.push({ name: 'CheckoutHeadFailure', error: errorRecord(error) });
+    }
+    try {
+      liveDeploymentResponse = await observeLiveDeploymentReceipt(base);
+      let liveReceipt = null;
+      try { liveReceipt = JSON.parse(liveDeploymentResponse.body.toString('utf8')); } catch { /* recorded as invalid below */ }
+      report.publicArtifact.liveDeploymentObservation = {
+        url: liveDeploymentResponse.url,
+        requestedUrl: liveDeploymentResponse.requestedUrl,
+        status: liveDeploymentResponse.status,
+        headers: liveDeploymentResponse.headers,
+        bodyBytes: liveDeploymentResponse.body.byteLength,
+        bodySha256: digestBytes(liveDeploymentResponse.body),
+        provider: liveReceipt?.provider || null,
+        sourceCommit: liveReceipt?.sourceCommit || null,
+        publicArtifactDigest: liveReceipt?.publicArtifactDigest || null,
+      };
+    } catch (error) {
+      report.publicArtifact.liveDeploymentObservation = {
+        requestedUrl: new URL('deployment.json', base).href,
+        status: 'UNAVAILABLE',
+        error: errorRecord(error),
+      };
+      report.failures.push({ name: 'LiveDeploymentHttpFailure', error: errorRecord(error) });
+    }
+  }
   const playwrightPackage = JSON.parse(await readFile(new URL('./node_modules/playwright/package.json', import.meta.url), 'utf8'));
   assert.equal(playwrightPackage.version, PLAYWRIGHT_VERSION, 'tests/donation Playwright package version changed');
   const { chromium } = await import('playwright');
@@ -585,18 +674,40 @@ try {
     platform: `${process.platform}-${process.arch}`,
     runnerOs: process.env.RUNNER_OS || null,
   };
-  report.provenance = bindPublicArtifactProvenance({
-    eventName: process.env.GITHUB_EVENT_NAME,
-    sourceCiMergeSha: process.env.GITHUB_SHA,
-    pullRequestHeadSha: process.env.PR_HEAD_SHA,
-    eventPayload,
-    deployment: inputs.deployment,
-    publication: inputs.publication,
-    publicationManifestBytes: inputs.publicationManifestBytes,
-    runtime: report.runtime,
-    runId: process.env.GITHUB_RUN_ID || null,
-    runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
-  });
+  if (mode === PRODUCTION_LIVE_MODE) {
+    try {
+      report.provenance = bindProductionPublicArtifactProvenance({
+        eventName: process.env.GITHUB_EVENT_NAME,
+        eventPayload,
+        githubSha: process.env.GITHUB_SHA,
+        githubRef: process.env.GITHUB_REF,
+        checkoutSha,
+        deployment: inputs.deployment,
+        deploymentBytes: inputs.deploymentBytes,
+        liveDeploymentResponse,
+        publication: inputs.publication,
+        publicationManifestBytes: inputs.publicationManifestBytes,
+        runtime: report.runtime,
+        runId: process.env.GITHUB_RUN_ID || null,
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
+      });
+    } catch (error) {
+      report.failures.push({ name: 'ProductionProvenanceFailure', error: errorRecord(error) });
+    }
+  } else {
+    report.provenance = bindPublicArtifactProvenance({
+      eventName: process.env.GITHUB_EVENT_NAME,
+      sourceCiMergeSha: process.env.GITHUB_SHA,
+      pullRequestHeadSha: process.env.PR_HEAD_SHA,
+      eventPayload,
+      deployment: inputs.deployment,
+      publication: inputs.publication,
+      publicationManifestBytes: inputs.publicationManifestBytes,
+      runtime: report.runtime,
+      runId: process.env.GITHUB_RUN_ID || null,
+      runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
+    });
+  }
   cacheRun = await runCacheProof(browser, base, inputs);
   openedContexts.push(...cacheRun.contexts.map((item) => item.context));
   mapRun = await runMapProof(browser, base, inputs);
