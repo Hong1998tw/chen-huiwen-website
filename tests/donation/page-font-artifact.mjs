@@ -514,7 +514,7 @@ function createFontRouteState(route) {
       runtimeErrors: [],
       observationErrors: [],
       renderCompleteness: {
-        definition: 'DOMContentLoaded + route readiness + document.fonts.ready; bounded tracked-request settle, no networkidle',
+        definition: 'DOMContentLoaded + route readiness + document.fonts.ready; bounded settle for tracked Document, Font, Stylesheet, and Script requests except positively identified foreign child-frame Documents; those child Documents stay audited and pending means unknown; no networkidle',
         domContentLoaded: false,
         routeReady: false,
         documentFonts: false,
@@ -888,6 +888,7 @@ async function finalizeFontOnlyRoute(state) {
       const settle = await withTimeout(waitForTrackedNetworkQuiet({
         routeNetwork,
         cdpSession,
+        routeOrigin: new URL(base).origin,
         timeoutMs: NETWORK_SETTLE_TIMEOUT_MS,
       }), NETWORK_SETTLE_TIMEOUT_MS + 1000, `${route}: tracked-network settle`);
       routeRecord.networkSettle = settle;
