@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 
@@ -95,15 +96,18 @@ function assertDeclarations(rule, expected, label) {
 
 test('homepage CSS is loaded after the legacy mobile and civic stylesheets', async () => {
   const html = await read('index.html');
-  const links = [...html.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi)]
+  const hrefs = [...html.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi)]
     .map(match => match[0].match(/\bhref=["']([^"']+)/i)?.[1])
-    .filter(Boolean)
-    .map(href => new URL(href, 'https://local.test/').pathname.split('/').at(-1));
+    .filter(Boolean);
+  const links = hrefs.map(href => new URL(href, 'https://local.test/').pathname.split('/').at(-1));
   const homeIndex = links.indexOf('home.css');
   assert.ok(homeIndex > -1, 'homepage stylesheet is linked');
   assert.ok(links.indexOf('mobile.css') > -1 && links.indexOf('mobile.css') < homeIndex);
   assert.ok(links.indexOf('civic.css') > -1 && links.indexOf('civic.css') < homeIndex);
   assert.equal(homeIndex, links.length - 1, 'home.css remains the final linked stylesheet');
+  const homeHref = hrefs.find(href => new URL(href, 'https://local.test/').pathname.endsWith('/home.css'));
+  const css = await read('home.css');
+  assert.equal(new URL(homeHref, 'https://local.test/').searchParams.get('v'), createHash('sha256').update(css).digest('hex').slice(0, 12), 'homepage stylesheet version matches its source hash');
 });
 
 test('scoped hero rules reset legacy grid placement and mobile display behavior', async () => {
@@ -125,6 +129,10 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const portrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-width: 780px');
   const caption = ruleFor(rules, '#main.home-redesign .hero-portrait figcaption', 'max-width: 780px');
   const frame = ruleFor(rules, '#main.home-redesign .portrait-frame');
+  const baseImage = ruleFor(rules, '#main.home-redesign .portrait-frame img');
+  const desktopImage = ruleFor(rules, '#main.home-redesign .portrait-frame img', 'min-width: 781px');
+  const mobileImageRules = rules.filter(rule => rule.selectors.includes('#main.home-redesign .portrait-frame img')
+    && rule.media.join(' ').includes('max-width: 780px'));
   const compactHero = ruleFor(rules, '#main.home-redesign .hero', 'max-height: 800px');
   const compactPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-height: 800px');
   const compactMobileHero = rules.find(rule => rule.selectors.includes('#main.home-redesign .hero')
@@ -199,6 +207,10 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'align-self': 'start',
   }, 'mobile portrait reset');
   assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'desktop portrait frame keeps its established ratio');
+  assert.equal(frame.declarations.get('overflow'), 'hidden', 'desktop portrait frame keeps the image crop clipped');
+  assert.equal(baseImage.declarations.get('object-fit'), 'contain', 'desktop zoom scales the contain-fitted source image');
+  assertDeclarations(desktopImage, { transform: 'scale(3)', 'transform-origin': '50% 44%' }, 'desktop portrait close-up');
+  assert.equal(mobileImageRules.some(rule => rule.declarations.has('transform')), false, 'mobile portrait stays unscaled');
   assert.equal(ruleFor(rules, '#main.home-redesign .portrait-frame', 'max-width: 780px')?.declarations.get('aspect-ratio'), '2 / 3', 'mobile portrait frame uses the source portrait ratio');
   assertDeclarations(caption, { display: 'block', position: 'absolute', 'clip-path': 'inset(50%)' }, 'mobile caption remains visually hidden but available to assistive technology');
   assertDeclarations(narrowHero, {
@@ -221,10 +233,10 @@ test('canonical portrait sizes match the generated homepage image source', async
   const built = await read('index.html');
   const source = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<source\b[^>]*sizes="([^"]+)"/i)?.[1];
   const alt = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<img\b[^>]*alt="([^"]+)"/i)?.[1];
-  const expectedSizes = '(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(38.3vw - 20px), 160px), (max-width: 780px) min(calc(38.3vw - 30px), 160px), 380px';
+  const expectedSizes = '(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(38.3vw - 20px), 160px), (max-width: 780px) min(calc(38.3vw - 30px), 160px), 1140px';
 
-  assert.equal(source(template), expectedSizes, 'canonical template describes the new mobile portrait width');
-  assert.equal(source(built), expectedSizes, 'generated homepage uses the canonical mobile portrait width');
+  assert.equal(source(template), expectedSizes, 'canonical template preserves mobile sizing and requests three-times desktop pixels');
+  assert.equal(source(built), expectedSizes, 'generated homepage preserves mobile sizing and requests three-times desktop pixels');
   assert.equal(alt(template), alt(built), 'the source and generated portrait keep identical alternative text');
 });
 

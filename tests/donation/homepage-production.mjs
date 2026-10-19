@@ -37,7 +37,20 @@ try{
   await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-layout`});
   const heroGeometry=await page.evaluate(()=>{
    const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-   return{hero:box('.hero'),kicker:box('.hero-copy .kicker'),title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),actions:box('.hero-actions'),tasks:box('.home-task-paths'),lawyer:box('.home-lawyer-link'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+   return{hero:box('.hero'),kicker:box('.hero-copy .kicker'),title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portraitImage:box('.hero-portrait .portrait-frame img'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),actions:box('.hero-actions'),tasks:box('.home-task-paths'),lawyer:box('.home-lawyer-link'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+  });
+  const portraitRendering=await page.locator('.hero-portrait .portrait-frame img').evaluate(img=>{
+   const style=getComputedStyle(img),image=img.getBoundingClientRect(),frame=document.querySelector('.hero-portrait .portrait-frame').getBoundingClientRect();
+   const boxWidth=parseFloat(style.width),boxHeight=parseFloat(style.height),ratio=img.naturalWidth/img.naturalHeight;
+   const contentWidth=Math.min(boxWidth,boxHeight*ratio),contentHeight=contentWidth/ratio;
+   const contentLeft=(boxWidth-contentWidth)/2,contentTop=(boxHeight-contentHeight)/2;
+   const imageScaleX=image.width/boxWidth,imageScaleY=image.height/boxHeight;
+   const roi={left:.30,right:.68,top:.31,bottom:.57};
+   return{
+    objectFit:style.objectFit,objectPosition:style.objectPosition,imageScaleX,imageScaleY,
+    frame:{left:frame.left,right:frame.right,top:frame.top,bottom:frame.bottom},
+    face:{left:image.left+(contentLeft+roi.left*contentWidth)*imageScaleX,right:image.left+(contentLeft+roi.right*contentWidth)*imageScaleX,top:image.top+(contentTop+roi.top*contentHeight)*imageScaleY,bottom:image.top+(contentTop+roi.bottom*contentHeight)*imageScaleY}
+   };
   });
   if(width<=780){
    assert(heroGeometry.frame.left>=heroGeometry.title.right,JSON.stringify(heroGeometry));
@@ -49,12 +62,22 @@ try{
    assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));
    assert(heroGeometry.tasks.bottom<=heroGeometry.lawyer.top,JSON.stringify(heroGeometry));
    assert.equal(heroGeometry.scrollWidth,heroGeometry.viewportWidth,JSON.stringify(heroGeometry));
+   assert(Math.abs(heroGeometry.portraitImage.width/heroGeometry.frame.width-1)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
+   assert(Math.abs(heroGeometry.portraitImage.height/heroGeometry.frame.height-1)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
+   assert(Math.abs(portraitRendering.imageScaleX-1)<=.01&&Math.abs(portraitRendering.imageScaleY-1)<=.01,JSON.stringify(portraitRendering));
    const titleLineCount=await page.locator('.hero h1 span').evaluateAll(spans=>spans.map(span=>{const range=document.createRange();range.selectNodeContents(span);return range.getClientRects().length;}));
    assert.deepEqual(titleLineCount,[1,1],`mobile title keeps its two authored lines at ${width}px: ${JSON.stringify(titleLineCount)}`);
   }else{
    assert(heroGeometry.title.right<=heroGeometry.frame.left,JSON.stringify(heroGeometry));
    assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));
    assert.equal(heroGeometry.scrollWidth,heroGeometry.viewportWidth,JSON.stringify(heroGeometry));
+   assert(Math.abs(heroGeometry.portraitImage.width/heroGeometry.frame.width-3)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
+   assert(Math.abs(heroGeometry.portraitImage.height/heroGeometry.frame.height-3)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
+   assert(Math.abs(portraitRendering.imageScaleX-3)<=.01&&Math.abs(portraitRendering.imageScaleY-3)<=.01,JSON.stringify(portraitRendering));
+   assert.equal(portraitRendering.objectFit,'contain',JSON.stringify(portraitRendering));
+   assert.equal(portraitRendering.objectPosition,'50% 50%',JSON.stringify(portraitRendering));
+   assert(portraitRendering.face.left>=portraitRendering.frame.left-.5&&portraitRendering.face.right<=portraitRendering.frame.right+.5,JSON.stringify(portraitRendering));
+   assert(portraitRendering.face.top>=portraitRendering.frame.top-.5&&portraitRendering.face.bottom<=portraitRendering.frame.bottom+.5,JSON.stringify(portraitRendering));
   }
   assert.equal(await page.locator('h1').count(),1);
   const main=page.locator('main.home-redesign');
@@ -118,10 +141,11 @@ try{
    const corners=[[0,0],[canvas.width-1,0],[0,canvas.height-1],[canvas.width-1,canvas.height-1]];
    const cornerAlpha=corners.map(([x,y])=>context.getImageData(x,y,1,1).data[3]);
    const currentSrc=new URL(img.currentSrc,location.href);
-   return{currentSrc:currentSrc.pathname,sameOrigin:currentSrc.origin===location.origin,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,canvasWidth:canvas.width,canvasHeight:canvas.height,cornerAlpha};
+   return{currentSrc:currentSrc.pathname,sameOrigin:currentSrc.origin===location.origin,devicePixelRatio:window.devicePixelRatio,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,canvasWidth:canvas.width,canvasHeight:canvas.height,cornerAlpha};
   });
   assert(portraitAlpha.sameOrigin,JSON.stringify(portraitAlpha));
   assert(portraitAlpha.currentSrc.endsWith('.webp'),JSON.stringify(portraitAlpha));
+  if(width>780&&portraitAlpha.devicePixelRatio===1)assert.equal(portraitAlpha.currentSrc,'/assets/legal/portrait.webp',JSON.stringify(portraitAlpha));
   assert.deepEqual(portraitAlpha.cornerAlpha,[0,0,0,0],JSON.stringify(portraitAlpha));
   const pageHeight=await page.evaluate(()=>document.documentElement.scrollHeight);
   await assertWithHomeDiagnostics(page,out,width,'page-height',async()=>{
