@@ -33,6 +33,8 @@ class FakeEvent {
   constructor(type, init = {}) {
     this.type = type;
     this.target = null;
+    this.currentTarget = null;
+    this.bubbles = init.bubbles ?? false;
     this.propertyName = init.propertyName;
     this.defaultPrevented = false;
   }
@@ -47,8 +49,10 @@ class FakeEventTarget {
     this.listeners.set(type, listeners);
   }
   dispatchEvent(event) {
-    event.target = this;
+    if (event.target === null) event.target = this;
+    event.currentTarget = this;
     for (const listener of this.listeners.get(event.type) || []) listener(event);
+    if (event.bubbles && this.parentElement) this.parentElement.dispatchEvent(event);
     return !event.defaultPrevented;
   }
 }
@@ -122,6 +126,7 @@ function makeHarness({mobile = true, scrollY = 0} = {}) {
   const html = new FakeElement('html', document);
   const body = new FakeElement('body', document);
   const header = new FakeElement('header', document);
+  const navWrap = new FakeElement('nav-wrap', document);
   const toggle = new FakeElement('menu-toggle', document);
   const navigation = new FakeElement('navigation', document);
   const search = new FakeElement('global-search-trigger', document);
@@ -133,11 +138,13 @@ function makeHarness({mobile = true, scrollY = 0} = {}) {
   document.navigation = navigation;
   document.search = search;
   document.activeElement = body;
-  header.append(toggle);
-  header.append(navigation);
+  header.append(navWrap);
+  navWrap.append(toggle);
+  navWrap.append(navigation);
   body.append(header);
   body.append(main);
   document.querySelector = selector => selector === '.site-header' ? header
+    : selector === '.site-header .nav-wrap' ? navWrap
     : selector === '.menu-toggle' ? toggle
       : null;
   document.getElementById = id => id === 'navigation' ? navigation : null;
@@ -176,7 +183,7 @@ function makeHarness({mobile = true, scrollY = 0} = {}) {
     window.dispatchEvent(new FakeEvent('scroll'));
   };
   return {
-    context, document, window, header, toggle, navigation, search, mobileQuery,
+    context, document, window, header, navWrap, toggle, navigation, search, mobileQuery,
     registrationOrder, frames, runCompact, runMenu, flushFrame, scroll,
     setY: y => { currentY = y; },
     get scrollReads() { return scrollReads; },
@@ -270,7 +277,7 @@ check('ready media changes reset immediately and reseed direction from real scro
   assert.equal(h.header.classList.contains('is-compact'), true);
 });
 
-check('early menu focus survives restored initialization and menu top follows header transition', () => {
+check('early menu focus survives restored initialization and the header min-height end updates menu top after the child end', () => {
   const h = makeHarness({scrollY:250});
   h.runCompact(); h.runMenu();
   h.toggle.dispatchEvent(new FakeEvent('click'));
@@ -283,6 +290,9 @@ check('early menu focus survives restored initialization and menu top follows he
   assert.equal(h.header.classList.contains('is-compact'), true);
   assert.equal(h.document.activeElement, h.search);
   assert.equal(h.navigation.classList.contains('is-open'), true);
+  assert.equal(h.navigation.style.getPropertyValue('--menu-top'), '77px');
+
+  h.navWrap.dispatchEvent(new FakeEvent('transitionend', {propertyName:'min-height', bubbles:true}));
   assert.equal(h.navigation.style.getPropertyValue('--menu-top'), '77px');
 
   h.header.boxBottom = 52;
