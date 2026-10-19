@@ -203,7 +203,7 @@ try{
   }
   if(primaryError)throw primaryError;if(closeError)throw closeError;
  });
- // Real secure-context SW tests, isolated storage; no production registration or mutation.
+ // Remaining service worker cases use isolated browser contexts and storage.
  const sw=await stage('create offline worker context',()=>browser.newContext(),10_000);const client=trackPage('offline-worker',await stage('create offline worker page',()=>sw.newPage(),10_000));
  await check('partial optional shell failure still installs required offline document; upgrade purges old raw cache',async()=>{
   await client.goto(base+'offline.html');
