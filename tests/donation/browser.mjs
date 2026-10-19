@@ -767,7 +767,8 @@ try {
         assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
         assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
         assert(frame && heading);
-        assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+        const expectedRatio = width <= 780 ? 2 / 3 : 1.04;
+        assert(Math.abs(frame.width / frame.height - expectedRatio) < 0.02);
         assert(frame.x >= 0 && frame.x + frame.width <= width);
       });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { openCaseFilterDialog, closeCaseFilterDialog } from './achievement-filter-dialog.mjs';
 import {
   AXE_CORE_VERSION,
   AXE_PLAYWRIGHT_VERSION,
@@ -249,8 +250,10 @@ try {
       await search.fill('文龍');
       await page.waitForFunction(() => !document.querySelector('#case-count')?.textContent?.includes('54 個專題'));
       assert((await visibleCases()) > 0, 'search returned no results');
+      await openCaseFilterDialog(page);
       await page.locator('.advanced-filters > summary').click();
       await page.locator('#reset-map-filters').click();
+      await closeCaseFilterDialog(page);
       await page.getByRole('button', { name: '地圖與列表', exact: true }).click();
       await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({ state: 'visible' });
