@@ -12,7 +12,7 @@ class LiveProductionProxyAssetTests(unittest.TestCase):
         self.temp_root = Path(self.temp_dir.name)
         self.root = self.temp_root / "snapshot"
         self.root.mkdir()
-        self.body = b"verified live CSS bytes\n"
+        self.body = (Path(__file__).resolve().parents[2] / "small-q.css").read_bytes()
         (self.root / "small-q.css").write_bytes(self.body)
 
     def tearDown(self):
