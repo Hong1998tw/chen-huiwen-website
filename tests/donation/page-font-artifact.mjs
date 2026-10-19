@@ -29,6 +29,8 @@ import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
   buildVisualCaptureRecord,
+  buildVisualFontProbeRequests,
+  classifyVisibleGlyphDiagnostics,
   selectVisualRoutes,
   SYSTEM_FALLBACK_CODEPOINTS,
   validateArtifactIdentity,
@@ -184,17 +186,14 @@ async function collectVisibleFontDiagnostics(page, route, row) {
   const expectedFonts = [row.commonFont, row.deltaFont].map((path) => {
     const face = fontManifest.fonts[path];
     return { path, family: face.family, weight: cssFontWeightRange(face.wght), sha256: face.sha256,
+      weightAxis: { min: face.wght.min, default: face.wght.default, max: face.wght.max },
       codepoints: face.codepoints };
   });
-  expectedFonts.jpFallbackCodepoints = row.jpFallbackCodepoints || [];
-  expectedFonts.systemFallbackCodepoints = SYSTEM_FALLBACK_CODEPOINTS;
-  return withTimeout(page.evaluate(({ routeName, expectedPreloads, expectedFonts }) => {
+  const diagnostics = await withTimeout(page.evaluate(({ routeName, expectedPreloads, expectedFonts }) => {
     const covered = new Set(expectedFonts.flatMap((font) => font.codepoints));
-    const jpFallback = new Set(expectedFonts.jpFallbackCodepoints);
-    const systemFallback = new Set(expectedFonts.systemFallbackCodepoints);
     const codepoints = new Set();
     const owners = new Map();
-    const uncovered = new Map();
+    const rawTcUnsupportedGlyphOwners = new Map();
     let visibleTextCharacterCount = 0;
     let visibleTextSample = '';
     const selectorFor = (element) => {
@@ -234,13 +233,14 @@ async function collectVisibleFontDiagnostics(page, route, row) {
       owner.textNodes += 1;
       if (owner.sample.length < 120) owner.sample += `${text} `.slice(0, 120 - owner.sample.length);
       owners.set(key, owner);
-      const missing = cps.filter((cp) => !covered.has(cp) && !jpFallback.has(cp) && !systemFallback.has(cp));
-      if (missing.length) {
-        const gap = uncovered.get(key) || { selector, fontFamily: style.fontFamily,
+      const rawUnsupported = cps.filter((cp) => !covered.has(cp));
+      if (rawUnsupported.length) {
+        const unsupportedOwner = rawTcUnsupportedGlyphOwners.get(key) || { selector, fontFamily: style.fontFamily,
           fontWeight: style.fontWeight, fontStyle: style.fontStyle, codepoints: new Set(), sample: '' };
-        missing.forEach((cp) => gap.codepoints.add(cp));
-        if (gap.sample.length < 120) gap.sample += `${text} `.slice(0, 120 - gap.sample.length);
-        uncovered.set(key, gap);
+        rawUnsupported.forEach((cp) => unsupportedOwner.codepoints.add(cp));
+        if (unsupportedOwner.sample.length < 120)
+          unsupportedOwner.sample += `${text} `.slice(0, 120 - unsupportedOwner.sample.length);
+        rawTcUnsupportedGlyphOwners.set(key, unsupportedOwner);
       }
     };
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -282,15 +282,14 @@ async function collectVisibleFontDiagnostics(page, route, row) {
       visibleTextSample: visibleTextSample.trim(),
       visibleCodepoints: [...codepoints].sort((a, b) => a - b),
       visibleCodepointsTruncated: codepoints.size > 4096,
-      uncoveredVisibleGlyphCount: [...uncovered.values()].reduce((count, owner) => count + owner.codepoints.size, 0),
-      uncoveredVisibleGlyphs: [...uncovered.values()].slice(0, 32).map((owner) => ({
+      rawTcUnsupportedGlyphOwners: [...rawTcUnsupportedGlyphOwners.values()].slice(0, 32).map((owner) => ({
         selector: owner.selector, fontFamily: owner.fontFamily, fontWeight: owner.fontWeight,
         fontStyle: owner.fontStyle,
         codepoints: [...owner.codepoints].sort((a, b) => a - b).slice(0, 32), sample: owner.sample.trim(),
       })),
       computedFontOwners: [...owners.values()].slice(0, 24),
-      expectedFonts: expectedFonts.map(({ path, family, weight, sha256, codepoints }) => ({
-        path, family, weight, sha256, codepointCount: codepoints.length,
+      expectedFonts: expectedFonts.map(({ path, family, weight, weightAxis, sha256, codepoints }) => ({
+        path, family, weight, weightAxis, sha256, codepointCount: codepoints.length,
       })),
       fontFaces,
       expectedPreloads,
@@ -302,6 +301,15 @@ async function collectVisibleFontDiagnostics(page, route, row) {
     expectedPreloads: row.preloads.map((path) => `/${path}`).sort(),
     expectedFonts,
   }), INITIAL_RENDER_TIMEOUT_MS, `${route}: visible font diagnostics`);
+  return {
+    ...diagnostics,
+    ...classifyVisibleGlyphDiagnostics({
+      expectedFonts,
+      visibleCodepoints: diagnostics.visibleCodepoints,
+      routeFallbacks: { jp: row.jpFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS },
+      rawTcUnsupportedGlyphOwners: diagnostics.rawTcUnsupportedGlyphOwners,
+    }),
+  };
 }
 
 function expectedVisualFonts(routeRow) {
@@ -312,28 +320,40 @@ function expectedVisualFonts(routeRow) {
     const face = fontManifest.fonts[path];
     assert.ok(face, `schema-2 ${role} face is missing from the parsed font manifest: ${path}`);
     return { role, path, family: face.family, weight: cssFontWeightRange(face.wght),
+      weightAxis: { min: face.wght.min, default: face.wght.default, max: face.wght.max },
       bytes: face.bytes, sha256: face.sha256, codepoints: face.codepoints };
   });
 }
 
 async function collectVisualTypography(page, route, expectedFonts, visibleDiagnostics) {
-  return withTimeout(page.evaluate(async ({ routeName, faces, visibleTextDiagnostics }) => {
+  const computedWeights = await withTimeout(page.evaluate(() => {
     const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
-    const fontChecks = await Promise.all(faces.map(async (face) => {
-      const probeCodepoint = face.probeCodepoint;
+    return {
+      body: getComputedStyle(document.body).fontWeight,
+      heading: getComputedStyle(heading).fontWeight,
+    };
+  }), INITIAL_RENDER_TIMEOUT_MS, `${route}: computed body and heading font weights`);
+  const fontProbeRequests = buildVisualFontProbeRequests(expectedFonts, computedWeights);
+  return withTimeout(page.evaluate(async ({ routeName, faces, fontProbeRequests, visibleTextDiagnostics }) => {
+    const heading = document.querySelector('main h1') || document.querySelector('h1') || document.body;
+    const fontChecks = await Promise.all(fontProbeRequests.map(async (probe) => {
+      const probeCodepoint = probe.probeCodepoint;
       if (!Number.isInteger(probeCodepoint)) return {
-        role: face.role, family: face.family, probeCodepoint: null,
+        role: probe.role, family: probe.family,
+        descriptorWeight: probe.descriptorWeight, computedWeight: probe.computedWeight,
+        fontSpec: probe.fontSpec, probeCodepoint: null,
         checkResult: false, loadedFaces: [],
       };
       const probeText = String.fromCodePoint(probeCodepoint);
-      const familySyntax = `"${face.family.replace(/["\\]/g, '\\$&')}"`;
-      const fontSpec = `${face.weight} 16px ${familySyntax}`;
-      const loadedFaces = await document.fonts.load(fontSpec, probeText);
+      const loadedFaces = await document.fonts.load(probe.fontSpec, probeText);
       return {
-        role: face.role,
-        family: face.family,
+        role: probe.role,
+        family: probe.family,
+        descriptorWeight: probe.descriptorWeight,
+        computedWeight: probe.computedWeight,
+        fontSpec: probe.fontSpec,
         probeCodepoint,
-        checkResult: document.fonts.check(fontSpec, probeText),
+        checkResult: document.fonts.check(probe.fontSpec, probeText),
         loadedFaces: loadedFaces.map((fontFace) => ({
           family: fontFace.family, weight: fontFace.weight, status: fontFace.status,
         })),
@@ -345,9 +365,16 @@ async function collectVisualTypography(page, route, expectedFonts, visibleDiagno
       artifactRoute: document.documentElement.dataset.huiwenFontArtifactRoute || null,
       documentFontsStatus: document.fonts.status,
       bodyFontFamily: getComputedStyle(document.body).fontFamily,
+      bodyFontWeight: getComputedStyle(document.body).fontWeight,
       headingFontFamily: getComputedStyle(heading).fontFamily,
+      headingFontWeight: getComputedStyle(heading).fontWeight,
       visibleCodepoints: visibleTextDiagnostics.visibleCodepoints,
       visibleCodepointsTruncated: visibleTextDiagnostics.visibleCodepointsTruncated,
+      rawTcUnsupportedCodepoints: visibleTextDiagnostics.rawTcUnsupportedCodepoints,
+      rawTcUnsupportedGlyphOwners: visibleTextDiagnostics.rawTcUnsupportedGlyphOwners,
+      fallbackCodepoints: visibleTextDiagnostics.fallbackCodepoints,
+      unexpectedGlyphCount: visibleTextDiagnostics.unexpectedGlyphCount,
+      unexpectedGlyphs: visibleTextDiagnostics.unexpectedGlyphs,
       uncoveredVisibleGlyphCount: visibleTextDiagnostics.uncoveredVisibleGlyphCount,
       uncoveredVisibleGlyphs: visibleTextDiagnostics.uncoveredVisibleGlyphs,
       fontFaces: [...document.fonts]
@@ -360,12 +387,18 @@ async function collectVisualTypography(page, route, expectedFonts, visibleDiagno
   }, {
     routeName: route,
     faces: expectedFonts.map((font) => ({
-      role: font.role, family: font.family, weight: font.weight,
+      role: font.role, family: font.family, weight: font.weight, weightAxis: font.weightAxis,
       probeCodepoint: font.probeCodepoint,
     })),
+    fontProbeRequests,
     visibleTextDiagnostics: {
       visibleCodepoints: visibleDiagnostics.visibleCodepoints,
       visibleCodepointsTruncated: visibleDiagnostics.visibleCodepointsTruncated,
+      rawTcUnsupportedCodepoints: visibleDiagnostics.rawTcUnsupportedCodepoints,
+      rawTcUnsupportedGlyphOwners: visibleDiagnostics.rawTcUnsupportedGlyphOwners,
+      fallbackCodepoints: visibleDiagnostics.fallbackCodepoints,
+      unexpectedGlyphCount: visibleDiagnostics.unexpectedGlyphCount,
+      unexpectedGlyphs: visibleDiagnostics.unexpectedGlyphs,
       uncoveredVisibleGlyphCount: visibleDiagnostics.uncoveredVisibleGlyphCount,
       uncoveredVisibleGlyphs: visibleDiagnostics.uncoveredVisibleGlyphs,
     },
@@ -837,10 +870,13 @@ async function captureFontOnlyRoute(state, visualRouteSet) {
       });
       assert.equal(routeRecord.visibleFontDiagnostics.visibleCodepointsTruncated, false,
         `${route}: initial visible glyph capture was truncated`);
-      assert.equal(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphCount, 0,
-        `${route}: initial route has uncovered visible glyphs`);
-      assert.deepEqual(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphs, [],
-        `${route}: initial route has nonempty uncovered glyph diagnostics`);
+      assert.equal(routeRecord.visibleFontDiagnostics.unexpectedGlyphCount, 0,
+        `${route}: initial route has unexpected visible glyphs`);
+      assert.deepEqual(routeRecord.visibleFontDiagnostics.unexpectedGlyphs, [],
+        `${route}: initial route has nonempty unexpected glyph diagnostics`);
+      assert.equal(routeRecord.visibleFontDiagnostics.uncoveredVisibleGlyphCount,
+        routeRecord.visibleFontDiagnostics.unexpectedGlyphCount,
+        `${route}: uncovered glyph count differs from unexpected glyph count`);
     } catch (error) {
       routeRecord.observationErrors.push({ kind: 'font-dom-diagnostic', ...errorRecord(error) });
     }
@@ -886,10 +922,10 @@ async function captureFontOnlyRoute(state, visualRouteSet) {
         });
         assert.equal(afterDiagnostics.visibleCodepointsTruncated, false,
           `${route}: post-screenshot visible glyph capture was truncated`);
-        assert.equal(afterDiagnostics.uncoveredVisibleGlyphCount, 0,
-          `${route}: post-screenshot route has uncovered visible glyphs`);
-        assert.deepEqual(afterDiagnostics.uncoveredVisibleGlyphs, [],
-          `${route}: post-screenshot route has nonempty uncovered glyph diagnostics`);
+        assert.equal(afterDiagnostics.unexpectedGlyphCount, 0,
+          `${route}: post-screenshot route has unexpected visible glyphs`);
+        assert.deepEqual(afterDiagnostics.unexpectedGlyphs, [],
+          `${route}: post-screenshot route has nonempty unexpected glyph diagnostics`);
         const fontStateAfter = await collectVisualTypography(state.routePage, route, expectedFonts, afterDiagnostics);
         validateVisualTypography({ route, routeCodepoints: routeRow.codepoints,
           expectedFonts, typography: fontStateAfter, stage: 'after screenshot', routeFallbacks });
@@ -1672,7 +1708,16 @@ try {
     assert.ok(proxyResponse, 'CMS proxy frame navigation produced no response');
     assert.equal(proxyResponse.status, 200, 'authenticated CMS proxy route was denied or failed');
     await cmsProxyFrame.waitForFunction(() => document.documentElement.dataset.huiwenFontArtifactPreview === '1', null, { timeout: 15000 });
-    await cmsProxyFrame.waitForFunction((text) => document.querySelector('.case-background')?.innerText.includes(text), draftChar, { timeout: 15000 });
+    await cmsProxyFrame.waitForFunction((text) =>
+      document.querySelector('.case-background')?.textContent.includes(text), draftChar, { timeout: 15000 });
+    await cmsProxyFrame.locator('.case-background summary').click({ timeout: 15000 });
+    await cmsProxyFrame.waitForFunction((text) => {
+      const details = document.querySelector('.case-background');
+      const paragraph = [...(details?.querySelectorAll('p') || [])]
+        .find((item) => item.textContent.includes(text));
+      return details?.open === true && details.innerText.includes(text)
+        && paragraph?.innerText.includes(text) && paragraph.getClientRects().length > 0;
+    }, draftChar, { timeout: 15000 });
   } catch (error) {
     let handshake = [];
     let handshakeReadError = null;
@@ -1712,21 +1757,31 @@ try {
   assert.equal(createHash('sha256').update(loadedBytes).digest('hex'), fullTcSha, 'CMS proxy did not download the published full TC font bytes');
   const cmsState = await withTimeout(frame.evaluate((text) => {
     const main = document.querySelector('.case-background');
-    const family = getComputedStyle(main.querySelector('p')).fontFamily;
+    const paragraph = [...main.querySelectorAll('p')].find((item) => item.textContent.includes(text));
+    const style = getComputedStyle(paragraph);
+    const family = style.fontFamily;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    context.font = `16px ${family}`;
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${family}`;
     return {
       marker: document.documentElement.dataset.huiwenFontArtifactPreview,
+      detailsOpen: main.open,
       text: main.innerText,
+      paragraphText: paragraph.innerText,
+      paragraphVisible: paragraph.getClientRects().length > 0,
       family,
-      fontLoaded: document.fonts.check('16px "Huiwen Sans TC"', text),
+      fontWeight: style.fontWeight,
+      fullTcFontSpec: `${style.fontWeight} 16px "Huiwen Sans TC"`,
+      fontLoaded: document.fonts.check(`${style.fontWeight} 16px "Huiwen Sans TC"`, text),
       glyphWidth: context.measureText(text).width,
-      tofu: /[\uFFFD\u25A1]/.test(main.innerText),
+      tofu: /[\uFFFD\u25A1]/.test(paragraph.innerText),
     };
   }, draftChar), INITIAL_RENDER_TIMEOUT_MS, 'read authenticated CMS preview frame state');
   assert.equal(cmsState.marker, '1');
+  assert.equal(cmsState.detailsOpen, true, 'CMS draft details were not expanded by a real summary click');
+  assert.equal(cmsState.paragraphVisible, true, 'CMS draft paragraph is not visible after expansion');
   assert.ok(cmsState.text.includes(draftChar), 'CMS draft-only TC glyph was dropped');
+  assert.ok(cmsState.paragraphText.includes(draftChar), 'visible CMS draft paragraph omitted its draft-only TC glyph');
   assert.match(cmsState.family, /Huiwen Sans TC/);
   assert.equal(cmsState.fontLoaded, true);
   assert.ok(cmsState.glyphWidth > 0);
