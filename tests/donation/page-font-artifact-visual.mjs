@@ -19,6 +19,31 @@ export function cssFontWeightRange(axis) {
   return `${axis.min} ${axis.max}`;
 }
 
+export function buildExpectedPageFonts(routeRow, fontManifest) {
+  assert.ok(routeRow && typeof routeRow === 'object', 'schema-2 route producer row is missing');
+  assert.ok(fontManifest?.fonts && typeof fontManifest.fonts === 'object',
+    'parsed page font manifest is missing');
+  const expectedFonts = FONT_ROLES.map((role) => {
+    const path = role === 'common' ? routeRow.commonFont : routeRow.deltaFont;
+    assert.ok(typeof path === 'string' && path.length > 0,
+      `schema-2 ${role} face path is missing from the producer row`);
+    const face = fontManifest.fonts[path];
+    assert.ok(face, `schema-2 ${role} face is missing from the parsed font manifest: ${path}`);
+    return {
+      role,
+      path,
+      family: face.family,
+      weight: cssFontWeightRange(face.wght),
+      weightAxis: { min: face.wght.min, default: face.wght.default, max: face.wght.max },
+      bytes: face.bytes,
+      sha256: face.sha256,
+      codepoints: face.codepoints,
+    };
+  });
+  validateExpectedFonts(expectedFonts);
+  return expectedFonts;
+}
+
 export function buildVisualFontProbeRequests(expectedFonts, computedWeights) {
   const expectedByRole = validateExpectedFonts(expectedFonts);
   const actualWeights = {
