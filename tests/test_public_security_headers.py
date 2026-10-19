@@ -6,7 +6,6 @@ Cloudflare Static Assets does (every matching rule applies; repeated names combi
 import hashlib
 from http.client import HTTPMessage
 import json
-import os
 import re
 import shutil
 import sys
@@ -21,6 +20,7 @@ import build_cloudflare_public as cloudflare
 import build_artifact_page_fonts as producer
 import public_asset_fingerprints
 import verify_security_headers as verifier
+from public_artifact_fixture import prepare_cloudflare_test_artifact
 
 FEATURES_DENIED = {'camera', 'microphone', 'geolocation', 'payment'}
 FEATURE_API = re.compile(r'geolocation|getUserMedia|mediaDevices|PaymentRequest', re.I)
@@ -62,14 +62,8 @@ def http_message(headers):
 class SecurityHeaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        artifact_root = os.environ.get('PAGE_FONT_ARTIFACT_ROOT')
-        cls.temp = None
-        if artifact_root:
-            cls.site = Path(artifact_root).resolve()
-        else:
-            cls.temp = tempfile.TemporaryDirectory()
-            cls.site = Path(cls.temp.name)
-            cloudflare.build(ROOT, cls.site, 'a' * 40)
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.site = prepare_cloudflare_test_artifact(ROOT, cls.temp.name, cloudflare, producer)
         cls.text = (cls.site / '_headers').read_text()
         cls.rules = parse_headers(cls.text)
         cls.publication = json.loads((cls.site / 'publication-manifest.json').read_text())
@@ -327,14 +321,8 @@ class SecurityHeaderTests(unittest.TestCase):
 class PostDeployCheckTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        artifact_root = os.environ.get('PAGE_FONT_ARTIFACT_ROOT')
-        cls.temp = None
-        if artifact_root:
-            cls.site = Path(artifact_root).resolve()
-        else:
-            cls.temp = tempfile.TemporaryDirectory()
-            cls.site = Path(cls.temp.name)
-            cloudflare.build(ROOT, cls.site, 'b' * 40)
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.site = prepare_cloudflare_test_artifact(ROOT, cls.temp.name, cloudflare, producer)
         cls.publication = json.loads((cls.site / 'publication-manifest.json').read_text())
         cls.immutable = {'/' + path: (cls.site / path).read_bytes()
                          for path, _ in verifier.immutable_policy_records(cls.site, cls.publication)}
