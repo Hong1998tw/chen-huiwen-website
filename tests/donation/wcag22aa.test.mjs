@@ -120,6 +120,7 @@ test('full-site, readiness, lifecycle, and production runners execute wcag22aa w
 
 test('capture-pending stays pending at zero and compare fails closed without an approved baseline', async () => {
   const baseline = JSON.parse(await readFile(new URL('./wcag22aa-baseline.json', donationDir), 'utf8'));
+  const pendingBaseline = { ...baseline, status: 'pending-ci', knownViolationCount: null, entries: null, source: null };
   const capture = evaluateTargetSizeGate(undefined, baseline, [], CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(capture.mode, 'capture-pending');
   assert.equal(capture.status, 'capture-pending');
@@ -142,16 +143,33 @@ test('capture-pending stays pending at zero and compare fails closed without an 
   assert.equal(captureWithFinding.measuredEntryCount, 0);
   assert.equal(captureWithFinding.measurementFailures.length, 1);
 
-  const compare = evaluateTargetSizeGate('compare', baseline, [], CANDIDATE_TARGET_SIZE_SCOPE);
+  const compare = evaluateTargetSizeGate('compare', pendingBaseline, [], CANDIDATE_TARGET_SIZE_SCOPE);
   assert.equal(compare.status, 'baseline-pending');
   assert.equal(compare.pass, false);
   assert.equal(compare.comparisonPerformed, true);
   assert.equal(compare.knownBaselineCount, null);
 });
 
+test('A-06 compare gate marks the supplied zero-finding fixture as a comparison', async () => {
+  const baseline = JSON.parse(await readFile(new URL('./wcag22aa-baseline.json', donationDir), 'utf8'));
+  assert.equal(baseline.status, 'approved');
+  assert.equal(baseline.scope, CANDIDATE_TARGET_SIZE_SCOPE);
+  assert.equal(baseline.knownViolationCount, 0);
+  assert.deepEqual(baseline.entries, []);
+
+  const coverage = evaluateTargetSizeCoverage(expectedTargetSizeCoverage());
+  const compare = evaluateTargetSizeGate('compare', baseline, [], CANDIDATE_TARGET_SIZE_SCOPE, coverage);
+  assert.equal(compare.status, 'pass');
+  assert.equal(compare.pass, true);
+  assert.equal(compare.comparisonPerformed, true);
+  assert.equal(compare.knownBaselineCount, 0);
+  assert.equal(compare.currentViolationCount, 0);
+});
+
 test('browser runners consume the explicit mode and production uses its own baseline file', async () => {
   const browser = await readFile(new URL('./browser.mjs', donationDir), 'utf8');
   const production = await readFile(new URL('./production-browser.mjs', donationDir), 'utf8');
+  const candidateWorkflow = await readFile(new URL('../../.github/workflows/donation-page-qa.yml', donationDir), 'utf8');
 
   for (const [name, source] of [['browser.mjs', browser], ['production-browser.mjs', production]]) {
     assert.match(source, /resolveTargetSizeMode\(process\.env\.WCAG22AA_TARGET_SIZE_MODE\)/, `${name}: explicit mode is not read`);
@@ -159,6 +177,8 @@ test('browser runners consume the explicit mode and production uses its own base
     assert.match(source, /status: 'Pending'/, `${name}: capture-pending is not reported as pending`);
   }
   assert.match(production, /wcag22aa-production-baseline\.json/, 'production must use its own scope baseline');
+  assert.match(candidateWorkflow, /WCAG22AA_TARGET_SIZE_MODE: compare[\s\S]*?run: node tests\/donation\/browser\.mjs/,
+    'candidate CI must trigger the A-06 comparison explicitly');
 });
 
 test('target-size mode is exact and defaults only to capture-pending', () => {
