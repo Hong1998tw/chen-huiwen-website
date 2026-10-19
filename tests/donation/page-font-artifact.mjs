@@ -32,6 +32,7 @@ import {
 import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
 import { redactBrowserDiagnosticText, safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 import { collectVisibleFontDiagnostics } from './page-font-artifact-collector.mjs';
+import { isVisibleInViewport } from './page-font-artifact-visibility.mjs';
 import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
@@ -1676,8 +1677,6 @@ try {
           const latestWrap = document.querySelector('.case-latest-wrap');
           const background = document.querySelector('.case-background');
           const title = document.querySelector('.case-head h1');
-          const headingRect = title?.getBoundingClientRect();
-          const headingStyle = title ? getComputedStyle(title) : null;
           const paragraph = [...(background?.querySelectorAll('p') || [])]
             .find((item) => item.textContent.includes(draftGlyph));
           const inbound = Array.isArray(window.__g02CmsIframeInbound)
@@ -1692,14 +1691,8 @@ try {
               backgroundsCount: document.querySelectorAll('.case-background').length,
               titleIsDraft: title?.textContent === expectedTitle,
               titleContainsDraft: Boolean(title?.innerText.includes(draftGlyph)),
-              titleHasClientRects: Boolean(title?.getClientRects().length),
-              titleIntersectsViewport: Boolean(headingRect && headingRect.width > 0 && headingRect.height > 0
-                && headingRect.bottom > 0 && headingRect.top < innerHeight
-                && headingRect.right > 0 && headingRect.left < innerWidth
-                && headingStyle?.display !== 'none' && headingStyle?.visibility === 'visible'),
               paragraphInDom: Boolean(paragraph),
               paragraphContainsDraft: Boolean(paragraph?.textContent.includes(draftGlyph)),
-              paragraphVisible: Boolean(paragraph?.getClientRects().length),
               anyMainContainsDraft: [...document.querySelectorAll('main')]
                 .some((main) => main.textContent.includes(draftGlyph)),
               detailsOpen: background?.open === true,
@@ -1718,6 +1711,13 @@ try {
         'read bounded CMS iframe failure diagnostics');
         iframeInbound = iframeDiagnostic.inbound;
         iframeDomState = iframeDiagnostic.domState;
+        const failureTitleLocator = cmsProxyFrame.locator('.case-head h1');
+        iframeDomState.titleVisible = await failureTitleLocator.count()
+          ? await failureTitleLocator.first().evaluate(isVisibleInViewport) : false;
+        const failureParagraphLocator = cmsProxyFrame.locator('.case-background p')
+          .filter({ hasText: draftChar }).first();
+        iframeDomState.paragraphVisible = iframeDomState.paragraphInDom
+          ? await failureParagraphLocator.evaluate(isVisibleInViewport) : false;
       } catch (snapshotError) {
         iframeDiagnosticReadError = safeBrowserError(snapshotError, cmsDiagnosticSecrets);
       }
@@ -1763,7 +1763,6 @@ try {
     const heading = document.querySelector('.case-head h1');
     const headingStyle = getComputedStyle(heading);
     const paragraphStyle = paragraph ? getComputedStyle(paragraph) : headingStyle;
-    const headingRect = heading.getBoundingClientRect();
     const headingRects = [...heading.getClientRects()].map((rect) => ({
       left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
       width: rect.width, height: rect.height,
@@ -1773,22 +1772,10 @@ try {
     const loadedFaces = await document.fonts.load(fullTcFontSpec, fontProbeText);
     const fontLoaded = document.fonts.check(fullTcFontSpec, fontProbeText);
     const matchingLoadedFaces = loadedFaces.filter((fontFace) => fontFace.family === 'Huiwen Sans TC');
-    let headingVisibilityChain = true;
-    for (let element = heading; element; element = element.parentElement) {
-      const style = getComputedStyle(element);
-      if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) <= 0) {
-        headingVisibilityChain = false;
-        break;
-      }
-    }
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     context.font = `${headingStyle.fontStyle} ${headingStyle.fontWeight} ${headingStyle.fontSize} ${headingStyle.fontFamily}`;
     const glyphWidth = context.measureText(draftGlyph).width;
-    const headingVisible = headingRects.length > 0 && headingRect.width > 0 && headingRect.height > 0
-      && headingRect.bottom > 0 && headingRect.top < innerHeight
-      && headingRect.right > 0 && headingRect.left < innerWidth
-      && headingVisibilityChain;
     return {
       marker: document.documentElement.dataset.huiwenFontArtifactPreview,
       documentCharacterSet: document.characterSet,
@@ -1797,15 +1784,12 @@ try {
       headingText: heading.innerText,
       headingIsDraft: heading.textContent === expectedTitle,
       headingContainsDraftGlyph: heading.innerText.includes(draftGlyph),
-      headingVisible,
-      headingVisibilityChain,
       headingRects,
       headingFontFamily: headingStyle.fontFamily,
       headingFontWeight: headingStyle.fontWeight,
       paragraphInDom: Boolean(paragraph),
       paragraphContainsDraftGlyph: Boolean(paragraph?.textContent.includes(draftGlyph)),
       paragraphText: paragraph?.textContent || '',
-      paragraphVisible: Boolean(paragraph?.getClientRects().length),
       detailsOpen: details?.open === true,
       paragraphFontFamily: paragraphStyle.fontFamily,
       paragraphFontWeight: paragraphStyle.fontWeight,
@@ -1826,6 +1810,11 @@ try {
     };
   }, { draftGlyph: draftChar, expectedTitle: cmsDraft.title }), INITIAL_RENDER_TIMEOUT_MS,
   'read authenticated CMS preview frame state');
+  const previewTitleLocator = frame.locator('.case-head h1');
+  cmsState.headingVisible = await previewTitleLocator.evaluate(isVisibleInViewport);
+  const previewParagraphLocator = frame.locator('.case-background p').filter({ hasText: draftChar }).first();
+  cmsState.paragraphVisible = cmsState.paragraphInDom
+    ? await previewParagraphLocator.evaluate(isVisibleInViewport) : false;
   results.cmsPreview.previewObservation = {
     documentCharacterSet: cmsState.documentCharacterSet,
     viewport: cmsState.viewport,
@@ -1835,7 +1824,6 @@ try {
       containsDraftGlyph: cmsState.headingContainsDraftGlyph,
       visible: cmsState.headingVisible,
       rects: cmsState.headingRects,
-      visibilityChain: cmsState.headingVisibilityChain,
     },
     paragraph: {
       inDom: cmsState.paragraphInDom,
@@ -1902,9 +1890,12 @@ try {
       detailsOpen: details?.open === true,
       paragraphInDom: Boolean(paragraph),
       paragraphContainsDraftGlyph: Boolean(paragraph?.textContent.includes(draftGlyph)),
-      paragraphVisible: Boolean(paragraph?.getClientRects().length),
     };
   }, { draftGlyph: draftChar });
+  const postFocusParagraphLocator = cmsProxyFrame.locator('.case-background p')
+    .filter({ hasText: draftChar }).first();
+  postFocusState.paragraphVisible = postFocusState.paragraphInDom
+    ? await postFocusParagraphLocator.evaluate(isVisibleInViewport) : false;
   results.cmsPreview.postFocusState = postFocusState;
   assert.equal(postFocusState.detailsOpen, false,
     'CMS capture handler unexpectedly expanded the background details');
