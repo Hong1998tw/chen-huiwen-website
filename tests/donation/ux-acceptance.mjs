@@ -1,12 +1,28 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import {
+  hasStableExplorePaginationGeometry,
+  isExplorePaginationPageReady,
+  isExplorePaginationTargetReady,
+  observeExplorePaginationAction,
+  waitForStableExplorePaginationSnapshot,
+} from './explore-pagination-readiness.mjs';
+import { withTimeout } from './page-font-artifact-lifecycle.mjs';
 import { startStaticServer } from './static-server.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const results = join(root, 'tests/donation/results/ux-acceptance');
+const HOMEPAGE_LAYOUT_TIMEOUT_MS = 10000;
+const HOMEPAGE_DIAGNOSTIC_TIMEOUT_MS = 3000;
+const HOMEPAGE_SCREENSHOT_TIMEOUT_MS = 5000;
+const HOMEPAGE_DIAGNOSTICS_KEY = '__huiwenUxAcceptanceHomepageLayoutDiagnostics';
+const EXPLORE_PAGINATION_FRAME_PROBE_KEY = '__huiwenUxAcceptanceExplorePaginationFrameProbe';
+const EXPLORE_SCROLL_SAMPLE_TIMES_MS = [0, 100, 250, 500, 1000, 2000];
+const EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS = 750;
+const EXPLORE_SCROLL_FINAL_SNAPSHOT_TIMEOUT_MS = 1500;
 await mkdir(results, { recursive: true });
 const server = await startStaticServer({ root, compression: 'none' });
 const base = server.url;
@@ -44,15 +60,331 @@ async function assertNoOverflow(expectedWidth) {
   report.viewports.push({ path: new URL(page.url()).pathname, width: expectedWidth, scrollWidth: result.document });
   return result;
 }
+function safeDiagnosticError(error) {
+  const name = String(error?.name || 'Error').slice(0, 80);
+  const message = String(error?.message || 'unknown error').slice(0, 500)
+    .replace(/https?:\/\/[^\s"'<>]+/gi, url => url.replace(/[?#].*$/, ''))
+    .replace(/\b(token|session|cookie|authorization|csrf|state|code|key)\s*[:=]\s*[^\s,;&]+/gi, '$1=[redacted]')
+    .replace(/([?&](?:token|session|cookie|authorization|csrf|state|code|key)=)[^&#\s]*/gi, '$1[redacted]');
+  return `${name}: ${message}`;
+}
+async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
+  return page.evaluate(({ pageNumber, totalPages, frameProbeKey }) => {
+    const round = value => Math.round(value * 100) / 100;
+    const rect = element => {
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return {
+        left: round(box.left), top: round(box.top), right: round(box.right), bottom: round(box.bottom),
+        width: round(box.width), height: round(box.height),
+      };
+    };
+    const pagination = document.querySelector('#explore-pagination');
+    const targetLabel = `第 ${pageNumber} 頁，共 ${totalPages} 頁`;
+    const target = [...(pagination?.querySelectorAll('.explore-page-button') || [])]
+      .find(button => button.getAttribute('aria-label') === targetLabel);
+    const targetBox = rect(target);
+    const targetStyle = target ? getComputedStyle(target) : null;
+    const heading = document.getElementById('explore-achievement-heading');
+    const headingBox = rect(heading);
+    const header = document.querySelector('.site-header');
+    const headerStyle = header ? getComputedStyle(header) : null;
+    const headerBox = rect(header);
+    const headerPositionRules = [];
+    const collectHeaderPositionRules = rules => {
+      for (const rule of rules) {
+        if (headerPositionRules.length >= 8) return;
+        if (rule.type === CSSRule.MEDIA_RULE) {
+          if (matchMedia(rule.conditionText).matches) collectHeaderPositionRules(rule.cssRules);
+        } else if (rule.type === CSSRule.STYLE_RULE && rule.style?.getPropertyValue('position')) {
+          try {
+            if (header?.matches(rule.selectorText)) {
+              const href = rule.parentStyleSheet?.href;
+              headerPositionRules.push({
+                source: href ? new URL(href).pathname.split('/').at(-1).slice(0, 80) : 'inline',
+                selector: rule.selectorText.slice(0, 120),
+                position: rule.style.getPropertyValue('position').slice(0, 24),
+                important: rule.style.getPropertyPriority('position') === 'important',
+              });
+            }
+          } catch {}
+        }
+      }
+    };
+    for (const stylesheet of document.styleSheets) {
+      if (headerPositionRules.length >= 8) break;
+      try { collectHeaderPositionRules(stylesheet.cssRules); } catch {}
+    }
+    if (header?.style?.position) {
+      headerPositionRules.push({
+        source: 'inline',
+        selector: '.site-header',
+        position: header.style.position.slice(0, 24),
+        important: header.style.getPropertyPriority('position') === 'important',
+      });
+    }
+    const active = document.activeElement;
+    const current = pagination?.querySelector('[aria-current="page"]');
+    const url = new URL(location.href);
+    const requestedValue = url.searchParams.get('value') || url.searchParams.get('category') || url.searchParams.get('village') || '';
+    const animations = document.getAnimations()
+      .filter(animation => animation.playState === 'running' || animation.pending)
+      .slice(0, 8).map(animation => {
+      const element = animation.effect?.target;
+      const selector = element?.id ? `#${element.id}` : element?.tagName?.toLowerCase() || 'unknown';
+      return {
+        selector,
+        playState: animation.playState,
+        pending: animation.pending,
+        currentTime: Number.isFinite(Number(animation.currentTime)) ? round(Number(animation.currentTime)) : null,
+      };
+    });
+    return {
+      url: {
+        path: url.pathname,
+        page: Math.max(1, Number.parseInt(url.searchParams.get('page'), 10) || 1),
+        type: url.searchParams.get('type') || '',
+        value: requestedValue.slice(0, 48),
+        hasKeyword: url.searchParams.has('q'),
+        hasStatus: url.searchParams.has('status'),
+      },
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: round(scrollX), y: round(scrollY), behavior: getComputedStyle(document.documentElement).scrollBehavior },
+      target: {
+        page: pageNumber,
+        found: Boolean(target),
+        connected: Boolean(target?.isConnected),
+        disabled: target?.disabled ?? null,
+        visible: Boolean(target && target.getClientRects().length && targetStyle.display !== 'none' && targetStyle.visibility !== 'hidden'),
+        withinViewport: Boolean(targetBox && targetBox.left >= 0 && targetBox.top >= 0 && targetBox.right <= innerWidth && targetBox.bottom <= innerHeight),
+        ariaCurrent: target?.getAttribute('aria-current') || null,
+        box: targetBox,
+        transitionProperty: targetStyle?.transitionProperty || '',
+        transitionDuration: targetStyle?.transitionDuration || '',
+        transitionDelay: targetStyle?.transitionDelay || '',
+        animationName: targetStyle?.animationName || '',
+      },
+      currentPage: Number(current?.textContent.trim()) || 0,
+      results: { count: document.querySelectorAll('#explore-achievements .explore-result-card').length },
+      heading: {
+        focused: active === heading,
+        withinViewport: Boolean(headingBox && headingBox.top >= 0 && headingBox.bottom <= innerHeight),
+        box: headingBox,
+      },
+      header: {
+        className: typeof header?.className === 'string' ? header.className.slice(0, 120) : '',
+        position: headerStyle?.position || '',
+        marginBottom: headerStyle?.marginBottom || '',
+        transitionProperty: headerStyle?.transitionProperty || '',
+        transitionDuration: headerStyle?.transitionDuration || '',
+        transitionDelay: headerStyle?.transitionDelay || '',
+        animationName: headerStyle?.animationName || '',
+        box: headerBox,
+        positionRules: headerPositionRules,
+      },
+      fonts: { status: document.fonts.status },
+      documentState: {
+        visibility: document.visibilityState,
+        hasFocus: document.hasFocus(),
+      },
+      activeElement: {
+        tag: active?.tagName?.toLowerCase() || '',
+        id: active?.id || '',
+        ariaLabel: (active?.getAttribute?.('aria-label') || '').slice(0, 80),
+      },
+      frameProbe: (() => {
+        const probe = window[frameProbeKey];
+        return probe ? {
+          active: probe.active,
+          frameCount: probe.frameCount,
+          firstFrameMs: probe.firstFrameMs,
+          lastFrameMs: probe.lastFrameMs,
+          elapsedMs: round(performance.now() - probe.startedAt),
+        } : null;
+      })(),
+      animations,
+    };
+  }, { pageNumber, totalPages, frameProbeKey: EXPLORE_PAGINATION_FRAME_PROBE_KEY });
+}
+async function startExplorePaginationFrameProbe(page) {
+  await page.evaluate(({ key, durationMs }) => {
+    const startedAt = performance.now();
+    const probe = { active: true, startedAt, frameCount: 0, firstFrameMs: null, lastFrameMs: null };
+    window[key] = probe;
+    const sampleFrame = timestamp => {
+      if (!probe.active) return;
+      const elapsedMs = Math.round((timestamp - startedAt) * 100) / 100;
+      probe.frameCount += 1;
+      if (probe.firstFrameMs === null) probe.firstFrameMs = elapsedMs;
+      probe.lastFrameMs = elapsedMs;
+      if (elapsedMs < durationMs) requestAnimationFrame(sampleFrame);
+      else probe.active = false;
+    };
+    requestAnimationFrame(sampleFrame);
+  }, { key: EXPLORE_PAGINATION_FRAME_PROBE_KEY, durationMs: 5500 });
+}
+async function stopExplorePaginationFrameProbe(page) {
+  await page.evaluate(key => {
+    const probe = window[key];
+    if (probe) probe.active = false;
+    delete window[key];
+  }, EXPLORE_PAGINATION_FRAME_PROBE_KEY);
+}
+async function waitForExplorePaginationSnapshot(page, pageNumber, totalPages, phase, expectedCount) {
+  let lastSnapshot = null;
+  const label = `Explore pagination ${phase} page ${pageNumber}`;
+  try {
+    return await waitForStableExplorePaginationSnapshot(
+      async () => {
+        lastSnapshot = await readExplorePaginationSnapshot(page, pageNumber, totalPages);
+        return lastSnapshot;
+      },
+      snapshot => phase === 'before click'
+        ? isExplorePaginationTargetReady(snapshot, pageNumber)
+        : isExplorePaginationPageReady(snapshot, pageNumber, expectedCount),
+      { label, timeoutMs: 2500, stableSamples: 3 },
+    );
+  } catch (error) {
+    const diagnostic = error?.lastSnapshot || lastSnapshot;
+    const wrapped = new Error(safeDiagnosticError(error), { cause: error });
+    wrapped.lastSnapshot = diagnostic;
+    throw wrapped;
+  }
+}
+async function waitForHomepageLayout() {
+  const evaluation = Promise.resolve().then(() => page.evaluate(async diagnosticsKey => {
+    const bounded = promise => new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 5000);
+      Promise.resolve(promise).then(() => { clearTimeout(timer); resolve(true); }, () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+    const portrait = document.querySelector('.hero-portrait img');
+    let fontsReady = null;
+    let portraitDecoded = null;
+    const rect = element => {
+      if (!element) return null;
+      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+      return { left, top, right, bottom, width, height };
+    };
+    const snapshot = () => {
+      const heading = document.querySelector('.home-task-paths strong');
+      const headingStyle = heading ? getComputedStyle(heading) : null;
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        readyState: document.readyState,
+        document: { scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight },
+        fonts: {
+          status: document.fonts.status,
+          ready: fontsReady,
+          taskFontLoaded: headingStyle ? document.fonts.check(`${headingStyle.fontWeight} ${headingStyle.fontSize} ${headingStyle.fontFamily}`) : false,
+        },
+        portrait: portrait ? { complete: portrait.complete, naturalWidth: portrait.naturalWidth, decoded: portraitDecoded } : null,
+        header: rect(document.querySelector('.site-header')),
+        hero: rect(document.querySelector('#main.home-redesign .hero')),
+        taskBoxes: [...document.querySelectorAll('.home-task-paths a')].map(rect),
+      };
+    };
+    let current = snapshot();
+    let stableFrames = 0;
+    let layoutStable = false;
+    const publishDiagnostics = () => {
+      const value = { ...current, stableFrames, layoutStable };
+      window[diagnosticsKey] = value;
+      return value;
+    };
+    publishDiagnostics();
+    const layoutKey = value => JSON.stringify({
+      viewport: value.viewport,
+      scrollWidth: value.document.scrollWidth,
+      header: value.header,
+      hero: value.hero,
+      taskBoxes: value.taskBoxes,
+    });
+    const waits = [
+      bounded(document.fonts.ready).then(value => {
+        fontsReady = value;
+        current = snapshot();
+        publishDiagnostics();
+        return value;
+      }),
+      portrait ? bounded(portrait.decode()).then(value => {
+        portraitDecoded = value;
+        current = snapshot();
+        publishDiagnostics();
+        return value;
+      }) : Promise.resolve(false),
+    ];
+    await Promise.all(waits);
+    current = snapshot();
+    publishDiagnostics();
+    for (let frame = 0; frame < 8; frame++) {
+      await new Promise(requestAnimationFrame);
+      const next = snapshot();
+      stableFrames = layoutKey(next) === layoutKey(current) ? stableFrames + 1 : 0;
+      current = next;
+      layoutStable = stableFrames >= 2;
+      publishDiagnostics();
+      if (stableFrames >= 2) break;
+    }
+    const readiness = publishDiagnostics();
+    delete window[diagnosticsKey];
+    return readiness;
+  }, HOMEPAGE_DIAGNOSTICS_KEY));
+  try {
+    return await withTimeout(evaluation, HOMEPAGE_LAYOUT_TIMEOUT_MS, 'homepage layout readiness');
+  } catch (primaryError) {
+    let partialDiagnostics = null;
+    let diagnosticFailure = null;
+    try {
+      partialDiagnostics = await withTimeout(page.evaluate(diagnosticsKey => {
+        const value = window[diagnosticsKey] || null;
+        if (value) delete window[diagnosticsKey];
+        return value;
+      }, HOMEPAGE_DIAGNOSTICS_KEY), HOMEPAGE_DIAGNOSTIC_TIMEOUT_MS, 'homepage partial diagnostics');
+      if (!partialDiagnostics) diagnosticFailure = 'partial layout diagnostics were not published';
+    } catch (diagnosticError) {
+      diagnosticFailure = safeDiagnosticError(diagnosticError);
+    }
+    return {
+      layoutStable: false,
+      primaryFailure: safeDiagnosticError(primaryError),
+      partialDiagnostics,
+      diagnosticFailure,
+    };
+  }
+}
+async function captureHomepage1180Screenshot() {
+  const screenshotPath = join(results, 'homepage-1180x757.png');
+  try {
+    const png = await withTimeout(page.screenshot({ fullPage: false }),
+      HOMEPAGE_SCREENSHOT_TIMEOUT_MS, '1180×757 homepage screenshot');
+    await writeFile(screenshotPath, png);
+    return { status: 'captured', file: 'homepage-1180x757.png', bytes: png.length };
+  } catch (error) {
+    let staleArtifactRemovalFailure = null;
+    try {
+      await unlink(screenshotPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') staleArtifactRemovalFailure = safeDiagnosticError(cleanupError);
+    }
+    return {
+      status: 'not-captured',
+      error: safeDiagnosticError(error),
+      staleArtifactRemovalFailure,
+    };
+  }
+}
 
 try {
   await page.goto(base + 'index.html');
-  await page.locator('.hero-task-links a').first().waitFor();
+  await page.locator('.home-task-paths a').first().waitFor();
   await check('homepage service, local-record and council task routes are directly available', async () => {
-    assert.deepEqual(await page.locator('.hero-task-links a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
+    assert.deepEqual(await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
       'service.html#contact', 'achievements.html#case-results', 'council-records.html'
     ]);
-    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map(row => row.dataset.homeRecentItem));
+    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map((row,index) => index===0?'award':row.querySelector('[data-home-event]')?'headquarters':'local'));
     assert.deepEqual(order, ['award', 'headquarters', 'local']);
     assert.match(await page.locator('#recent').innerText(), /獲選[\s\S]*總部成立[\s\S]*文德國小活動中心/);
     await page.screenshot({ path: join(results, 'homepage-desktop-1440x960.png'), fullPage: false });
@@ -62,7 +394,7 @@ try {
   await page.goto(base + 'index.html');
   await check('390×844 homepage keeps task routes inside the first screen without overflow', async () => {
     await assertNoOverflow(390);
-    const boxes = await page.locator('.hero-task-links a').evaluateAll(links => links.map(link => {
+    const boxes = await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => {
       const r = link.getBoundingClientRect();
       return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
     }));
@@ -186,14 +518,33 @@ try {
     const height = width === 1180 ? 757 : 900;
     await page.setViewportSize({ width, height });
     await page.goto(base + 'index.html');
-    await page.locator('.hero-task-links a').first().waitFor();
+    const readiness = await waitForHomepageLayout();
+    if (width === 1180) {
+      readiness.screenshot = await captureHomepage1180Screenshot();
+      report.homepage1180 = readiness;
+    }
     await check(`homepage reflows at ${width}px with all three task links visible and no horizontal overflow`, async () => {
+      assert(readiness.layoutStable, readiness.primaryFailure
+        ? `homepage layout readiness failed: ${JSON.stringify(readiness)}`
+        : `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
+      await page.locator('.home-task-paths a').first().waitFor({ state: 'visible', timeout: 5000 });
+      assert(readiness.fonts.ready, `homepage fonts did not become ready: ${JSON.stringify(readiness)}`);
+      assert(readiness.portrait?.decoded, `homepage portrait did not decode: ${JSON.stringify(readiness)}`);
+      if (width === 1180) {
+        assert.equal(readiness.screenshot.status, 'captured',
+          `1180×757 homepage screenshot was not captured: ${JSON.stringify(readiness.screenshot)}`);
+      }
       await assertNoOverflow(width);
-      const boxes=await page.locator('.hero-task-links a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
+      const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
       assert.equal(boxes.length,3);
-      assert(boxes.every(box=>box.left>=0&&box.right<=width&&box.width>=44&&box.height>=40));
-      assert(boxes.every(box=>box.bottom<=height));
+      assert(boxes.every(box=>box.left>=0&&box.top>=0&&box.right<=width&&box.bottom<=height&&box.width>=44&&box.height>=40),
+        `homepage task links must fit inside ${width}×${height}: ${JSON.stringify({ readiness, boxes })}`);
+      return { boxes, readiness };
     });
+    if (width === 1180 && readiness.primaryFailure && readiness.diagnosticFailure
+      && readiness.screenshot.status === 'not-captured') {
+      throw new Error('1180×757 renderer did not answer bounded diagnostics or screenshot; see the saved UX report.');
+    }
   }
 
   await check('five out-of-order history records keep the canonical latest date in Explore, search index and detail page',async()=>{
@@ -226,7 +577,7 @@ try {
   for(const viewport of [{width:590,height:378,label:'200% source viewport'},{width:393,height:252,label:'300% short viewport'}]){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
     await page.goto(base+'index.html');
-    await page.locator('.hero-task-links a').first().waitFor();
+    await page.locator('.home-task-paths a').first().waitFor();
     await check(`homepage reflows at ${viewport.width}×${viewport.height} CSS px (${viewport.label}) without fixed controls obscuring content`,async()=>{
       await assertNoOverflow(viewport.width);
       const layout=await page.evaluate(()=>({
@@ -235,7 +586,7 @@ try {
         headerBottom:document.querySelector('.site-header').getBoundingClientRect().bottom,
         titleTop:document.querySelector('#hero-title').getBoundingClientRect().top,
         titleBottom:document.querySelector('#hero-title').getBoundingClientRect().bottom,
-        actions:getComputedStyle(document.querySelector('.mobile-actions')).position,
+        actions:document.querySelector('.mobile-actions')?getComputedStyle(document.querySelector('.mobile-actions')).position:'none',
       }));
       assert.equal(layout.topline,'none');
       assert.equal(layout.header,'relative');
@@ -277,12 +628,105 @@ try {
     const expectedButtons = ['上一頁', ...Array.from({ length: totalPages }, (_, i) => String(i + 1)), '下一頁'];
     assert.deepEqual(await page.locator('#explore-pagination .explore-page-button').allTextContents(), expectedButtons);
     let reachable=10;
+    const paginationDiagnostics=[];
     for(let number = 2; number <= totalPages; number++){
-      await page.getByRole('button',{name:`第 ${number} 頁，共 ${totalPages} 頁`}).click();
-      await page.waitForFunction(number=>new URL(location.href).searchParams.get('page')===String(number),number);
-      const count=await page.locator('#explore-achievements .explore-result-card').count();
-      assert.equal(count, number === totalPages ? lastPageCount : 10);
-      reachable+=count;
+      const expectedCount=number === totalPages ? lastPageCount : 10;
+      const button=page.getByRole('button',{name:`第 ${number} 頁，共 ${totalPages} 頁`});
+      let latestSnapshot=null;
+      const pageDiagnostic = {
+        page: number,
+        scrollIntoView: { before: null, samples: [], after: null, observation: null },
+        beforeClick: null,
+        afterClick: null,
+        ordinaryPointerClick: false,
+      };
+      paginationDiagnostics.push(pageDiagnostic);
+      try {
+        pageDiagnostic.scrollIntoView.before = await withTimeout(
+          readExplorePaginationSnapshot(page,number,totalPages),
+          EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+          `Explore pagination page ${number} initial scroll snapshot`,
+        );
+        latestSnapshot = pageDiagnostic.scrollIntoView.before;
+        await withTimeout(
+          startExplorePaginationFrameProbe(page),
+          EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+          `Explore pagination page ${number} frame probe start`,
+        );
+        try {
+          const observed = await observeExplorePaginationAction(
+            () => button.scrollIntoViewIfNeeded(),
+            () => readExplorePaginationSnapshot(page,number,totalPages),
+            {
+              sampleTimesMs: EXPLORE_SCROLL_SAMPLE_TIMES_MS,
+              snapshotTimeoutMs: EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+            },
+          );
+          pageDiagnostic.scrollIntoView.samples = observed.observation.samples;
+          pageDiagnostic.scrollIntoView.observation = {
+            outcome: observed.observation.outcome,
+            elapsedMs: observed.observation.elapsedMs,
+          };
+        } catch(error) {
+          const observation = error?.explorePaginationObservation;
+          pageDiagnostic.scrollIntoView.samples = observation?.samples || [];
+          pageDiagnostic.scrollIntoView.observation = observation
+            ? { outcome: observation.outcome, elapsedMs: observation.elapsedMs }
+            : { outcome: 'diagnostic-error', elapsedMs: null };
+          pageDiagnostic.scrollIntoView.nativeError = safeDiagnosticError(error);
+          throw error;
+        } finally {
+          try {
+            pageDiagnostic.scrollIntoView.after = await withTimeout(
+              readExplorePaginationSnapshot(page,number,totalPages),
+              EXPLORE_SCROLL_FINAL_SNAPSHOT_TIMEOUT_MS,
+              `Explore pagination page ${number} final scroll snapshot`,
+            );
+          } catch(snapshotError) {
+            pageDiagnostic.scrollIntoView.afterError = safeDiagnosticError(snapshotError);
+          }
+          latestSnapshot = pageDiagnostic.scrollIntoView.after
+            || [...pageDiagnostic.scrollIntoView.samples].reverse().find(sample => sample.snapshot)?.snapshot
+            || latestSnapshot;
+          try {
+            await withTimeout(
+              stopExplorePaginationFrameProbe(page),
+              EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+              `Explore pagination page ${number} frame probe stop`,
+            );
+          } catch(stopError) {
+            pageDiagnostic.scrollIntoView.frameProbeStopError = safeDiagnosticError(stopError);
+          }
+        }
+        let previousProbeSnapshot = null;
+        for (const sample of pageDiagnostic.scrollIntoView.samples) {
+          if (!sample.snapshot) continue;
+          sample.geometryStableFromPrevious = previousProbeSnapshot
+            ? hasStableExplorePaginationGeometry(previousProbeSnapshot, sample.snapshot)
+            : null;
+          previousProbeSnapshot = sample.snapshot;
+        }
+        const before=await waitForExplorePaginationSnapshot(page,number,totalPages,'before click');
+        latestSnapshot=before;
+        pageDiagnostic.beforeClick=before;
+        assert.equal(before.url.page,number-1,`pagination must advance from page ${number-1}: ${JSON.stringify(before)}`);
+        assert.equal(before.url.type,'topic');
+        assert.equal(before.url.value,'交通與基建');
+        await button.click();
+        pageDiagnostic.ordinaryPointerClick=true;
+        await page.waitForFunction(number=>new URL(location.href).searchParams.get('page')===String(number),number);
+        const count=await page.locator('#explore-achievements .explore-result-card').count();
+        assert.equal(count,expectedCount);
+        const after=await waitForExplorePaginationSnapshot(page,number,totalPages,'after click',expectedCount);
+        latestSnapshot=after;
+        pageDiagnostic.afterClick=after;
+        assert.equal(after.url.type,'topic');
+        assert.equal(after.url.value,'交通與基建');
+        assert.equal(after.heading.focused,true,'pointer pagination must move focus to the results heading');
+        reachable+=count;
+      } catch(error) {
+        throw new Error(`${safeDiagnosticError(error)}; latest UI snapshot=${JSON.stringify(error?.lastSnapshot||latestSnapshot)}; pagination diagnostics=${JSON.stringify(paginationDiagnostics)}`);
+      }
     }
     assert.equal(reachable, expectedTopicCount, `all ${expectedTopicCount} matching records must be reachable through pagination`);
     await page.reload();
@@ -297,6 +741,7 @@ try {
     await page.goBack();
     await page.waitForFunction(() => new URL(location.href).searchParams.get('page') !== '2');
     assert.equal(await page.locator('#explore-achievements .explore-result-card').count(), 10);
+    return { paginationReadiness: { timeoutMs: 2500, stableSamples: 3, pages: paginationDiagnostics } };
   });
   await page.goto(base+'explore.html?type=topic&value='+encodeURIComponent('交通與基建'));
   await page.locator('#explore-achievements .explore-result-card').first().waitFor();

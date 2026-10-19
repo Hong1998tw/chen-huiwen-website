@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "npm",
+    "pyenv"
+  ],
+  "automerge": false,
+  "dependencyDashboard": false,
+  "timezone": "Asia/Taipei",
+  "schedule": [
+    "* 4-7 * * 1"
+  ],
+  "updateNotScheduled": false,
+  "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
+      "groupName": "weekly patch and action digest updates"
+    }
+  ]
+}

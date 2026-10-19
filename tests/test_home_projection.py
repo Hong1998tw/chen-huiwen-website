@@ -2,29 +2,152 @@
 import copy
 import json
 from pathlib import Path
+import re
 import sys
+import tempfile
 import unittest
 from bs4 import BeautifulSoup
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from build_home import render_services, render_event
+from build_home import (
+    local_coordinate_records,
+    render_event,
+    render_home_map_svg,
+    render_home_progress,
+    render_recent_local,
+    render_services,
+    render_contact,
+)
 from build_guides import load_office
-from build_civic import render_stories, render_home_map, render_funding, funding_of
+from build_service import render_schedule
+from build_civic import render_funding, funding_of
 from publication_path_guard import compare_generated_outputs, evaluate
 
 
 class HomeProjectionTests(unittest.TestCase):
+    def test_home_task_card_background_matches_its_light_text_colors(self):
+        css=(ROOT/'home.css').read_text()
+        card_rule=re.search(r'\.home-redesign \.home-task-paths a\s*\{([^}]+)\}',css)
+        hover_rule=re.search(r'\.home-redesign \.home-task-paths a:hover\s*\{([^}]+)\}',css)
+        self.assertIsNotNone(card_rule)
+        self.assertIsNotNone(hover_rule)
+        self.assertIn('background: var(--ink);',card_rule.group(1))
+        self.assertIn('background: var(--ink);',hover_rule.group(1))
+        foregrounds=['#d5f582','#e1e8de']
+        background='#173f33'
+        def luminance(color):
+            channels=[int(color[i:i+2],16)/255 for i in (1,3,5)]
+            linear=[channel/12.92 if channel<=0.04045 else ((channel+0.055)/1.055)**2.4 for channel in channels]
+            return sum(weight*channel for weight,channel in zip((0.2126,0.7152,0.0722),linear))
+        dark=luminance(background)
+        for foreground in foregrounds:
+            light=luminance(foreground)
+            self.assertGreaterEqual((light+0.05)/(dark+0.05),4.5)
+
     def test_service_entry_uses_canonical_month_and_office(self):
         office=load_office(ROOT)
         for month in ['2026-10','2027-02']:
             soup=BeautifulSoup(render_services(office,{'month':month}),'html.parser')
-            links=soup.select('a[href="service.html#monthly-heading"]')
+            links=soup.select('a[data-home-legal-month]')
             self.assertEqual(len(links),1)
             self.assertEqual(links[0]['data-home-legal-month'],month)
             self.assertIn(str(int(month[-2:]))+'月',links[0].get_text())
-            self.assertIsNotNone(soup.select_one('a[href="'+office['phoneUrl']+'"]'))
-            self.assertIn(office['address'],soup.get_text())
+            self.assertEqual(len(soup.select('.home-task-paths a')),3)
+            self.assertEqual(len(soup.select('.home-lawyer-link')),1)
+            self.assertEqual(len(soup.select('a[href^="tel:"]')),0)
+            self.assertNotIn('服務處地址：',soup.get_text())
+
+    def test_home_page_has_one_hero_contact_pair_and_three_task_cards(self):
+        soup=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
+        main=soup.select_one('main.home-redesign')
+        self.assertEqual(len(main.select('.hero-actions a')),2)
+        office=load_office(ROOT)
+        self.assertEqual(main.select_one('.hero-actions a.primary')['href'],office['phoneUrl'])
+        self.assertEqual(main.select_one('.hero-actions a.primary').get_text(strip=True),'撥打服務處')
+        self.assertEqual(main.select_one('.hero-actions a.outline')['href'],'https://line.me/R/ti/p/@yve2766q')
+        self.assertEqual(len(main.select('.home-task-paths a')),3)
+        self.assertEqual(len(main.select('.home-lawyer-link a[data-home-legal-month]')),1)
+        self.assertEqual(len(main.select('.home-task-paths')),1)
+
+    def test_home_page_has_only_the_six_requested_content_sections(self):
+        soup=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
+        main=soup.select_one('main.home-redesign')
+        sections=main.select(':scope > section')
+        self.assertEqual([section.get('id') for section in sections],
+                         [None,'recent','home-local-progress','council','contact'])
+        self.assertEqual(len(main.select('.home-recent-list > li')),3)
+        self.assertEqual(len(main.select('[data-home-local-record]')),1)
+        self.assertFalse(main.select('.civic-story-grid, #map, .filters, .place'))
+        self.assertEqual(main.select_one('.home-local-progress img')['src'],'assets/fengshan-home-map.svg')
+        feature=main.select_one('[data-home-recent-item="local"] .home-recent-local')
+        self.assertIsNotNone(feature)
+        self.assertIsNotNone(feature.select_one('.home-recent-art--local span:first-child'))
+        self.assertIsNotNone(feature.select_one('.home-recent-art--local span:nth-child(2)'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy h3 a'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy .home-recent-copy'))
+        self.assertIsNotNone(feature.select_one('.home-recent-card-copy .home-recent-meta'))
+
+    def test_cms_home_preview_targets_the_current_published_feature_slot(self):
+        editor=(ROOT/'cms-page-editor.js').read_text()
+        self.assertIn('[data-home-recent-item="local"] .home-recent-local',editor)
+        self.assertIn('.home-recent-card-copy .home-recent-copy',editor)
+        self.assertNotIn('civic-story-grid',editor)
+        preview=editor.split('  function applyHomePreview',1)[1].split('  function applyCasePreview',1)[0]
+        self.assertIn('typeof featured.lastRecordDate === "string"',preview)
+        self.assertIn('latestHistoryEvent(history)?.date',preview)
+        self.assertNotIn('localeCompare',preview)
+
+    def test_home_stats_and_village_options_follow_public_projection(self):
+        records=json.loads((ROOT/'data/achievements-public.json').read_text())
+        html=render_home_progress(ROOT)
+        soup=BeautifulSoup(html,'html.parser')
+        status_counts={}
+        for record in records:
+            status_counts[record.get('status')]=status_counts.get(record.get('status'),0)+1
+        self.assertEqual(int(soup.select_one('[data-home-stat="total"] strong').get_text()),len(records))
+        village_set={v for r in records if r.get('district')=='鳳山區' and r.get('scope') not in {'全市政策','跨區服務'} for v in r.get('villages',[])}
+        self.assertEqual(int(soup.select_one('[data-home-stat="villages"] strong').get_text()),len(village_set))
+        linked={row['data-home-status']:int(row.select_one('strong').get_text()) for row in soup.select('[data-home-status]')}
+        self.assertEqual(linked,status_counts)
+        for anchor in soup.select('[data-home-status]'):
+            self.assertIn('status=',anchor['href'])
+        options=soup.select('#home-village option')
+        self.assertEqual([o.get_text() for o in options[1:]],sorted(village_set))
+        self.assertTrue(all(option['value']=='v:'+option.get_text() for option in options[1:]))
+        self.assertEqual(soup.select_one('.home-village-form')['method'],'get')
+        self.assertEqual(len(soup.select('.home-village-form button[type="reset"]')),1)
+        self.assertTrue(soup.select_one('.home-village-form noscript'))
+
+    def test_static_map_uses_only_published_fengshan_points_and_attributes_boundary(self):
+        records=json.loads((ROOT/'data/achievements-public.json').read_text())
+        geojson=json.loads((ROOT/'assets/fengshan-villages.geojson').read_text())
+        features=geojson['features']
+        locations=local_coordinate_records(records,features)
+        svg=render_home_map_svg(records,geojson)
+        self.assertGreater(len(locations),0)
+        self.assertEqual(svg.count('<circle '),len(locations))
+        self.assertEqual(svg.count('<path '),sum(x.get('properties',{}).get('district')=='鳳山區' for x in features))
+        self.assertIn('公開紀錄已有的鳳山區座標',svg)
+        self.assertIn(geojson['sourceUrl'],svg)
+        self.assertIn(geojson['license'],svg)
+        self.assertTrue(all(r.get('district')=='鳳山區' and r.get('scope') not in {'全市政策','跨區服務'} for r in locations))
+        progress=BeautifulSoup(render_home_progress(ROOT),'html.parser')
+        self.assertIn(geojson['sourceUrl'],str(progress.select_one('.home-map-preview figcaption')))
+        self.assertIn(geojson['license'],str(progress.select_one('.home-map-preview figcaption')))
+        map_link=progress.select_one('.home-map-preview a[aria-label^="在互動地圖查看公開紀錄"]')['href']
+        self.assertEqual(map_link,'achievements.html?case=wende-school-center#achievement-map')
+        self.assertEqual(progress.select_one('.home-map-text-link')['href'],'achievements.html#case-results')
+        featured=next(row for row in records if row['id']=='wende-school-center')
+        self.assertTrue(featured.get('coordinates'))
+        self.assertIn("new URLSearchParams(location.search).get('case')",(ROOT/'map.js').read_text())
+
+    def test_lawyer_reservation_copy_stays_outside_description_lists(self):
+        schedule=json.loads((ROOT/'data/legal-schedule.json').read_text())
+        for html in (render_schedule(schedule),render_contact(load_office(ROOT))):
+            soup=BeautifulSoup(html,'html.parser')
+            for node in soup.find_all(string=lambda value:value and ('預約制' in value or '先來電' in value)):
+                self.assertIsNone(node.find_parent('dl'))
 
     def test_home_event_follows_source_changes_and_cancellation(self):
         events=json.loads((ROOT/'data/events.json').read_text())['events']
@@ -39,20 +162,36 @@ class HomeProjectionTests(unittest.TestCase):
             self.assertTrue(all(original['id'] in a['href'] for a in soup.select('a')))
             if event['status']=='cancelled': self.assertIn('活動已取消',soup.get_text())
 
-    def test_home_selection_projection_tracks_current_source(self):
+    def test_home_selection_projection_contains_one_current_public_feature(self):
         config=json.loads((ROOT/'data/civic-home.json').read_text())
         records={x['id']:x for x in json.loads((ROOT/'data/achievements-public.json').read_text())}
-        html=render_stories(config,records);soup=BeautifulSoup(html,'html.parser')
-        self.assertEqual([x['data-record-id'] for x in soup.select('[data-record-id]')],[config['featured'],*config['reading']])
+        html=render_recent_local(ROOT);soup=BeautifulSoup(html,'html.parser')
+        self.assertEqual([x['data-home-local-record'] for x in soup.select('[data-home-local-record]')],[config['featured']])
         featured=records[config['featured']]
-        funding=funding_of(featured)
-        if funding:
-            self.assertIn(funding['sourceUrl'],html)
-            if funding.get('collaboration'):
-                self.assertIn(funding['collaboration'],soup.get_text())
-        else:
-            self.assertNotIn('civic-feature-funding',html)
-        self.assertEqual(len(BeautifulSoup(render_home_map(config,records),'html.parser').select('.place')),len(config['reading'])+1)
+        self.assertEqual(soup.select_one('h3 a').get_text(),featured['title'])
+        self.assertEqual(soup.get_text().count(featured['title']),1)
+        self.assertNotIn('civic-reading',html)
+
+    def test_saved_cms_feature_and_summary_render_into_the_current_home_card(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'data').mkdir()
+            record={
+                'id':'cms-selected-feature','title':'CMS 主打專題','summary':'原始政績摘要',
+                'status':'持續追蹤','categories':['交通與基建'],'villages':['測試里'],
+                'history':[{'date':'2026-09-27','title':'最新公開紀錄'}],
+            }
+            (root/'data/civic-home.json').write_text(json.dumps({
+                'featured':record['id'],'reading':['other-feature'],
+                'summaries':{record['id']:'CMS 儲存的首頁摘要'},
+            }),encoding='utf-8')
+            (root/'data/achievements-public.json').write_text(json.dumps([record]),encoding='utf-8')
+            soup=BeautifulSoup(render_recent_local(root),'html.parser')
+            card=soup.select_one('[data-home-local-record="cms-selected-feature"]')
+            self.assertEqual(card.select_one('h3 a').get_text(),'CMS 主打專題')
+            self.assertEqual(card.select_one('.home-recent-copy').get_text(),'CMS 儲存的首頁摘要')
+            self.assertEqual(card.select_one('.home-recent-art--local span:nth-child(2)').get_text(),'測試里')
+            self.assertIn('最新收錄 2026-09-27',card.select_one('.home-recent-meta').get_text())
 
     def test_home_feature_funding_uses_the_selected_record_amounts_and_source(self):
         record={

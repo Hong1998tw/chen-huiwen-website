@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import sys
+import tempfile
 import unittest
 
 from bs4 import BeautifulSoup
@@ -12,6 +13,51 @@ import build_font_subsets as fonts
 
 
 class FontSubsetContractTests(unittest.TestCase):
+    def test_generated_cleanup_matches_only_owned_content_addressed_assets(self):
+        self.assertTrue(fonts.is_owned_generated_font("huiwen-about-core-0123456789ab.woff2"))
+        self.assertTrue(fonts.is_owned_generated_font("huiwen-cjk-support-0123456789ab.woff2"))
+        self.assertFalse(fonts.is_owned_generated_font("huiwen-about-core-0123456789ab 2.woff2"))
+        self.assertFalse(fonts.is_owned_generated_font("third-party-0123456789ab.woff2"))
+
+    def test_full_corpus_contains_its_generated_upgrade_markup_before_injection(self):
+        with tempfile.TemporaryDirectory(prefix="font-upgrade-corpus-") as name:
+            root = Path(name)
+            (root / "about.html").write_text("<!doctype html><html><body>公開頁</body></html>", encoding="utf-8")
+            full_text = fonts.page_text(root, "about.html")
+        self.assertIn(fonts.font_upgrade_markup(), full_text)
+        self.assertIn("document.fonts.load('400 16px", full_text)
+
+    def test_global_full_tc_face_uses_the_exact_source_cmap(self):
+        tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        face = re.search(r'@font-face\{font-family:"Huiwen Sans TC"[^}]*\}', css)
+        self.assertIsNotNone(face)
+        range_match = re.search(r"unicode-range:([^;}]+)", face.group(0))
+        self.assertIsNotNone(range_match)
+
+        intervals = []
+        for item in range_match.group(1).split(","):
+            match = re.fullmatch(r"U\+([0-9A-Fa-f]{1,6})(?:-([0-9A-Fa-f]{1,6}))?", item)
+            self.assertIsNotNone(match, item)
+            start = int(match.group(1), 16)
+            end = int(match.group(2), 16) if match.group(2) else start
+            self.assertLessEqual(start, end)
+            intervals.append((start, end))
+
+        self.assertEqual(
+            range_match.group(1),
+            fonts.unicode_range_for_codepoints(tc_cmap),
+        )
+        self.assertTrue(all(any(start <= cp <= end for start, end in intervals) for cp in tc_cmap))
+        self.assertEqual(sum(end - start + 1 for start, end in intervals), len(tc_cmap))
+        self.assertFalse(any(start <= cp <= end for start, end in intervals for cp in (0x2733, 0x2630)))
+        self.assertIn("font-weight:250 900", face.group(0))
+        self.assertIn("font-display:swap", face.group(0))
+
+        broad_face = [(0, 0x10FFFF)]
+        self.assertGreater(sum(end - start + 1 for start, end in broad_face), len(tc_cmap))
+        self.assertNotEqual("U+0-10FFFF", range_match.group(1))
+
     def test_required_cjk_glyphs_have_a_source_font(self):
         _, codepoints = fonts.collect_corpus(ROOT)
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
@@ -109,6 +155,27 @@ class FontSubsetContractTests(unittest.TestCase):
                 self.assertEqual(core_actual, core_expected)
                 self.assertEqual(full_actual, full_delta_expected)
 
+    def test_all_legacy_face_glyphsets_match_the_generated_source_text(self):
+        css = (ROOT / "styles.css").read_text(encoding="utf-8")
+        source_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
+        for route, (slug, selectors) in fonts.ROUTES.items():
+            core_text = fonts.page_text(ROOT, route, selectors)
+            full_text = fonts.page_text(ROOT, route)
+            expected = {
+                "Core": {ord(char) for char in core_text}.intersection(source_cmap),
+                "Full": ({ord(char) for char in full_text} - {ord(char) for char in core_text}).intersection(source_cmap),
+            }
+            for role in ("Core", "Full"):
+                with self.subTest(route=route, role=role):
+                    match = re.search(
+                        rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} {role}";'
+                        rf'src:url\("([^\"]+)"\)',
+                        css,
+                    )
+                    self.assertIsNotNone(match)
+                    asset = ROOT / match.group(1).lstrip("/")
+                    self.assertEqual(set(fonts.cmap(asset)), expected[role])
+
     def test_dynamic_search_and_map_surfaces_use_the_full_site_face(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")
         for selector in (
@@ -130,7 +197,7 @@ class FontSubsetContractTests(unittest.TestCase):
 
     def test_homepage_headquarters_title_is_covered_by_the_preloaded_core_face(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        heading = soup.select_one("#opening-title").get_text(" ", strip=True)
+        heading = soup.select_one("[data-home-event] h3").get_text(" ", strip=True)
         core_text = fonts.page_text(ROOT, "index.html", fonts.ROUTES["index.html"][1])
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
         expected = {ord(char) for char in heading if ord(char) in tc_cmap}
@@ -144,7 +211,7 @@ class FontSubsetContractTests(unittest.TestCase):
             [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
             ["award", "headquarters", "local"],
         )
-        self.assertIn("獲選", recent.select_one("[data-home-recent-item='award']").get_text(" ", strip=True))
+        self.assertIn("獲選", recent.find("li", attrs={"data-home-recent-item": "award"}).get_text(" ", strip=True))
         self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))
         self.assertEqual(recent.select_one("[data-home-local-record]")["data-home-local-record"], "wende-school-center")
         self.assertIn("閱讀這件地方事", recent.get_text(" ", strip=True))

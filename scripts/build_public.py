@@ -436,7 +436,28 @@ def build_page_editor_artifacts(staging, root):
     return manifests
 
 
-def build(root=ROOT, destination=None):
+PUBLICATION_DERIVED_FILES = {
+    'publication-manifest.json', 'deployment.json', '_headers', '_redirects',
+}
+
+
+def publication_file_hashes(staging, exclude=()):
+    excluded = PUBLICATION_DERIVED_FILES | set(exclude)
+    return {
+        path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(staging.rglob('*'))
+        if path.is_file() and path.relative_to(staging).as_posix() not in excluded
+    }
+
+
+def write_publication_manifest(staging, record_count, exclude=()):
+    files = publication_file_hashes(staging, exclude)
+    manifest = {'version': 1, 'publicRecordCount': record_count, 'files': files}
+    (staging / 'publication-manifest.json').write_bytes(encoded(manifest))
+    return manifest
+
+
+def build(root=ROOT, destination=None, *, include_font_contract=False, artifact_transform=None):
     root = root.resolve()
     destination = (destination or root / '_site').resolve()
     if destination == root or destination in root.parents:
@@ -459,9 +480,29 @@ def build(root=ROOT, destination=None):
         # copy it to the public site except through the validated projection.
         (staging / 'data/achievements.json').write_bytes(encoded(records))
         editor_manifests = build_page_editor_artifacts(staging, root)
+        # Artifact-only font subsets are compiled from the final public and CMS
+        # projections. Their route closure is included in the publication digest.
+        from build_artifact_page_fonts import build as build_artifact_page_fonts
+        artifact_page_fonts = build_artifact_page_fonts(root, staging, paths)
+        # Provider-specific derivatives belong to the isolated artifact and must
+        # exist before publication, page-font binding, and Service Worker closure.
+        if artifact_transform is not None:
+            artifact_transform(staging, root, paths)
         validate_artifact_links(staging, root)
-        manifest = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(staging.rglob('*')) if path.is_file()}
-        (staging / 'publication-manifest.json').write_bytes(encoded({'version': 1, 'publicRecordCount': len(records), 'files': manifest}))
+        # The source-derived font contract requires a publication binding. Keep
+        # the raw source worker out of this temporary manifest; the final manifest
+        # binds the rendered worker after its bytes are known.
+        write_publication_manifest(staging, len(records), exclude={'sw.js'})
+        from page_font_contract import validate_artifact_contract
+        font_contract = validate_artifact_contract(staging, root)
+        # Derive deployment CACHE/SHELL only after the reviewed public and CMS
+        # projections and source-derived font closure are complete.
+        from service_worker_artifact import render_service_worker
+        (staging / 'sw.js').write_bytes(
+            render_service_worker(staging, (root / 'sw.js').read_bytes(), font_contract)
+        )
+        final_publication = write_publication_manifest(staging, len(records))
+        manifest = final_publication['files']
         # This gate deliberately runs after the CMS has rendered saved edits.
         from validate_public_copy import validate_artifact_surface
         failures = validate_artifact_surface(staging)
@@ -470,7 +511,16 @@ def build(root=ROOT, destination=None):
         if destination.exists():
             shutil.rmtree(destination)
         staging.replace(destination)
-    return {'files': len(manifest) + 1, 'publicRecords': len(records), 'editorManifests': editor_manifests, 'output': str(destination)}
+    result = {
+        'files': len(manifest) + 1,
+        'publicRecords': len(records),
+        'editorManifests': editor_manifests,
+        'artifactPageFonts': artifact_page_fonts,
+        'output': str(destination),
+    }
+    if include_font_contract:
+        result['_fontContract'] = font_contract
+    return result
 
 
 def main():

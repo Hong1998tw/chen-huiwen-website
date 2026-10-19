@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {openCaseFilterDialog,closeCaseFilterDialog} from './achievement-filter-dialog.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
 const platformEvidenceCount=Object.values(platforms.itemsById).filter(item=>item.year===2026&&item.relatedRecordIds?.length).length;
@@ -39,10 +40,10 @@ try{
    const actions=page.locator('.hero-actions a');
    const actual=await actions.evaluateAll(rows=>rows.map(a=>({href:a.getAttribute('href'),label:a.innerText.trim()})));
    assert.deepEqual(actual,[
-    {href:'service.html#contact',label:'聯絡服務處'},
+    {href:'tel:+88678212536',label:'撥打服務處'},
     {href:'https://line.me/R/ti/p/@yve2766q',label:'LINE 官方帳號 ↗'}
    ]);
-   for(const href of ['service.html#contact','https://line.me/R/ti/p/@yve2766q']){
+   for(const href of ['tel:+88678212536','https://line.me/R/ti/p/@yve2766q']){
     const a=page.locator('.hero-actions a[href="'+href+'"]');assert(await a.isVisible());
     const b=await a.boundingBox();assert(b.y+b.height<844);
    }
@@ -80,8 +81,9 @@ try{
    assert(await page.locator('.map-panel').isHidden());assert.equal(await page.locator('.advanced-filters').getAttribute('open'),null);
    const cards=page.locator('#case-list [data-case]:visible');assert.equal(await cards.count(),10);
    const station=await cards.evaluateAll(xs=>xs.filter(x=>/station|rail-greenway|metro-green-line/.test(x.dataset.case)).length);assert(station<=1);
+   await openCaseFilterDialog(page);
    await page.locator('.advanced-filters > summary').click();await page.locator('#status-filter').selectOption('已完成');assert((await cards.count())>0);
-   await page.locator('#reset-map-filters').click();await page.getByRole('button',{name:'地圖與列表',exact:true}).click();assert(await page.locator('.map-panel').isVisible());
+   await page.locator('#reset-map-filters').click();await closeCaseFilterDialog(page);await page.getByRole('button',{name:'地圖與列表',exact:true}).click();assert(await page.locator('.map-panel').isVisible());
   });
   await page.goto(base+'achievement-metro-green-line.html');
   await page.screenshot({path:fileURLToPath(new URL('detail-'+width+'.png',out))});
@@ -92,7 +94,9 @@ try{
   });
   await page.goto(base+'achievement-wufu-2nd-lane81-drainage.html');
   await check(width+' old record not represented as recent construction',async()=>{
-   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);assert.match(await page.locator('.case-latest .record-boundary').innerText(),/陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。/);
+   assert.match(await page.locator('.case-latest').innerText(),/2019-12-25/);
+   assert.match(await page.locator('.case-latest').innerText(),/確立由區公所提報民政局籌措改善經費/);
+   assert.equal(await page.locator('.case-latest .record-boundary').count(),0);
   });
   await page.goto(base+'vision.html');
   await page.screenshot({path:fileURLToPath(new URL('platform-'+width+'.png',out))});

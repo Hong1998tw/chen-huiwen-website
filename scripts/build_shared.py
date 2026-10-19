@@ -7,8 +7,31 @@ import hashlib
 import html
 import json
 import re
+from urllib.parse import urljoin, urlsplit
+from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
+SITE_BASE = 'https://www.huiwen.tw/'
+
+
+def link_arrow(href):
+    """Use a right arrow for this site and contact actions, an up-right arrow elsewhere."""
+    value = str(href or '')
+    if urlsplit(value).scheme.lower() in {'mailto', 'tel'}:
+        return '→'
+    destination = urlsplit(urljoin(SITE_BASE, value))
+    origin = urlsplit(SITE_BASE)
+
+    def origin_key(url):
+        scheme = url.scheme.lower()
+        try:
+            port = url.port
+        except ValueError:
+            return (scheme, (url.hostname or '').lower(), -1)
+        default_port = 443 if scheme == 'https' else 80 if scheme == 'http' else None
+        return (scheme, (url.hostname or '').lower(), port or default_port)
+
+    return '→' if origin_key(destination) == origin_key(origin) else '↗'
 
 
 def region(text, name, body):
@@ -34,8 +57,21 @@ def sync_digital_assets(root):
         path.write_text(text)
 
 
+def canonical_service_phone(root):
+    """Read the header phone from the canonical public service contact block."""
+    document = BeautifulSoup((root / 'service.html').read_text(), 'html.parser')
+    phone = document.select_one('#contact .contact-card a.big-phone')
+    number = phone.select_one('.phone-number') if phone else None
+    href = phone.get('href', '') if phone else ''
+    display = number.get_text(' ', strip=True) if number else ''
+    if not re.fullmatch(r'tel:\+?\d+', href) or not display or not re.fullmatch(r'[\d\s()+.-]+', display):
+        raise ValueError('Canonical service contact phone is missing or invalid')
+    return href, display
+
+
 def build(root=ROOT):
     sync_digital_assets(root)
+    phone_url, phone_number = canonical_service_phone(root)
     groups = json.loads((root / 'data/navigation.json').read_text())
     header = (root / 'templates/site-header.html').read_text()
     footer = (root / 'templates/site-footer.html').read_text()
@@ -54,7 +90,10 @@ def build(root=ROOT):
                 nav += f'<a href="{prefix}{html.escape(url, quote=True)}"{current}>{html.escape(title)}</a>'
             nav += '</div></details>'
         nav += '</nav>'
-        for name, body in [('shared-header', header.replace('{{NAVIGATION}}', nav)), ('shared-footer', footer)]:
+        rendered_header = (header.replace('{{NAVIGATION}}', nav)
+                           .replace('{{PHONE_URL}}', html.escape(phone_url, quote=True))
+                           .replace('{{PHONE_NUMBER}}', html.escape(phone_number)))
+        for name, body in [('shared-header', rendered_header), ('shared-footer', footer)]:
             if prefix:
                 body = re.sub(r'href="(?![a-z]+:|/|#)([^"]+)"',
                               lambda m: 'href="/' + ('' if m[1] == './' else m[1]) + '"', body)

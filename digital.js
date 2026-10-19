@@ -38,8 +38,9 @@
   }
 
   function registerServiceWorker() {
-    if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-    if (['localhost','127.0.0.1'].includes(location.hostname)) return;
+    if (window.top !== window.self) return;
+    if (!window.isSecureContext || ['localhost','127.0.0.1'].includes(location.hostname)) return;
+    if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', () => navigator.serviceWorker.register(new URL(`sw.js?v=${SERVICE_WORKER_VERSION}`,assetBase).href).catch(() => {}), {once:true});
   }
 

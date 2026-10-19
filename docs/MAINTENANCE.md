@@ -4,7 +4,7 @@
 
 ## 安裝與單一入口
 
-沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；安裝 `beautifulsoup4==4.13.5 html5lib==1.1`。所有會寫入產物的腳本都先呼叫 `scripts/python_guard.py`：低於 3.12 會在寫入任何檔案前以 exit 2 停止並說明版本需求（新增會寫檔的腳本須同樣呼叫，`tests/test_python_guard.py` 會檢查）。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
+沿用 Python、靜態 HTML/CSS/JavaScript。Python 3.12；執行完整品質檢查需安裝 `beautifulsoup4==4.13.5 html5lib==1.1 PyYAML==6.0.3`。所有會寫入產物的腳本都先呼叫 `scripts/python_guard.py`：低於 3.12 會在寫入任何檔案前以 exit 2 停止並說明版本需求（新增會寫檔的腳本須同樣呼叫，`tests/test_python_guard.py` 會檢查）。瀏覽器測試用 Node >=22.19.0、`npm ci --ignore-scripts --prefix tests/donation`，依現有 workflow 安裝 Chromium。
 
 ```sh
 python3 scripts/build_all.py
@@ -35,7 +35,7 @@ python3 scripts/audit_external_links.py /path/outside/repository/external-links.
 ## 品質三層
 
 - PR deterministic：既有 schema、stable ID、HTML／local links／SEO／public copy、search／OG、build 兩次一致性；新增 isolated mutation tests。瀏覽器負向樣本證明 overflow、缺 accessible name 會失敗。
-- 發布前／週期：外部 URL、時間敏感資訊、來源、Lighthouse、dependencies、素材授權；紀錄觀測時間。403／429／TLS／網路錯誤為 BLOCKED；404／410 為 FAIL；2xx 只表示可達，不代表內容正確。外部查核 sequential、每次間隔 >=0.25s、最多兩次，不繞過限制。
+- 發布前／週期：外部 URL、時間敏感資訊、來源、Lighthouse、dependencies、素材授權；紀錄觀測時間。403／429／TLS／網路錯誤為 BLOCKED；404／410 為 FAIL；2xx 只表示可達，不代表內容正確。外部查核 sequential、每次間隔 >=0.25s、最多兩次、單次 timeout <=30 秒，不繞過限制。
 - 人工：歸因、事實衝突、著作權、法律、品牌與真實輔助工具；責任人未明時標未指派。自動 a11y 不是 WCAG 認證。
 
 負向 fixtures 在 temporary repository／獨立瀏覽器頁面運行，不改 live content；不得放真實秘密或私人資料。`tests/test_quality_gates.py` 覆蓋 broken link、metadata、schema、stable ID、private URL、stale output、來源更新傳播及錯誤活動日期。`tests/donation/lifecycle.mjs` 覆蓋 a11y／overflow 負向樣本、減少動態、連續選單取消、搜尋 fallback、台／臺、零結果、觀察器不啟動、圖片失敗與無 JS 五種寬度。
@@ -53,6 +53,8 @@ python3 scripts/audit_external_links.py /path/outside/repository/external-links.
 | 任期／改期／法規／到期 | 對應業務 owner（未指派） | 未指定；未啟用 | 事件觸發 | 校閱後走 PR 流程，未確認不改公開事實 |
 
 每項 recurring 任務啟用前先查 existing scheduler。建議 idempotency key=`task_id:source_revision:period`；bounded_retry=2，403／429 不反覆要求；成功完成 source write＋native read-back 才推 cursor。告警只報新增／恢復，去重且不含個資。fallback 為手動執行上述命令並保存 receipt。last_success 以各次 receipt 為準，不預填。除下方明載的 content-freshness workflow 外，其餘未指定的排程仍未啟用，不另建立外部通知服務。
+
+`scripts/audit_external_links.py` 是既有手動唯讀檢查，沒有 scheduler、Issue 或通知功能。報告以移除 fragment、正規化 host/default port 並保留 query 的 URL 產生 SHA-256 fingerprint；重複來源合併在同一列。`--inventory-only` 標 `NOT_RUN` 且不連外；實際 HTTP 結果依上方規則分成 PASS／FAIL／BLOCKED。A07 外部連結報告的範圍與未啟用狀態見[候選文件](maintenance-candidates/a07-external-link-audit.md)。
 
 ### 內容有效期檢查與實際告警邊界
 

@@ -8,12 +8,20 @@ import { createServer } from 'node:http';
 import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  AXE_CORE_VERSION,
+  AXE_PLAYWRIGHT_VERSION,
+  collectTargetSizeDiagnostics,
+  readTargetSizeBaseline,
+} from './wcag22aa.mjs';
 
 const root = resolve(process.env.ROOT_DIR || fileURLToPath(new URL('../../', import.meta.url)));
 const label = process.env.LABEL || 'candidate';
 const engine = process.env.ENGINE || 'chromium';
 const output = resolve(process.env.EVIDENCE_DIR || fileURLToPath(new URL('./results/readiness/', import.meta.url)), label + '-' + engine);
 const widths = (process.env.WIDTHS || '390,430,768,1024,1440').split(',').map(Number);
+const targetSizeBaseline = await readTargetSizeBaseline();
+const targetSizeEntries = [];
 const pages = (process.env.PAGES || 'index.html,about.html,achievements.html,vision.html,news.html,press.html,news-20260915-special-education-nurse.html,political-donation.html,service.html,election.html,explore.html,404.html').split(',');
 const types = {'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript','.json':'application/json','.geojson':'application/geo+json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.avif':'image/avif','.woff2':'font/woff2','.xml':'application/xml','.txt':'text/plain'};
 const server = createServer(async (req, res) => {
@@ -72,6 +80,8 @@ try {
         await page.screenshot({path:resolve(output,name),type:'jpeg',quality:78,fullPage}); row.screenshot=name;
       }
       const axe = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
+      row.targetSizeViolations = await collectTargetSizeDiagnostics(page, file, width, axe.violations, 'readiness-page-default');
+      targetSizeEntries.push(...row.targetSizeViolations);
       row.violations=axe.violations.map(v=>({id:v.id,impact:v.impact,help:v.help,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}));
 
       // Auto-loaded third-party embeds are intentionally best-effort. Provider-internal
@@ -123,5 +133,7 @@ try {
   }
 } finally { await browser.close(); await new Promise(r=>server.close(r)); }
 report.finished=new Date().toISOString();report.passed=report.rows.every(r=>r.passed);
+report.wcag22aaTargetSize={axePlaywrightVersion:AXE_PLAYWRIGHT_VERSION,axeCoreVersion:AXE_CORE_VERSION,baselineStatus:targetSizeBaseline.status,baselineKnownViolationCount:targetSizeBaseline.status==='approved'?targetSizeBaseline.entries.length:null,currentViolationCount:targetSizeEntries.length,comparison:'These readiness rows retain their existing strict-zero gate. The donation-page PR workflow also compares selector and viewport findings in browser.mjs.'};
+await writeFile(resolve(output,'wcag22aa-target-size.json'),JSON.stringify({schema:'wcag22aa-target-size-report/v1',scope:'production-readiness page-default rows',axePlaywrightVersion:AXE_PLAYWRIGHT_VERSION,axeCoreVersion:AXE_CORE_VERSION,baseline:targetSizeBaseline,gate:{status:'strict-zero-existing-readiness-check',pass:targetSizeEntries.length===0,currentViolationCount:targetSizeEntries.length},violations:targetSizeEntries},null,2));
 await writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2));
 if(!report.passed)process.exitCode=1;

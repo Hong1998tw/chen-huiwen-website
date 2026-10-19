@@ -1,0 +1,410 @@
+{
+  "schema": "wcag22aa-target-size-baseline/v1",
+  "scope": "candidate-core-pages-15x2",
+  "status": "approved",
+  "baseHeadSha": "83d0e2210079d607d29d5b01c0571feb56929184",
+  "axePlaywrightVersion": "4.10.2",
+  "axeCoreVersion": "4.10.3",
+  "knownViolationCount": 0,
+  "entries": [],
+  "source": {
+    "headSha": "83d0e2210079d607d29d5b01c0571feb56929184",
+    "checkoutSha": "83d0e2210079d607d29d5b01c0571feb56929184",
+    "eventHeadSha": "9c79133ccbace42e7121422aea743697c0a2a8e3",
+    "workflowRunId": "39192767770",
+    "artifactName": "full-site-browser-qa",
+    "runUrl": "https://github.com/Hong1998tw/chen-huiwen-website/actions/runs/39192767770"
+  },
+  "reason": "Approved empty candidate baseline from the cited native A-06 proposal. Only candidate-core-pages-15x2 uses this file; production-live-core-pages-default remains separate. CI must run compare mode with exact coverage and comparisonPerformed=true before reporting a pass.",
+  "tool": {
+    "entrypoint": "tests/donation/browser.mjs",
+    "version": "1.0.0",
+    "gitHeadSha": "83d0e2210079d607d29d5b01c0571feb56929184",
+    "scriptSha256": "de0477530d541fda8ba64fc39e118121e30d25d41bba2dfc30398a1cab07044c"
+  },
+  "runtime": {
+    "node": "v24.21.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "playwrightVersion": "1.55.1",
+    "axePlaywrightVersion": "4.10.2",
+    "axeCoreVersion": "4.10.3",
+    "chromiumVersion": "140.0.7339.186"
+  },
+  "coverage": {
+    "status": "complete",
+    "complete": true,
+    "expected": [
+      {
+        "route": "index.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "index.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "about.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "about.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievements.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievements.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "vision.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "vision.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "news.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "news.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "press.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "press.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "activities.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "activities.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "gallery.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "gallery.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "service.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "service.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "petition.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "petition.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "political-donation.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "political-donation.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "election.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "election.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "404.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "404.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "offline.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "offline.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievement-wende-school-center.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievement-wende-school-center.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      }
+    ],
+    "completed": [
+      {
+        "route": "404.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "about.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievement-wende-school-center.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievements.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "activities.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "election.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "gallery.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "index.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "news.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "offline.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "petition.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "political-donation.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "press.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "service.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "vision.html",
+        "viewportWidth": 1440,
+        "viewportHeight": 960,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "404.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "about.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievement-wende-school-center.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "achievements.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "activities.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "election.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "gallery.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "index.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "news.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "offline.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "petition.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "political-donation.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "press.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "service.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      },
+      {
+        "route": "vision.html",
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "scenario": "core-page-default"
+      }
+    ],
+    "missing": [],
+    "unexpected": [],
+    "duplicates": []
+  },
+  "approval": {
+    "reviewedBy": "Codex 主控（非作者 AI 工程審查）",
+    "reviewedAt": "2026-10-19T11:21:31+08:00",
+    "note": "依 execution/jobs/manager-9c-baseline-adoption-decision.md 核准 candidate-core-pages-15x2 空 entries 基準。由 tests/donation/wcag22aa-baseline-proposal.mjs 對 native A-06 run 39192767770 的原始 wcag22aa-target-size.json 與 browser-report.json 建立提案；30/30 exact coverage、0 violations、0 measurement errors。這是採用候選基準，不代表已在本機執行 browser compare 或宣稱 PASS。production-live-core-pages-default 的歷史基準檔維持獨立且未更動。"
+  }
+}

@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 from urllib.parse import unquote, urljoin, urlsplit
+from build_shared import link_arrow
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,13 +99,13 @@ def event_label(item):
 def render_item(item):
     website_date = website_time(item['websiteUpdatedAt']).date().isoformat()
     event = f'<time datetime="{e(item["eventDate"])}">{e(item["eventDate"])}</time>' if item['eventDate'] else e(event_label(item))
-    links = ''.join(f'<li><a class="text-link" href="{e(source["url"])}">{e(source["title"])} →</a></li>' for source in item['sources'])
+    links = ''.join(f'<li><a class="text-link" href="{e(source["url"])}">{e(source["title"])} {link_arrow(source["url"])}</a></li>' for source in item['sources'])
     return f'''<article class="event-card content-update" id="update-{e(item['id'])}"><p class="civic-kicker">{KINDS[item['kind']]}</p><h2><a href="{e(item['pageUrl'])}">{e(item['title'])}</a></h2><dl class="update-dates"><div><dt>網站補充日期</dt><dd><time datetime="{e(item['websiteUpdatedAt'])}">{website_date}</time></dd></div><div><dt>事件日期</dt><dd>{event}</dd></div></dl><p>{e(item['summary'])}</p><nav aria-label="{e(item['title'])}：閱讀內容與來源"><ul>{links}</ul></nav></article>'''
 
 
 def render_page_body(data):
     items = ordered_updates(data)
-    body = f'''<section class="page-head"><div class="wrap"><p class="eyebrow">網站內容更新</p><h1>最近更新</h1><p>找到新補充的服務指南、議題導讀與資料整理。</p><p class="source-note">{e(data['dateSemantics'])}</p><a class="text-link" href="{FEED}" type="application/rss+xml">訂閱網站更新 RSS ↗</a></div></section><section class="wrap event-announcements updates-list" aria-label="網站補充紀錄">'''
+    body = f'''<section class="page-head"><div class="wrap"><p class="eyebrow">網站內容更新</p><h1>最近更新</h1><p>找到新補充的服務指南、議題導讀與資料整理。</p><p class="source-note">{e(data['dateSemantics'])}</p><a class="text-link" href="{FEED}" type="application/rss+xml">訂閱網站更新 RSS →</a></div></section><section class="wrap event-announcements updates-list" aria-label="網站補充紀錄">'''
     return body + (''.join(render_item(item) for item in items) or '<p>目前沒有新增的網站補充紀錄。</p>') + '</section>'
 
 

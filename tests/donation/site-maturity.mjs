@@ -1,11 +1,13 @@
 /** Regression of content-first reading, exact critical history and shared source boundaries. */
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {chromium,webkit} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import {assertPetitionPreservesOriginalContent} from './petition-preservation.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
+const dadeRecord=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).find(record=>record.id==='dade-park-road-opening');
 const out=new URL('./results/site-maturity/',import.meta.url);await mkdir(out,{recursive:true});
 const base=process.env.BASE_URL||'http://127.0.0.1:8773/';
 const server=process.env.BASE_URL?null:spawn('python3',['-m','http.server','8773','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
@@ -46,11 +48,36 @@ try{
    await page.screenshot({path:fileURLToPath(new URL(`${engine}-${width}-${(path||'home').replace('.html','')}.png`,out)),fullPage:false});
   }
   await page.goto(base+'achievement-dade-park-road-opening.html');
-  await check(`${engine} single event only once with optional background and measurement`,async()=>{
+  await check(`${engine} Dade case keeps unique facts visible with dated sources`,async()=>{
+   assert(dadeRecord,'Dade case source record exists');
    assert.equal(await page.locator('.case-timeline li').count(),0);
    assert.match(await page.locator('.case-latest').innerText(),/127公尺/);
+   const actionParagraph= dadeRecord.paragraphs.find(text=>text.includes('用地取得與工程經費'));
+   assert(actionParagraph,'Dade source includes the land acquisition and construction cost facts');
+   const actionHeading=page.getByRole('heading',{name:'慧文的行動',exact:true});
+   assert.equal(await actionHeading.count(),1);
+   const actionPoint=actionHeading.locator('xpath=..');
+   assert(await actionPoint.isVisible());
+   const normalize=text=>text.normalize('NFC').replace(/\s+/gu,' ').trim();
+   assert.equal(normalize(await actionPoint.locator('p').innerText()),normalize(actionParagraph));
    const summary=page.locator('.case-background > summary');assert(await summary.isVisible());
-   await summary.click();assert.match(await page.locator('.case-background').innerText(),/用地取得與工程經費/);await summary.click();
+   await summary.click();
+   const longParagraphs=await page.locator('main p').evaluateAll(nodes=>nodes
+    .filter(node=>!node.closest('.case-print-sheet'))
+    .map(node=>(node.innerText||node.textContent||'').normalize('NFC').replace(/\s+/gu,' ').trim())
+    .filter(text=>[...text].length>40));
+   const duplicates=[...new Set(longParagraphs.filter((text,index)=>longParagraphs.indexOf(text)!==index))];
+   assert.deepEqual(duplicates,[],'Long body paragraphs appear at most once; print content is checked separately');
+   assert.equal(longParagraphs.filter(text=>text===normalize(actionParagraph)).length,1,'The full source paragraph remains once in the visible action block');
+   const sources=page.locator('#case-sources');
+   assert(await sources.isVisible());
+   assert.equal(await sources.locator('li').count(),dadeRecord.sources.length);
+   const sourceText=await sources.innerText();
+   for(const source of dadeRecord.sources)assert(sourceText.includes(source.title));
+   const sourceDate=dadeRecord.sources.find(source=>source.sourceDate)?.sourceDate;
+   assert(sourceDate);assert(sourceText.includes(sourceDate));
+   assert.equal(await page.locator('.case-latest time').getAttribute('datetime'),dadeRecord.history.at(-1).date);
+   return{uniqueActionParagraphs:1,sourceCount:dadeRecord.sources.length,sourceDate};
   });
   await context.close();
  }
@@ -64,18 +91,9 @@ try{
    return source.slice(start,end+7);
   };
   const baselineMain=getMain(baseline),main=getMain(current);
-  const priorStart=baselineMain.indexOf('<p>線上表單為');
-  const priorEnd=baselineMain.indexOf('</p>',priorStart)+4;
-  const noticeStart=main.indexOf('<p>線上表單會在新分頁');
-  const noticeEnd=main.indexOf('</p>',noticeStart)+4;
-  assert(priorStart>=0&&priorEnd>priorStart&&noticeStart>=0&&noticeEnd>noticeStart);
-  const priorNotice=baselineMain.slice(priorStart,priorEnd);
-  const disclosure=main.slice(noticeStart,noticeEnd);
-  const expected='<p>線上表單會在新分頁開啟外部 Notion 網站，填寫與送出都在該網站進行；本頁不會顯示填寫或送出狀態。若不使用線上表單，可直接致電服務處。送出前請確認填寫資料正確；需要聯絡資訊時可查看<a class="text-link" href="service.html#contact">服務處聯絡資訊</a>。</p>';
-  assert.equal(disclosure,expected,'The added copy discloses the outside form without promising a service outcome');
-  assert.equal(main.replace(disclosure,priorNotice),baselineMain,'Every prior main-content element outside the approved disclosure remains intact');
+  assertPetitionPreservesOriginalContent(baselineMain,main);
   assert(main.includes('<a class="button button-green" href="https://lihong-tw.notion.site/1ffbd1468054800b9940fbfde5fee74d" target="_blank" rel="noopener noreferrer">前往服務案件登記 ↗</a>'));
-  assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 ↗</a>'));
+  assert(main.includes('<a class="button button-outline" href="tel:+88678212536">電話聯絡 →</a>'));
  });
 
 }finally{await browser.close();server?.kill('SIGTERM');}

@@ -7,6 +7,9 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 18
+    env:
+      A06_ARTIFACT_NAME: full-site-browser-qa
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,29 +33,120 @@ jobs:
       - run: node --check tests/donation/ux-acceptance.mjs
       - run: node --check tests/donation/font-rendering.mjs
       - run: node --check tests/donation/min-font.mjs
+      - run: node --check tests/donation/target-size.mjs
+      - run: node --check tests/donation/target-size-lifecycle.mjs
+      - run: node --check tests/donation/target-size-lifecycle.test.mjs
+      - run: node --check tests/donation/target-size-inline.mjs
+      - run: node --check tests/donation/target-size-inline.test.mjs
       - run: node --check tests/donation/election-mode.mjs
+      - run: node --check tests/donation/petition-preservation.mjs
+      - run: node tests/donation/petition-preservation.test.mjs
+      - name: Verify compact-header startup state from the shipped site.js source
+        run: node tests/donation/site-header-controller.mjs
+      - name: Verify inline-link target-size exception predicate with pure fixtures
+        run: node tests/donation/target-size-inline.test.mjs
+      - name: Verify target-size cleanup and report persistence failures
+        run: node tests/donation/target-size-lifecycle.test.mjs
+      - run: node --check tests/donation/visual-qa.mjs
+      - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-check.mjs
+      - name: Verify homepage layout deadline with pure Node fixtures
+        run: |
+          node --check tests/donation/ux-acceptance-deadline.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/ux-acceptance-deadline.test.mjs
+      - name: Verify Explore pagination readiness with pure Node fixtures
+        run: |
+          node --check tests/donation/explore-pagination-readiness.mjs
+          node --check tests/donation/explore-pagination-readiness.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/explore-pagination-readiness.test.mjs
+      - name: Verify complete visible Han font observation batches with pure Node fixtures
+        run: |
+          node --check tests/donation/font-rendering-observation.mjs
+          node --check tests/donation/font-rendering-observation.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/font-rendering-observation.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
+      - run: npm run test:visual-qa --prefix tests/donation
+      - run: node --check tests/donation/wcag22aa.mjs
+      - run: node --check tests/donation/wcag22aa.test.mjs
+      - run: node --check tests/donation/wcag22aa-baseline-proposal.mjs
+      - run: node --test tests/donation/wcag22aa.test.mjs
+      - name: Verify runtime maturity worker contract with pure fixtures
+        run: |
+          node --check tests/donation/runtime-maturity-fixture.mjs
+          node --check tests/donation/runtime-maturity-fixture.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/runtime-maturity-fixture.test.mjs
+          node --check tests/donation/runtime-maturity-worker.mjs
+          node --check tests/donation/runtime-maturity-worker.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/runtime-maturity-worker.test.mjs
       - name: Install Playwright Chromium with bounded official dependency retries
+        id: browser_prerequisites
         run: bash scripts/install_playwright_ci.sh
-      - run: node tests/donation/browser.mjs
+      # These suites keep running after an individual failure so every independent report is produced.
+      # The final outcome gate below still fails the job for any non-success outcome.
+      - name: Run full-site candidate browser QA against the approved target-size baseline
+        id: browser
+        continue-on-error: true
+        env:
+          WCAG22AA_TARGET_SIZE_MODE: compare
+        run: node tests/donation/browser.mjs
       - name: Check computed text font sizes and horizontal overflow across representative pages
+        id: min_font
+        continue-on-error: true
         run: node tests/donation/min-font.mjs
-      - run: node tests/donation/sticky-navigation.mjs
-      - run: node tests/donation/small-q.mjs
-      - run: node tests/donation/public-service-audit.mjs
-      - run: node tests/donation/runtime-maturity.mjs
-      - run: node tests/donation/site-maturity.mjs
-      - run: node tests/donation/service-tools.mjs
-      - run: node tests/donation/legal-calendar.mjs
-      - run: node tests/donation/digital-civic.mjs
-      - run: node tests/donation/ux-acceptance.mjs
-      - run: node tests/donation/font-rendering.mjs
-      - run: node tests/donation/p0.mjs
-      - run: node tests/donation/achievement-governance.mjs
-      - run: node tests/donation/election-mode.mjs
+      - name: Check target sizes, WCAG spacing exceptions, keyboard use and narrow reflow on news routes
+        id: target_size
+        continue-on-error: true
+        run: node tests/donation/target-size.mjs
+      - id: sticky_navigation
+        continue-on-error: true
+        run: node tests/donation/sticky-navigation.mjs
+      - id: small_q
+        continue-on-error: true
+        run: node tests/donation/small-q.mjs
+      - id: public_service_audit
+        continue-on-error: true
+        run: node tests/donation/public-service-audit.mjs
+      - id: runtime_maturity
+        continue-on-error: true
+        run: node tests/donation/runtime-maturity.mjs
+      - id: site_maturity
+        continue-on-error: true
+        run: node tests/donation/site-maturity.mjs
+      - id: service_tools
+        continue-on-error: true
+        run: node tests/donation/service-tools.mjs
+      - id: legal_calendar
+        continue-on-error: true
+        run: node tests/donation/legal-calendar.mjs
+      - id: digital_civic
+        continue-on-error: true
+        run: node tests/donation/digital-civic.mjs
+      - id: ux_acceptance
+        continue-on-error: true
+        run: node tests/donation/ux-acceptance.mjs
+      - id: font_rendering
+        continue-on-error: true
+        run: node tests/donation/font-rendering.mjs
+      - id: p0
+        continue-on-error: true
+        run: node tests/donation/p0.mjs
+      - id: achievement_governance
+        continue-on-error: true
+        run: node tests/donation/achievement-governance.mjs
+      - name: Verify achievement mobile filters, map layout and no-JavaScript fallback
+        id: achievement_list_mobile
+        continue-on-error: true
+        run: node tests/donation/achievement-list-mobile.mjs
+      - id: election_mode
+        continue-on-error: true
+        run: node tests/donation/election-mode.mjs
       - name: Verify lifecycle resilience and negative browser fixtures
+        id: lifecycle
+        continue-on-error: true
         run: node tests/donation/lifecycle.mjs
       - name: Run five-viewport production-readiness regression suite
+        id: readiness
+        continue-on-error: true
         run: npm run test:readiness --prefix tests/donation
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
@@ -60,10 +154,238 @@ jobs:
           retention-days: 14
           name: full-site-browser-qa
           path: tests/donation/results/
+      - name: Require success from every independent browser suite
+        if: always()
+        env:
+          BROWSER_SUITE_OUTCOMES: |
+            browser=${{ steps.browser.outcome }}
+            min_font=${{ steps.min_font.outcome }}
+            target_size=${{ steps.target_size.outcome }}
+            sticky_navigation=${{ steps.sticky_navigation.outcome }}
+            small_q=${{ steps.small_q.outcome }}
+            public_service_audit=${{ steps.public_service_audit.outcome }}
+            runtime_maturity=${{ steps.runtime_maturity.outcome }}
+            site_maturity=${{ steps.site_maturity.outcome }}
+            service_tools=${{ steps.service_tools.outcome }}
+            legal_calendar=${{ steps.legal_calendar.outcome }}
+            digital_civic=${{ steps.digital_civic.outcome }}
+            ux_acceptance=${{ steps.ux_acceptance.outcome }}
+            font_rendering=${{ steps.font_rendering.outcome }}
+            p0=${{ steps.p0.outcome }}
+            achievement_governance=${{ steps.achievement_governance.outcome }}
+            achievement_list_mobile=${{ steps.achievement_list_mobile.outcome }}
+            election_mode=${{ steps.election_mode.outcome }}
+            lifecycle=${{ steps.lifecycle.outcome }}
+            readiness=${{ steps.readiness.outcome }}
+        run: node tests/donation/browser-suite-outcome-gate.mjs
+
+  visual-qa:
+    name: A-05 visual evidence and approved-baseline comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Fetch and verify only the pull request base commit for A-05 reference capture
+        id: base_reference
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'A-05 independent reference unavailable: PR base SHA is not a full 40-character commit.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fetched_sha="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+          if [[ "$fetched_sha" != "$BASE_SHA" ]]; then
+            echo "Fetched A-05 base SHA mismatch: expected $BASE_SHA, received $fetched_sha" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git worktree add --detach "$BASE_ROOT" "$BASE_SHA"
+          actual_sha="$(git -C "$BASE_ROOT" rev-parse --verify HEAD)"
+          worktree_status="$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)"
+          if [[ "$actual_sha" != "$BASE_SHA" ]] || [[ -n "$worktree_status" ]]; then
+            echo 'A-05 independent reference worktree failed the exact-HEAD or clean-worktree check.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Verified independent A-05 site source: $actual_sha" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install the pinned source-native publication builder dependencies
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
+      - name: Build the independent PR base with its own publication source
+        id: base_publication
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+          BASE_PUBLIC: ${{ runner.temp }}/a05-main-reference-public
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git -C "$BASE_ROOT" rev-parse --verify 'HEAD^{commit}')"
+          if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ || "$actual_sha" != "$BASE_SHA" ]]; then
+            echo 'A-05 base publication requires the exact full PR base commit.' >&2
+            exit 1
+          fi
+          if [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 base publication requires a clean base worktree.' >&2
+            exit 1
+          fi
+          (cd "$BASE_ROOT" && python scripts/build_cloudflare_public.py --output "$BASE_PUBLIC")
+          post_sha="$(git -C "$BASE_ROOT" rev-parse --verify 'HEAD^{commit}')"
+          if [[ "$post_sha" != "$BASE_SHA" ]] || [[ -n "$(git -C "$BASE_ROOT" status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 base source changed during its source-native publication build.' >&2
+            exit 1
+          fi
+          echo "Built the PR base publication artifact from $post_sha at $BASE_PUBLIC."
+      - name: Build the candidate with this checkout's publication source
+        id: candidate_publication
+        env:
+          CANDIDATE_PUBLIC: ${{ runner.temp }}/a05-candidate-public
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [[ ! "$candidate_sha" =~ ^[a-f0-9]{40}$ ]] || [[ -n "$(git status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 candidate publication requires a full Git HEAD and clean candidate checkout.' >&2
+            exit 1
+          fi
+          python scripts/build_cloudflare_public.py --output "$CANDIDATE_PUBLIC"
+          post_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [[ "$post_sha" != "$candidate_sha" ]] || [[ -n "$(git status --porcelain=v1 -uall)" ]]; then
+            echo 'A-05 candidate source changed during its source-native publication build.' >&2
+            exit 1
+          fi
+          echo "Built the candidate publication artifact from $post_sha at $CANDIDATE_PUBLIC."
+      - run: npm ci --ignore-scripts --prefix tests/donation
+      - name: Verify A-05 archive safety fixtures
+        run: python -m unittest discover -s tests -p 'test_visual_qa_baseline_archive.py'
+      - run: node --check tests/donation/visual-qa.mjs
+      - run: node --check tests/donation/visual-qa-lib.mjs
+      - run: node --check tests/donation/visual-qa-identity.mjs
+      - run: node --check tests/donation/visual-qa-publication.mjs
+      - run: node --check tests/donation/visual-qa-cross-compare.mjs
+      - run: node --check tests/donation/visual-qa-source-integrity.mjs
+      - run: node --check tests/donation/visual-qa-check.mjs
+      - run: node --check tests/donation/download-visual-qa-baseline.mjs
+      - run: npm run test:visual-qa --prefix tests/donation
+      - name: Install Playwright Chromium with bounded official dependency retries
+        run: bash scripts/install_playwright_ci.sh
+      - name: Capture A-05 local screenshots and live Cloudflare measurements
+        id: capture
+        shell: bash
+        env:
+          BASE_ROOT: ${{ runner.temp }}/a05-main-reference
+          BASE_PUBLIC: ${{ runner.temp }}/a05-main-reference-public
+          CANDIDATE_PUBLIC: ${{ runner.temp }}/a05-candidate-public
+        run: |
+          set +e
+          reference_status=0
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            if [[ "${{ steps.base_reference.outcome }}" == 'success' && -d "$BASE_ROOT" ]]; then
+              node tests/donation/visual-qa.mjs capture \
+                --environment local-http-uncompressed \
+                --site-root "$BASE_ROOT" \
+                --public-artifact "$BASE_PUBLIC" \
+                --output-dir tests/donation/results/visual-qa/main-reference
+              reference_status=$?
+            else
+              echo '- A-05 independent base: MISSING; fetch/verification did not succeed.' >> "$GITHUB_STEP_SUMMARY"
+              reference_status=1
+            fi
+          else
+            echo '- A-05 independent base: NOT_APPLICABLE; this non-PR event has no pull-request base.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          node tests/donation/visual-qa.mjs capture \
+            --environment local-http-uncompressed \
+            --public-artifact "$CANDIDATE_PUBLIC"
+          local_capture_status=$?
+          node tests/donation/visual-qa.mjs capture --environment cloudflare-production --base-url https://www.huiwen.tw/
+          cloudflare_capture_status=$?
+          {
+            echo '## A-05 visual QA'
+            if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+              echo "- Independent base-reference capture exit: ${reference_status}; its site SHA and capture-tool SHA are recorded separately."
+            else
+              echo '- Independent base-reference capture: NOT_APPLICABLE for this non-PR event.'
+            fi
+            echo '- On PR base-reference captures, the source records exact HEAD, clean status, tracked-byte digest, and read-only mode digest before capture, then rechecks HEAD, clean status, and tracked bytes before reporting the source SHA.'
+            echo '- This read-only mode protection deters writes by the reviewed capture tool; same-UID code can change modes, so it is not a strong sandbox.'
+            echo "- Local capture exit: ${local_capture_status}"
+            echo "- Cloudflare capture exit: ${cloudflare_capture_status}"
+            echo '- Cloudflare source is read from deployment.json before and after capture; transfer encoding is recorded as observed.'
+            echo '- Pixel comparison uses only the local screenshot set.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "reference_status=${reference_status}" >> "$GITHUB_OUTPUT"
+          echo "local_status=${local_capture_status}" >> "$GITHUB_OUTPUT"
+          echo "cloudflare_status=${cloudflare_capture_status}" >> "$GITHUB_OUTPUT"
+          if [[ "$reference_status" -ne 0 || "$local_capture_status" -ne 0 || "$cloudflare_capture_status" -ne 0 ]]; then
+            exit 1
+          fi
+      - name: Compare the independent base and candidate captures for human review
+        id: cross_source_review
+        if: always()
+        env:
+          REFERENCE_STATUS: ${{ steps.capture.outputs.reference_status }}
+          LOCAL_STATUS: ${{ steps.capture.outputs.local_status }}
+          REFERENCE_MANIFEST: tests/donation/results/visual-qa/main-reference/local-http-uncompressed/manifest.json
+          CANDIDATE_MANIFEST: tests/donation/results/visual-qa/local-http-uncompressed/manifest.json
+          REVIEW_OUTPUT: tests/donation/results/visual-qa/cross-source-review
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
+            echo '- Cross-source review: NOT_RUN; this event has no independent pull-request base.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$REFERENCE_STATUS" != '0' || "$LOCAL_STATUS" != '0' ]]; then
+            echo '- Cross-source review: NOT_RUN; the independent reference and candidate captures must both complete first.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node tests/donation/visual-qa.mjs cross-compare \
+            --reference-manifest "$REFERENCE_MANIFEST" \
+            --candidate-manifest "$CANDIDATE_MANIFEST" \
+            --output-dir "$REVIEW_OUTPUT"
+          echo '- Cross-source review: CROSS_SOURCE_REVIEW; pixel diffs and per-capture metric changes are attached for human review. This does not select or approve a golden baseline.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare local captures with the committed Git baseline or record baseline pending
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ "${{ steps.capture.outputs.local_status }}" != "0" || "${{ steps.capture.outputs.cloudflare_status }}" != "0" ]]; then
+            echo '- Comparison: NOT_RUN because one or both capture commands failed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          candidate='tests/donation/results/visual-qa/local-http-uncompressed/manifest.json'
+          node tests/donation/visual-qa.mjs compare \
+            --candidate-manifest "$candidate" \
+            --baseline-selection
+          compare_status=$?
+          echo "- Comparison exit: ${compare_status}; baseline source is the committed Git selection at tests/baselines/visual-qa/selection.json. Missing selection is PENDING; invalid selected content is rejected." >> "$GITHUB_STEP_SUMMARY"
+          exit "$compare_status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          retention-days: 14
+          name: a05-visual-qa-${{ github.run_id }}
+          path: tests/donation/results/visual-qa/
 
   lighthouse:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,7 +396,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1
+      - run: pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
       - name: Build the final public artifact (the same build Cloudflare publishes)
         # Lighthouse measures this _site (JSON projections, CMS text and rewritten HTML references
         # applied), not the repository root. It is built once and both runs below read the same tree;
@@ -87,6 +409,8 @@ jobs:
         run: node tests/donation/static-server-check.mjs
       - name: Verify the Lighthouse comparison refuses runs without identical-content evidence
         run: node tests/donation/lighthouse-compare-check.mjs
+      - name: Verify election Lighthouse trace and allowlisted snapshot evidence
+        run: node tests/donation/election-lighthouse-evidence-check.mjs
       - name: Enforce mobile Lighthouse acceptance medians
         # Pages are served with production-like brotli/gzip (tests/donation/static-server.mjs);
         # conditions and how to compare with older scores: docs/LIGHTHOUSE-MEASUREMENT.md.

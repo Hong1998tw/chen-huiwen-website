@@ -2,7 +2,8 @@
 """Single deterministic quality entry point. Never contacts production or private registries."""
 from python_guard import require_supported_python
 require_supported_python()
-import argparse, hashlib, subprocess, sys
+import argparse, hashlib, shlex, subprocess, sys, time
+from datetime import datetime, timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 BUILDERS=('build_all.py',)
@@ -15,14 +16,38 @@ def snapshot(root):
     paths=[p for p in paths if p.exists()]
     return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
-def run(root,args):
-    subprocess.run(args,cwd=root,check=True)
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
+
+def run(root,args,label=None):
+    command=shlex.join(str(arg) for arg in args)
+    stage=label or command
+    started=time.monotonic()
+    print(f'QUALITY_SUBPROCESS_START stage={stage!r} utc={_utc_now()} command={command}',flush=True)
+    def report_end(returncode):
+        elapsed=time.monotonic()-started
+        print(f'QUALITY_SUBPROCESS_END stage={stage!r} utc={_utc_now()} elapsed_monotonic_seconds={elapsed:.3f} returncode={returncode}',flush=True)
+    try:
+        result=subprocess.run(args,cwd=root,check=True)
+    except subprocess.CalledProcessError as exc:
+        try:
+            report_end(exc.returncode)
+        except Exception as observation_error:
+            exc.add_note(f'quality end observation failed: {type(observation_error).__name__}')
+        raise
+    except OSError as exc:
+        try:
+            report_end('not-started')
+        except Exception as observation_error:
+            exc.add_note(f'quality end observation failed: {type(observation_error).__name__}')
+        raise
+    report_end(result.returncode)
 
 def generated(root):
     before=snapshot(root)
     # Diagnostics only: a mismatch still fails the same publication gate.
     before_bytes={name:(root/name).read_bytes() for name in before}
-    for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
+    for name in BUILDERS: run(root,[sys.executable,'scripts/'+name],label=f'generated.first_build.{name}')
     after=snapshot(root)
     if before != after:
         changed=sorted(name for name in set(before)|set(after) if before.get(name)!=after.get(name))
@@ -39,7 +64,7 @@ def generated(root):
             offset=next((i for i,(a,b) in enumerate(zip(old,new)) if a!=b),min(len(old),len(new)))
             print(f'{name}: first difference at {offset}; before={old[max(0,offset-60):offset+120]!r}; after={new[max(0,offset-60):offset+120]!r}',file=sys.stderr)
         raise RuntimeError('GENERATED_STALE: rebuild, review and commit generated outputs before checking')
-    for name in BUILDERS: run(root,[sys.executable,'scripts/'+name])
+    for name in BUILDERS: run(root,[sys.executable,'scripts/'+name],label=f'generated.second_build.{name}')
     if before != snapshot(root): raise RuntimeError('GENERATED_NONDETERMINISTIC')
 
 def main():
@@ -54,8 +79,8 @@ def main():
         generated(root)
         run(root,[sys.executable,'scripts/build_public.py','--check'])
         if not a.generated_only:
-            run(root,[sys.executable,'-m','unittest','discover','-s','tests','-p','test_*.py'])
-            run(root,[sys.executable,'-m','unittest','discover','-s','tests/events'])
+            run(root,[sys.executable,'-u','-m','unittest','discover','-v','-s','tests','-p','test_*.py'])
+            run(root,[sys.executable,'-u','-m','unittest','discover','-v','-s','tests/events'])
         if a.browser:
             for name in ('browser','digital-civic','p0','achievement-governance','election-mode','lifecycle','runtime-maturity','site-maturity','service-tools'):
                 run(root,['node','tests/donation/'+name+'.mjs'])

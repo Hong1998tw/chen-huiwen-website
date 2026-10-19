@@ -6,16 +6,91 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   if (!header) return;
   // ResizeObserver supplies the completed layout size; avoid forcing a full
   // page reflow during startup, especially on the long achievement index.
-  new ResizeObserver(([entry]) => {
-    const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
-    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
-  }).observe(header, {box:'border-box'});
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(([entry]) => {
+      const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 1;
+      document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(height)}px`);
+    }).observe(header, {box:'border-box'});
+  } else {
+    document.documentElement.style.setProperty('--site-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+  }
+})();
+// Compact sticky mobile down; restore up.
+(() => {
+  const header = document.querySelector('.site-header');
+  if (!header) return;
+  const mobile = window.matchMedia('(max-width: 780px)');
+  const isStickyMobile = () => mobile.matches && window.getComputedStyle(header).position === 'sticky';
+  let lastY;
+  let direction = 0;
+  let directionStartY;
+  let initialized = false;
+  let pendingMediaReset = false;
+  let queued = false;
+  let stickyMobile = isStickyMobile();
+  const resetMode = y => {
+    if (isStickyMobile() === stickyMobile) return;
+    stickyMobile = !stickyMobile;
+    header.classList.remove('is-compact');
+    if (!initialized) pendingMediaReset = true;
+    else { lastY = directionStartY = y ?? window.scrollY; direction = 0; }
+  };
+  const update = () => {
+    queued = false;
+    const y = window.scrollY;
+    resetMode(y);
+    if (!initialized) {
+      initialized = true;
+      lastY = y;
+      direction = 0;
+      directionStartY = y;
+      if (pendingMediaReset) {
+        header.classList.remove('is-compact');
+        pendingMediaReset = false;
+      } else if (stickyMobile && y > 8) {
+        header.classList.add('is-compact');
+        document.dispatchEvent(new Event('site:header-layout-change'));
+      }
+      return;
+    }
+    if (!stickyMobile) return;
+    const movement = Math.sign(y - lastY);
+    if (y <= 8) {
+      header.classList.remove('is-compact');
+      direction = 0;
+      directionStartY = y;
+    } else if (movement) {
+      if (movement !== direction) {
+        direction = movement;
+        directionStartY = lastY;
+      }
+      // 64/52px shifts move controls 6px; 8px filters anchor jitter.
+      if (direction > 0 && y - directionStartY >= 8) {
+        header.classList.add('is-compact');
+        directionStartY = y;
+      } else if (direction < 0 && directionStartY - y >= 8) {
+        header.classList.remove('is-compact');
+        directionStartY = y;
+      }
+    }
+    lastY = y;
+  };
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(update);
+  };
+  window.addEventListener('scroll', onScroll, {passive:true});
+  mobile.addEventListener('change', () => resetMode());
+  window.addEventListener('resize', () => resetMode());
+  onScroll();
 })();
 // Progressive enhancement: navigation remains usable when JavaScript is disabled.
 (() => {
   const toggle = document.querySelector('.menu-toggle');
   const navigation = document.getElementById('navigation');
   if (!toggle || !navigation) return;
+  const header = document.querySelector('.site-header');
   document.documentElement.classList.add('menu-ready');
   const backdrop = document.createElement('button');
   backdrop.type = 'button'; backdrop.className = 'menu-backdrop'; backdrop.hidden = true;
@@ -61,11 +136,19 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
   });
   const background = [...document.body.children].filter(node =>
     node !== backdrop && !node.contains(toggle) && !['SCRIPT', 'STYLE', 'DIALOG'].includes(node.tagName));
+  const headerControls = [document.querySelector('.site-header .brand'), document.querySelector('.site-header .header-phone')].filter(Boolean);
   let inertBefore = [];
   function positionMenu() {
     const bottom = document.querySelector('.site-header').getBoundingClientRect().bottom;
     navigation.style.setProperty('--menu-top', `${Math.ceil(bottom + 12)}px`);
   }
+  document.addEventListener('site:header-layout-change', () => {
+    if (toggle.getAttribute('aria-expanded') === 'true') positionMenu();
+  });
+  header?.addEventListener('transitionend', event => {
+    if (event.target === header && event.propertyName === 'min-height' &&
+        toggle.getAttribute('aria-expanded') === 'true') positionMenu();
+  });
   function closeMenu(returnFocus = false) {
     navigation.classList.remove('is-open'); document.body.classList.remove('menu-open');
     toggle.setAttribute('aria-expanded', 'false'); backdrop.hidden = true;
@@ -78,8 +161,8 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
     navigation.classList.add('is-open'); document.body.classList.add('menu-open');
     toggle.setAttribute('aria-expanded', 'true'); backdrop.hidden = false;
     toggle.setAttribute('aria-label', '關閉主要選單');
-    inertBefore = background.map(node => [node, node.inert]);
-    background.forEach(node => { node.inert = true; });
+    inertBefore = [...background, ...headerControls].map(node => [node, node.inert]);
+    [...background, ...headerControls].forEach(node => { node.inert = true; });
     const search = navigation.querySelector('.global-search-trigger');
     (search || groups[0]?.querySelector('summary') || links.find(link => link.getClientRects().length))?.focus({preventScroll:true});
   }
@@ -167,7 +250,7 @@ const HUIWEN_ASSET_BASE = new URL('.', document.currentScript.src);
 (() => {
   const VERSION = '20260912-p0-v2';
   // Generated by scripts/build_shared.py from the dependency bytes, before hashing site.js.
-  const DIGITAL_SCRIPT_VERSION = 'd1575ba776f3';
+  const DIGITAL_SCRIPT_VERSION = '9ef584d3022b';
   const DIGITAL_STYLE_VERSION = 'ce930dd462b4';
   const scriptURL = new URL(`digital.js?v=${DIGITAL_SCRIPT_VERSION}`, HUIWEN_ASSET_BASE);
   const styleURL = new URL(`digital.css?v=${DIGITAL_STYLE_VERSION}`, HUIWEN_ASSET_BASE);

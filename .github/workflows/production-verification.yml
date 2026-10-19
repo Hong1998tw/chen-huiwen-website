@@ -18,7 +18,7 @@ jobs:
   verify:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout deployed commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,12 +29,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.12'
+          python-version: '3.12.14'
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+
+      - name: Install pinned public artifact toolchain
+        run: python -m pip install beautifulsoup4==4.13.5 html5lib==1.1 'fonttools[woff]==4.66.1' brotli==1.2.0
+
+      - name: Rebuild the exact emitted public artifact for live verification
+        run: python scripts/build_cloudflare_public.py
 
       - name: Prepare report directory
         run: mkdir -p tests/donation/results/production-live
@@ -48,6 +54,7 @@ jobs:
           --attempts 16
           --delay 15
           --timeout 20
+          --artifact-root _site
           --report tests/donation/results/production-live/http-parity.json
           --snapshot-dir /tmp/huiwen-production-snapshot
 
@@ -66,6 +73,14 @@ jobs:
 
       - name: Install Chromium
         run: npx --prefix tests/donation playwright install --with-deps chromium
+
+      - name: Run native public asset cache and map proof against production
+        id: public_asset_runtime
+        continue-on-error: true
+        env:
+          BASE_URL: https://www.huiwen.tw/
+          PUBLIC_ASSET_RUNTIME_MODE: production-live
+        run: node tests/donation/public-asset-runtime-smoke.mjs
 
       - name: Run browser, responsive and accessibility QA against live production
         id: browser
@@ -114,11 +129,12 @@ jobs:
             tests/donation/results/legal-calendar/
             tests/donation/results/homepage-production/
             tests/donation/results/events/
+            tests/donation/results/public-asset-runtime/
             tests/donation/results/*.json
             tests/donation/results/*.png
 
       - name: Fail production verification when a check failed
-        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success') }}
+        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success' || steps.public_asset_runtime.outcome != 'success') }}
         run: |
           echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
           echo "All public pages outcome: ${{ steps.all_pages.outcome }}"
@@ -127,5 +143,6 @@ jobs:
           echo "Published monthly card download outcome: ${{ steps.legal_card.outcome }}"
           echo "Published homepage design outcome: ${{ steps.home_design.outcome }}"
           echo "Published event timeline and sharing outcome: ${{ steps.events.outcome }}"
+          echo "Production public asset runtime outcome: ${{ steps.public_asset_runtime.outcome }}"
           echo "Independent Production Verification failed or blocked; inspect reports."
           exit 1

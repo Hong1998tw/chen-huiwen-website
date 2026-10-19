@@ -56,7 +56,7 @@ def render_comparisons(data):
         for key in ('fromItemId', 'toItemId'):
             item_id = comparison[key]
             item = registry[item_id]
-            body += f'<p><strong>{item["year"]} 原文</strong></p><blockquote><p>{e(item["sourceText"])}</p></blockquote><a class="text-link" href="#platform-item-{e(item_id)}">閱讀 {item["year"]} 原文與來源 ↓</a>'
+            body += f'<p><strong>{item["year"]} 原文</strong></p><blockquote><p>{e(item["sourceText"])}</p></blockquote><a class="text-link" href="#platform-item-{e(item_id)}">閱讀 {item["year"]} 原文與來源 →</a>'
         body += f'<p class="source-note">{e(comparison["note"])}</p></details>'
     return body + '</section>'
 
@@ -68,7 +68,7 @@ def render_platforms(data, achievements):
     if current:
         body += '<nav class="platform-topic-nav" aria-label="2026 政見主題">' + ''.join(f'<a href="#platform-2026-theme-{index+1}">{e(section["heading"])}</a>' for index, section in enumerate(current['sections'])) + '</nav>'
     if data.get('crossTermComparisons'):
-        body += '<a class="text-link" href="#platform-comparisons-heading">前後屆政見對照 ↓</a>'
+        body += '<a class="text-link" href="#platform-comparisons-heading">前後屆政見對照 →</a>'
     body += '</div></section><div class="wrap platforms-wrap"><div class="platform-timeline">'
     entries = [(x['year'], x['election'], x, None) for x in data['elections']]
     for gap in data['gaps']:

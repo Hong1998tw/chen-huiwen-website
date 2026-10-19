@@ -1,26 +1,311 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {
+  AXE_CORE_VERSION,
+  AXE_PLAYWRIGHT_VERSION,
+  collectTargetSizeDiagnostics,
+  CANDIDATE_TARGET_SIZE_SCOPE,
+  evaluateTargetSizeGate,
+  evaluateTargetSizeCoverage,
+  nonTargetAxeViolations,
+  readTargetSizeBaseline,
+  resolveTargetSizeMode,
+  TARGET_SIZE_BASELINE_SCENARIO,
+  TARGET_SIZE_CORE_ROUTES,
+  TARGET_SIZE_CORE_VIEWPORTS,
+  targetSizeGateMessage,
+} from './wcag22aa.mjs';
+import { assertWithHomeDiagnostics } from './homepage-diagnostics.mjs';
+import { assertNoHorizontalOverflow, captureLayoutDiagnostics, findVisibleClickPoint } from './layout-diagnostics.mjs';
+import { openCaseFilterDialog, closeCaseFilterDialog } from './achievement-filter-dialog.mjs';
+import {
+  assertHeaderAnimationContractFixtures,
+  evaluateMenuAnchor,
+  evaluateRequiredCheckGate,
+  installEarlyHeaderAnimationProbe,
+  MENU_ANCHOR_TOLERANCE_PX,
+} from './header-animation-contracts.mjs';
+
+assertHeaderAnimationContractFixtures();
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const output = new URL('./results/', import.meta.url);
+const targetSizeMode = resolveTargetSizeMode(process.env.WCAG22AA_TARGET_SIZE_MODE);
+const checkoutHeadSha = (() => {
+  try {
+    const value = execFileSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD^{commit}'], { encoding: 'utf8' }).trim();
+    return /^[a-f0-9]{40}$/i.test(value) ? value.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+})();
+const sourceHeadSha = process.env.GITHUB_SHA ?? checkoutHeadSha;
+const eventHeadSha = process.env.PR_HEAD_SHA && /^[a-f0-9]{40}$/i.test(process.env.PR_HEAD_SHA) ? process.env.PR_HEAD_SHA.toLowerCase() : null;
+const workflowRunId = /^\d+$/.test(process.env.GITHUB_RUN_ID ?? '') ? process.env.GITHUB_RUN_ID : null;
+const artifactName = process.env.A06_ARTIFACT_NAME ?? null;
+const repositorySlug = process.env.GITHUB_REPOSITORY ?? null;
+const serverUrl = process.env.GITHUB_SERVER_URL ?? 'https://github.com';
+const runUrl = workflowRunId && repositorySlug ? `${serverUrl.replace(/\/$/, '')}/${repositorySlug}/actions/runs/${workflowRunId}` : null;
+const runnerScriptBytes = await readFile(new URL('./browser.mjs', import.meta.url));
+const runnerScriptSha256 = createHash('sha256').update(runnerScriptBytes).digest('hex');
+const packageJson = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 await mkdir(output, { recursive: true });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
 const base = 'http://127.0.0.1:8765/';
-const report = { scope: 'Full-site candidate QA', checks: [], failures: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
+const report = { scope: 'Full-site candidate QA', checks: [], failures: [], diagnostics: [], interactions: [], externalResources: 'Blocked deliberately; third-party live availability is a separate manual check.' };
+const targetSizeBaseline = await readTargetSizeBaseline();
+const targetSizeEntries = [];
+const targetSizeCompletedCases = [];
 let browser;
+let diagnosticPage;
+let chromiumVersion = null;
 
-async function check(name, fn) {
+async function check(name, fn, { required = false } = {}) {
+  const metadata = required ? { required: true } : {};
   try {
     const value = await fn();
-    report.checks.push({ name, status: 'Passed', ...(value === undefined ? {} : { value }) });
+    if (value?.__checkStatus === 'Pending') {
+      report.checks.push({ name, ...metadata, status: 'Pending', value: value.value });
+      return;
+    }
+    report.checks.push({ name, ...metadata, status: 'Passed', ...(value === undefined ? {} : { value }) });
   } catch (error) {
-    report.checks.push({ name, status: 'Failed', error: String(error) });
+    report.checks.push({ name, ...metadata, status: 'Failed', error: String(error) });
     report.failures.push(name);
+    if (diagnosticPage && /horizontal overflow|navigation, layout|G06 mobile header|mobile menu|no JavaScript|CLS/i.test(name) && !String(error).includes('horizontal overflow')) {
+      try {
+        const evidence = await captureLayoutDiagnostics(diagnosticPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:name,error});
+        report.diagnostics.push(evidence.files);
+      } catch (diagnosticError) {
+        report.diagnostics.push({label:name,error:String(diagnosticError)});
+      }
+    }
   }
+}
+
+async function assertWithinHalfPixel(page, label, actual, expected) {
+  if (Math.abs(actual - expected) > 0.5) {
+    await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label,error:`${label}: ${actual}px differs from ${expected}px`});
+  }
+  assert(Math.abs(actual - expected) <= 0.5, `${label}: ${actual}px differs from ${expected}px by more than 0.5px`);
+}
+
+async function captureOpenMenuHeaderTransition(page, { label, targetScrollY, compact }) {
+  const evidence = await page.evaluate(async ({ label, targetScrollY, compact }) => {
+    const header = document.querySelector('.site-header');
+    const navigation = document.querySelector('#navigation');
+    const toggle = document.querySelector('.menu-toggle');
+    const round = value => Math.round(value * 10) / 10;
+    const activeElement = () => {
+      const element = document.activeElement;
+      return element ? {
+        tagName: element.tagName,
+        id: element.id || null,
+        className: typeof element.className === 'string' ? element.className : null,
+        href: element.getAttribute?.('href') ?? null,
+        text: (element.textContent || '').trim().slice(0, 64),
+      } : null;
+    };
+    if (!header || !navigation || !toggle) {
+      return { label, supported: false, unsupportedReason: 'Required header, navigation, or menu toggle selector is missing.' };
+    }
+
+    const media = {
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+    };
+    const initialStyle = getComputedStyle(header);
+    const properties = initialStyle.transitionProperty.split(',').map(value => value.trim());
+    const durations = initialStyle.transitionDuration.split(',').map(value => value.trim());
+    const delays = initialStyle.transitionDelay.split(',').map(value => value.trim());
+    const parseTime = value => {
+      const number = Number.parseFloat(value);
+      if (!Number.isFinite(number)) return 0;
+      return value.endsWith('ms') ? number : number * 1000;
+    };
+    const transitionIndex = properties.findIndex(value => value === 'min-height' || value === 'all');
+    const minHeightTransitionMs = transitionIndex < 0 ? 0 : parseTime(durations[transitionIndex % durations.length] || '0s');
+    const minHeightDelayMs = transitionIndex < 0 ? 0 : parseTime(delays[transitionIndex % delays.length] || '0s');
+    const targetHeight = compact ? 52 : 64;
+    const startedAt = performance.now();
+    const samples = [];
+    const transitionEvents = [];
+    let transitionRunAt = null;
+    let transitionEndAt = null;
+    let transitionCancelAt = null;
+    let pendingFrameId = 0;
+
+    const sample = frame => {
+      const headerRect = header.getBoundingClientRect();
+      const navigationRect = navigation.getBoundingClientRect();
+      return {
+        frame,
+        elapsedMs: round(performance.now() - startedAt),
+        scrollY: round(window.scrollY),
+        headerHeight: round(headerRect.height),
+        headerBottom: round(headerRect.bottom),
+        menuTop: round(navigationRect.top),
+        headerBottomForAnchor: headerRect.bottom,
+        menuTopForAnchor: navigationRect.top,
+        menuLeft: round(navigationRect.left),
+        menuRight: round(navigationRect.right),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        compact: header.classList.contains('is-compact'),
+        ariaExpanded: toggle.getAttribute('aria-expanded'),
+        activeElement: activeElement(),
+        focusInsideMenu: navigation.contains(document.activeElement),
+        menuVisible: getComputedStyle(navigation).display !== 'none',
+      };
+    };
+    const onTransition = event => {
+      if (event.target !== header || event.propertyName !== 'min-height') return;
+      const atMs = round(performance.now() - startedAt);
+      transitionEvents.push({ type: event.type, atMs, propertyName: event.propertyName });
+      if (event.type === 'transitionrun' && transitionRunAt === null) transitionRunAt = atMs;
+      if (event.type === 'transitionend' && transitionEndAt === null) transitionEndAt = atMs;
+      if (event.type === 'transitioncancel' && transitionCancelAt === null) transitionCancelAt = atMs;
+    };
+    header.addEventListener('transitionrun', onTransition);
+    header.addEventListener('transitionstart', onTransition);
+    header.addEventListener('transitionend', onTransition);
+    header.addEventListener('transitioncancel', onTransition);
+
+    const initial = sample('before-trigger');
+    samples.push(initial);
+    window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+    const timeoutMs = Math.min(1500, Math.max(600, minHeightTransitionMs + minHeightDelayMs + 500));
+    const deadline = startedAt + timeoutMs;
+    let timeoutId;
+    const timeoutPromise = new Promise(resolve => { timeoutId = window.setTimeout(() => resolve(false), timeoutMs); });
+    let terminalReachedAt = null;
+    let terminalFramesWithoutRun = 0;
+    let timedOut = false;
+    try {
+      while (performance.now() < deadline) {
+        const hasFrame = await Promise.race([
+          new Promise(resolve => { pendingFrameId = requestAnimationFrame(() => { pendingFrameId = 0; resolve(true); }); }),
+          timeoutPromise,
+        ]);
+        if (!hasFrame) {
+          timedOut = true;
+          break;
+        }
+        const current = sample(samples.length);
+        samples.push(current);
+        const expectedCompact = current.compact === compact;
+        const atEndpoint = Math.abs(current.headerHeight - targetHeight) <= 0.75;
+        if (expectedCompact && atEndpoint && terminalReachedAt === null) terminalReachedAt = current.elapsedMs;
+        if (expectedCompact && atEndpoint && transitionRunAt !== null &&
+            current.elapsedMs - transitionRunAt >= minHeightTransitionMs + minHeightDelayMs) break;
+        if (expectedCompact && atEndpoint && transitionRunAt === null) {
+          terminalFramesWithoutRun++;
+          if (terminalFramesWithoutRun >= 3) break;
+        }
+      }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (pendingFrameId) cancelAnimationFrame(pendingFrameId);
+      header.removeEventListener('transitionrun', onTransition);
+      header.removeEventListener('transitionstart', onTransition);
+      header.removeEventListener('transitionend', onTransition);
+      header.removeEventListener('transitioncancel', onTransition);
+    }
+
+    const final = samples.at(-1);
+    const low = Math.min(initial.headerHeight, targetHeight);
+    const high = Math.max(initial.headerHeight, targetHeight);
+    const intermediateSamples = samples.filter(item => item.headerHeight > low + 0.75 && item.headerHeight < high - 0.75);
+    samples.forEach(item => { item.isIntermediate = intermediateSamples.includes(item); });
+    const overlappingSamples = samples.filter(item => item.menuTop < item.headerBottom - 0.5);
+    const rightOverflowSamples = samples.filter(item => item.menuLeft < -0.5 || item.menuRight > item.viewportWidth + 0.5);
+    const expectedScrollReached = targetScrollY > 8 ? final.scrollY > 8 : final.scrollY <= 8;
+    const terminalReached = final.compact === compact && Math.abs(final.headerHeight - targetHeight) <= 0.75;
+    const transitionEndpoint = transitionEndAt !== null ? 'transitionend' : terminalReached ? 'raf-endpoint-fallback' : 'timeout';
+    const unsupportedReasons = [];
+    if (!media.noPreference || media.reducedMotion) unsupportedReasons.push('The browser does not report prefers-reduced-motion: no-preference.');
+    if (!properties.some(value => value === 'min-height' || value === 'all') || minHeightTransitionMs <= 0) unsupportedReasons.push('Computed CSS has no positive min-height transition duration.');
+    if (!expectedScrollReached) unsupportedReasons.push(`Programmatic scroll did not reach the requested ${targetScrollY}px transition trigger; final scrollY=${final.scrollY}px.`);
+    if (transitionRunAt === null) unsupportedReasons.push('No native min-height transitionrun event was observed.');
+    if (transitionCancelAt !== null) unsupportedReasons.push('The native min-height transition was canceled.');
+    if (!terminalReached) unsupportedReasons.push(`The ${compact ? 'compact' : 'expanded'} terminal height was not observed before the bounded ${timeoutMs}ms wait ended.`);
+    if (intermediateSamples.length === 0) unsupportedReasons.push('No intermediate requestAnimationFrame sample fell between the start and terminal heights.');
+    if (samples.length < 4) unsupportedReasons.push(`Only ${samples.length} requestAnimationFrame samples were captured; at least 4 are required.`);
+    if (overlappingSamples.length) unsupportedReasons.push(`${overlappingSamples.length} sampled frame(s) placed the menu over the header.`);
+    if (rightOverflowSamples.length) unsupportedReasons.push(`${rightOverflowSamples.length} sampled frame(s) placed the menu outside the viewport width.`);
+    if (samples.some(item => item.ariaExpanded !== 'true' || !item.menuVisible || !item.focusInsideMenu)) unsupportedReasons.push('The open menu lost visible/ARIA/focus state during the transition.');
+
+    return {
+      label,
+      supported: unsupportedReasons.length === 0,
+      unsupportedReasons,
+      viewport: { width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio },
+      motion: { requested: 'no-preference', ...media },
+      css: {
+        transitionProperty: properties,
+        transitionDuration: durations,
+        transitionDelay: delays,
+        minHeightTransitionMs: round(minHeightTransitionMs),
+        minHeightDelayMs: round(minHeightDelayMs),
+      },
+      target: { scrollY: targetScrollY, compact, height: targetHeight },
+      terminalWait: { timeoutMs, timedOut, endpoint: transitionEndpoint, terminalReachedAtMs: terminalReachedAt },
+      transition: {
+        runAtMs: transitionRunAt,
+        endAtMs: transitionEndAt,
+        cancelAtMs: transitionCancelAt,
+        actualDurationMs: transitionRunAt !== null && transitionEndAt !== null ? round(transitionEndAt - transitionRunAt) : null,
+        observedDurationMs: transitionRunAt !== null && terminalReachedAt !== null ? round(terminalReachedAt - transitionRunAt) : null,
+        events: transitionEvents,
+      },
+      sampleCount: samples.length,
+      intermediateSampleCount: intermediateSamples.length,
+      overlappingFrameCount: overlappingSamples.length,
+      rightOverflowFrameCount: rightOverflowSamples.length,
+      anchorFormula: 'Math.ceil(header.bottom + 12px)',
+      initial,
+      final,
+      samples,
+    };
+  }, { label, targetScrollY, compact });
+
+  for (const [index, sample] of evidence.samples.entries()) {
+    const anchor = evaluateMenuAnchor(sample.headerBottomForAnchor, sample.menuTopForAnchor);
+    sample.expectedMenuTop = anchor.expectedMenuTop;
+    sample.anchorDelta = anchor.anchorDelta;
+    if (index === 0 || index === evidence.samples.length - 1) sample.anchorWithinTolerance = anchor.withinTolerance;
+    delete sample.headerBottomForAnchor;
+    delete sample.menuTopForAnchor;
+  }
+  evidence.initial = evidence.samples[0];
+  evidence.final = evidence.samples.at(-1);
+  const intermediateSamples = evidence.samples.filter(sample => sample.isIntermediate);
+  const maxAbsoluteAnchorDelta = Math.max(0, ...evidence.samples.map(sample => Math.abs(sample.anchorDelta)));
+  const intermediateMaxAbsoluteAnchorDelta = Math.max(0, ...intermediateSamples.map(sample => Math.abs(sample.anchorDelta)));
+  evidence.anchorAudit = {
+    tolerancePx: MENU_ANCHOR_TOLERANCE_PX,
+    startWithinTolerance: evidence.initial.anchorWithinTolerance,
+    endWithinTolerance: evidence.final.anchorWithinTolerance,
+    maxAbsoluteAnchorDelta,
+    intermediateMaxAbsoluteAnchorDelta,
+  };
+  if (!evidence.anchorAudit.startWithinTolerance) {
+    evidence.unsupportedReasons.push(`The start sample missed the ${evidence.anchorFormula} anchor by ${evidence.initial.anchorDelta}px.`);
+  }
+  if (!evidence.anchorAudit.endWithinTolerance) {
+    evidence.unsupportedReasons.push(`The end sample missed the ${evidence.anchorFormula} anchor by ${evidence.final.anchorDelta}px.`);
+  }
+  evidence.supported = evidence.unsupportedReasons.length === 0;
+
+  report.interactions.push({ name: `live header transition: ${label}`, ...evidence });
+  assert(evidence.supported, `${label} did not demonstrate a valid native header transition: ${JSON.stringify(evidence.unsupportedReasons)}`);
+  assert(evidence.terminalWait.endpoint === 'transitionend' || evidence.terminalWait.endpoint === 'raf-endpoint-fallback', `${label} did not reach an observed animation endpoint`);
+  return evidence;
 }
 
 function largestCls(shifts) {
@@ -41,6 +326,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
+  chromiumVersion = browser.version();
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
   await context.addInitScript(() => {
     window.layoutShifts = [];
@@ -48,6 +334,7 @@ try {
   });
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
+  diagnosticPage = page;
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
   const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
   const mapRecords = JSON.parse(await readFile(new URL('../../data/achievement-map.json', import.meta.url)));
@@ -68,7 +355,7 @@ try {
     });
 
     await check(`donation ${width}px: no horizontal overflow`, async () => {
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`donation-${width}-horizontal-overflow`});
     });
 
     await check(`donation ${width}px: keyboard FAQ and focus`, async () => {
@@ -80,12 +367,20 @@ try {
       await page.keyboard.press('Enter');
     });
 
-    if (width === 1440 || width === 390) await check(`G07 ${width}px: named topline region, single banner, axe region and keyboard`, async () => {
+    if (width === 1440 || width === 390) await check(`G07 ${width}px: topline semantics, single banner, axe region and keyboard`, async () => {
       await page.goto(base + 'political-donation.html');
       const topline = page.locator('section.topline');
       assert.equal(await topline.count(), 1);
       assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
-      assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      if (width === 1440) {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'block');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+        assert.equal(await page.locator('.site-header').evaluate(el => getComputedStyle(el).position), 'sticky');
+        assert.equal(await page.getByRole('region', { name: '議員與服務資訊', exact: true }).count(), 1);
+      } else {
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).display), 'none');
+        assert.equal(await topline.evaluate(el => getComputedStyle(el).position), 'static');
+      }
       assert.equal(await page.getByRole('banner').count(), 1);
       await page.screenshot({ path: fileURLToPath(new URL(`political-donation-g07-${width}.png`, output)), fullPage: true });
 
@@ -99,9 +394,257 @@ try {
       assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BODY');
       await page.keyboard.press('Tab');
       assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
-      await page.keyboard.press('Tab');
-      assert(await page.locator('a[href="tel:+88678212536"]').first().evaluate(el => el === document.activeElement));
+      if (width === 1440) {
+        await page.keyboard.press('Tab');
+        assert(await page.locator('.topline a[href^="tel:"]').evaluate(el => el === document.activeElement));
+      }
     });
+
+    if (width === 390) await check('G06 mobile header: first-screen position, identity, service phone and keyboard order', async () => {
+      await page.goto(base + 'service.html');
+      const header = page.locator('.site-header');
+      const topline = page.locator('section.topline');
+      const phone = page.locator('.site-header a.header-phone');
+      const brand = page.locator('.site-header a.brand');
+      const toggle = page.locator('.menu-toggle');
+      const canonicalPhone = page.locator('#contact .contact-card a.big-phone');
+      const expectedHref = await canonicalPhone.getAttribute('href');
+      const expectedNumber = await canonicalPhone.locator('.phone-number').innerText();
+      const firstScreen = await page.evaluate(() => ({
+        mainTop: document.querySelector('main').getBoundingClientRect().top,
+        headerHeight: document.querySelector('.site-header').getBoundingClientRect().height,
+        headerPosition: getComputedStyle(document.querySelector('.site-header')).position,
+        toplineDisplay: getComputedStyle(document.querySelector('.topline')).display,
+      }));
+      assert.equal(firstScreen.toplineDisplay, 'none');
+      assert.equal(firstScreen.headerPosition, 'sticky');
+      assert(firstScreen.mainTop < 70, `main starts at ${firstScreen.mainTop}px`);
+      await assertWithinHalfPixel(page,'mobile header height',firstScreen.headerHeight,64);
+      assert.equal(await topline.count(), 1);
+      assert.equal(await topline.getAttribute('aria-label'), '議員與服務資訊');
+      assert.equal(await phone.getAttribute('href'), expectedHref);
+      assert.equal(await phone.getAttribute('aria-label'), `撥打陳慧文服務處電話 ${expectedNumber}`);
+      assert.equal(await phone.locator('svg').count(), 1);
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      assert((await page.locator('.brand-role').innerText()).includes('高雄市議員'));
+      assert((await page.locator('.brand-role').innerText()).includes('鳳山區'));
+      assert(await page.locator('.brand-role').isVisible());
+      assert(parseFloat(await page.locator('.brand-role').evaluate(el => getComputedStyle(el).fontSize)) >= 12);
+      assert(await page.getByRole('banner').count() === 1);
+
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await page.keyboard.press('Tab');
+      assert(await page.locator('a.skip-link').evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await brand.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await phone.evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Tab');
+      assert(await toggle.evaluate(el => el === document.activeElement));
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-initial.png', output)), fullPage: false });
+    });
+
+    if (width === 390) await check('G06 mobile header: down 52px, up restore 64px, reduced motion and stable flow', async () => {
+      await page.goto(base + 'service.html');
+      await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'instant' }));
+      await page.waitForFunction(() => document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 52) <= 0.5);
+      const down = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      await assertWithinHalfPixel(page,'compact mobile header height',down.height,52);
+      await assertWithinHalfPixel(page,'compact mobile header flow footprint',down.flowFootprint,64);
+      await assertWithinHalfPixel(page,'compact mobile header top',down.top,0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-down.png', output)), fullPage: false });
+
+      await page.evaluate(() => window.scrollTo({ top: 660, behavior: 'instant' }));
+      await page.waitForTimeout(50);
+      await page.evaluate(() => window.scrollTo({ top: 620, behavior: 'instant' }));
+      await page.waitForFunction(() => !document.querySelector('.site-header').classList.contains('is-compact'));
+      await page.waitForFunction(() => Math.abs(document.querySelector('.site-header').getBoundingClientRect().height - 64) <= 0.5);
+      const up = await page.evaluate(() => {
+        const header = document.querySelector('.site-header');
+        return {
+          height: header.getBoundingClientRect().height,
+          flowFootprint: header.getBoundingClientRect().height + parseFloat(getComputedStyle(header).marginBottom),
+          top: header.getBoundingClientRect().top,
+        };
+      });
+      await assertWithinHalfPixel(page,'restored mobile header height',up.height,64);
+      await assertWithinHalfPixel(page,'restored mobile header flow footprint',up.flowFootprint,64);
+      await assertWithinHalfPixel(page,'restored mobile header top',up.top,0);
+      await page.screenshot({ path: fileURLToPath(new URL('header-390-scrolled-up.png', output)), fullPage: false });
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const reduced = await page.evaluate(() => ({
+        scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+        transitionDuration: getComputedStyle(document.querySelector('.site-header')).transitionDuration,
+      }));
+      assert.equal(reduced.scrollBehavior, 'auto');
+      assert.equal(reduced.transitionDuration, '0s');
+      const axe = await new AxeBuilder({ page }).withRules(['region']).analyze();
+      assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      // Keep the shared page reduced for its existing non-animation checks.
+      await page.goto(base + 'political-donation.html');
+    });
+
+    if (width === 390) {
+      // Keep header motion and early-probe checks in an explicit no-preference context.
+      const headerContext = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 1,
+        reducedMotion: 'no-preference',
+      });
+      let animationPage;
+      const headerPageErrors = [];
+      const headerLocalFailures = [];
+      const onHeaderPageError = error => headerPageErrors.push(String(error));
+      const onHeaderRequestFailed = request => {
+        if (new URL(request.url()).hostname === '127.0.0.1') headerLocalFailures.push(request.url());
+      };
+      try {
+        await headerContext.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+        animationPage = await headerContext.newPage();
+        animationPage.on('pageerror', onHeaderPageError);
+        animationPage.on('requestfailed', onHeaderRequestFailed);
+        diagnosticPage = animationPage;
+
+        await check('G06 mobile header animation: live compact and expand frames while menu is open', async () => {
+          await animationPage.goto(base + 'service.html');
+          const initial = await animationPage.evaluate(() => ({
+            scrollY: window.scrollY,
+            compact: document.querySelector('.site-header').classList.contains('is-compact'),
+            height: document.querySelector('.site-header').getBoundingClientRect().height,
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+            noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
+          }));
+          assert.equal(initial.scrollY, 0, JSON.stringify(initial));
+          assert.equal(initial.compact, false, JSON.stringify(initial));
+          assert(Math.abs(initial.height - 64) <= 0.75, JSON.stringify(initial));
+          assert.equal(initial.reducedMotion, false, JSON.stringify(initial));
+          assert.equal(initial.noPreference, true, JSON.stringify(initial));
+
+          const toggle = animationPage.locator('.menu-toggle');
+          await toggle.focus();
+          await animationPage.keyboard.press('Enter');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open compact 64px to 52px', targetScrollY: 600, compact: true });
+          await captureOpenMenuHeaderTransition(animationPage, { label: 'menu-open expand 52px to 64px', targetScrollY: 0, compact: false });
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+          assert(await animationPage.locator('#navigation').evaluate(el => el.classList.contains('is-open')));
+          assert(await animationPage.locator('#navigation').evaluate(el => el.contains(document.activeElement)));
+
+          await animationPage.keyboard.press('Escape');
+          assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+          assert(await toggle.evaluate(el => el === document.activeElement));
+        });
+
+        await check('G06 mobile header animation: restored nonzero scroll and programmatic menu before first controller RAF', async () => {
+          await animationPage.addInitScript(installEarlyHeaderAnimationProbe);
+
+          await animationPage.goto(base + 'service.html');
+          await animationPage.waitForFunction(() => {
+            const probe = window.__earlyHeaderAnimationProbe;
+            return Boolean(probe && (probe.unsupportedReason || probe.firstSampleStartedAt !== null));
+          }, null, { timeout: 1500 }).catch(() => {});
+          const probe = await animationPage.evaluate(() => window.__earlyHeaderAnimationProbe);
+          const firstRafQueuedBeforeOrDuringDCL = probe?.queuedBeforeDCL || probe?.queuedDuringDOMContentLoaded;
+          if (!probe?.controllerScriptMatched || !probe?.controllerRafQueued || !firstRafQueuedBeforeOrDuringDCL ||
+              !['loading', 'interactive'].includes(probe?.readyStateAtQueued) || !probe?.domContentLoadedSeen ||
+              probe?.domContentLoadedAt === null || probe?.firstSampleStartedAt === null) {
+            const pending = {
+              name: 'early restored-scroll header/menu sample',
+              status: 'not-verified',
+              reason: probe?.unsupportedReason || 'The test hook could not hold the controller first RAF until after the DOMContentLoaded state setup.',
+              evidence: probe ?? null,
+              inputSource: probe?.inputSource ?? 'programmatic focus()/click(); not human input',
+              nodeVmEvidence: 'The previously recorded site-header-controller VM covers the early menu case; it is not browser animation evidence.',
+            };
+            report.interactions.push(pending);
+            return { __checkStatus: 'Pending', value: pending };
+          }
+
+          const {
+            headerBottomForAnchor,
+            menuTopForAnchor,
+            ...firstSampleGeometry
+          } = probe.firstSampleState;
+          const firstSampleAnchor = evaluateMenuAnchor(headerBottomForAnchor, menuTopForAnchor);
+          const firstSampleState = {
+            ...firstSampleGeometry,
+            expectedMenuTop: firstSampleAnchor.expectedMenuTop,
+            anchorDelta: firstSampleAnchor.anchorDelta,
+            anchorWithinTolerance: firstSampleAnchor.withinTolerance,
+          };
+
+          const evidence = {
+            controllerScriptMatched: probe.controllerScriptMatched,
+            controllerScriptURLPath: probe.controllerScriptURLPath,
+            controllerScriptType: probe.controllerScriptType,
+            controllerScriptTypeAttribute: probe.controllerScriptTypeAttribute,
+            controllerScriptDeferred: probe.controllerScriptDeferred,
+            controllerScriptAsync: probe.controllerScriptAsync,
+            controllerRafQueued: probe.controllerRafQueued,
+            queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
+            readyStateAtQueued: probe.readyStateAtQueued,
+            queuedBeforeDCL: probe.queuedBeforeDCL,
+            queuedDuringDOMContentLoaded: probe.queuedDuringDOMContentLoaded,
+            domContentLoadedSeen: probe.domContentLoadedSeen,
+            controllerRafQueuedAtMs: probe.controllerRafQueuedAt,
+            domContentLoadedAtMs: probe.domContentLoadedAt,
+            releasedAtMs: probe.releasedAt,
+            firstSampleStartedAtMs: probe.firstSampleStartedAt,
+            firstSampleObservedAfterDOMContentLoaded: probe.firstSampleStartedAt > probe.domContentLoadedAt,
+            humanInput: false,
+            inputSource: probe.inputSource,
+            programmaticFocusInvoked: probe.programmaticFocusInvoked,
+            programmaticClickInvoked: probe.programmaticClickInvoked,
+            clickIsTrusted: probe.clickIsTrusted,
+            scrollYBeforeControllerSample: probe.scrollYBeforeControllerSample,
+            firstSampleScrollY: probe.firstSampleScrollY,
+            ariaExpandedBeforeControllerSample: probe.ariaExpandedBeforeControllerSample,
+            menuOpenBeforeControllerSample: probe.menuOpenBeforeControllerSample,
+            firstSampleState,
+          };
+          report.interactions.push({ name: 'early restored-scroll header/menu sample', status: 'observed', ...evidence });
+          assert(evidence.firstSampleObservedAfterDOMContentLoaded, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticFocusInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.programmaticClickInvoked, true, JSON.stringify(evidence));
+          assert.equal(evidence.clickIsTrusted, false, JSON.stringify(evidence));
+          assert(evidence.scrollYBeforeControllerSample >= 500, JSON.stringify(evidence));
+          assert(evidence.firstSampleScrollY >= 500, JSON.stringify(evidence));
+          assert.equal(evidence.ariaExpandedBeforeControllerSample, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.menuOpenBeforeControllerSample, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.compact, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.ariaExpanded, 'true', JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.activeElementInsideMenu, true, JSON.stringify(evidence));
+          assert.equal(evidence.firstSampleState.anchorWithinTolerance, true, JSON.stringify(evidence));
+          assert(evidence.firstSampleState.menuRight <= evidence.firstSampleState.viewportWidth + 0.5, JSON.stringify(evidence));
+        }, { required: true });
+
+        await check('G06 mobile header fixture page errors and local requests', async () => {
+          assert.deepEqual(headerPageErrors, []);
+          assert.deepEqual(headerLocalFailures, []);
+        });
+      } finally {
+        if (animationPage) {
+          animationPage.off('pageerror', onHeaderPageError);
+          animationPage.off('requestfailed', onHeaderRequestFailed);
+        }
+        await headerContext.close();
+        diagnosticPage = page;
+      }
+    }
 
     if (width === 390) await check('mobile menu: Enter, Escape, focus return and election link', async () => {
       const toggle = page.locator('.menu-toggle');
@@ -110,6 +653,8 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await toggle.getAttribute('aria-label'), '關閉主要選單');
       assert(await page.locator('main').evaluate(el => el.inert));
+      assert(await page.locator('.header-phone').evaluate(el => el.inert));
+      assert(await page.locator('.brand').evaluate(el => el.inert));
       assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
       await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
       assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
@@ -121,19 +666,28 @@ try {
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await toggle.getAttribute('aria-label'), '開啟主要選單');
       assert.equal(await page.locator('main').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.header-phone').evaluate(el => el.inert), false);
+      assert.equal(await page.locator('.brand').evaluate(el => el.inert), false);
       assert(await toggle.evaluate(el => el === document.activeElement));
       await toggle.click();
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).position), 'fixed');
       assert.equal(await page.locator('#navigation').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
-      await page.locator('.menu-backdrop').click({ position: { x: 4, y: 4 } });
+      const backdropPoint = await findVisibleClickPoint(page,'.menu-backdrop');
+      report.interactions.push({name:'menu backdrop closes through an unobscured real pointer point',targetRect:backdropPoint.rect,selected:backdropPoint.selected,samples:backdropPoint.samples});
+      if (!backdropPoint.selected) {
+        await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:'menu-backdrop-no-visible-hit-point',error:'No point in the visible backdrop receives the real pointer hit test',extra:{backdropPoint}});
+      }
+      assert(backdropPoint.selected,JSON.stringify(backdropPoint));
+      await page.mouse.click(backdropPoint.selected.x,backdropPoint.selected.y);
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     });
 
-    await check(`donation ${width}px: axe WCAG2 A/AA`, async () => {
+    await check(`donation ${width}px: axe WCAG 2.0/2.1/2.2 A/AA`, async () => {
       for (const summary of await page.locator('main summary').all()) await summary.click();
-      const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
+      const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
       await writeFile(new URL(`axe-donation-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
-      assert.deepEqual(axe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
+      // target-size has its own fail-closed baseline gate below; all other axe findings remain strict here.
+      assert.deepEqual(nonTargetAxeViolations(axe.violations).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), []);
     });
   }
 
@@ -149,7 +703,7 @@ try {
         page.on('pageerror', onError);
         page.on('requestfailed', onFailed);
         await page.goto(base + file);
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${file}: horizontal overflow`);
+        await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`all-pages-${width}-${file}-horizontal-overflow`});
         if (file !== 'offline.html') {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
@@ -174,11 +728,21 @@ try {
           const text = await page.locator('main').innerText();
           assert(!/紀錄補充|資料與追蹤|並非已完成證明|尚未取得足以|本頁保留議題索引|待核驗|資料核驗狀態|資料查核|來源邊界|不混為完成|正式選舉公報尚未取得/.test(text), `${file}: public copy`);
         }
-        const core = ['index.html','about.html','achievements.html','vision.html','news.html','press.html','activities.html','gallery.html','service.html','petition.html','political-donation.html','election.html','404.html','offline.html','achievement-wende-school-center.html'];
-        if (core.includes(file)) {
-          const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
-          const serious = axe.violations.filter(v => ['serious','critical'].includes(v.impact));
+        if (TARGET_SIZE_CORE_ROUTES.includes(file)) {
+          const axe = await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();
+          const targetSizeViewport = TARGET_SIZE_CORE_VIEWPORTS.find(viewport => viewport.width === width);
+          if (targetSizeViewport) {
+            targetSizeEntries.push(...await collectTargetSizeDiagnostics(page, file, width, axe.violations, TARGET_SIZE_BASELINE_SCENARIO, targetSizeViewport.height));
+            targetSizeCompletedCases.push({
+              route: file,
+              viewportWidth: targetSizeViewport.width,
+              viewportHeight: targetSizeViewport.height,
+              scenario: TARGET_SIZE_BASELINE_SCENARIO,
+            });
+          }
+          const serious = nonTargetAxeViolations(axe.violations, ['serious', 'critical']);
           await writeFile(new URL(`axe-${file}-${width}.json`, output), JSON.stringify(axe.violations, null, 2));
+          // The dedicated baseline check handles target-size; other serious/critical axe findings remain zero-tolerance.
           assert.deepEqual(serious.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${file}: axe`);
         }
         assert.deepEqual(pageErrors, [], `${file}: page errors`);
@@ -188,24 +752,27 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: portrait first, civic entry and CLS`, async () => {
+    await check(`homepage ${width}px: portrait first, local query entry and CLS`, async () => {
       await page.goto(base + 'index.html');
       const img = page.locator('.hero-portrait img');
       await img.evaluate(el => el.decode());
+      await page.evaluate(() => document.fonts.ready);
       assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
       assert.equal(await img.getAttribute('loading'),'eager');
       const frame = await page.locator('.portrait-frame').boundingBox();
       const heading = await page.locator('.hero-copy h1').boundingBox();
-      assert.equal(await page.locator('h1').count(),1);
-      assert(await page.locator('.civic-search').isVisible());
-      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-      assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.civic-lead').boundingBox()).y);
-      assert(frame && heading);
-      assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
-      assert(frame.x >= 0 && frame.x + frame.width <= width);
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',async()=>{
+        assert.equal(await page.locator('h1').count(),1);
+        assert(await page.locator('.home-village-form #home-village').isVisible());
+        assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
+        assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
+        assert(frame && heading);
+        assert(Math.abs(frame.width / frame.height - 1.04) < 0.02);
+        assert(frame.x >= 0 && frame.x + frame.width <= width);
+      });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'service.html#contact');
-      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'聯絡服務處');
+      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
+      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
       assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
@@ -213,6 +780,7 @@ try {
         const shifts = [...window.layoutShifts].sort((a,b)=>a.startTime-b.startTime); let max=0,current=0,start=0,last=0;
         for(const e of shifts){ if(current>0&&e.startTime-last<1000&&e.startTime-start<=5000) current+=e.value; else {current=e.value;start=e.startTime;} last=e.startTime;max=Math.max(max,current); } return max;
       }));
+      if (cls >= 0.1) await captureLayoutDiagnostics(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`homepage-${width}-cls`,error:`homepage CLS ${cls}`,extra:{cls,layoutShifts:await page.evaluate(()=>window.layoutShifts.map(({value,startTime,hadRecentInput,sources})=>({value,startTime,hadRecentInput,sources:sources?.map(source=>({previousRect:source.previousRect,currentRect:source.currentRect}))})))}});
       assert(cls < 0.1, `homepage CLS ${cls}`);
       await page.screenshot({ path: fileURLToPath(new URL(`index-${width}.png`, output)), fullPage: true });
     });
@@ -225,6 +793,7 @@ try {
       assert.equal(await visible(), Math.min(10, items.length));
       await page.locator('#case-search').fill('文龍');
       assert((await visible()) > 0);
+      await openCaseFilterDialog(page);
       await page.locator('#reset-map-filters').click();
       const village = items.find(item => item.villages.length).villages[0];
       await page.locator('#village-filter').selectOption('v:' + village);
@@ -234,11 +803,12 @@ try {
       await page.locator('#subcategory-filter').selectOption({ label: '寵物' });
       assert((await visible()) > 0);
       await page.locator('#reset-map-filters').click();
+      if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
+      await closeCaseFilterDialog(page);
       if (items.length > 10) {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
       }
-      if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
       await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await page.locator('#achievement-map').scrollIntoViewIfNeeded();
       await page.locator('.leaflet-container').waitFor({state:'visible'});
@@ -247,7 +817,7 @@ try {
         const controls = await page.locator('.map-controls').boundingBox();
         const map = await page.locator('#achievement-map').boundingBox();
         assert(controls && controls.height < 350, `mobile map filters too tall: ${controls?.height}`);
-        assert(map && map.height >= 520, `mobile map too short: ${map?.height}`);
+        assert(map && Math.abs(map.height - 0.45 * 844) < 2, `mobile map should be 45vh: ${map?.height}`);
       }
     });
 
@@ -419,6 +989,7 @@ try {
       await requestStarted;
       await p.locator('#case-search').fill('文德國小');
       await p.locator('#case-search').fill('');
+      await openCaseFilterDialog(p);
       await p.locator('#village-filter').selectOption('v:曹公里');
       release();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')) && window.HuiwenCases.getState().filters.village === 'v:曹公里');
@@ -437,7 +1008,7 @@ try {
       const lead = await page.locator('.news-card-lead').first().boundingBox();
       await page.screenshot({path:fileURLToPath(new URL(`news-reading-${viewport.width}.png`, output))});
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await assertNoHorizontalOverflow(page,{directory:new URL('./results/diagnostics/',import.meta.url),label:`news-first-screen-${viewport.width}-layout`});
     });
   }
 
@@ -456,16 +1027,20 @@ try {
       await leadLocator.scrollIntoViewIfNeeded();
       const lead = await leadLocator.boundingBox();
       assert(lead && lead.y >= 0 && lead.y + lead.height <= viewport.height, JSON.stringify({viewport,lead}));
-      assert.match(await page.locator('.case-latest .record-boundary').innerText(), /陳慧文議員與服務處持續追蹤辦理進度，為鳳山與高雄鄉親落實建設與服務。/);
+      assert.equal(await page.locator('.case-latest .record-boundary').count(), 0);
+      assert.match(await page.locator('.case-latest').innerText(), /市府將串聯鳳山火車站納入可行性評估/);
       await page.screenshot({path:fileURLToPath(new URL(`case-reading-${viewport.width}.png`, output))});
       const sources = page.locator('#case-sources');
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const stories = page.locator('.civic-story-grid');
-      assert.equal(await stories.locator('.civic-reading-row').count(),4);
-      assert.equal(await stories.locator('[data-record-id="bade-detention"]').count(),0);
-      await stories.screenshot({path:fileURLToPath(new URL(`home-stories-${viewport.width}.png`, output))});
+      const recent = page.locator('.home-recent-list');
+      assert.equal(await recent.locator('> li').count(),3);
+      assert.equal(await page.locator('.home-recent-local').count(),1);
+      assert.equal(await page.locator('[data-home-local-record="bade-detention"]').count(),0);
+      assert.equal(await page.locator('.civic-story-grid, .civic-reading-row, .place').count(),0);
+      await recent.screenshot({path:fileURLToPath(new URL(`home-recent-${viewport.width}.png`, output))});
+      await page.locator('.home-local-progress').screenshot({path:fileURLToPath(new URL(`home-local-progress-${viewport.width}.png`, output))});
 
     });
   }
@@ -474,6 +1049,53 @@ try {
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
+  diagnosticPage = nojsPage;
+  await check('no JavaScript: mobile native navigation flows, expands and leaves the page reachable', async () => {
+    await nojsPage.setViewportSize({ width: 320, height: 740 });
+    try {
+      await nojsPage.goto(base + 'service.html');
+      const header = nojsPage.locator('.site-header');
+      const navigation = nojsPage.locator('#navigation');
+      const role = nojsPage.locator('.brand-role');
+      const phone = nojsPage.locator('.site-header a.header-phone');
+      const canonicalPhone = nojsPage.locator('#contact .contact-card a.big-phone');
+      assert.equal(await nojsPage.locator('html.menu-ready').count(), 0);
+      assert.equal(await nojsPage.locator('.menu-toggle').isVisible(), false);
+      assert(await role.isVisible());
+      assert(parseFloat(await role.evaluate(el => getComputedStyle(el).fontSize)) >= 12);
+      assert((await role.innerText()).includes('高雄市議員'));
+      assert((await role.innerText()).includes('鳳山區'));
+      assert.equal(await phone.getAttribute('href'), await canonicalPhone.getAttribute('href'));
+      assert.equal((await phone.boundingBox()).width, 44);
+      assert.equal((await phone.boundingBox()).height, 44);
+      await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-service-320-layout'});
+
+      const group = navigation.locator('.nav-group').first();
+      await group.locator('summary').click();
+      assert.equal(await group.getAttribute('open'), '');
+      assert(await group.locator('a[href="achievements.html"]').isVisible());
+      const flow = await nojsPage.evaluate(() => {
+        const headerRect = document.querySelector('.site-header').getBoundingClientRect();
+        const navRect = document.querySelector('#navigation').getBoundingClientRect();
+        const mainRect = document.querySelector('main').getBoundingClientRect();
+        const headingRect = document.querySelector('main h1').getBoundingClientRect();
+        return { headerBottom: headerRect.bottom, navBottom: navRect.bottom, mainTop: mainRect.top, headingTop: headingRect.top };
+      });
+      assert(flow.navBottom <= flow.headerBottom + 1, JSON.stringify(flow));
+      assert(flow.mainTop >= flow.headerBottom - 1, JSON.stringify(flow));
+      assert(flow.headingTop >= flow.mainTop - 1, JSON.stringify(flow));
+
+      const heading = nojsPage.locator('main h1').first();
+      await heading.scrollIntoViewIfNeeded();
+      const headingPosition = await heading.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+      });
+      assert(headingPosition.top >= 0 && headingPosition.top < headingPosition.viewportHeight, JSON.stringify(headingPosition));
+    } finally {
+      await nojsPage.setViewportSize({ width: 390, height: 844 });
+    }
+  });
   await check('no JavaScript: political donation remains readable', async () => {
     await nojsPage.goto(base + 'political-donation.html');
     assert(await nojsPage.locator('.brand[href="./"]').isVisible());
@@ -481,7 +1103,7 @@ try {
     assert.equal(await nojsPage.locator('main details').first().getAttribute('open'), '');
     assert(await nojsPage.getByText('752200636579', { exact: true }).isVisible());
     assert.equal(await nojsPage.locator('form,input,iframe').count(), 0);
-    assert(await nojsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-political-donation-layout'});
   });
 
   for (const file of ['vision.html','achievements.html','election.html','news.html','press.html']) {
@@ -504,7 +1126,91 @@ try {
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');
+  const targetSizeCoverage = evaluateTargetSizeCoverage(targetSizeCompletedCases);
+  const unmeasurableViolations = targetSizeEntries.filter(entry => entry.measurementStatus !== 'measured');
+  const targetSizeSummary = {
+    expectedCaseCount: targetSizeCoverage.expected.length,
+    completedCaseCount: targetSizeCoverage.completed.length,
+    axeTargetSizeViolationCount: targetSizeEntries.length,
+    measuredViolationCount: targetSizeEntries.length - unmeasurableViolations.length,
+    unmeasurableViolationCount: unmeasurableViolations.length,
+    measurementErrorCount: targetSizeEntries.reduce((sum, entry) => sum + (entry.measurementErrors?.length ?? 0), 0),
+  };
+  const targetSizeGate = evaluateTargetSizeGate(
+    targetSizeMode,
+    targetSizeBaseline,
+    targetSizeEntries,
+    CANDIDATE_TARGET_SIZE_SCOPE,
+    targetSizeCoverage,
+  );
+  if (!checkoutHeadSha || sourceHeadSha !== checkoutHeadSha) {
+    report.failures.push('WCAG 2.2 AA target-size source identity');
+  }
+  report.wcag22aaTargetSize = {
+    mode: targetSizeMode,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
+    axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+    axeCoreVersion: AXE_CORE_VERSION,
+    baselineStatus: targetSizeBaseline.status,
+    baselineScope: targetSizeBaseline.scope ?? null,
+    baselineKnownViolationCount: targetSizeGate.knownBaselineCount,
+    baselineBaseHeadSha: targetSizeBaseline.baseHeadSha,
+    sourceHeadSha,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
+    gate: targetSizeGate,
+  };
+  if (targetSizeGate.status === 'coverage-incomplete') {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
+    report.failures.push('WCAG 2.2 AA target-size coverage incomplete');
+  } else if (targetSizeMode === 'capture-pending') {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Pending', value: targetSizeGate });
+  } else if (!targetSizeGate.pass) {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Failed', error: targetSizeGateMessage(targetSizeGate) });
+    report.failures.push('WCAG 2.2 AA target-size baseline');
+  } else {
+    report.checks.push({ name: 'WCAG 2.2 AA target-size baseline', status: 'Passed', value: targetSizeGate });
+  }
+  const requiredCheckGate = evaluateRequiredCheckGate(report.checks);
+  report.requiredCheckGate = requiredCheckGate;
+  report.status = report.failures.length ? 'Failed' : report.checks.some(item => item.status === 'Pending') ? 'Pending' : 'Passed';
+  await writeFile(new URL('wcag22aa-target-size.json', output), JSON.stringify({
+    schema: 'wcag22aa-target-size-report/v2',
+    source: {
+      headSha: sourceHeadSha,
+      checkoutSha: checkoutHeadSha,
+      eventHeadSha,
+      workflowRunId,
+      artifactName,
+      runUrl,
+    },
+    tool: {
+      entrypoint: 'tests/donation/browser.mjs',
+      version: '1.0.0',
+      gitHeadSha: checkoutHeadSha,
+      scriptSha256: runnerScriptSha256,
+    },
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      playwrightVersion: packageJson.devDependencies.playwright,
+      axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+      axeCoreVersion: AXE_CORE_VERSION,
+      chromiumVersion,
+    },
+    run: { browserReportStatus: report.status, browserFailureCount: report.failures.length },
+    mode: targetSizeMode,
+    scope: CANDIDATE_TARGET_SIZE_SCOPE,
+    axePlaywrightVersion: AXE_PLAYWRIGHT_VERSION,
+    axeCoreVersion: AXE_CORE_VERSION,
+    baseline: targetSizeBaseline,
+    gate: targetSizeGate,
+    coverage: targetSizeCoverage,
+    counts: targetSizeSummary,
+    violations: targetSizeEntries,
+  }, null, 2));
   await writeFile(new URL('browser-report.json', output), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
-  if (report.failures.length) process.exitCode = 1;
+  if (report.failures.length || requiredCheckGate.shouldExitNonZero) process.exitCode = 1;
 }
