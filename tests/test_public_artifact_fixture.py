@@ -1,18 +1,123 @@
 """Focused checks for immutable public-artifact fixture reuse and isolation."""
+from contextlib import redirect_stderr
+from io import StringIO
+import json
 import os
 from pathlib import Path
+import stat
+import sys
 import tempfile
+import time
+import types
 import unittest
+from unittest.mock import patch
 
 from public_artifact_fixture import (
     ArtifactTemplateCache,
     _build_cloudflare_fixture,
+    _cloudflare_input_identity,
+    _module_state,
+    _UNSUPPORTED,
     build_fixture_key,
     hash_input_paths,
+    prepare_cloudflare_test_artifact,
 )
 
 
 class ArtifactTemplateCacheTests(unittest.TestCase):
+    def test_real_cloudflare_builder_pair_shares_one_immutable_fixture(self):
+        root = Path(__file__).resolve().parents[1]
+        scripts = str(root / 'scripts')
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import build_cloudflare_public as cloudflare
+        import build_artifact_page_fonts as producer
+        import public_artifact_fixture as fixture
+
+        key, revision, cacheable, reason = _cloudflare_input_identity(root, cloudflare, producer)
+        self.assertRegex(key or '', r'^[a-f0-9]{64}$')
+        self.assertTrue(cacheable, reason)
+        self.assertIsNone(reason)
+
+        cache = fixture._CLOUDFLARE_CACHE
+        cache.close()
+        original_build = cache._build
+        build_calls = []
+
+        def counted_build(builder, builder_args):
+            build_calls.append(builder)
+            return original_build(builder, builder_args)
+
+        started = time.perf_counter()
+        cache_events = StringIO()
+        cache._build = counted_build
+        try:
+            with patch.dict(os.environ, {'PAGE_FONT_ARTIFACT_ROOT': ''}):
+                with redirect_stderr(cache_events):
+                    with tempfile.TemporaryDirectory() as first_directory, \
+                            tempfile.TemporaryDirectory() as second_directory:
+                        first = prepare_cloudflare_test_artifact(
+                            root, first_directory, cloudflare, producer,
+                        )
+                        second = prepare_cloudflare_test_artifact(
+                            root, second_directory, cloudflare, producer,
+                        )
+                        self.assertEqual(len(build_calls), 1)
+                        self.assertIsNotNone(cache._key)
+                        self.assertEqual(cache_events.getvalue().count('cache=miss'), 1)
+                        self.assertEqual(cache_events.getvalue().count('cache=hit'), 1)
+                        self.assertIn('reason=exact_identity', cache_events.getvalue())
+
+                        first_files = sorted(
+                            path.relative_to(first).as_posix()
+                            for path in first.rglob('*') if path.is_file()
+                        )
+                        second_files = sorted(
+                            path.relative_to(second).as_posix()
+                            for path in second.rglob('*') if path.is_file()
+                        )
+                        self.assertEqual(first_files, second_files)
+                        first_digest = hash_input_paths(first, first_files)
+                        second_digest = hash_input_paths(second, second_files)
+                        self.assertEqual(first_digest, second_digest)
+                        self.assertGreater(len(first_files), 300)
+
+                        for relative in first_files:
+                            first_stat = os.lstat(first / relative)
+                            second_stat = os.lstat(second / relative)
+                            self.assertTrue(stat.S_ISREG(first_stat.st_mode))
+                            self.assertTrue(stat.S_ISREG(second_stat.st_mode))
+                            self.assertEqual(first_stat.st_nlink, 1)
+                            self.assertEqual(second_stat.st_nlink, 1)
+                            self.assertNotEqual(
+                                (first_stat.st_dev, first_stat.st_ino),
+                                (second_stat.st_dev, second_stat.st_ino),
+                            )
+
+                        first_receipt = json.loads((first / 'deployment.json').read_text())
+                        second_receipt = json.loads((second / 'deployment.json').read_text())
+                        self.assertEqual(first_receipt, second_receipt)
+                        self.assertEqual(first_receipt.get('sourceCommit'), revision)
+                        before_mutation = (second / 'index.html').read_bytes()
+                        (first / 'index.html').write_bytes(b'changed class copy')
+                        self.assertEqual((second / 'index.html').read_bytes(), before_mutation)
+                        self.assertEqual((cache._template / 'index.html').read_bytes(), before_mutation)
+
+                        elapsed = time.perf_counter() - started
+                        print(json.dumps({
+                            'event': 'real-cloudflare-fixture-pair',
+                            'builderModule': cloudflare.__name__,
+                            'buildCalls': len(build_calls),
+                            'secondCallHit': 'exact_identity',
+                            'moduleKey': key,
+                            'sourceCommit': revision,
+                            'fileCount': len(first_files),
+                            'outputSha256': first_digest,
+                            'elapsedSeconds': round(elapsed, 3),
+                        }, sort_keys=True))
+        finally:
+            cache._build = original_build
+
     def test_builder_receipt_source_commit_must_match_input_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -241,6 +346,14 @@ class ArtifactTemplateCacheTests(unittest.TestCase):
                 'source-sha', 'input-digest', 'builder',
                 {'left': shared_state, 'right': shared_state},
             ))
+            unknown_module = types.ModuleType('unknown_module_state')
+            unknown_module.state = object()
+            self.assertIs(_module_state(unknown_module), _UNSUPPORTED)
+            circular_module = types.ModuleType('circular_module_state')
+            circular_state = []
+            circular_state.append(circular_state)
+            circular_module.state = circular_state
+            self.assertIs(_module_state(circular_module), _UNSUPPORTED)
             deeply_nested = []
             current = deeply_nested
             for _ in range(1200):

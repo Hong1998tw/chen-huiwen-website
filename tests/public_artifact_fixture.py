@@ -1,6 +1,7 @@
 """Share an immutable, source-bound Cloudflare artifact between read-only tests."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import marshal
@@ -106,6 +107,10 @@ def _stable_value_impl(value, active=None, seen=None):
     """Return a deterministic JSON value, or reject state we cannot prove stable."""
     if value is None or type(value) in (bool, int, str):
         return value
+    if type(value) is tuple and not value:
+        # CPython reuses the empty tuple singleton for empty function defaults.
+        # Repeating this immutable value does not create aliased mutable state.
+        return {'tuple': []}
     if type(value) is float:
         return {'floatBits': struct.pack('!d', value).hex()}
     if isinstance(value, bytes):
@@ -189,18 +194,115 @@ def _stable_value_impl(value, active=None, seen=None):
         active.remove(identity)
 
 
-def _module_state(module, seen=None):
-    if seen is None:
-        seen = set()
+_MODULE_METADATA_FIELDS = {
+    '__builtins__', '__cached__', '__doc__', '__file__', '__loader__',
+    '__name__', '__package__', '__spec__',
+}
+
+
+def _module_source_identity(module):
+    """Identify a runtime module by its source location, mode, and exact bytes."""
+    filename = getattr(module, '__file__', None)
+    if filename is None:
+        return {'name': module.__name__, 'path': None, 'mode': None, 'sha256': None}
+    source = Path(filename)
+    try:
+        info = source.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            return _UNSUPPORTED
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        path = str(source.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError):
+        return _UNSUPPORTED
+    return {
+        'name': module.__name__,
+        'path': path,
+        'mode': stat.S_IMODE(info.st_mode),
+        'sha256': digest.hexdigest(),
+    }
+
+
+def _is_lru_cache_wrapper(value):
+    wrapper_type = getattr(functools, '_lru_cache_wrapper', None)
+    return isinstance(wrapper_type, type) and type(value) is wrapper_type
+
+
+def _module_field_state(value):
+    """Encode known production-module bindings without weakening closure state."""
+    if isinstance(value, types.ModuleType):
+        identity = _module_source_identity(value)
+        if identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {'module': identity}
+    if isinstance(value, type):
+        owner = sys.modules.get(value.__module__)
+        if owner is None or not isinstance(value.__qualname__, str):
+            return _UNSUPPORTED
+        identity = _module_source_identity(owner)
+        if identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {'class': f'{value.__module__}.{value.__qualname__}', 'moduleSource': identity}
+    if _is_lru_cache_wrapper(value):
+        wrapped = _stable_value(value.__wrapped__)
+        parameters = _stable_value(value.cache_parameters())
+        if wrapped is _UNSUPPORTED or parameters is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {'lruCache': wrapped, 'parameters': parameters}
+    if isinstance(value, types.BuiltinFunctionType):
+        module_name = getattr(value, '__module__', None)
+        owner = sys.modules.get(module_name) if isinstance(module_name, str) else None
+        if owner is None:
+            return _UNSUPPORTED
+        identity = _module_source_identity(owner)
+        name = getattr(value, '__qualname__', None)
+        if identity is _UNSUPPORTED or not isinstance(name, str):
+            return _UNSUPPORTED
+        return {'builtinFunction': f'{module_name}.{name}', 'moduleSource': identity}
+    if type(value).__module__ == '__future__' and type(value).__qualname__ == '_Feature':
+        mandatory = _stable_value(value.mandatory)
+        optional = _stable_value(value.optional)
+        if mandatory is _UNSUPPORTED or optional is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {
+            'futureFeature': value.compiler_flag,
+            'mandatory': mandatory,
+            'optional': optional,
+        }
+    return _stable_value(value)
+
+
+def _module_field_has_identity(value):
+    """Return whether repeated module bindings need an explicit alias marker."""
+    return (
+        type(value) in (dict, list, set)
+        or isinstance(value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type))
+        or _is_lru_cache_wrapper(value)
+    )
+
+
+def _module_state(module):
     values = {}
+    first_binding = {}
     for name, value in vars(module).items():
-        if name.startswith('__') or isinstance(value, types.ModuleType):
+        if name in _MODULE_METADATA_FIELDS:
             continue
-        normalized = _stable_value(value, seen=seen)
+        if _module_field_has_identity(value):
+            first_name = first_binding.get(id(value))
+            if first_name is not None:
+                values[name] = {'aliasOf': first_name}
+                continue
+            first_binding[id(value)] = name
+        normalized = _module_field_state(value)
         if normalized is _UNSUPPORTED:
             return _UNSUPPORTED
         values[name] = normalized
-    return {'name': module.__name__, 'path': getattr(module, '__file__', None), 'values': values}
+    source = _module_source_identity(module)
+    if source is _UNSUPPORTED:
+        return _UNSUPPORTED
+    return {'name': module.__name__, 'source': source, 'values': values}
 
 
 def _cloudflare_input_identity(root, cloudflare, font_producer):
@@ -233,8 +335,7 @@ def _cloudflare_input_identity(root, cloudflare, font_producer):
             module_path = Path(filename).resolve()
             if root in module_path.parents:
                 effective_paths.add(module_path.relative_to(root).as_posix())
-    module_state_seen = set()
-    module_states = [_module_state(module, module_state_seen) for module in runtime_modules]
+    module_states = [_module_state(module) for module in runtime_modules]
     module_state = {
         'python': sys.version,
         'platform': sys.platform,
