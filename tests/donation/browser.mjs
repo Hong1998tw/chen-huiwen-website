@@ -558,13 +558,14 @@ try {
             return Boolean(probe && (probe.unsupportedReason || probe.firstSampleStartedAt !== null));
           }, null, { timeout: 1500 }).catch(() => {});
           const probe = await animationPage.evaluate(() => window.__earlyHeaderAnimationProbe);
-          if (!probe?.controllerScriptMatched || !probe?.controllerRafQueued || !probe?.queuedBeforeDCL ||
+          const firstRafQueuedBeforeOrDuringDCL = probe?.queuedBeforeDCL || probe?.queuedDuringDOMContentLoaded;
+          if (!probe?.controllerScriptMatched || !probe?.controllerRafQueued || !firstRafQueuedBeforeOrDuringDCL ||
               !['loading', 'interactive'].includes(probe?.readyStateAtQueued) || !probe?.domContentLoadedSeen ||
               probe?.domContentLoadedAt === null || probe?.firstSampleStartedAt === null) {
             const pending = {
               name: 'early restored-scroll header/menu sample',
               status: 'not-verified',
-              reason: probe?.unsupportedReason || 'The test hook could not verify that the controller first sample ran after DOMContentLoaded.',
+              reason: probe?.unsupportedReason || 'The test hook could not hold the controller first RAF until after the DOMContentLoaded state setup.',
               evidence: probe ?? null,
               inputSource: probe?.inputSource ?? 'programmatic focus()/click(); not human input',
               nodeVmEvidence: 'The previously recorded site-header-controller VM covers the early menu case; it is not browser animation evidence.',
@@ -597,6 +598,7 @@ try {
             queuedWhileDocumentLoading: probe.queuedWhileDocumentLoading,
             readyStateAtQueued: probe.readyStateAtQueued,
             queuedBeforeDCL: probe.queuedBeforeDCL,
+            queuedDuringDOMContentLoaded: probe.queuedDuringDOMContentLoaded,
             domContentLoadedSeen: probe.domContentLoadedSeen,
             controllerRafQueuedAtMs: probe.controllerRafQueuedAt,
             domContentLoadedAtMs: probe.domContentLoadedAt,
