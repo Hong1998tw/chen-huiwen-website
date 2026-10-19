@@ -1456,7 +1456,10 @@ try {
     'frame-ancestors https://admin.huiwen.tw',
   ].join('; ');
 
-  const cmsContext = await browser.newContext({ viewport: { width: 1365, height: 950 } });
+  const cmsPreviewViewport = { width: 1365, height: 950 };
+  // A bare iframe defaults to 300x150; give the preview the context viewport explicitly.
+  const cmsPreviewFrameStyle = 'position:fixed;top:0;left:0;display:block;width:100vw;height:100vh;border:0';
+  const cmsContext = await browser.newContext({ viewport: cmsPreviewViewport });
   cmsContext.setDefaultTimeout(INITIAL_RENDER_TIMEOUT_MS);
   cmsContext.setDefaultNavigationTimeout(INITIAL_RENDER_TIMEOUT_MS);
   await cmsContext.addInitScript(({ expectedNonce }) => {
@@ -1535,7 +1538,9 @@ try {
             });`
           : '';
         return route.fulfill(buildCmsFixtureHtmlFulfill(`
-          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
+          <iframe id="preview" title="CMS preview" sandbox="allow-scripts"
+            style="${cmsPreviewFrameStyle}"
+            src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>
           ${evilFrame}<script>const frame=document.querySelector('#preview');${handshake}</script>`));
       }
       if (url.pathname === '/api/page-preview') {
@@ -1639,19 +1644,6 @@ try {
         && message.sourceMatches && message.origin === 'admin' && message.nonceMatches));
     assert.ok(previewInbound, 'CMS preview did not receive the correct owner source, origin, and nonce');
     results.cmsPreview.casePreviewInbound = previewInbound;
-    await cmsProxyFrame.locator('.case-background summary').click({ timeout: 15000 });
-    await cmsPage.waitForFunction(() =>
-      (window.__g02CmsHandshake || []).some((message) => message.step === 'message'
-        && message.sourceMatches && message.origin === 'opaque'
-        && message.type === 'huiwen-cms-case-focus' && message.nonceMatches
-        && message.section === 'paragraphs'), null, { timeout: 15000 });
-    const focusMessage = await cmsPage.evaluate(() =>
-      (window.__g02CmsHandshake || []).find((message) => message.step === 'message'
-        && message.type === 'huiwen-cms-case-focus' && message.nonceMatches
-        && message.section === 'paragraphs'));
-    assert.ok(focusMessage?.sourceMatches, 'summary click focus message did not come from the preview iframe');
-    assert.equal(focusMessage.origin, 'opaque', 'sandboxed preview focus message had an unexpected origin');
-    results.cmsPreview.summaryClickMessage = focusMessage;
   } catch (error) {
     let handshake = [];
     let handshakeReadError = null;
@@ -1763,6 +1755,7 @@ try {
     'read CMS full-TC response body');
   assert.equal(loadedBytes.byteLength, 783820, 'CMS preview full TC response has an unexpected byte length');
   assert.equal(createHash('sha256').update(loadedBytes).digest('hex'), fullTcSha, 'CMS proxy did not download the published full TC font bytes');
+  // Measure the draft title before a summary click can scroll the child iframe.
   const cmsState = await withTimeout(frame.evaluate(async ({ draftGlyph, expectedTitle }) => {
     const details = document.querySelector('.case-background');
     const paragraph = [...(details?.querySelectorAll('p') || [])]
@@ -1799,6 +1792,8 @@ try {
     return {
       marker: document.documentElement.dataset.huiwenFontArtifactPreview,
       documentCharacterSet: document.characterSet,
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: scrollX, y: scrollY },
       headingText: heading.innerText,
       headingIsDraft: heading.textContent === expectedTitle,
       headingContainsDraftGlyph: heading.innerText.includes(draftGlyph),
@@ -1831,6 +1826,38 @@ try {
     };
   }, { draftGlyph: draftChar, expectedTitle: cmsDraft.title }), INITIAL_RENDER_TIMEOUT_MS,
   'read authenticated CMS preview frame state');
+  results.cmsPreview.previewObservation = {
+    documentCharacterSet: cmsState.documentCharacterSet,
+    viewport: cmsState.viewport,
+    scroll: cmsState.scroll,
+    heading: {
+      isDraft: cmsState.headingIsDraft,
+      containsDraftGlyph: cmsState.headingContainsDraftGlyph,
+      visible: cmsState.headingVisible,
+      rects: cmsState.headingRects,
+      visibilityChain: cmsState.headingVisibilityChain,
+    },
+    paragraph: {
+      inDom: cmsState.paragraphInDom,
+      containsDraftGlyph: cmsState.paragraphContainsDraftGlyph,
+      visible: cmsState.paragraphVisible,
+    },
+    font: {
+      bytes: loadedBytes.byteLength,
+      sha256: fullTcSha,
+      headingFamily: cmsState.headingFontFamily,
+      headingWeight: cmsState.headingFontWeight,
+      paragraphFamily: cmsState.paragraphFontFamily,
+      paragraphWeight: cmsState.paragraphFontWeight,
+      loaded: cmsState.fontLoaded,
+      loadedFaces: cmsState.fullTcLoadedFaces,
+      glyphCoverage: cmsState.glyphCoverageProbe,
+      glyphWidth: cmsState.glyphWidth,
+      tofu: cmsState.tofu,
+    },
+  };
+  assert.deepEqual(cmsState.viewport, cmsPreviewViewport,
+    'CMS preview iframe did not use the configured viewport');
   assert.equal(cmsState.marker, '1');
   assert.equal(cmsState.documentCharacterSet, 'UTF-8');
   assert.equal(cmsState.headingIsDraft, true, 'CMS draft title was not applied to the visible heading');
@@ -1853,6 +1880,40 @@ try {
   assert.equal(cmsState.glyphCoverageProbe.loadedMatchingFaceCount, 1);
   assert.ok(cmsState.glyphWidth > 0);
   assert.equal(cmsState.tofu, false);
+
+  await cmsProxyFrame.locator('.case-background summary').click({ timeout: 15000 });
+  await cmsPage.waitForFunction(() =>
+    (window.__g02CmsHandshake || []).some((message) => message.step === 'message'
+      && message.sourceMatches && message.origin === 'opaque'
+      && message.type === 'huiwen-cms-case-focus' && message.nonceMatches
+      && message.section === 'paragraphs'), null, { timeout: 15000 });
+  const focusMessage = await cmsPage.evaluate(() =>
+    (window.__g02CmsHandshake || []).find((message) => message.step === 'message'
+      && message.type === 'huiwen-cms-case-focus' && message.nonceMatches
+      && message.section === 'paragraphs'));
+  assert.ok(focusMessage?.sourceMatches, 'summary click focus message did not come from the preview iframe');
+  assert.equal(focusMessage.origin, 'opaque', 'sandboxed preview focus message had an unexpected origin');
+  results.cmsPreview.summaryClickMessage = focusMessage;
+  const postFocusState = await cmsProxyFrame.evaluate(({ draftGlyph }) => {
+    const details = document.querySelector('.case-background');
+    const paragraph = [...(details?.querySelectorAll('p') || [])]
+      .find((item) => item.textContent.includes(draftGlyph));
+    return {
+      detailsOpen: details?.open === true,
+      paragraphInDom: Boolean(paragraph),
+      paragraphContainsDraftGlyph: Boolean(paragraph?.textContent.includes(draftGlyph)),
+      paragraphVisible: Boolean(paragraph?.getClientRects().length),
+    };
+  }, { draftGlyph: draftChar });
+  results.cmsPreview.postFocusState = postFocusState;
+  assert.equal(postFocusState.detailsOpen, false,
+    'CMS capture handler unexpectedly expanded the background details');
+  assert.equal(postFocusState.paragraphInDom, true,
+    'CMS draft paragraph was removed after the summary focus action');
+  assert.equal(postFocusState.paragraphContainsDraftGlyph, true,
+    'CMS draft paragraph lost its draft-only TC glyph after the summary focus action');
+  assert.equal(postFocusState.paragraphVisible, false,
+    'closed CMS background paragraph was unexpectedly reported visible');
   results.cmsPreview = { ...results.cmsPreview, route: cmsRoute, access: 'verified owner assertion fixture', draftChar,
     fontBytes: loadedBytes.byteLength, fontSha256: fullTcSha, ...cmsState };
   await cmsContext.close();
@@ -1884,7 +1945,9 @@ try {
         const previewPath = mode === 'wrong-path' ? 'index.html' : cmsRoute;
         const sender = mode === 'unauthorized-message' ? '<iframe title="untrusted sender" src="https://evil.test/send"></iframe>' : '';
         return route.fulfill(buildCmsFixtureHtmlFulfill(`
-          <iframe id="preview" title="CMS preview" sandbox="allow-scripts" src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>${sender}`));
+          <iframe id="preview" title="CMS preview" sandbox="allow-scripts"
+            style="${cmsPreviewFrameStyle}"
+            src="/api/page-preview?path=${encodeURIComponent(previewPath)}&session=${session}&cmsEdit=${cmsEdit}"></iframe>${sender}`));
       }
       if (url.pathname === '/api/page-preview') {
         // This negative route models Access denying the request before the Worker.
