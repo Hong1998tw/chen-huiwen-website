@@ -1,9 +1,9 @@
 """Share an immutable, source-bound Cloudflare artifact between read-only tests."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
-import marshal
 import os
 from pathlib import Path
 import re
@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import types
 
 
@@ -94,6 +95,116 @@ def _builder_inputs_clean(root):
 
 _UNSUPPORTED = object()
 
+# `_CLOUDFLARE_CACHE` is process-local and never persists keys. Keep a strong
+# reference for every class whose module binding contributes to a fixture key:
+# the reference prevents CPython from reusing its id for a replacement class.
+_CLASS_IDENTITY_LOCK = threading.Lock()
+_CLASS_IDENTITY_REFERENCES = {}
+_CLASS_IDENTITY_SEQUENCE = 0
+
+
+def _class_identity_token(value):
+    """Return a process-local token while retaining the class against id reuse."""
+    global _CLASS_IDENTITY_SEQUENCE
+    identity = id(value)
+    with _CLASS_IDENTITY_LOCK:
+        registered = _CLASS_IDENTITY_REFERENCES.get(identity)
+        if registered is not None:
+            if registered[0] is not value:
+                return _UNSUPPORTED
+            return registered[1]
+        _CLASS_IDENTITY_SEQUENCE += 1
+        token = _CLASS_IDENTITY_SEQUENCE
+        _CLASS_IDENTITY_REFERENCES[identity] = (value, token)
+        return token
+
+
+def _canonical_class_binding(value):
+    """Resolve a class's module/qualname without invoking dynamic attributes."""
+    module_name = type.__getattribute__(value, '__module__')
+    qualname = type.__getattribute__(value, '__qualname__')
+    if not isinstance(module_name, str) or not isinstance(qualname, str):
+        return _UNSUPPORTED
+    owner = sys.modules.get(module_name)
+    if owner is None:
+        return _UNSUPPORTED
+    parts = qualname.split('.')
+    if not parts or any(not part or part == '<locals>' for part in parts):
+        return _UNSUPPORTED
+    try:
+        current = types.ModuleType.__getattribute__(owner, '__dict__').get(parts[0], _UNSUPPORTED)
+        for part in parts[1:]:
+            if current is _UNSUPPORTED:
+                return _UNSUPPORTED
+            namespace = type.__getattribute__(current, '__dict__')
+            current = namespace.get(part, _UNSUPPORTED)
+    except (AttributeError, TypeError):
+        return _UNSUPPORTED
+    return (owner, module_name, qualname) if current is value else _UNSUPPORTED
+
+
+def _stable_code_constant(value, active):
+    if isinstance(value, types.CodeType):
+        return _stable_code(value, active)
+    if value is None or type(value) in (bool, int, str):
+        return value
+    if type(value) is float:
+        return {'floatBits': struct.pack('!d', value).hex()}
+    if type(value) is complex:
+        return {'complexBits': struct.pack('!dd', value.real, value.imag).hex()}
+    if isinstance(value, bytes):
+        return {'bytesSha256': hashlib.sha256(value).hexdigest(), 'length': len(value)}
+    if value is Ellipsis:
+        return {'ellipsis': True}
+    if type(value) is tuple:
+        values = [_stable_code_constant(item, active) for item in value]
+        return _UNSUPPORTED if any(item is _UNSUPPORTED for item in values) else {'tuple': values}
+    if type(value) is frozenset:
+        values = [_stable_code_constant(item, active) for item in value]
+        if any(item is _UNSUPPORTED for item in values):
+            return _UNSUPPORTED
+        values.sort(key=lambda item: json.dumps(
+            item, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+        ))
+        return {'frozenset': values}
+    return _UNSUPPORTED
+
+
+def _stable_code(code, active=None):
+    """Fingerprint source code fields without CPython's adaptive quickening state."""
+    if active is None:
+        active = set()
+    identity = id(code)
+    if identity in active:
+        return _UNSUPPORTED
+    active.add(identity)
+    try:
+        constants = [_stable_code_constant(value, active) for value in code.co_consts]
+        if any(value is _UNSUPPORTED for value in constants):
+            return _UNSUPPORTED
+        return {
+            'argcount': code.co_argcount,
+            'posonlyargcount': code.co_posonlyargcount,
+            'kwonlyargcount': code.co_kwonlyargcount,
+            'nlocals': code.co_nlocals,
+            'stacksize': code.co_stacksize,
+            'flags': code.co_flags,
+            'bytecodeSha256': hashlib.sha256(code.co_code).hexdigest(),
+            'constants': constants,
+            'names': code.co_names,
+            'varnames': code.co_varnames,
+            'freevars': code.co_freevars,
+            'cellvars': code.co_cellvars,
+            'filename': code.co_filename,
+            'name': code.co_name,
+            'qualname': code.co_qualname,
+            'firstlineno': code.co_firstlineno,
+            'linetableSha256': hashlib.sha256(code.co_linetable).hexdigest(),
+            'exceptiontableSha256': hashlib.sha256(code.co_exceptiontable).hexdigest(),
+        }
+    finally:
+        active.remove(identity)
+
 
 def _stable_value(value, active=None, seen=None):
     try:
@@ -106,6 +217,10 @@ def _stable_value_impl(value, active=None, seen=None):
     """Return a deterministic JSON value, or reject state we cannot prove stable."""
     if value is None or type(value) in (bool, int, str):
         return value
+    if type(value) is tuple and not value:
+        # CPython reuses the empty tuple singleton for empty function defaults.
+        # Repeating this immutable value does not create aliased mutable state.
+        return {'tuple': []}
     if type(value) is float:
         return {'floatBits': struct.pack('!d', value).hex()}
     if isinstance(value, bytes):
@@ -145,7 +260,12 @@ def _stable_value_impl(value, active=None, seen=None):
                 kwdefaults = _stable_value(value.__kwdefaults__, active, seen)
                 if defaults is _UNSUPPORTED or kwdefaults is _UNSUPPORTED:
                     return _UNSUPPORTED
-                code_digest = hashlib.sha256(marshal.dumps(value.__code__)).hexdigest()
+                code_state = _stable_code(value.__code__)
+                if code_state is _UNSUPPORTED:
+                    return _UNSUPPORTED
+                code_digest = hashlib.sha256(json.dumps(
+                    code_state, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                ).encode()).hexdigest()
             except (AttributeError, TypeError, ValueError, RecursionError):
                 return _UNSUPPORTED
             return {
@@ -189,18 +309,123 @@ def _stable_value_impl(value, active=None, seen=None):
         active.remove(identity)
 
 
-def _module_state(module, seen=None):
-    if seen is None:
-        seen = set()
+_MODULE_METADATA_FIELDS = {
+    '__builtins__', '__cached__', '__doc__', '__file__', '__loader__',
+    '__name__', '__package__', '__spec__',
+}
+
+
+def _module_source_identity(module):
+    """Identify a runtime module by its source location, mode, and exact bytes."""
+    filename = getattr(module, '__file__', None)
+    if filename is None:
+        return {'name': module.__name__, 'path': None, 'mode': None, 'sha256': None}
+    source = Path(filename)
+    try:
+        info = source.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            return _UNSUPPORTED
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        path = str(source.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError):
+        return _UNSUPPORTED
+    return {
+        'name': module.__name__,
+        'path': path,
+        'mode': stat.S_IMODE(info.st_mode),
+        'sha256': digest.hexdigest(),
+    }
+
+
+def _is_lru_cache_wrapper(value):
+    wrapper_type = getattr(functools, '_lru_cache_wrapper', None)
+    return isinstance(wrapper_type, type) and type(value) is wrapper_type
+
+
+def _module_field_state(value):
+    """Encode known production-module bindings without weakening closure state."""
+    if isinstance(value, types.ModuleType):
+        identity = _module_source_identity(value)
+        if identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {'module': identity}
+    if isinstance(value, type):
+        canonical = _canonical_class_binding(value)
+        if canonical is _UNSUPPORTED:
+            return _UNSUPPORTED
+        owner, module_name, qualname = canonical
+        identity = _module_source_identity(owner)
+        if identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        class_identity = _class_identity_token(value)
+        if class_identity is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {
+            'class': f'{module_name}.{qualname}',
+            'classIdentity': class_identity,
+            'moduleSource': identity,
+        }
+    if _is_lru_cache_wrapper(value):
+        wrapped = _stable_value(value.__wrapped__)
+        parameters = _stable_value(value.cache_parameters())
+        if wrapped is _UNSUPPORTED or parameters is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {'lruCache': wrapped, 'parameters': parameters}
+    if isinstance(value, types.BuiltinFunctionType):
+        module_name = getattr(value, '__module__', None)
+        owner = sys.modules.get(module_name) if isinstance(module_name, str) else None
+        if owner is None:
+            return _UNSUPPORTED
+        identity = _module_source_identity(owner)
+        name = getattr(value, '__qualname__', None)
+        if identity is _UNSUPPORTED or not isinstance(name, str):
+            return _UNSUPPORTED
+        return {'builtinFunction': f'{module_name}.{name}', 'moduleSource': identity}
+    if type(value).__module__ == '__future__' and type(value).__qualname__ == '_Feature':
+        mandatory = _stable_value(value.mandatory)
+        optional = _stable_value(value.optional)
+        if mandatory is _UNSUPPORTED or optional is _UNSUPPORTED:
+            return _UNSUPPORTED
+        return {
+            'futureFeature': value.compiler_flag,
+            'mandatory': mandatory,
+            'optional': optional,
+        }
+    return _stable_value(value)
+
+
+def _module_field_has_identity(value):
+    """Return whether repeated module bindings need an explicit alias marker."""
+    return (
+        type(value) in (dict, list, set)
+        or isinstance(value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type))
+        or _is_lru_cache_wrapper(value)
+    )
+
+
+def _module_state(module):
     values = {}
+    first_binding = {}
     for name, value in vars(module).items():
-        if name.startswith('__') or isinstance(value, types.ModuleType):
+        if name in _MODULE_METADATA_FIELDS:
             continue
-        normalized = _stable_value(value, seen=seen)
+        if _module_field_has_identity(value):
+            first_name = first_binding.get(id(value))
+            if first_name is not None:
+                values[name] = {'aliasOf': first_name}
+                continue
+            first_binding[id(value)] = name
+        normalized = _module_field_state(value)
         if normalized is _UNSUPPORTED:
             return _UNSUPPORTED
         values[name] = normalized
-    return {'name': module.__name__, 'path': getattr(module, '__file__', None), 'values': values}
+    source = _module_source_identity(module)
+    if source is _UNSUPPORTED:
+        return _UNSUPPORTED
+    return {'name': module.__name__, 'source': source, 'values': values}
 
 
 def _cloudflare_input_identity(root, cloudflare, font_producer):
@@ -233,8 +458,7 @@ def _cloudflare_input_identity(root, cloudflare, font_producer):
             module_path = Path(filename).resolve()
             if root in module_path.parents:
                 effective_paths.add(module_path.relative_to(root).as_posix())
-    module_state_seen = set()
-    module_states = [_module_state(module, module_state_seen) for module in runtime_modules]
+    module_states = [_module_state(module) for module in runtime_modules]
     module_state = {
         'python': sys.version,
         'platform': sys.platform,
