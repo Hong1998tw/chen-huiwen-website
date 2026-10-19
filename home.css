@@ -345,7 +345,7 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
   .home-redesign .home-task-paths a { min-height: 76px; padding-block: 12px; border-right: 0; border-bottom: 1px solid #557668}
   .home-redesign .home-task-paths a:last-child { border-bottom: 0}
   .home-redesign .home-task-paths strong { font-size: 21px}
-  .home-redesign .home-lawyer-link { margin: -8px 0 0}
+  #main.home-redesign .home-lawyer-link { margin: 0}
   .home-redesign .home-recent-list { grid-template-columns: minmax(0, 1fr); gap: 16px}
   .home-redesign .home-recent-list article {
     display: grid;

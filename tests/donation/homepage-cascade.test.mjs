@@ -114,6 +114,7 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const basePortrait = ruleFor(rules, '#main.home-redesign .hero-portrait');
   const baseTasks = ruleFor(rules, '#main.home-redesign .home-task-paths');
   const baseLawyer = ruleFor(rules, '#main.home-redesign .home-lawyer-link');
+  const mobileLawyer = ruleFor(rules, '#main.home-redesign .home-lawyer-link', 'max-width: 780px');
   const hero = ruleFor(rules, '#main.home-redesign .hero', 'max-width: 780px');
   const copy = ruleFor(rules, '#main.home-redesign .hero-copy', 'max-width: 780px');
   const copyChildren = ruleFor(rules, '#main.home-redesign .hero-copy > *', 'max-width: 780px');
@@ -158,6 +159,7 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'grid-column': 'lawyer-start / lawyer-end',
     'grid-row': 'lawyer-start / lawyer-end',
   }, 'desktop lawyer link');
+  assertDeclarations(mobileLawyer, { margin: '0' }, 'mobile lawyer link clears the desktop overlap margin');
   assertDeclarations(hero, {
     'grid-template-columns': 'minmax(0, 1fr) minmax(0, .62fr)',
     'grid-template-rows': 'auto auto auto auto auto auto',
