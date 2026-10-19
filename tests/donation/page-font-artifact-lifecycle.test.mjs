@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { observePendingResult, preservePrimaryError, requireObservedValue } from './page-font-artifact-lifecycle.mjs';
+import {
+  gotoObservedWithTimeout,
+  observePendingResult,
+  preservePrimaryError,
+  requireObservedValue,
+  withTimeout,
+} from './page-font-artifact-lifecycle.mjs';
 
 test('a pending response rejection during cleanup does not replace the primary failure', async () => {
   let rejectResponseWait;
@@ -55,4 +61,28 @@ test('a successful response remains available to the existing byte assertions', 
   const response = { status: 200, body: async () => Buffer.from('font bytes') };
   const outcome = await observePendingResult(Promise.resolve(response));
   assert.strictEqual(requireObservedValue(outcome), response);
+});
+
+test('negative host navigation passes an explicit finite timeout to page.goto', async () => {
+  let observed;
+  const page = { goto: async (url, options) => {
+    observed = { url, options };
+    return { status: () => 200 };
+  } };
+  const response = await gotoObservedWithTimeout(page, 'https://admin.huiwen.tw/__g02/cms', {
+    waitUntil: 'domcontentloaded', timeout: 15000,
+  });
+  assert.equal(response.status(), 200);
+  assert.deepEqual(observed, {
+    url: 'https://admin.huiwen.tw/__g02/cms',
+    options: { timeout: 15000, waitUntil: 'domcontentloaded' },
+  });
+  await assert.rejects(gotoObservedWithTimeout(page, 'https://admin.huiwen.tw/slow', { timeout: 15001 }),
+    /no greater than 15000ms/);
+});
+
+test('bounded page operations time out and later rejections stay observed', async () => {
+  const lateRejection = new Promise((_resolve, reject) => setTimeout(() => reject(new Error('late rejection')), 10));
+  await assert.rejects(withTimeout(lateRejection, 1, 'bounded fixture'), /exceeded 1ms/);
+  await new Promise((resolve) => setTimeout(resolve, 15));
 });

@@ -9,6 +9,9 @@ import {
   selectVisualRoutes,
   sha256,
   validateArtifactIdentity,
+  validateVisibleCodepointCoverage,
+  validateVisualTypography,
+  SYSTEM_FALLBACK_CODEPOINTS,
   visualPngMatchesHash,
   visualPngPath,
 } from './page-font-artifact-visual.mjs';
@@ -29,9 +32,9 @@ function pngFixtureBytes(width, height) {
 const visualRoute = 'news/example.html';
 const expectedFonts = [
   { role: 'common', path: 'assets/fonts/page-common-fixture.woff2', family: 'Fixture Page Common',
-    weight: 400, sha256: 'c'.repeat(64), codepoints: [0x4e2d, 0x6587] },
+    weight: 400, bytes: 2048, sha256: 'c'.repeat(64), codepoints: [0x4e2d, 0x6587] },
   { role: 'delta', path: 'assets/fonts/page-delta-fixture.woff2', family: 'Fixture Page Delta',
-    weight: 500, sha256: 'd'.repeat(64), codepoints: [0x6587, 0x65b0] },
+    weight: 500, bytes: 3072, sha256: 'd'.repeat(64), codepoints: [0x6587, 0x65b0] },
 ];
 const routeCodepoints = [0x4e2d, 0x6587, 0x65b0];
 
@@ -40,9 +43,12 @@ function loadedTypography(route = visualRoute, overrides = {}) {
     route,
     artifactRoute: route,
     documentFontsStatus: 'loaded',
-    bodyFontFamily: '"Fixture Page Common", sans-serif',
+    bodyFontFamily: '"Fixture Page Common", "Fixture Page Delta", sans-serif',
     headingFontFamily: '"Fixture Page Delta", "Fixture Page Common", sans-serif',
     visibleCodepoints: [0x4e2d, 0x6587, 0x65b0],
+    visibleCodepointsTruncated: false,
+    uncoveredVisibleGlyphCount: 0,
+    uncoveredVisibleGlyphs: [],
     fontFaces: expectedFonts.map((font) => ({
       family: font.family, weight: String(font.weight), style: 'normal', status: 'loaded',
     })),
@@ -61,17 +67,26 @@ function validCaptureNetwork(route = visualRoute) {
   return {
     route,
     phase: 'visual-capture',
+    snapshotStage: 'after-context-close',
+    observationClosed: true,
+    routeOrigin: 'https://public-artifact.invalid',
     preOnDemandPhases: ['initial', 'visual-capture'],
+    violations: [],
     phaseCounts: {
       initial: { fullTc: 0, pageFont: expectedFonts.length },
       'visual-capture': { fullTc: 0, pageFont: 0 },
+      'post-trigger': { fullTc: 0, pageFont: 0 },
+      unclassified: { fullTc: 0, pageFont: 0 },
     },
     initialFullTcRequestsBeforeCapture: 0,
     fullTcRequests: [],
     preOnDemandFullTcRequests: [],
+    postTriggerFullTcRequests: [],
     pageFontRequests: expectedFonts.map((font) => ({
-      path: `/${font.path}`, phase: 'initial', requestType: 'Font', isMainFrame: true,
+      path: `/${font.path}`, origin: 'https://public-artifact.invalid', phase: 'initial',
+      requestType: 'Font', isMainFrame: true, terminal: 'finished',
       initiator: { type: 'parser', frames: [] }, status: 200, encodedDataLength: 2048, failure: null,
+      bodyBytes: font.bytes, bodySha256: font.sha256, bodyError: null,
     })),
   };
 }
@@ -206,6 +221,74 @@ test('rejects unrendered manifest fonts, wrong route binding, and failed capture
     afterCapture: loadedTypography(),
   } }), /artifact marker does not match/);
 
+  const fallbackFirst = loadedTypography(visualRoute, {
+    bodyFontFamily: 'Arial, "Fixture Page Common", sans-serif',
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: fallbackFirst,
+    stage: 'fallback-first stack',
+  }), /must begin with producer-contract family order Fixture Page Common → Fixture Page Delta/);
+
+  const headingFallbackFirst = loadedTypography(visualRoute, {
+    headingFontFamily: 'Arial, "Fixture Page Delta", "Fixture Page Common", sans-serif',
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: headingFallbackFirst,
+    stage: 'heading fallback-first stack',
+  }), /must begin with producer-contract family order Fixture Page Delta → Fixture Page Common/);
+
+  const bodyOrderWrong = loadedTypography(visualRoute, {
+    bodyFontFamily: '"Fixture Page Delta", "Fixture Page Common", sans-serif',
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: bodyOrderWrong,
+    stage: 'body Common/Delta order',
+  }), /must begin with producer-contract family order Fixture Page Common → Fixture Page Delta/);
+
+  const headingOrderWrong = loadedTypography(visualRoute, {
+    headingFontFamily: '"Fixture Page Common", "Fixture Page Delta", sans-serif',
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: headingOrderWrong,
+    stage: 'heading Delta/Common order',
+  }), /must begin with producer-contract family order Fixture Page Delta → Fixture Page Common/);
+
+  const missingVisibleGlyph = loadedTypography(visualRoute, {
+    visibleCodepoints: [...routeCodepoints, 0x1f600],
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: missingVisibleGlyph,
+    stage: 'uncovered visible character',
+  }), /visible character U\+1F600 is outside the page manifest and explicit JP\/system fallback contracts/);
+
+  const truncatedGlyphs = loadedTypography(visualRoute, { visibleCodepointsTruncated: true });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute, routeCodepoints, expectedFonts, typography: truncatedGlyphs,
+  }), /visible codepoint capture was truncated/);
+
+  const ignoredUncovered = loadedTypography(visualRoute, {
+    uncoveredVisibleGlyphCount: 1,
+    uncoveredVisibleGlyphs: [{ selector: 'p', codepoints: [0x1f600] }],
+  });
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute, routeCodepoints, expectedFonts, typography: ignoredUncovered,
+  }), /has uncovered visible glyphs/);
+
   assert.throws(() => buildVisualCaptureRecord({
     route: visualRoute,
     pngBytes,
@@ -216,7 +299,7 @@ test('rejects unrendered manifest fonts, wrong route binding, and failed capture
     typography: { beforeCapture: loadedTypography(), afterCapture: loadedTypography() },
     preloads: validPreloads(),
     captureNetwork: validCaptureNetwork(),
-  }), /schema-2 route cmap character U\+7121 has no Common\/page Delta font coverage/);
+  }), /manifest-required character U\+7121 is absent from its actual Common\/Delta cmap/);
 
   const fullTcCapture = validCaptureNetwork();
   fullTcCapture.fullTcRequests = [{ path: '/assets/fonts/full-tc.woff2', phase: 'visual-capture' }];
@@ -242,6 +325,10 @@ test('rejects unrendered manifest fonts, wrong route binding, and failed capture
   deniedFontResponse.pageFontRequests[0].status = 403;
   assert.throws(() => build({ captureNetwork: deniedFontResponse }), /did not return HTTP 200/);
 
+  const wrongPageFontHash = validCaptureNetwork();
+  wrongPageFontHash.pageFontRequests[0].bodySha256 = 'e'.repeat(64);
+  assert.throws(() => build({ captureNetwork: wrongPageFontHash }), /hash differs from the producer manifest/);
+
   const missingCdpFontResponse = validCaptureNetwork();
   missingCdpFontResponse.pageFontRequests = missingCdpFontResponse.pageFontRequests.slice(1);
   missingCdpFontResponse.phaseCounts.initial.pageFont -= 1;
@@ -252,4 +339,54 @@ test('rejects unrendered manifest fonts, wrong route binding, and failed capture
   latePageFontResponse.phaseCounts.initial.pageFont -= 1;
   latePageFontResponse.phaseCounts['visual-capture'].pageFont += 1;
   assert.throws(() => build({ captureNetwork: latePageFontResponse }), /first requested during visual capture/);
+});
+
+test('maps manifest JP fallback and only the explicit system-symbol fallback codepoints', () => {
+  const visible = [0x4e2d, 0x6587, 0x65b0, 0x65e5, 0x2630, 0x2733];
+  const result = validateVisibleCodepointCoverage({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: visible,
+    routeFallbacks: { jp: [0x65e5] },
+  });
+  assert.deepEqual(result.coverage, { common: 2, delta: 1, jpFallback: 1, systemFallback: 2 });
+  assert.deepEqual(result.fallbacks.system, SYSTEM_FALLBACK_CODEPOINTS);
+  assert.throws(() => validateVisibleCodepointCoverage({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: [...visible, 0x1f600],
+    routeFallbacks: { jp: [0x65e5] },
+  }), /visible character U\+1F600 is outside the page manifest and explicit JP\/system fallback contracts/);
+  assert.throws(() => validateVisibleCodepointCoverage({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    visibleCodepoints: [...routeCodepoints, 0x1f600],
+    routeFallbacks: { jp: [], system: [0x1f600] },
+  }), /system fallback must match the explicit artifact codepoint allowlist/);
+});
+
+test('visible fallback glyphs still require the Common/Delta prefix and a system fallback', () => {
+  const fallbackTypography = loadedTypography(visualRoute, {
+    visibleCodepoints: [...routeCodepoints, 0x2630],
+    bodyFontFamily: '"Fixture Page Common", "Fixture Page Delta", system-ui',
+    headingFontFamily: '"Fixture Page Delta", "Fixture Page Common", sans-serif',
+  });
+  assert.equal(validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: fallbackTypography,
+    stage: 'explicit symbol fallback',
+  }), true);
+  assert.throws(() => validateVisualTypography({
+    route: visualRoute,
+    routeCodepoints,
+    expectedFonts,
+    typography: { ...fallbackTypography,
+      bodyFontFamily: '"Fixture Page Common", "Fixture Page Delta", Arial' },
+    stage: 'missing generic fallback',
+  }), /no generic system fallback after Fixture Page Common → Fixture Page Delta/);
 });

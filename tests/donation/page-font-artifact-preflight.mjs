@@ -18,7 +18,15 @@ export async function writePageFontArtifactReport(reportPath, results) {
 
 async function readAndVerifyArtifacts({ artifactRoot, fullTcPath, expectedBytes }) {
   const publication = JSON.parse(await readFile(resolve(artifactRoot, 'publication-manifest.json'), 'utf8'));
-  const fontManifest = JSON.parse(await readFile(resolve(artifactRoot, 'page-font-manifest.json'), 'utf8'));
+  const fontManifestBytes = await readFile(resolve(artifactRoot, 'page-font-manifest.json'));
+  const fontManifestSha = createHash('sha256').update(fontManifestBytes).digest('hex');
+  assert.equal(fontManifestSha, publication.files['page-font-manifest.json'],
+    'page-font manifest bytes differ from the publication manifest');
+  const fontManifest = JSON.parse(fontManifestBytes.toString('utf8'));
+  for (const [path, font] of Object.entries(fontManifest.fonts || {})) {
+    assert.equal(font.sha256, publication.files[path],
+      `page-font producer digest for ${path} differs from the publication manifest`);
+  }
   const fullTcBytes = await readFile(resolve(artifactRoot, fullTcPath));
   const fullTcSha = createHash('sha256').update(fullTcBytes).digest('hex');
   assert.equal(fullTcSha, publication.files[fullTcPath]);
