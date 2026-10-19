@@ -30,7 +30,9 @@ import {
 } from './visual-qa-source-integrity.mjs';
 import {
   assertSamePublicationArtifact,
+  publicationMetadataIdentity,
   validatePublicationArtifact,
+  validatePublicationIdentityRecord,
 } from './visual-qa-publication.mjs';
 
 function png(width, height, color) {
@@ -222,6 +224,16 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
       ['publication-manifest.json', { sha256: '4'.repeat(64), bytes: 50 }],
     ])
     : null;
+  const artifactModeEntries = siteSourceKind === 'publication'
+    ? [
+      { path: '.', kind: 'directory', mode: candidate ? '0750' : '0755' },
+      { path: '_headers', kind: 'file', mode: candidate ? '0600' : '0644' },
+      { path: '_redirects', kind: 'file', mode: candidate ? '0600' : '0644' },
+      { path: 'deployment.json', kind: 'file', mode: candidate ? '0600' : '0644' },
+      { path: 'index.html', kind: 'file', mode: candidate ? '0640' : '0644' },
+      { path: 'publication-manifest.json', kind: 'file', mode: candidate ? '0600' : '0644' },
+    ].sort((first, second) => first.path < second.path ? -1 : first.path > second.path ? 1 : 0)
+    : null;
   const publicationArtifact = siteSourceKind === 'publication'
     ? {
       status: 'VERIFIED',
@@ -236,6 +248,9 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
       payloadInventorySha256: sha256(Buffer.from(stableStringifyFixture(publicationPayloads))),
       wrapperInventorySha256: sha256(Buffer.from(stableStringifyFixture(wrapperFiles))),
       wrapperFiles,
+      artifactModeEntryCount: artifactModeEntries.length,
+      artifactModeInventorySha256: sha256(Buffer.from(stableStringifyFixture(artifactModeEntries))),
+      artifactModeEntries,
     }
     : null;
   const baselinePolicy = {
@@ -469,6 +484,34 @@ test('A-05 publication identity verifies a real Git source and exact public arti
     assert.equal(attestation.payloadFileCount, 3);
     assert.equal(attestation.payloads.length, 3);
     assert(attestation.payloads.some(item => item.path === 'assets/site.css' && item.bytes > 0));
+    assert.deepEqual(attestation.artifactModeEntries.map(item => [item.path, item.kind]), [
+      ['.', 'directory'],
+      ['.nojekyll', 'file'],
+      ['_headers', 'file'],
+      ['_redirects', 'file'],
+      ['assets', 'directory'],
+      ['assets/site.css', 'file'],
+      ['deployment.json', 'file'],
+      ['index.html', 'file'],
+      ['publication-manifest.json', 'file'],
+    ]);
+    assert.equal(attestation.artifactModeEntryCount, attestation.artifactModeEntries.length);
+    assert.match(attestation.artifactModeInventorySha256, /^[a-f0-9]{64}$/);
+    const publicationIdentity = publicationMetadataIdentity(attestation);
+    assert.deepEqual(publicationIdentity.artifactModeEntries, attestation.artifactModeEntries);
+    assert.equal(publicationIdentity.artifactModeInventorySha256, attestation.artifactModeInventorySha256);
+    const metadataRecord = {
+      sourceGitSHA: sourceSHA,
+      sourceSHA,
+      siteSourceSHA: sourceSHA,
+      siteSourceKind: 'publication',
+      servedRootRole: 'publication-artifact',
+      publicationArtifact: publicationIdentity,
+      publicationPayloads: attestation.payloads,
+    };
+    assert.equal(validatePublicationIdentityRecord(metadataRecord, sourceSHA), true);
+    const unchanged = await validatePublicationArtifact({ artifactRoot, sourceRoot, sourceGitSHA: sourceSHA });
+    assert.doesNotThrow(() => assertSamePublicationArtifact(attestation, unchanged));
 
     const changedRoot = join(directory, 'changed-artifact');
     await createMinimalPublicationArtifact(changedRoot, sourceSHA, { 'index.html': 'before\n' });
@@ -515,6 +558,49 @@ test('A-05 publication identity verifies a real Git source and exact public arti
     const secretRoot = join(directory, 'secret-artifact');
     await createMinimalPublicationArtifact(secretRoot, sourceSHA, { 'content.json': '{"api_key":"fixture-secret-value-123456"}\n' });
     await assert.rejects(validatePublicationArtifact({ artifactRoot: secretRoot, sourceRoot, sourceGitSHA: sourceSHA }), /secret-like value/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('A-05 publication artifact pre/post identity rejects same-byte payload, directory, wrapper, and root mode changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'a05-publication-artifact-mode-'));
+  const sourceRoot = join(directory, 'git-source');
+  const cases = [
+    { name: 'payload', path: 'index.html', entryPath: 'index.html' },
+    { name: 'directory', path: 'assets', entryPath: 'assets' },
+    { name: 'wrapper', path: '_headers', entryPath: '_headers' },
+    { name: 'root', path: '.', entryPath: '.' },
+  ];
+  try {
+    await initRepositoryFixture(sourceRoot);
+    await writeFile(join(sourceRoot, 'index.html'), '<main>canonical source</main>\n');
+    commitFixtureRepository(sourceRoot);
+    const actualSourceSHA = gitAtFixture(sourceRoot, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    for (const item of cases) {
+      const artifactRoot = join(directory, `artifact-${item.name}`);
+      await createMinimalPublicationArtifact(artifactRoot, actualSourceSHA, {
+        'index.html': '<main>same payload bytes</main>\n',
+        'assets/site.css': 'body{color:#123}\n',
+      });
+      const before = await validatePublicationArtifact({ artifactRoot, sourceRoot, sourceGitSHA: actualSourceSHA });
+      const target = item.path === '.' ? artifactRoot : join(artifactRoot, ...item.path.split('/'));
+      const originalMode = (await lstat(target)).mode & 0o7777;
+      await chmod(target, originalMode ^ 0o001);
+      const after = await validatePublicationArtifact({ artifactRoot, sourceRoot, sourceGitSHA: actualSourceSHA });
+
+      assert.deepEqual(after.payloads, before.payloads, `${item.name}: payload bytes or hashes changed`);
+      assert.deepEqual(after.wrapperFiles, before.wrapperFiles, `${item.name}: wrapper bytes or hashes changed`);
+      assert.equal(after.payloadInventorySha256, before.payloadInventorySha256, `${item.name}: payload inventory changed`);
+      assert.equal(after.wrapperInventorySha256, before.wrapperInventorySha256, `${item.name}: wrapper inventory changed`);
+      assert.notEqual(after.artifactModeInventorySha256, before.artifactModeInventorySha256, `${item.name}: mode fingerprint did not change`);
+      assert.notEqual(
+        after.artifactModeEntries.find(entry => entry.path === item.entryPath)?.mode,
+        before.artifactModeEntries.find(entry => entry.path === item.entryPath)?.mode,
+        `${item.name}: recorded mode did not change`
+      );
+      assert.throws(() => assertSamePublicationArtifact(before, after), /integrity changed/);
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -918,6 +1004,11 @@ test('A-05 cross-source review verifies both capture bundles and emits review di
     assert.equal(publicationReview.approval, null);
     assert.equal(publicationReview.source.reference.siteSourceKind, 'publication');
     assert.equal(publicationReview.source.candidate.servedRootRole, 'publication-artifact');
+    assert.notEqual(
+      publicationReview.source.reference.publicationArtifact.artifactModeInventorySha256,
+      publicationReview.source.candidate.publicationArtifact.artifactModeInventorySha256,
+      'base and candidate artifacts may carry different native modes without being rejected as a pre/post mutation'
+    );
     await assert.rejects(createCrossSourceReview({
       referenceManifestPath: reference.manifestPath,
       candidateManifestPath: publicationCandidate.manifestPath,
