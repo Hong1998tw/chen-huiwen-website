@@ -54,6 +54,11 @@ jobs:
         run: |
           node --check tests/donation/ux-acceptance-deadline.test.mjs
           node --unhandled-rejections=strict --test tests/donation/ux-acceptance-deadline.test.mjs
+      - name: Verify Explore pagination readiness with pure Node fixtures
+        run: |
+          node --check tests/donation/explore-pagination-readiness.mjs
+          node --check tests/donation/explore-pagination-readiness.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/explore-pagination-readiness.test.mjs
       - name: Verify complete visible Han font observation batches with pure Node fixtures
         run: |
           node --check tests/donation/font-rendering-observation.mjs
