@@ -54,6 +54,11 @@ jobs:
         run: |
           node --check tests/donation/ux-acceptance-deadline.test.mjs
           node --unhandled-rejections=strict --test tests/donation/ux-acceptance-deadline.test.mjs
+      - name: Verify complete visible Han font observation batches with pure Node fixtures
+        run: |
+          node --check tests/donation/font-rendering-observation.mjs
+          node --check tests/donation/font-rendering-observation.test.mjs
+          node --unhandled-rejections=strict --test tests/donation/font-rendering-observation.test.mjs
       - run: npm ci --ignore-scripts --prefix tests/donation
       - run: npm run test:visual-qa --prefix tests/donation
       - run: node --check tests/donation/wcag22aa.mjs
