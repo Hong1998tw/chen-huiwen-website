@@ -70,7 +70,7 @@ jobs:
           python scripts/verify_security_headers.py --base-url http://127.0.0.1:8789 --artifact-root _site --report tests/donation/results/cloudflare-assets/security-headers.json
           BASE_URL=http://127.0.0.1:8789/ node tests/donation/public-asset-runtime-smoke.mjs
           BASE_URL=http://127.0.0.1:8789/ node tests/donation/page-font-artifact.mjs
-          node --test tests/donation/service-worker-cache-policy.test.mjs
+          node --test tests/donation/service-worker-cache-policy.test.mjs tests/donation/service-worker-shell-contract.test.mjs
           BASE_URL=http://127.0.0.1:8789 node tests/donation/service-worker-artifact-browser.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

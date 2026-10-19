@@ -6,6 +6,7 @@ import {once} from 'node:events';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
+import {parseServiceWorkerShell, verifyVersionedShellAssets} from './service-worker-shell-contract.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ARTIFACT = join(ROOT, '_site');
@@ -420,8 +421,13 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     'the deployment receipt must identify the served publication manifest');
   const cacheName = emittedWorkerText.match(/const CACHE='([^']+)';/)?.[1];
   assert(cacheName, 'emitted worker must define its derived cache name');
-  const shell = JSON.parse(emittedWorkerText.match(/const SHELL=(\[[^;]*\]);/)?.[1] || 'null');
-  const requiredShell = JSON.parse(emittedWorkerText.match(/const REQUIRED_SHELL=(\[[^;]*\]);/)?.[1] || 'null');
+  const {shell, requiredShell} = parseServiceWorkerShell(emittedWorkerText);
+  const shellAssets = await verifyVersionedShellAssets(
+    shell,
+    manifest.files,
+    path => readFile(join(ARTIFACT, path)),
+  );
+  const shellAsset = shellAssets[0];
   const expectedOfflineFontUrls = offlineFontClosure.fonts.map(font => './' + font.path);
   assert(Array.isArray(shell), 'emitted worker must define exact SHELL URLs');
   assert.deepEqual(requiredShell, expectedOfflineFontUrls,
@@ -449,19 +455,20 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     pageFontManifestSha256: offlineFontClosure.fontManifestSha256,
     offlineHtmlSha256: offlineFontClosure.offlineHtml.sha256,
     offlineFonts: offlineFontClosure.fonts.map(({path, sha256: digest}) => ({path, sha256: digest})),
+    shellCssJsAssets: shellAssets,
   };
 
-  const queryEntry = shell.find(value => /\.(?:css|js)\?/.test(value));
-  assert(queryEntry, 'artifact SHELL must contain a versioned CSS or JavaScript URL');
-  const absoluteShellUrl = new URL(queryEntry, new URL('/', BASE_URL)).href;
-  const changedQueryUrl = absoluteShellUrl.replace(/\?.*$/, '?c11-different-query=1');
+  const absoluteShellUrl = new URL(shellAsset.url, new URL('/', BASE_URL)).href;
+  const changedShellUrl = new URL(absoluteShellUrl);
+  changedShellUrl.searchParams.set('c11-different-query', '1');
+  const changedShellCacheUrl = changedShellUrl.href;
   const onlineProbe = new URL('/offline.html', BASE_URL);
   onlineProbe.searchParams.set('c11-context-offline-probe', 'online');
   const offlineProbe = new URL('/offline.html', BASE_URL);
   offlineProbe.searchParams.set('c11-context-offline-probe', 'offline');
   Object.assign(state.cacheKeyUrls, {
     exactShell: absoluteShellUrl,
-    changedShellQuery: changedQueryUrl,
+    changedShellQuery: changedShellCacheUrl,
     onlineWorkerProbe: onlineProbe.href,
     offlineWorkerProbe: offlineProbe.href,
     offlineHtml: offlineFontClosure.offlineHtml.url,
@@ -493,18 +500,59 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   }
   const cacheHit = await page.evaluate(async url => {
     const response = await fetch(url, {cache: 'no-store'});
-    return {status: response.status, body: await response.text()};
-  }, absoluteShellUrl);
-  assert.equal(cacheHit.status, 200, 'a query-bearing SHELL asset must be served');
-  const shellCacheState = await page.evaluate(async url => {
-    const cache = await caches.open((await caches.keys()).find(key => key.startsWith('huiwen-digital-v16-')));
+    const bytes = await response.arrayBuffer();
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
     return {
-      exactHit: Boolean(await cache.match(url)),
-      alteredHit: Boolean(await cache.match(url.replace(/\?.*$/, '?c11-different-query=1'))),
+      status: response.status,
+      bodySha256: [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join(''),
+      contentType: response.headers.get('content-type') || null,
+      cacheControl: response.headers.get('cache-control') || null,
+      cachedAt: response.headers.get('x-huiwen-cached-at') || null,
     };
   }, absoluteShellUrl);
-  assert.equal(shellCacheState.exactHit, true, 'the complete public query must be present in Cache Storage');
-  assert.equal(shellCacheState.alteredHit, false, 'a changed query must not match the cached key');
+  assert.equal(cacheHit.status, 200, 'a manifest-owned, versioned SHELL CSS/JS asset must be served');
+  assert.equal(cacheHit.bodySha256, shellAsset.sha256,
+    'the served SHELL asset body must match its publication manifest SHA-256');
+  assert.match(cacheHit.contentType || '', shellAsset.extension === 'css'
+    ? /^text\/css(?:\s*;|\s*$)/i
+    : /^(?:application|text)\/(?:javascript|ecmascript)(?:\s*;|\s*$)/i,
+  'the served SHELL asset must retain its CSS or JavaScript content type');
+  assert(cacheHit.cacheControl, 'the served SHELL asset must expose Cache-Control');
+  assert(!/\b(?:private|no-store)\b/i.test(cacheHit.cacheControl),
+    'a manifest-owned public SHELL asset must not return private or no-store headers');
+  assert(cacheHit.cachedAt, 'the served SHELL asset must retain its cache timestamp header');
+  const shellCacheState = await page.evaluate(async ({name, url, changedUrl}) => {
+    const cache = await caches.open(name);
+    const response = await cache.match(url);
+    let bodySha256 = null;
+    if (response) {
+      const bytes = await response.arrayBuffer();
+      const hash = await crypto.subtle.digest('SHA-256', bytes);
+      bodySha256 = [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join('');
+    }
+    return {
+      exactHit: Boolean(response),
+      status: response?.status ?? null,
+      bodySha256,
+      contentType: response?.headers.get('content-type') || null,
+      cacheControl: response?.headers.get('cache-control') || null,
+      cachedAt: response?.headers.get('x-huiwen-cached-at') || null,
+      alteredHit: Boolean(await cache.match(changedUrl)),
+    };
+  }, {name: cacheName, url: absoluteShellUrl, changedUrl: changedShellCacheUrl});
+  assert.equal(shellCacheState.exactHit, true, 'the exact published SHELL URL must be present in Cache Storage');
+  assert.equal(shellCacheState.status, 200, 'the exact SHELL Cache Storage entry must retain HTTP 200');
+  assert.equal(shellCacheState.bodySha256, shellAsset.sha256,
+    'the exact SHELL Cache Storage body must match the publication manifest SHA-256');
+  assert.equal(shellCacheState.contentType, cacheHit.contentType,
+    'the selected SHELL Cache Storage entry must preserve its response content type');
+  assert.equal(shellCacheState.cacheControl, cacheHit.cacheControl,
+    'the selected SHELL Cache Storage entry must preserve its public cache directive');
+  assert(shellCacheState.cachedAt, 'the exact SHELL Cache Storage entry must retain its cache timestamp');
+  assert(!/\b(?:private|no-store)\b/i.test(shellCacheState.cacheControl || ''),
+    'Cache Storage must not retain private or no-store SHELL responses');
+  assert.equal(shellCacheState.alteredHit, false,
+    'a changed query must not match the exact published SHELL cache key');
 
   const initialProbeKeys = await captureServiceWorkerCacheKeys(page, cacheName, state.cacheKeyUrls);
   offlineDiagnostics.initialProbeCacheKeys = initialProbeKeys;
@@ -587,8 +635,8 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
     } catch (error) {
       return {ok: false, error: error.name};
     }
-  }, changedQueryUrl);
-  offlineDiagnostics.probes.changedShellQuery = {url: changedQueryUrl, ...changedQuery};
+  }, changedShellCacheUrl);
+  offlineDiagnostics.probes.changedShellQuery = {url: changedShellCacheUrl, ...changedQuery};
   assert.equal(changedQuery.ok, false, 'a changed query must not reuse the cached response while offline');
 
   const offlineWorkerProbe = await page.evaluate(async url => {
@@ -980,10 +1028,11 @@ async function runArtifactChecksBody(browser, emittedWorker, manifest, deploymen
   assert.equal(restoredState.pageOnline, true, 'the context page must report online after setOffline(false)');
   return {
     checks: ['controller and emitted cache identity', 'old cache cleanup', 'unrelated cache preservation',
-      'query-preserving exact cache hit', 'context and Service Worker offline network failure',
+      'manifest-owned versioned SHELL asset header/body/cache-key verification',
+      'context and Service Worker offline network failure',
       'required offline HTML and common/delta font bytes match source SHA-256',
       'changed offline font query remains a cache miss', 'offline fallback and Taiwan-time banner'],
-    shellEntry: queryEntry,
+    shellEntry: shellAsset.url,
     activeScript: activeState.activeScript,
     cacheName,
   };
