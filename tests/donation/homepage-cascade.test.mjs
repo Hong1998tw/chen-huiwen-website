@@ -209,7 +209,7 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'desktop portrait frame keeps its established ratio');
   assert.equal(frame.declarations.get('overflow'), 'hidden', 'desktop portrait frame keeps the image crop clipped');
   assert.equal(baseImage.declarations.get('object-fit'), 'contain', 'desktop zoom scales the contain-fitted source image');
-  assertDeclarations(desktopImage, { transform: 'scale(3)', 'transform-origin': '50% 44%' }, 'desktop portrait close-up');
+  assertDeclarations(desktopImage, { transform: 'scale(3)', 'transform-origin': '50% 44%', 'object-position': '50% 50%' }, 'desktop portrait close-up');
   assert.equal(mobileImageRules.some(rule => rule.declarations.has('transform')), false, 'mobile portrait stays unscaled');
   assert.equal(ruleFor(rules, '#main.home-redesign .portrait-frame', 'max-width: 780px')?.declarations.get('aspect-ratio'), '2 / 3', 'mobile portrait frame uses the source portrait ratio');
   assertDeclarations(caption, { display: 'block', position: 'absolute', 'clip-path': 'inset(50%)' }, 'mobile caption remains visually hidden but available to assistive technology');

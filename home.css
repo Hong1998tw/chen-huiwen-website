@@ -127,6 +127,7 @@
   #main.home-redesign .portrait-frame img {
     transform: scale(3);
     transform-origin: 50% 44%;
+    object-position: 50% 50%;
   }
 }
 #main.home-redesign .hero-portrait figcaption { display: block; position: static; margin-top: 8px; color: var(--muted); font-size: 13px; letter-spacing: .08em; }
