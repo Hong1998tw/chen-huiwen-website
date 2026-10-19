@@ -195,11 +195,12 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   }, 'desktop lawyer link');
   assertDeclarations(mobileLawyer, { margin: '0' }, 'mobile lawyer link clears the desktop overlap margin');
   assertDeclarations(hero, {
-    'grid-template-columns': 'minmax(0, 1fr) minmax(0, .62fr)',
+    'grid-template-columns': 'minmax(0, 1fr) minmax(0, 1fr)',
     'grid-template-rows': 'auto auto auto auto auto auto',
     'grid-template-areas': '"eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer"',
-    'row-gap': '18px',
+    'row-gap': '12px',
     'column-gap': '14px',
+    'padding-top': '12px',
   }, 'mobile hero');
   assertDeclarations(copy, {
     display: 'contents',
@@ -221,7 +222,7 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     width: '100%',
     height: 'auto',
     'min-height': '0',
-    'max-width': '160px',
+    'max-width': '190px',
     margin: '0',
     'justify-self': 'end',
     'align-self': 'start',
@@ -277,7 +278,7 @@ test('canonical portrait sizes match the generated homepage image source', async
   const built = await read('index.html');
   const source = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<source\b[^>]*sizes="([^"]+)"/i)?.[1];
   const alt = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<img\b[^>]*alt="([^"]+)"/i)?.[1];
-  const expectedSizes = '(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(38.3vw - 20px), 160px), (max-width: 780px) min(calc(38.3vw - 30px), 160px), 1140px';
+  const expectedSizes = '(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(50vw - 27px), 190px), (max-width: 780px) min(calc(50vw - 39px), 190px), 1140px';
 
   assert.equal(source(template), expectedSizes, 'canonical template preserves mobile sizing and requests three-times desktop pixels');
   assert.equal(source(built), expectedSizes, 'generated homepage preserves mobile sizing and requests three-times desktop pixels');

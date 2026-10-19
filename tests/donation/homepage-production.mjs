@@ -20,8 +20,10 @@ const mapSource=await readFile(root+'map.js','utf8');
 const browser=await chromium.launch();
 const report={base,method:'local generated source in Chromium; not Lighthouse; no external requests',checks:[],errors:[]};
 const viewportCases=[320,360,390,430,780,781,1180,1440].map(width=>({width,height:960}));
+viewportCases.push({width:640,height:900});
 viewportCases.push({width:1180,height:757});
 viewportCases.push({width:1440,height:900});
+const mobilePortraitBaselines=new Map([[320,101.8],[360,117.1],[390,128.6],[430,143.9],[780,160]]);
 try{
  if(!live)for(let n=0;n<60;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const {width,height} of viewportCases){
@@ -89,8 +91,13 @@ try{
    assert(Math.abs(heroGeometry.portraitImage.width/heroGeometry.frame.width-1)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
    assert(Math.abs(heroGeometry.portraitImage.height/heroGeometry.frame.height-1)<=.01,JSON.stringify({heroGeometry,portraitRendering}));
    assert(Math.abs(portraitRendering.transformScaleX-1)<=.01&&Math.abs(portraitRendering.transformScaleY-1)<=.01,JSON.stringify(portraitRendering));
+   if(mobilePortraitBaselines.has(width)){
+    const baselineWidth=mobilePortraitBaselines.get(width);
+    assert(heroGeometry.frame.width>=baselineWidth*1.18-.5,JSON.stringify({width,baselineWidth,heroGeometry}));
+   }
    const titleLineCount=await page.locator('.hero h1 span').evaluateAll(spans=>spans.map(span=>{const range=document.createRange();range.selectNodeContents(span);return range.getClientRects().length;}));
    assert.deepEqual(titleLineCount,[1,1],`mobile title keeps its two authored lines at ${width}px: ${JSON.stringify(titleLineCount)}`);
+   if(width===640&&height===900)assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
   }else{
    assert(heroGeometry.title.right<=heroGeometry.frame.left,JSON.stringify(heroGeometry));
    assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));

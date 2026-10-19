@@ -348,11 +348,12 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
 
 @media (max-width: 780px) {
   #main.home-redesign .hero {
-    grid-template-columns: minmax(0, 1fr) minmax(0, .62fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto auto auto auto auto;
     grid-template-areas: "eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer";
-    row-gap: 18px;
+    row-gap: 12px;
     column-gap: 14px;
+    padding-top: 12px;
   }
   #main.home-redesign .hero-copy {
     display: contents;
@@ -387,7 +388,7 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
     width: 100%;
     height: auto;
     min-height: 0;
-    max-width: 160px;
+    max-width: 190px;
     margin: 0;
     justify-self: end;
     align-self: start;
