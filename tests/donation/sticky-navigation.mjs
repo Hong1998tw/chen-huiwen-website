@@ -306,6 +306,7 @@ try {
         menuOpened:document.querySelector('.menu-toggle').getAttribute('aria-expanded')==='true',
       }));
       try {
+        // This fixture holds requestAnimationFrame for the header sample; poll by timer here.
         await page.waitForFunction(()=>{
           const header=document.querySelector('.site-header');
           const navigation=document.querySelector('#navigation');
@@ -313,7 +314,7 @@ try {
           return header.classList.contains('is-compact')&&
             Math.abs(header.getBoundingClientRect().height-52)<=0.5&&
             menuTop===Math.ceil(header.getBoundingClientRect().bottom+12);
-        },null,{timeout:2000});
+        },null,{timeout:2000,polling:10});
       } catch(error) {
         try {
           // Preserve the exact end state before taking a short native-RAF trace.
