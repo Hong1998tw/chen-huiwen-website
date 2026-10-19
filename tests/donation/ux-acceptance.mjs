@@ -1,12 +1,17 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { withTimeout } from './page-font-artifact-lifecycle.mjs';
 import { startStaticServer } from './static-server.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const results = join(root, 'tests/donation/results/ux-acceptance');
+const HOMEPAGE_LAYOUT_TIMEOUT_MS = 10000;
+const HOMEPAGE_DIAGNOSTIC_TIMEOUT_MS = 3000;
+const HOMEPAGE_SCREENSHOT_TIMEOUT_MS = 5000;
+const HOMEPAGE_DIAGNOSTICS_KEY = '__huiwenUxAcceptanceHomepageLayoutDiagnostics';
 await mkdir(results, { recursive: true });
 const server = await startStaticServer({ root, compression: 'none' });
 const base = server.url;
@@ -44,8 +49,16 @@ async function assertNoOverflow(expectedWidth) {
   report.viewports.push({ path: new URL(page.url()).pathname, width: expectedWidth, scrollWidth: result.document });
   return result;
 }
+function safeDiagnosticError(error) {
+  const name = String(error?.name || 'Error').slice(0, 80);
+  const message = String(error?.message || 'unknown error').slice(0, 500)
+    .replace(/https?:\/\/[^\s"'<>]+/gi, url => url.replace(/[?#].*$/, ''))
+    .replace(/\b(token|session|cookie|authorization|csrf|state|code|key)\s*[:=]\s*[^\s,;&]+/gi, '$1=[redacted]')
+    .replace(/([?&](?:token|session|cookie|authorization|csrf|state|code|key)=)[^&#\s]*/gi, '$1[redacted]');
+  return `${name}: ${message}`;
+}
 async function waitForHomepageLayout() {
-  return page.evaluate(async () => {
+  const evaluation = Promise.resolve().then(() => page.evaluate(async diagnosticsKey => {
     const bounded = promise => new Promise(resolve => {
       const timer = setTimeout(() => resolve(false), 5000);
       Promise.resolve(promise).then(() => { clearTimeout(timer); resolve(true); }, () => {
@@ -54,10 +67,8 @@ async function waitForHomepageLayout() {
       });
     });
     const portrait = document.querySelector('.hero-portrait img');
-    const [fontsReady, portraitDecoded] = await Promise.all([
-      bounded(document.fonts.ready),
-      portrait ? bounded(portrait.decode()) : Promise.resolve(false),
-    ]);
+    let fontsReady = null;
+    let portraitDecoded = null;
     const rect = element => {
       if (!element) return null;
       const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
@@ -83,6 +94,13 @@ async function waitForHomepageLayout() {
     };
     let current = snapshot();
     let stableFrames = 0;
+    let layoutStable = false;
+    const publishDiagnostics = () => {
+      const value = { ...current, stableFrames, layoutStable };
+      window[diagnosticsKey] = value;
+      return value;
+    };
+    publishDiagnostics();
     const layoutKey = value => JSON.stringify({
       viewport: value.viewport,
       scrollWidth: value.document.scrollWidth,
@@ -90,15 +108,79 @@ async function waitForHomepageLayout() {
       hero: value.hero,
       taskBoxes: value.taskBoxes,
     });
+    const waits = [
+      bounded(document.fonts.ready).then(value => {
+        fontsReady = value;
+        current = snapshot();
+        publishDiagnostics();
+        return value;
+      }),
+      portrait ? bounded(portrait.decode()).then(value => {
+        portraitDecoded = value;
+        current = snapshot();
+        publishDiagnostics();
+        return value;
+      }) : Promise.resolve(false),
+    ];
+    await Promise.all(waits);
+    current = snapshot();
+    publishDiagnostics();
     for (let frame = 0; frame < 8; frame++) {
       await new Promise(requestAnimationFrame);
       const next = snapshot();
       stableFrames = layoutKey(next) === layoutKey(current) ? stableFrames + 1 : 0;
       current = next;
+      layoutStable = stableFrames >= 2;
+      publishDiagnostics();
       if (stableFrames >= 2) break;
     }
-    return { ...current, stableFrames, layoutStable: stableFrames >= 2 };
-  });
+    const readiness = publishDiagnostics();
+    delete window[diagnosticsKey];
+    return readiness;
+  }, HOMEPAGE_DIAGNOSTICS_KEY));
+  try {
+    return await withTimeout(evaluation, HOMEPAGE_LAYOUT_TIMEOUT_MS, 'homepage layout readiness');
+  } catch (primaryError) {
+    let partialDiagnostics = null;
+    let diagnosticFailure = null;
+    try {
+      partialDiagnostics = await withTimeout(page.evaluate(diagnosticsKey => {
+        const value = window[diagnosticsKey] || null;
+        if (value) delete window[diagnosticsKey];
+        return value;
+      }, HOMEPAGE_DIAGNOSTICS_KEY), HOMEPAGE_DIAGNOSTIC_TIMEOUT_MS, 'homepage partial diagnostics');
+      if (!partialDiagnostics) diagnosticFailure = 'partial layout diagnostics were not published';
+    } catch (diagnosticError) {
+      diagnosticFailure = safeDiagnosticError(diagnosticError);
+    }
+    return {
+      layoutStable: false,
+      primaryFailure: safeDiagnosticError(primaryError),
+      partialDiagnostics,
+      diagnosticFailure,
+    };
+  }
+}
+async function captureHomepage1180Screenshot() {
+  const screenshotPath = join(results, 'homepage-1180x757.png');
+  try {
+    const png = await withTimeout(page.screenshot({ fullPage: false }),
+      HOMEPAGE_SCREENSHOT_TIMEOUT_MS, '1180×757 homepage screenshot');
+    await writeFile(screenshotPath, png);
+    return { status: 'captured', file: 'homepage-1180x757.png', bytes: png.length };
+  } catch (error) {
+    let staleArtifactRemovalFailure = null;
+    try {
+      await unlink(screenshotPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') staleArtifactRemovalFailure = safeDiagnosticError(cleanupError);
+    }
+    return {
+      status: 'not-captured',
+      error: safeDiagnosticError(error),
+      staleArtifactRemovalFailure,
+    };
+  }
 }
 
 try {
@@ -244,14 +326,20 @@ try {
     await page.goto(base + 'index.html');
     const readiness = await waitForHomepageLayout();
     if (width === 1180) {
+      readiness.screenshot = await captureHomepage1180Screenshot();
       report.homepage1180 = readiness;
-      await page.screenshot({ path: join(results, 'homepage-1180x757.png'), fullPage: false });
     }
     await check(`homepage reflows at ${width}px with all three task links visible and no horizontal overflow`, async () => {
+      assert(readiness.layoutStable, readiness.primaryFailure
+        ? `homepage layout readiness failed: ${JSON.stringify(readiness)}`
+        : `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
       await page.locator('.home-task-paths a').first().waitFor({ state: 'visible', timeout: 5000 });
       assert(readiness.fonts.ready, `homepage fonts did not become ready: ${JSON.stringify(readiness)}`);
       assert(readiness.portrait?.decoded, `homepage portrait did not decode: ${JSON.stringify(readiness)}`);
-      assert(readiness.layoutStable, `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
+      if (width === 1180) {
+        assert.equal(readiness.screenshot.status, 'captured',
+          `1180×757 homepage screenshot was not captured: ${JSON.stringify(readiness.screenshot)}`);
+      }
       await assertNoOverflow(width);
       const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
       assert.equal(boxes.length,3);
@@ -259,6 +347,10 @@ try {
         `homepage task links must fit inside ${width}×${height}: ${JSON.stringify({ readiness, boxes })}`);
       return { boxes, readiness };
     });
+    if (width === 1180 && readiness.primaryFailure && readiness.diagnosticFailure
+      && readiness.screenshot.status === 'not-captured') {
+      throw new Error('1180×757 renderer did not answer bounded diagnostics or screenshot; see the saved UX report.');
+    }
   }
 
   await check('five out-of-order history records keep the canonical latest date in Explore, search index and detail page',async()=>{
