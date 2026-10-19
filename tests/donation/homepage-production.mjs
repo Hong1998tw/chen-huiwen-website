@@ -23,6 +23,9 @@ const viewportCases=[320,360,390,430,780,781,1180,1440].map(width=>({width,heigh
 viewportCases.push({width:640,height:900});
 viewportCases.push({width:1180,height:757});
 viewportCases.push({width:1440,height:900});
+viewportCases.push({width:390,height:844});
+viewportCases.push({width:320,height:900});
+viewportCases.push({width:427,height:900});
 const mobilePortraitBaselines=new Map([[320,101.8],[360,117.1],[390,128.6],[430,143.9],[780,160]]);
 try{
  if(!live)for(let n=0;n<60;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -98,6 +101,10 @@ try{
    const titleLineCount=await page.locator('.hero h1 span').evaluateAll(spans=>spans.map(span=>{const range=document.createRange();range.selectNodeContents(span);return range.getClientRects().length;}));
    assert.deepEqual(titleLineCount,[1,1],`mobile title keeps its two authored lines at ${width}px: ${JSON.stringify(titleLineCount)}`);
    if(width===640&&height===900)assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
+   if([[390,844],[320,900],[427,900]].some(([targetWidth,targetHeight])=>width===targetWidth&&height===targetHeight)){
+    assert(heroGeometry.tasks.top>=0,JSON.stringify({heroGeometry,portraitRendering,height}));
+    assert(heroGeometry.tasks.bottom<=height,JSON.stringify({heroGeometry,portraitRendering,height}));
+   }
   }else{
    assert(heroGeometry.title.right<=heroGeometry.frame.left,JSON.stringify(heroGeometry));
    assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));

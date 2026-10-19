@@ -200,7 +200,7 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'grid-template-areas': '"eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer"',
     'row-gap': '12px',
     'column-gap': '14px',
-    'padding-top': '12px',
+    'padding-top': '8px',
   }, 'mobile hero');
   assertDeclarations(copy, {
     display: 'contents',

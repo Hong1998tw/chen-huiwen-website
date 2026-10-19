@@ -353,7 +353,7 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
     grid-template-areas: "eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer";
     row-gap: 12px;
     column-gap: 14px;
-    padding-top: 12px;
+    padding-top: 8px;
   }
   #main.home-redesign .hero-copy {
     display: contents;
