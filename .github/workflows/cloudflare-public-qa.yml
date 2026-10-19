@@ -43,7 +43,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_public_security_headers.py
       - run: npx --yes wrangler@4.143.1 deploy --dry-run --config wrangler.public.jsonc
       - name: Verify page-font failure report lifecycle
-        run: node --unhandled-rejections=strict --test tests/donation/page-font-artifact-collector.test.mjs tests/donation/page-font-artifact-lifecycle.test.mjs tests/donation/page-font-artifact-network-gate.test.mjs tests/donation/page-font-artifact-preflight.test.mjs tests/donation/page-font-artifact-visual.test.mjs
+        run: node --unhandled-rejections=strict --test tests/donation/cms-preview-fixture.test.mjs tests/donation/page-font-artifact-collector.test.mjs tests/donation/page-font-artifact-lifecycle.test.mjs tests/donation/page-font-artifact-network-gate.test.mjs tests/donation/page-font-artifact-preflight.test.mjs tests/donation/page-font-artifact-visual.test.mjs
       - name: Verify public asset runtime proof and negative cases
         run: |
           node --check tests/donation/public-asset-runtime-proof.mjs
