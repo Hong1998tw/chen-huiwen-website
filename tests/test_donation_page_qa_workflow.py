@@ -64,6 +64,27 @@ def outcome_lines(outcomes):
 
 
 class DonationPageQaWorkflowTests(unittest.TestCase):
+    def assert_artifact_and_gate_are_strict(self, steps):
+        artifact = next(
+            step for step in steps
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        gate = next(
+            step for step in steps
+            if step.get("name") == "Require success from every independent browser suite"
+        )
+        self.assertNotEqual(
+            artifact.get("continue-on-error"),
+            "true",
+            "artifact upload failure must fail the workflow",
+        )
+        self.assertNotEqual(
+            gate.get("continue-on-error"),
+            "true",
+            "the final outcome gate failure must fail the workflow",
+        )
+        return artifact, gate
+
     def test_browser_suites_are_independent_and_final_gate_is_mandatory(self):
         workflow = load_workflow()
         self.assertEqual(workflow["on"], {"pull_request": ""})
@@ -102,14 +123,7 @@ class DonationPageQaWorkflowTests(unittest.TestCase):
             with self.subTest(preflight=step.get("name", step.get("run", step.get("uses")))):
                 self.assertNotEqual(step.get("continue-on-error"), "true")
 
-        artifact = next(
-            step for step in steps
-            if step.get("uses", "").startswith("actions/upload-artifact@")
-        )
-        gate = next(
-            step for step in steps
-            if step.get("name") == "Require success from every independent browser suite"
-        )
+        artifact, gate = self.assert_artifact_and_gate_are_strict(steps)
         self.assertEqual(artifact["if"], "always()")
         self.assertIn("tests/donation/results/", artifact["with"]["path"])
         self.assertEqual(gate["if"], "always()")
@@ -126,6 +140,18 @@ class DonationPageQaWorkflowTests(unittest.TestCase):
             configured,
             {suite_id: f"${{{{ steps.{suite_id}.outcome }}}}" for suite_id, _ in SUITES},
         )
+
+    def test_workflow_contract_rejects_weak_final_gate_mutation(self):
+        workflow = load_workflow()
+        steps = workflow["jobs"]["browser"]["steps"]
+        gate = next(
+            step for step in steps
+            if step.get("name") == "Require success from every independent browser suite"
+        )
+        gate["continue-on-error"] = "true"
+
+        with self.assertRaisesRegex(AssertionError, "final outcome gate failure"):
+            self.assert_artifact_and_gate_are_strict(steps)
 
     def test_outcome_gate_accepts_only_all_success(self):
         outcomes = {suite_id: "success" for suite_id, _ in SUITES}
