@@ -8,6 +8,7 @@ import {startStaticServer} from './static-server.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const output=resolve(root,'tests/donation/results/achievement-list');
+const FILTER_DIALOG_CLOSE_TIMEOUT_MS=3000;
 await mkdir(output,{recursive:true});
 const publicCases=JSON.parse(await readFile(resolve(root,'data/achievements.json'),'utf8')).filter(row=>row.status!=='待核驗');
 const report={scope:'P-ACH-LIST mobile filters and map/list presentation',checks:[],failures:[],screenshots:[],diagnostics:{focusSequence:[],cleanupErrors:[]}};
@@ -25,6 +26,26 @@ const focusSnapshot=async phase=>{
  },phase);
  report.diagnostics.focusSequence.push(state);
  return state;
+};
+const waitForFilterDialogClosed=async action=>{
+ try{
+  await page.waitForFunction(()=>{
+   const dialog=document.querySelector('#case-filter-dialog'),trigger=document.querySelector('#case-filter-open');
+   return !!dialog&&!dialog.open&&trigger?.getAttribute('aria-expanded')==='false'
+    &&!document.documentElement.classList.contains('case-filter-dialog-open')
+    &&!document.body.classList.contains('case-filter-dialog-open')
+    &&document.activeElement===trigger;
+  },null,{timeout:FILTER_DIALOG_CLOSE_TIMEOUT_MS});
+ }catch(error){
+  const state=await page.evaluate(()=>{
+   const dialog=document.querySelector('#case-filter-dialog'),trigger=document.querySelector('#case-filter-open');
+   return{open:dialog?.open??null,ariaExpanded:trigger?.getAttribute('aria-expanded')??null,
+    htmlOpenClass:document.documentElement.classList.contains('case-filter-dialog-open'),
+    bodyOpenClass:document.body.classList.contains('case-filter-dialog-open'),
+    focusReturned:document.activeElement===trigger,activeElement:{tag:document.activeElement?.tagName.toLowerCase()||null,id:document.activeElement?.id||''}};
+  }).catch(diagnosticError=>({captureError:String(diagnosticError)}));
+  throw new Error(`${action} did not reach the complete closed state within ${FILTER_DIALOG_CLOSE_TIMEOUT_MS}ms; observed ${JSON.stringify(state)}; wait error: ${String(error)}`);
+ }
 };
 const check=async(name,fn)=>{
  let details,failure;
@@ -116,7 +137,7 @@ try{
   const afterShiftTab=await focusSnapshot('after Shift+Tab from first tab stop');
   assert.equal(afterShiftTab.key,tabStops.at(-1).key,`Shift+Tab should wrap to the last enabled, visible dialog control: ${JSON.stringify(afterShiftTab)}`);
   await page.locator('#case-filter-close').click();
-  await page.waitForFunction(()=>document.querySelector('#case-filter-dialog')?.open===false);
+  await waitForFilterDialogClosed('Close button click');
   assert(await trigger.evaluate(element=>element===document.activeElement));
   assert.equal(await trigger.getAttribute('aria-expanded'),'false');
   assert.equal(await page.locator('html').evaluate(element=>element.classList.contains('case-filter-dialog-open')),false);
@@ -124,8 +145,12 @@ try{
   await trigger.click();
   await page.waitForFunction(()=>{const dialog=document.querySelector('#case-filter-dialog');return dialog?.open&&dialog.contains(document.activeElement);});
   await page.keyboard.press('Escape');
-  await page.waitForFunction(()=>document.querySelector('#case-filter-dialog')?.open===false);
+  await waitForFilterDialogClosed('Escape key');
+  assert.equal(await dialog.evaluate(element=>element.open),false);
   assert(await trigger.evaluate(element=>element===document.activeElement));
+  assert.equal(await trigger.getAttribute('aria-expanded'),'false');
+  assert.equal(await page.locator('html').evaluate(element=>element.classList.contains('case-filter-dialog-open')),false);
+  assert.equal(await page.locator('body').evaluate(element=>element.classList.contains('case-filter-dialog-open')),false);
  });
 
  await check('Filter selections, removable chips, URL hash and popstate stay synchronized',async()=>{
