@@ -40,6 +40,14 @@ function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+function permissionMode(mode) {
+  return `0${(mode & 0o7777).toString(8).padStart(3, '0')}`;
+}
+
+function compareRelativePaths(first, second) {
+  return first < second ? -1 : first > second ? 1 : 0;
+}
+
 function isWithin(parent, child) {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
@@ -105,6 +113,12 @@ async function readRegularFileWithoutFollowingLinks(path, label) {
 async function walkArtifact(root) {
   const files = new Map();
   const directories = new Set();
+  const modeEntries = [];
+  const rootInfo = await lstat(root);
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+    throw new Error('Publication artifact root must remain a real directory while walking.');
+  }
+  modeEntries.push({ path: '.', kind: 'directory', mode: permissionMode(rootInfo.mode) });
   const pending = [''];
   while (pending.length) {
     const current = pending.pop();
@@ -120,6 +134,7 @@ async function walkArtifact(root) {
       if (info.isSymbolicLink()) throw new Error(`Publication artifact contains a symlink: ${relativePath}`);
       if (info.isDirectory()) {
         directories.add(relativePath);
+        modeEntries.push({ path: relativePath, kind: 'directory', mode: permissionMode(info.mode) });
         pending.push(relativePath);
         continue;
       }
@@ -127,9 +142,11 @@ async function walkArtifact(root) {
         throw new Error(`Publication artifact contains a non-regular or hard-linked file: ${relativePath}`);
       }
       files.set(relativePath, { absolutePath, size: info.size });
+      modeEntries.push({ path: relativePath, kind: 'file', mode: permissionMode(info.mode) });
     }
   }
-  return { files, directories };
+  modeEntries.sort((first, second) => compareRelativePaths(first.path, second.path));
+  return { files, directories, modeEntries };
 }
 
 function expectedDirectories(filePaths) {
@@ -139,6 +156,16 @@ function expectedDirectories(filePaths) {
     for (let index = 1; index < parts.length; index += 1) directories.add(parts.slice(0, index).join('/'));
   }
   return directories;
+}
+
+function isSafeArtifactModePath(path) {
+  if (path === '.') return true;
+  try {
+    safeRelativePath(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sameSet(first, second) {
@@ -179,7 +206,7 @@ export async function validatePublicationArtifact({ artifactRoot, sourceRoot, so
     throw new Error('Publication artifact must be separate from the Git site source root.');
   }
 
-  const { files: actualFiles, directories: actualDirectories } = await walkArtifact(artifact);
+  const { files: actualFiles, directories: actualDirectories, modeEntries: artifactModeEntries } = await walkArtifact(artifact);
   const wrapperSet = new Set(PUBLICATION_WRAPPERS);
   for (const wrapper of PUBLICATION_WRAPPERS) {
     if (!actualFiles.has(wrapper)) throw new Error(`Publication artifact is missing required wrapper: ${wrapper}`);
@@ -271,6 +298,7 @@ export async function validatePublicationArtifact({ artifactRoot, sourceRoot, so
   }
   const payloadInventorySha256 = sha256(Buffer.from(stableStringify(payloads)));
   const wrapperInventorySha256 = sha256(Buffer.from(stableStringify(wrapperFiles)));
+  const artifactModeInventorySha256 = sha256(Buffer.from(stableStringify(artifactModeEntries)));
   return {
     status: 'VERIFIED',
     servedRootRole: 'publication-artifact',
@@ -285,13 +313,25 @@ export async function validatePublicationArtifact({ artifactRoot, sourceRoot, so
     payloads,
     wrapperInventorySha256,
     wrapperFiles,
+    artifactModeEntryCount: artifactModeEntries.length,
+    artifactModeInventorySha256,
+    artifactModeEntries,
     artifactRoot: artifact,
   };
+}
+
+function hasValidArtifactModeFingerprint(attestation) {
+  return Array.isArray(attestation?.artifactModeEntries) &&
+    Number.isSafeInteger(attestation.artifactModeEntryCount) &&
+    attestation.artifactModeEntryCount === attestation.artifactModeEntries.length &&
+    attestation.artifactModeEntryCount > 0 && SHA64.test(attestation.artifactModeInventorySha256 ?? '') &&
+    sha256(Buffer.from(stableStringify(attestation.artifactModeEntries))) === attestation.artifactModeInventorySha256;
 }
 
 export function assertSamePublicationArtifact(before, after) {
   if (!before || !after || before.status !== 'VERIFIED' || after.status !== 'VERIFIED' ||
       before.servedRootRole !== 'publication-artifact' || after.servedRootRole !== 'publication-artifact' ||
+      !hasValidArtifactModeFingerprint(before) || !hasValidArtifactModeFingerprint(after) ||
       before.sourceGitSHA !== after.sourceGitSHA ||
       before.deploymentSourceCommit !== after.deploymentSourceCommit ||
       before.publicArtifactDigest !== after.publicArtifactDigest ||
@@ -300,6 +340,8 @@ export function assertSamePublicationArtifact(before, after) {
       before.payloadBytes !== after.payloadBytes ||
       before.payloadInventorySha256 !== after.payloadInventorySha256 ||
       before.wrapperInventorySha256 !== after.wrapperInventorySha256 ||
+      before.artifactModeEntryCount !== after.artifactModeEntryCount ||
+      before.artifactModeInventorySha256 !== after.artifactModeInventorySha256 ||
       before.artifactRoot !== after.artifactRoot) {
     throw new Error('Publication artifact integrity changed during A-05 capture.');
   }
@@ -320,7 +362,40 @@ export function publicationMetadataIdentity(attestation) {
     payloadInventorySha256: attestation.payloadInventorySha256,
     wrapperInventorySha256: attestation.wrapperInventorySha256,
     wrapperFiles: attestation.wrapperFiles,
+    artifactModeEntryCount: attestation.artifactModeEntryCount,
+    artifactModeInventorySha256: attestation.artifactModeInventorySha256,
+    artifactModeEntries: attestation.artifactModeEntries,
   };
+}
+
+function validArtifactModeEvidence(artifact, publicationPayloads) {
+  const entries = artifact.artifactModeEntries;
+  if (!Array.isArray(entries) || !Number.isSafeInteger(artifact.artifactModeEntryCount) ||
+      artifact.artifactModeEntryCount !== entries.length || entries.length === 0 ||
+      !SHA64.test(artifact.artifactModeInventorySha256 ?? '') ||
+      sha256(Buffer.from(stableStringify(entries))) !== artifact.artifactModeInventorySha256) return false;
+
+  let previousPath = null;
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).length !== 3 ||
+        typeof entry.path !== 'string' || !['directory', 'file'].includes(entry.kind) ||
+        typeof entry.mode !== 'string' || !/^0[0-7]{3,4}$/.test(entry.mode) ||
+        !isSafeArtifactModePath(entry.path) ||
+        (previousPath !== null && compareRelativePaths(entry.path, previousPath) <= 0)) return false;
+    previousPath = entry.path;
+  }
+  if (!entries.some(entry => entry.path === '.' && entry.kind === 'directory')) return false;
+
+  const filePaths = new Set(entries.filter(entry => entry.kind === 'file').map(entry => entry.path));
+  const directoryPaths = new Set(entries.filter(entry => entry.kind === 'directory' && entry.path !== '.').map(entry => entry.path));
+  if (filePaths.size + directoryPaths.size + 1 !== entries.length ||
+      PUBLICATION_WRAPPERS.some(path => !filePaths.has(path))) return false;
+  const payloadPaths = new Set([...filePaths].filter(path => !PUBLICATION_WRAPPERS.includes(path)));
+  if (payloadPaths.size !== artifact.payloadFileCount || !sameSet(directoryPaths, expectedDirectories(filePaths))) return false;
+  if (publicationPayloads !== undefined &&
+      (!Array.isArray(publicationPayloads) || publicationPayloads.length !== payloadPaths.size ||
+       !sameSet(new Set(publicationPayloads.map(item => item?.path)), payloadPaths))) return false;
+  return true;
 }
 
 export function validatePublicationIdentityRecord(record, expectedSourceGitSHA) {
@@ -335,7 +410,8 @@ export function validatePublicationIdentityRecord(record, expectedSourceGitSHA) 
       !artifact.wrapperFiles || PUBLICATION_WRAPPERS.some(path =>
         !SHA64.test(artifact.wrapperFiles[path]?.sha256 ?? '') || !Number.isSafeInteger(artifact.wrapperFiles[path]?.bytes) || artifact.wrapperFiles[path].bytes < 0) ||
       Object.keys(artifact.wrapperFiles).length !== PUBLICATION_WRAPPERS.length ||
-      sha256(Buffer.from(stableStringify(artifact.wrapperFiles))) !== artifact.wrapperInventorySha256) {
+      sha256(Buffer.from(stableStringify(artifact.wrapperFiles))) !== artifact.wrapperInventorySha256 ||
+      !validArtifactModeEvidence(artifact, record.publicationPayloads)) {
     return false;
   }
   if (record.sourceGitSHA !== expectedSourceGitSHA || record.sourceSHA !== expectedSourceGitSHA ||
