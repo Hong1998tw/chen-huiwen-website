@@ -4,8 +4,10 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import {
+  hasStableExplorePaginationGeometry,
   isExplorePaginationPageReady,
   isExplorePaginationTargetReady,
+  observeExplorePaginationAction,
   waitForStableExplorePaginationSnapshot,
 } from './explore-pagination-readiness.mjs';
 import { withTimeout } from './page-font-artifact-lifecycle.mjs';
@@ -17,6 +19,10 @@ const HOMEPAGE_LAYOUT_TIMEOUT_MS = 10000;
 const HOMEPAGE_DIAGNOSTIC_TIMEOUT_MS = 3000;
 const HOMEPAGE_SCREENSHOT_TIMEOUT_MS = 5000;
 const HOMEPAGE_DIAGNOSTICS_KEY = '__huiwenUxAcceptanceHomepageLayoutDiagnostics';
+const EXPLORE_PAGINATION_FRAME_PROBE_KEY = '__huiwenUxAcceptanceExplorePaginationFrameProbe';
+const EXPLORE_SCROLL_SAMPLE_TIMES_MS = [0, 100, 250, 500, 1000, 2000];
+const EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS = 750;
+const EXPLORE_SCROLL_FINAL_SNAPSHOT_TIMEOUT_MS = 1500;
 await mkdir(results, { recursive: true });
 const server = await startStaticServer({ root, compression: 'none' });
 const base = server.url;
@@ -63,7 +69,7 @@ function safeDiagnosticError(error) {
   return `${name}: ${message}`;
 }
 async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
-  return page.evaluate(({ pageNumber, totalPages }) => {
+  return page.evaluate(({ pageNumber, totalPages, frameProbeKey }) => {
     const round = value => Math.round(value * 100) / 100;
     const rect = element => {
       if (!element) return null;
@@ -84,14 +90,54 @@ async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
     const header = document.querySelector('.site-header');
     const headerStyle = header ? getComputedStyle(header) : null;
     const headerBox = rect(header);
+    const headerPositionRules = [];
+    const collectHeaderPositionRules = rules => {
+      for (const rule of rules) {
+        if (headerPositionRules.length >= 8) return;
+        if (rule.type === CSSRule.MEDIA_RULE) {
+          if (matchMedia(rule.conditionText).matches) collectHeaderPositionRules(rule.cssRules);
+        } else if (rule.type === CSSRule.STYLE_RULE && rule.style?.getPropertyValue('position')) {
+          try {
+            if (header?.matches(rule.selectorText)) {
+              const href = rule.parentStyleSheet?.href;
+              headerPositionRules.push({
+                source: href ? new URL(href).pathname.split('/').at(-1).slice(0, 80) : 'inline',
+                selector: rule.selectorText.slice(0, 120),
+                position: rule.style.getPropertyValue('position').slice(0, 24),
+                important: rule.style.getPropertyPriority('position') === 'important',
+              });
+            }
+          } catch {}
+        }
+      }
+    };
+    for (const stylesheet of document.styleSheets) {
+      if (headerPositionRules.length >= 8) break;
+      try { collectHeaderPositionRules(stylesheet.cssRules); } catch {}
+    }
+    if (header?.style?.position) {
+      headerPositionRules.push({
+        source: 'inline',
+        selector: '.site-header',
+        position: header.style.position.slice(0, 24),
+        important: header.style.getPropertyPriority('position') === 'important',
+      });
+    }
     const active = document.activeElement;
     const current = pagination?.querySelector('[aria-current="page"]');
     const url = new URL(location.href);
     const requestedValue = url.searchParams.get('value') || url.searchParams.get('category') || url.searchParams.get('village') || '';
-    const animations = document.getAnimations().filter(animation => animation.playState === 'running').slice(0, 8).map(animation => {
+    const animations = document.getAnimations()
+      .filter(animation => animation.playState === 'running' || animation.pending)
+      .slice(0, 8).map(animation => {
       const element = animation.effect?.target;
       const selector = element?.id ? `#${element.id}` : element?.tagName?.toLowerCase() || 'unknown';
-      return { selector, playState: animation.playState, currentTime: Number.isFinite(Number(animation.currentTime)) ? round(Number(animation.currentTime)) : null };
+      return {
+        selector,
+        playState: animation.playState,
+        pending: animation.pending,
+        currentTime: Number.isFinite(Number(animation.currentTime)) ? round(Number(animation.currentTime)) : null,
+      };
     });
     return {
       url: {
@@ -107,11 +153,15 @@ async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
       target: {
         page: pageNumber,
         found: Boolean(target),
+        connected: Boolean(target?.isConnected),
         disabled: target?.disabled ?? null,
         visible: Boolean(target && target.getClientRects().length && targetStyle.display !== 'none' && targetStyle.visibility !== 'hidden'),
+        withinViewport: Boolean(targetBox && targetBox.left >= 0 && targetBox.top >= 0 && targetBox.right <= innerWidth && targetBox.bottom <= innerHeight),
         ariaCurrent: target?.getAttribute('aria-current') || null,
         box: targetBox,
+        transitionProperty: targetStyle?.transitionProperty || '',
         transitionDuration: targetStyle?.transitionDuration || '',
+        transitionDelay: targetStyle?.transitionDelay || '',
         animationName: targetStyle?.animationName || '',
       },
       currentPage: Number(current?.textContent.trim()) || 0,
@@ -124,19 +174,61 @@ async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
       header: {
         className: typeof header?.className === 'string' ? header.className.slice(0, 120) : '',
         position: headerStyle?.position || '',
+        marginBottom: headerStyle?.marginBottom || '',
+        transitionProperty: headerStyle?.transitionProperty || '',
         transitionDuration: headerStyle?.transitionDuration || '',
+        transitionDelay: headerStyle?.transitionDelay || '',
         animationName: headerStyle?.animationName || '',
         box: headerBox,
+        positionRules: headerPositionRules,
       },
       fonts: { status: document.fonts.status },
+      documentState: {
+        visibility: document.visibilityState,
+        hasFocus: document.hasFocus(),
+      },
       activeElement: {
         tag: active?.tagName?.toLowerCase() || '',
         id: active?.id || '',
         ariaLabel: (active?.getAttribute?.('aria-label') || '').slice(0, 80),
       },
+      frameProbe: (() => {
+        const probe = window[frameProbeKey];
+        return probe ? {
+          active: probe.active,
+          frameCount: probe.frameCount,
+          firstFrameMs: probe.firstFrameMs,
+          lastFrameMs: probe.lastFrameMs,
+          elapsedMs: round(performance.now() - probe.startedAt),
+        } : null;
+      })(),
       animations,
     };
-  }, { pageNumber, totalPages });
+  }, { pageNumber, totalPages, frameProbeKey: EXPLORE_PAGINATION_FRAME_PROBE_KEY });
+}
+async function startExplorePaginationFrameProbe(page) {
+  await page.evaluate(({ key, durationMs }) => {
+    const startedAt = performance.now();
+    const probe = { active: true, startedAt, frameCount: 0, firstFrameMs: null, lastFrameMs: null };
+    window[key] = probe;
+    const sampleFrame = timestamp => {
+      if (!probe.active) return;
+      const elapsedMs = Math.round((timestamp - startedAt) * 100) / 100;
+      probe.frameCount += 1;
+      if (probe.firstFrameMs === null) probe.firstFrameMs = elapsedMs;
+      probe.lastFrameMs = elapsedMs;
+      if (elapsedMs < durationMs) requestAnimationFrame(sampleFrame);
+      else probe.active = false;
+    };
+    requestAnimationFrame(sampleFrame);
+  }, { key: EXPLORE_PAGINATION_FRAME_PROBE_KEY, durationMs: 5500 });
+}
+async function stopExplorePaginationFrameProbe(page) {
+  await page.evaluate(key => {
+    const probe = window[key];
+    if (probe) probe.active = false;
+    delete window[key];
+  }, EXPLORE_PAGINATION_FRAME_PROBE_KEY);
 }
 async function waitForExplorePaginationSnapshot(page, pageNumber, totalPages, phase, expectedCount) {
   let lastSnapshot = null;
@@ -541,26 +633,95 @@ try {
       const expectedCount=number === totalPages ? lastPageCount : 10;
       const button=page.getByRole('button',{name:`第 ${number} 頁，共 ${totalPages} 頁`});
       let latestSnapshot=null;
+      const pageDiagnostic = {
+        page: number,
+        scrollIntoView: { before: null, samples: [], after: null, observation: null },
+        beforeClick: null,
+        afterClick: null,
+        ordinaryPointerClick: false,
+      };
+      paginationDiagnostics.push(pageDiagnostic);
       try {
-        await button.scrollIntoViewIfNeeded();
+        pageDiagnostic.scrollIntoView.before = await readExplorePaginationSnapshot(page,number,totalPages);
+        latestSnapshot = pageDiagnostic.scrollIntoView.before;
+        await withTimeout(
+          startExplorePaginationFrameProbe(page),
+          EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+          `Explore pagination page ${number} frame probe start`,
+        );
+        try {
+          const observed = await observeExplorePaginationAction(
+            () => button.scrollIntoViewIfNeeded(),
+            () => readExplorePaginationSnapshot(page,number,totalPages),
+            {
+              sampleTimesMs: EXPLORE_SCROLL_SAMPLE_TIMES_MS,
+              snapshotTimeoutMs: EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+            },
+          );
+          pageDiagnostic.scrollIntoView.samples = observed.observation.samples;
+          pageDiagnostic.scrollIntoView.observation = {
+            outcome: observed.observation.outcome,
+            elapsedMs: observed.observation.elapsedMs,
+          };
+        } catch(error) {
+          const observation = error?.explorePaginationObservation;
+          pageDiagnostic.scrollIntoView.samples = observation?.samples || [];
+          pageDiagnostic.scrollIntoView.observation = observation
+            ? { outcome: observation.outcome, elapsedMs: observation.elapsedMs }
+            : { outcome: 'diagnostic-error', elapsedMs: null };
+          pageDiagnostic.scrollIntoView.nativeError = safeDiagnosticError(error);
+          throw error;
+        } finally {
+          try {
+            pageDiagnostic.scrollIntoView.after = await withTimeout(
+              readExplorePaginationSnapshot(page,number,totalPages),
+              EXPLORE_SCROLL_FINAL_SNAPSHOT_TIMEOUT_MS,
+              `Explore pagination page ${number} final scroll snapshot`,
+            );
+          } catch(snapshotError) {
+            pageDiagnostic.scrollIntoView.afterError = safeDiagnosticError(snapshotError);
+          }
+          latestSnapshot = pageDiagnostic.scrollIntoView.after
+            || [...pageDiagnostic.scrollIntoView.samples].reverse().find(sample => sample.snapshot)?.snapshot
+            || latestSnapshot;
+          try {
+            await withTimeout(
+              stopExplorePaginationFrameProbe(page),
+              EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+              `Explore pagination page ${number} frame probe stop`,
+            );
+          } catch(stopError) {
+            pageDiagnostic.scrollIntoView.frameProbeStopError = safeDiagnosticError(stopError);
+          }
+        }
+        let previousProbeSnapshot = null;
+        for (const sample of pageDiagnostic.scrollIntoView.samples) {
+          if (!sample.snapshot) continue;
+          sample.geometryStableFromPrevious = previousProbeSnapshot
+            ? hasStableExplorePaginationGeometry(previousProbeSnapshot, sample.snapshot)
+            : null;
+          previousProbeSnapshot = sample.snapshot;
+        }
         const before=await waitForExplorePaginationSnapshot(page,number,totalPages,'before click');
         latestSnapshot=before;
+        pageDiagnostic.beforeClick=before;
         assert.equal(before.url.page,number-1,`pagination must advance from page ${number-1}: ${JSON.stringify(before)}`);
         assert.equal(before.url.type,'topic');
         assert.equal(before.url.value,'交通與基建');
         await button.click();
+        pageDiagnostic.ordinaryPointerClick=true;
         await page.waitForFunction(number=>new URL(location.href).searchParams.get('page')===String(number),number);
         const count=await page.locator('#explore-achievements .explore-result-card').count();
         assert.equal(count,expectedCount);
         const after=await waitForExplorePaginationSnapshot(page,number,totalPages,'after click',expectedCount);
         latestSnapshot=after;
+        pageDiagnostic.afterClick=after;
         assert.equal(after.url.type,'topic');
         assert.equal(after.url.value,'交通與基建');
         assert.equal(after.heading.focused,true,'pointer pagination must move focus to the results heading');
-        paginationDiagnostics.push({page:number,beforeClick:before,afterClick:after,ordinaryPointerClick:true});
         reachable+=count;
       } catch(error) {
-        throw new Error(`${safeDiagnosticError(error)}; latest UI snapshot=${JSON.stringify(error?.lastSnapshot||latestSnapshot)}; completed pagination diagnostics=${JSON.stringify(paginationDiagnostics)}`);
+        throw new Error(`${safeDiagnosticError(error)}; latest UI snapshot=${JSON.stringify(error?.lastSnapshot||latestSnapshot)}; pagination diagnostics=${JSON.stringify(paginationDiagnostics)}`);
       }
     }
     assert.equal(reachable, expectedTopicCount, `all ${expectedTopicCount} matching records must be reachable through pagination`);

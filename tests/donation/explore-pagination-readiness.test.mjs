@@ -4,6 +4,7 @@ import {
   hasStableExplorePaginationGeometry,
   isExplorePaginationPageReady,
   isExplorePaginationTargetReady,
+  observeExplorePaginationAction,
   waitForStableExplorePaginationSnapshot,
 } from './explore-pagination-readiness.mjs';
 
@@ -109,4 +110,75 @@ test('bounded readiness also ends when a frame snapshot never returns', async ()
     }),
     error => /frame fixture: snapshot timed out/.test(error.message),
   );
+});
+
+test('scroll action observation samples geometry while the native action is pending', async () => {
+  let actionActive = false;
+  const { value, observation } = await observeExplorePaginationAction(
+    async () => {
+      actionActive = true;
+      await new Promise(resolve => setTimeout(resolve, 45));
+      actionActive = false;
+      return 'scrolled';
+    },
+    () => ({ actionActive }),
+    { sampleTimesMs: [0, 10, 25, 60] },
+  );
+
+  assert.equal(value, 'scrolled');
+  assert.equal(observation.outcome, 'fulfilled');
+  assert(observation.elapsedMs >= 35);
+  assert(observation.samples.length >= 2);
+  assert(observation.samples.length <= 3);
+  assert(observation.samples.every(sample => sample.snapshot.actionActive));
+});
+
+test('scroll action rejection carries its bounded time series', async () => {
+  const failure = new Error('native action failed');
+  await assert.rejects(
+    observeExplorePaginationAction(
+      async () => {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        throw failure;
+      },
+      () => ({ visible: true }),
+      { sampleTimesMs: [0, 5, 15, 40] },
+    ),
+    error => error === failure
+      && error.explorePaginationObservation?.outcome === 'rejected'
+      && error.explorePaginationObservation.samples.length >= 2
+      && error.explorePaginationObservation.samples.length <= 3,
+  );
+});
+
+test('scroll action observation caps sample count and does not add an action deadline', async () => {
+  let finish;
+  const action = new Promise(resolve => { finish = resolve; });
+  const observed = observeExplorePaginationAction(
+    () => action,
+    () => ({ visible: true }),
+    { sampleTimesMs: Array(12).fill(0) },
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  finish('done');
+  const { value, observation } = await observed;
+
+  assert.equal(value, 'done');
+  assert.equal(observation.samples.length, 8);
+});
+
+test('scroll action observation redacts failed snapshot details without replacing action success', async () => {
+  const { value, observation } = await observeExplorePaginationAction(
+    async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return 'done';
+    },
+    async () => { throw new Error('failed https://example.test/path?token=secret cookie=private'); },
+    { sampleTimesMs: [0, 5, 15, 40] },
+  );
+
+  assert.equal(value, 'done');
+  const errors = observation.samples.map(sample => sample.snapshotError).filter(Boolean);
+  assert(errors.length >= 1);
+  assert(errors.every(error => !error.includes('secret') && !error.includes('private')));
 });
