@@ -74,6 +74,14 @@ jobs:
       - name: Install Chromium
         run: npx --prefix tests/donation playwright install --with-deps chromium
 
+      - name: Run native public asset cache and map proof against production
+        id: public_asset_runtime
+        continue-on-error: true
+        env:
+          BASE_URL: https://www.huiwen.tw/
+          PUBLIC_ASSET_RUNTIME_MODE: production-live
+        run: node tests/donation/public-asset-runtime-smoke.mjs
+
       - name: Run browser, responsive and accessibility QA against live production
         id: browser
         continue-on-error: true
@@ -121,11 +129,12 @@ jobs:
             tests/donation/results/legal-calendar/
             tests/donation/results/homepage-production/
             tests/donation/results/events/
+            tests/donation/results/public-asset-runtime/
             tests/donation/results/*.json
             tests/donation/results/*.png
 
       - name: Fail production verification when a check failed
-        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success') }}
+        if: ${{ always() && (steps.http.outcome != 'success' || steps.all_pages.outcome != 'success' || steps.browser.outcome != 'success' || steps.native.outcome != 'success' || steps.legal_card.outcome != 'success' || steps.home_design.outcome != 'success' || steps.events.outcome != 'success' || steps.public_asset_runtime.outcome != 'success') }}
         run: |
           echo "HTTP production verification outcome: ${{ steps.http.outcome }}"
           echo "All public pages outcome: ${{ steps.all_pages.outcome }}"
@@ -134,5 +143,6 @@ jobs:
           echo "Published monthly card download outcome: ${{ steps.legal_card.outcome }}"
           echo "Published homepage design outcome: ${{ steps.home_design.outcome }}"
           echo "Published event timeline and sharing outcome: ${{ steps.events.outcome }}"
+          echo "Production public asset runtime outcome: ${{ steps.public_asset_runtime.outcome }}"
           echo "Independent Production Verification failed or blocked; inspect reports."
           exit 1

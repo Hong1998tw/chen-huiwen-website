@@ -5,10 +5,15 @@ import {
   assembleMutableAliasResource,
   assemblePublishedResource,
   bindPublicArtifactProvenance,
+  bindProductionPublicArtifactProvenance,
   fingerprintAlias,
+  LOCAL_CI_MODE,
+  normalizeBaseUrl,
   parseHeaderRules,
   selectSharedCommonFont,
   sha256,
+  PRODUCTION_BASE_URL,
+  PRODUCTION_LIVE_MODE,
   validateArtifactResponse,
   validateColdWarmCacheProof,
   validateMutableAliasObservation,
@@ -222,4 +227,126 @@ test('provenance binds the CI merge, native PR head, runtime, manifest digest an
   assert.throws(() => bindPublicArtifactProvenance({ ...valid, deployment: { ...valid.deployment, sourceCommit: head } }), /CI merge SHA/);
   assert.throws(() => bindPublicArtifactProvenance({ ...valid, publicationManifestBytes: bytesFor('tampered') }), /manifest bytes/);
   assert.throws(() => bindPublicArtifactProvenance({ ...valid, runtime: { ...valid.runtime, playwrightVersion: '1.56.0' } }), /not pinned/);
+});
+
+test('mode validation keeps loopback local behavior and limits production-live to the canonical HTTPS origin', () => {
+  assert.equal(normalizeBaseUrl('http://127.0.0.1:8789', LOCAL_CI_MODE).href, 'http://127.0.0.1:8789/');
+  assert.equal(normalizeBaseUrl(PRODUCTION_BASE_URL, PRODUCTION_LIVE_MODE).href, PRODUCTION_BASE_URL);
+  for (const value of [
+    'https://huiwen.tw/',
+    'https://other.example/',
+    'http://www.huiwen.tw/',
+    'https://user:secret@www.huiwen.tw/',
+    'https://www.huiwen.tw/?preview=1',
+    'https://www.huiwen.tw/#section',
+  ]) {
+    assert.throws(() => normalizeBaseUrl(value, PRODUCTION_LIVE_MODE));
+  }
+  assert.throws(() => normalizeBaseUrl('https://example.com/', 'unknown-mode'), /unsupported/);
+});
+
+function makeProductionProvenanceFixture() {
+  const fixture = makeFixture();
+  const checkoutSha = '3'.repeat(40);
+  const publicationManifestBytes = bytesFor(JSON.stringify(fixture.publication));
+  const deployment = {
+    schemaVersion: 1,
+    provider: 'cloudflare-static-assets',
+    sourceCommit: checkoutSha,
+    publicArtifactDigest: sha256(publicationManifestBytes),
+    publicFileCount: Object.keys(fixture.publication.files).length,
+    publicRecordCount: fixture.publication.publicRecordCount,
+  };
+  const deploymentBytes = bytesFor(`${JSON.stringify(deployment)}\n`);
+  const runtime = { playwrightVersion: '1.55.1', chromiumVersion: '140.0.0.0', nodeVersion: 'v24.0.0' };
+  return {
+    fixture,
+    publication: fixture.publication,
+    publicationManifestBytes,
+    deployment,
+    deploymentBytes,
+    runtime,
+    eventName: 'workflow_run',
+    eventPayload: { workflow_run: { head_sha: checkoutSha } },
+    githubSha: '4'.repeat(40),
+    githubRef: 'refs/heads/main',
+    checkoutSha,
+    liveDeploymentResponse: {
+      requestedUrl: `${PRODUCTION_BASE_URL}deployment.json`,
+      url: `${PRODUCTION_BASE_URL}deployment.json`,
+      status: 200,
+      body: deploymentBytes,
+    },
+  };
+}
+
+test('production provenance binds workflow event, checked out HEAD, local artifact and real HTTP receipt', () => {
+  const valid = makeProductionProvenanceFixture();
+  const provenance = bindProductionPublicArtifactProvenance(valid);
+  assert.equal(provenance.mode, PRODUCTION_LIVE_MODE);
+  assert.equal(provenance.sourceCi.checkoutSha, valid.checkoutSha);
+  assert.equal(provenance.sourceCi.checkoutShaContract, 'github.event.workflow_run.head_sha');
+  assert.equal(provenance.sourceCi.githubSha, valid.githubSha);
+  assert.notEqual(provenance.sourceCi.githubSha, provenance.sourceCi.checkoutSha,
+    'workflow_run must bind head_sha and must not blindly require GITHUB_SHA');
+  assert.equal(provenance.localDeployment.publicArtifactDigest, sha256(valid.publicationManifestBytes));
+  assert.equal(provenance.liveDeployment.sha256, sha256(valid.deploymentBytes));
+
+  const dispatch = {
+    ...valid,
+    eventName: 'workflow_dispatch',
+    githubSha: valid.checkoutSha,
+    eventPayload: { ref: 'refs/heads/main', inputs: {} },
+  };
+  assert.equal(bindProductionPublicArtifactProvenance(dispatch).sourceCi.checkoutShaContract,
+    'GITHUB_SHA for the native workflow_dispatch ref');
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...dispatch,
+    eventPayload: { ref: 'refs/heads/release', inputs: {} },
+  }), /differs from the native GITHUB_REF/);
+});
+
+test('production provenance rejects wrong source, digest, live receipt and pull request substitution', () => {
+  const valid = makeProductionProvenanceFixture();
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    checkoutSha: '5'.repeat(40),
+  }), /differs from github\.event\.workflow_run\.head_sha/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    deployment: { ...valid.deployment, sourceCommit: '5'.repeat(40) },
+  }), /differs from the checked out Git HEAD/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    deployment: { ...valid.deployment, publicArtifactDigest: 'a'.repeat(64) },
+    deploymentBytes: bytesFor(`${JSON.stringify({ ...valid.deployment, publicArtifactDigest: 'a'.repeat(64) })}\n`),
+  }), /differs from the _site publication manifest bytes/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    deploymentBytes: bytesFor('different local receipt'),
+  }), /_site deployment\.json is not valid JSON/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    liveDeploymentResponse: { ...valid.liveDeploymentResponse, body: bytesFor('fake receipt') },
+  }), /bytes differ from the checked out _site deployment\.json/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    liveDeploymentResponse: { ...valid.liveDeploymentResponse, requestedUrl: 'https://other.example/deployment.json' },
+  }), /request differs from the fixed production origin/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    eventName: 'pull_request',
+    eventPayload: { pull_request: { head: { sha: valid.checkoutSha } } },
+  }), /requires a native workflow_run or workflow_dispatch/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    eventPayload: {
+      workflow_run: {},
+      pull_request: { head: { sha: valid.checkoutSha } },
+    },
+  }), /workflow_run\.head_sha is missing/);
+  assert.throws(() => bindProductionPublicArtifactProvenance({
+    ...valid,
+    liveDeploymentResponse: { ...valid.liveDeploymentResponse, status: 503 },
+  }), /expected HTTP 200/);
 });
