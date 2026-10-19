@@ -9,6 +9,26 @@ export const SERVICE_CARD_SELECTOR = '[data-legal-view="card"]';
 const TRACKED_REQUEST_TYPES = new Set(['Document', 'Font', 'Stylesheet', 'Script']);
 const SHA256 = /^[a-f0-9]{64}$/;
 
+export function expectedSharedFallbackFontsForRoute(routeManifestRow, sharedJpFallbackFont) {
+  const jpFallbackCodepoints = routeManifestRow?.jpFallbackCodepoints;
+  const routeSourceCodepoints = routeManifestRow?.codepoints;
+  if (!Object.hasOwn(routeManifestRow || {}, 'jpFallbackCodepoints')
+    || !Array.isArray(jpFallbackCodepoints) || jpFallbackCodepoints.length === 0
+    || !Array.isArray(routeSourceCodepoints) || routeSourceCodepoints.length === 0) return [];
+
+  // The producer records JP-only glyphs after checking them against the JP source cmap.
+  // They must also be absent from this route's TC source cmap before JP can be allowed.
+  const validCodepoint = (codepoint) => Number.isInteger(codepoint) && codepoint > 0
+    && codepoint <= 0x10ffff && !(codepoint >= 0xd800 && codepoint <= 0xdfff);
+  const routeSourceSet = new Set(routeSourceCodepoints);
+  if (!routeSourceCodepoints.every(validCodepoint) || !jpFallbackCodepoints.every(validCodepoint)
+    || new Set(jpFallbackCodepoints).size !== jpFallbackCodepoints.length
+    || jpFallbackCodepoints.some((codepoint) => routeSourceSet.has(codepoint))) return [];
+  if (typeof sharedJpFallbackFont?.path !== 'string' || !sharedJpFallbackFont.path.startsWith('/')
+    || !SHA256.test(sharedJpFallbackFont.sha256 || '')) return [];
+  return [sharedJpFallbackFont];
+}
+
 export function buildTrustedClickCaptureScript() {
   const selector = JSON.stringify(SERVICE_CARD_SELECTOR);
   return `(() => {

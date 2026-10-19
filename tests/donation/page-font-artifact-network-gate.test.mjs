@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildFinalFontNetworkSnapshot,
   classifyCdpRequestTimestamp,
+  expectedSharedFallbackFontsForRoute,
   hashResponseBody,
   validateServiceCardOnDemand,
   validateTrustedClickMarker,
@@ -144,6 +145,50 @@ test('only the declared shared JP fallback font is exempt from page-subset paths
   });
   assert.ok(unexpected.violations.some((item) => item.kind === 'unexpected-page-font-path'
     && item.path === unlisted.path));
+});
+
+test('route snapshot assembly allows JP fallback only for manifest-declared JP-only source coverage', () => {
+  const sharedFallback = {
+    path: '/assets/fonts/huiwen-site-sans/generated/huiwen-cjk-support-abcdef123456.woff2',
+    sha256: 'e'.repeat(64),
+  };
+  const fallbackRequest = request(sharedFallback.path, 1.4, {
+    bodyBytes: 4096,
+    bodySha256: sharedFallback.sha256,
+  });
+  const rawRequests = [...validRequests().slice(0, 2), fallbackRequest];
+  const ordinaryManifestRow = { codepoints: [0x4e2d] };
+  const ordinaryExpectedFallbacks = expectedSharedFallbackFontsForRoute(ordinaryManifestRow, sharedFallback);
+  assert.deepEqual(ordinaryExpectedFallbacks, []);
+  const ordinary = snapshot({
+    route: 'ordinary.html',
+    clickMarker: null,
+    requireTrustedClickMarker: false,
+    rawRequests,
+    expectedSharedFallbackFonts: ordinaryExpectedFallbacks,
+  });
+  assert.ok(ordinary.violations.some((item) => item.kind === 'unexpected-page-font-path'
+    && item.path === sharedFallback.path));
+
+  const jpManifestRow = { codepoints: [0x4e2d], jpFallbackCodepoints: [0x3042] };
+  const jpExpectedFallbacks = expectedSharedFallbackFontsForRoute(jpManifestRow, sharedFallback);
+  assert.deepEqual(jpExpectedFallbacks, [sharedFallback]);
+  const jp = snapshot({
+    route: 'news-20260810-kumamoto-relief.html',
+    clickMarker: null,
+    requireTrustedClickMarker: false,
+    rawRequests,
+    expectedSharedFallbackFonts: jpExpectedFallbacks,
+  });
+  assert.deepEqual(jp.violations, []);
+  assert.deepEqual(jp.sharedFallbackFontRequests.map((item) => item.path), [sharedFallback.path]);
+
+  assert.deepEqual(expectedSharedFallbackFontsForRoute({
+    codepoints: [0x3042], jpFallbackCodepoints: [0x3042],
+  }, sharedFallback), [], 'a fallback glyph already covered by the route TC source must not grant an exemption');
+  assert.deepEqual(expectedSharedFallbackFontsForRoute({
+    codepoints: [], jpFallbackCodepoints: [0x3042],
+  }, sharedFallback), [], 'a route without positive TC source-font coverage must not grant an exemption');
 });
 
 test('the final gate does not grant a Full-TC exemption when the trusted click marker is missing', () => {

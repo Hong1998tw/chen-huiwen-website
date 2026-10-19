@@ -2,18 +2,24 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { redactBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 
-export function errorRecord(error) {
+export function errorRecord(error, secretValues = []) {
   return {
     name: error?.name || 'Error',
-    message: String(error?.message || error).slice(0, 1200),
-    stack: typeof error?.stack === 'string' ? error.stack.split('\n').slice(0, 6).join('\n').slice(0, 1200) : null,
+    message: redactBrowserDiagnosticText(String(error?.message || error), secretValues).slice(0, 1200),
+    stack: typeof error?.stack === 'string'
+      ? redactBrowserDiagnosticText(error.stack, secretValues).split('\n').slice(0, 6).join('\n').slice(0, 1200)
+      : null,
   };
 }
 
-export async function writePageFontArtifactReport(reportPath, results) {
+export async function writePageFontArtifactReport(reportPath, results, secretValues = []) {
   await mkdir(dirname(reportPath), { recursive: true });
-  await writeFile(reportPath, JSON.stringify(results, null, 2) + '\n');
+  const serialized = JSON.stringify(results, (_key, value) => typeof value === 'string'
+    ? redactBrowserDiagnosticText(value, secretValues)
+    : value, 2);
+  await writeFile(reportPath, `${serialized}\n`);
 }
 
 async function readAndVerifyArtifacts({ artifactRoot, fullTcPath, expectedBytes }) {

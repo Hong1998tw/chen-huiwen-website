@@ -1,5 +1,8 @@
-export function safeBrowserDiagnosticText(value, secretValues = []) {
-  let text = String(value || '').slice(0, 4000);
+export function redactBrowserDiagnosticText(value, secretValues = []) {
+  let text = String(value || '');
+  for (const secret of secretValues) {
+    if (typeof secret === 'string' && secret) text = text.split(secret).join('[redacted]');
+  }
   text = text.replace(/https?:\/\/[^\s"'<>]+/g, (raw) => {
     const punctuation = raw.match(/[),.;]+$/)?.[0] || '';
     let candidate = raw.slice(0, raw.length - punctuation.length);
@@ -17,14 +20,14 @@ export function safeBrowserDiagnosticText(value, secretValues = []) {
       return `[url]${lineSuffix}${punctuation}`;
     }
   });
-  for (const secret of secretValues) {
-    if (typeof secret === 'string' && secret) text = text.split(secret).join('[redacted]');
-  }
   return text
     .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
     .replace(/\b(cookie|set-cookie|authorization|proxy-authorization|cf-access-jwt-assertion)\s*[:=]\s*[^\r\n]*/gi,
       (_match, name) => `${name}=[redacted]`)
     .replace(/\b(session|nonce|token|assertion)\s*[:=]\s*[^,\s;]+/gi,
-      (_match, name) => `${name}=[redacted]`)
-    .slice(0, 4000);
+      (_match, name) => `${name}=[redacted]`);
+}
+
+export function safeBrowserDiagnosticText(value, secretValues = []) {
+  return redactBrowserDiagnosticText(value, secretValues).slice(0, 4000);
 }

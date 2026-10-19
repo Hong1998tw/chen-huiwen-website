@@ -14,6 +14,7 @@ import {
 import {
   buildFinalFontNetworkSnapshot,
   buildTrustedClickCaptureScript,
+  expectedSharedFallbackFontsForRoute,
   hashResponseBody,
   INITIAL_RENDER_TIMEOUT_MS,
   NETWORK_SETTLE_TIMEOUT_MS,
@@ -23,7 +24,7 @@ import {
   waitForTrackedNetworkQuiet,
 } from './page-font-artifact-network-gate.mjs';
 import { errorRecord, runPageFontArtifactPreflight, writePageFontArtifactReport } from './page-font-artifact-preflight.mjs';
-import { safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
+import { redactBrowserDiagnosticText, safeBrowserDiagnosticText } from './page-font-artifact-diagnostics.mjs';
 import {
   VISUAL_CAPTURE_COUNT,
   VISUAL_CAPTURE_SEED,
@@ -51,6 +52,7 @@ let fontManifest;
 let fullTcSha;
 let artifactIdentity;
 let sharedJpFallbackFont;
+let cmsDiagnosticSecrets = [];
 
 function urlPath(value) {
   try {
@@ -95,6 +97,20 @@ function safeBrowserError(error, secretValues = []) {
     message,
     stack,
   };
+}
+
+function sanitizeThrownError(error, secretValues = []) {
+  if (!(error instanceof Error)) return new Error(redactBrowserDiagnosticText(error, secretValues));
+  try {
+    error.message = redactBrowserDiagnosticText(error.message, secretValues);
+    if (typeof error.stack === 'string') error.stack = redactBrowserDiagnosticText(error.stack, secretValues);
+    return error;
+  } catch {
+    const sanitized = new Error(redactBrowserDiagnosticText(error.message, secretValues));
+    sanitized.name = String(error.name || 'Error');
+    if (typeof error.stack === 'string') sanitized.stack = redactBrowserDiagnosticText(error.stack, secretValues);
+    return sanitized;
+  }
 }
 
 async function resolveSharedJpFallbackFont() {
@@ -565,11 +581,11 @@ function captureRunFailure(error, source = null) {
   const merged = preservePrimaryError(runError, error);
   runError = merged.primaryError;
   if (merged.secondaryError) results.execution.secondaryErrors.push({
-    ...(source ? { source } : {}), ...errorRecord(merged.secondaryError),
+    ...(source ? { source } : {}), ...errorRecord(merged.secondaryError, cmsDiagnosticSecrets),
   });
   if (!results.execution.primaryError) {
-    results.fatalError = errorRecord(runError);
-    results.execution.primaryError = errorRecord(runError);
+    results.fatalError = errorRecord(runError, cmsDiagnosticSecrets);
+    results.execution.primaryError = errorRecord(runError, cmsDiagnosticSecrets);
     if (source) results.execution.primarySource = source;
   }
   results.execution.status = 'failed';
@@ -578,7 +594,7 @@ function captureRunFailure(error, source = null) {
     const phase = results.execution.phases[phaseName];
     if (phase.status === 'running') {
       phase.status = 'failed';
-      phase.error = errorRecord(runError);
+      phase.error = errorRecord(runError, cmsDiagnosticSecrets);
     }
   }
 }
@@ -1040,7 +1056,7 @@ async function finalizeFontOnlyRoute(state) {
         assert.ok(font, `${route}: route preload font is missing from the producer manifest: ${path}`);
         return { path: `/${path}`, bytes: font.bytes, sha256: font.sha256 };
       }),
-      expectedSharedFallbackFonts: [sharedJpFallbackFont],
+      expectedSharedFallbackFonts: expectedSharedFallbackFontsForRoute(routeRow, sharedJpFallbackFont),
       fullTcPath: `/${fullTcPath}`,
       routeOrigin: new URL(base).origin,
       observationClosed,
@@ -1486,6 +1502,7 @@ try {
   const session = 'g02-ci-page-preview-nonce';
   const accessAssertion = 'g02-ci-fixture-verified-owner-access-assertion';
   const nonce = 'g02-ci-preview-nonce';
+  cmsDiagnosticSecrets = [session, accessAssertion, nonce];
   async function fetchPublishedPreview(timeoutMs = 15000) {
     assert.ok(Number.isFinite(timeoutMs) && timeoutMs > 0 && timeoutMs <= 15000,
       'published preview fetch timeout must be finite and no greater than 15000ms');
@@ -1606,7 +1623,6 @@ try {
   const cmsProxyResponses = [];
   const cmsProxyBlockedReasons = [];
   const cmsBrowserMessages = [];
-  const cmsDiagnosticSecrets = [session, accessAssertion, nonce];
   cmsPage.on('request', (request) => {
     if (isCmsProxyUrl(request.url())) cmsProxyRequests.push({ method: request.method(), ...safeUrlSummary(request.url()) });
   });
@@ -1688,7 +1704,8 @@ try {
   };
   const fullFontResponseOutcome = await cmsFullFontResponseWait;
   results.cmsPreview.fullFontResponseWait = { status: fullFontResponseOutcome.status,
-    error: fullFontResponseOutcome.status === 'rejected' ? errorRecord(fullFontResponseOutcome.error) : null };
+    error: fullFontResponseOutcome.status === 'rejected'
+      ? errorRecord(fullFontResponseOutcome.error, cmsDiagnosticSecrets) : null };
   const loadedFullFont = requireObservedValue(fullFontResponseOutcome);
   const loadedBytes = await withTimeout(loadedFullFont.body(), INITIAL_RENDER_TIMEOUT_MS,
     'read CMS full-TC response body');
@@ -1896,19 +1913,19 @@ try {
 } finally {
   if (browser) {
     try { await browser.close(); } catch (error) {
-      results.browserCloseError = errorRecord(error);
+      results.browserCloseError = errorRecord(error, cmsDiagnosticSecrets);
       captureRunFailure(error, 'browser-close');
     }
   }
   if (cmsFullFontResponseWait) {
     const outcome = await cmsFullFontResponseWait;
     results.cmsPreview.fullFontResponseWait = { status: outcome.status,
-      error: outcome.status === 'rejected' ? errorRecord(outcome.error) : null };
+      error: outcome.status === 'rejected' ? errorRecord(outcome.error, cmsDiagnosticSecrets) : null };
     if (outcome.status === 'rejected') captureRunFailure(outcome.error, 'cms-full-font-response-wait');
   }
   if (results.cmsPreview.status === 'running') {
     results.cmsPreview.status = runError ? 'failed' : 'incomplete';
-    if (runError) results.cmsPreview.error = errorRecord(runError);
+    if (runError) results.cmsPreview.error = errorRecord(runError, cmsDiagnosticSecrets);
   }
   if (results.initialFontNetwork.status === 'running') {
     results.initialFontNetwork.status = runError ? 'failed' : 'incomplete';
@@ -1916,20 +1933,22 @@ try {
   for (const phase of Object.values(results.execution.phases)) {
     if (phase.status === 'running') {
       phase.status = runError ? 'failed' : 'incomplete';
-      if (runError) phase.error ||= errorRecord(runError);
+      if (runError) phase.error ||= errorRecord(runError, cmsDiagnosticSecrets);
     }
   }
   results.execution.currentPhase = results.execution.currentPhase || null;
   results.execution.status = runError ? 'failed' : 'passed';
-  if (runError && !results.execution.primaryError) results.execution.primaryError = errorRecord(runError);
+  if (runError && !results.execution.primaryError) {
+    results.execution.primaryError = errorRecord(runError, cmsDiagnosticSecrets);
+  }
   try {
-    await writePageFontArtifactReport(reportPath, results);
+    await writePageFontArtifactReport(reportPath, results, cmsDiagnosticSecrets);
   } catch (error) {
-    results.reportWriteError = errorRecord(error);
+    results.reportWriteError = errorRecord(error, cmsDiagnosticSecrets);
     if (!runError) runError = error;
   }
 }
-if (runError) throw runError;
+if (runError) throw sanitizeThrownError(runError, cmsDiagnosticSecrets);
 console.log(JSON.stringify({ samples: results.samples.length, schemaRoutes: results.schemaRoutes.length,
   allRouteFontChecks: results.initialFontNetwork.routesChecked,
   allRouteFontSeconds: results.initialFontNetwork.durationSeconds,
