@@ -59,7 +59,8 @@ class PlaywrightCiInstallTests(unittest.TestCase):
                 self.assertNotIn("continue-on-error: true", job)
 
         # Each independent job installs the browser it needs and runs its own QA gate.
-        self.assertIn("      - run: node tests/donation/browser.mjs", browser)
+        self.assertIn("WCAG22AA_TARGET_SIZE_MODE: compare", browser)
+        self.assertIn("run: node tests/donation/browser.mjs", browser)
         self.assertIn("Run five-viewport production-readiness regression suite", browser)
         self.assertIn("run: npm run test:readiness --prefix tests/donation", browser)
         self.assertIn("Verify A-05 archive safety fixtures", visual_qa)
