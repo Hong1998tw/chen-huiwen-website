@@ -1,4 +1,5 @@
 const GEOMETRY_EPSILON = 0.25;
+const SNAPSHOT_POLL_INTERVAL_MS = 30;
 
 function sameNumber(left, right) {
   return Number.isFinite(left) && Number.isFinite(right)
@@ -89,6 +90,11 @@ export async function waitForStableExplorePaginationSnapshot(readSnapshot, isRea
       readySamples = 0;
     }
     previous = latest;
+
+    if (sampleCount < maxSamples && Date.now() < deadline) {
+      const remainingMs = Math.max(0, deadline - Date.now());
+      await new Promise(resolve => setTimeout(resolve, Math.min(SNAPSHOT_POLL_INTERVAL_MS, remainingMs)));
+    }
   }
 
   const reason = Date.now() >= deadline ? `exceeded ${timeoutMs}ms` : `exceeded ${maxSamples} samples`;

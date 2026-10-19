@@ -63,82 +63,80 @@ function safeDiagnosticError(error) {
   return `${name}: ${message}`;
 }
 async function readExplorePaginationSnapshot(page, pageNumber, totalPages) {
-  return page.evaluate(({ pageNumber, totalPages }) => new Promise(resolve => {
-    requestAnimationFrame(() => {
-      const round = value => Math.round(value * 100) / 100;
-      const rect = element => {
-        if (!element) return null;
-        const box = element.getBoundingClientRect();
-        return {
-          left: round(box.left), top: round(box.top), right: round(box.right), bottom: round(box.bottom),
-          width: round(box.width), height: round(box.height),
-        };
+  return page.evaluate(({ pageNumber, totalPages }) => {
+    const round = value => Math.round(value * 100) / 100;
+    const rect = element => {
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return {
+        left: round(box.left), top: round(box.top), right: round(box.right), bottom: round(box.bottom),
+        width: round(box.width), height: round(box.height),
       };
-      const pagination = document.querySelector('#explore-pagination');
-      const targetLabel = `第 ${pageNumber} 頁，共 ${totalPages} 頁`;
-      const target = [...(pagination?.querySelectorAll('.explore-page-button') || [])]
-        .find(button => button.getAttribute('aria-label') === targetLabel);
-      const targetBox = rect(target);
-      const targetStyle = target ? getComputedStyle(target) : null;
-      const heading = document.getElementById('explore-achievement-heading');
-      const headingBox = rect(heading);
-      const header = document.querySelector('.site-header');
-      const headerStyle = header ? getComputedStyle(header) : null;
-      const headerBox = rect(header);
-      const active = document.activeElement;
-      const current = pagination?.querySelector('[aria-current="page"]');
-      const url = new URL(location.href);
-      const requestedValue = url.searchParams.get('value') || url.searchParams.get('category') || url.searchParams.get('village') || '';
-      const animations = document.getAnimations().filter(animation => animation.playState === 'running').slice(0, 8).map(animation => {
-        const element = animation.effect?.target;
-        const selector = element?.id ? `#${element.id}` : element?.tagName?.toLowerCase() || 'unknown';
-        return { selector, playState: animation.playState, currentTime: Number.isFinite(Number(animation.currentTime)) ? round(Number(animation.currentTime)) : null };
-      });
-      resolve({
-        url: {
-          path: url.pathname,
-          page: Math.max(1, Number.parseInt(url.searchParams.get('page'), 10) || 1),
-          type: url.searchParams.get('type') || '',
-          value: requestedValue.slice(0, 48),
-          hasKeyword: url.searchParams.has('q'),
-          hasStatus: url.searchParams.has('status'),
-        },
-        viewport: { width: innerWidth, height: innerHeight },
-        scroll: { x: round(scrollX), y: round(scrollY), behavior: getComputedStyle(document.documentElement).scrollBehavior },
-        target: {
-          page: pageNumber,
-          found: Boolean(target),
-          disabled: target?.disabled ?? null,
-          visible: Boolean(target && target.getClientRects().length && targetStyle.display !== 'none' && targetStyle.visibility !== 'hidden'),
-          ariaCurrent: target?.getAttribute('aria-current') || null,
-          box: targetBox,
-          transitionDuration: targetStyle?.transitionDuration || '',
-          animationName: targetStyle?.animationName || '',
-        },
-        currentPage: Number(current?.textContent.trim()) || 0,
-        results: { count: document.querySelectorAll('#explore-achievements .explore-result-card').length },
-        heading: {
-          focused: active === heading,
-          withinViewport: Boolean(headingBox && headingBox.top >= 0 && headingBox.bottom <= innerHeight),
-          box: headingBox,
-        },
-        header: {
-          className: typeof header?.className === 'string' ? header.className.slice(0, 120) : '',
-          position: headerStyle?.position || '',
-          transitionDuration: headerStyle?.transitionDuration || '',
-          animationName: headerStyle?.animationName || '',
-          box: headerBox,
-        },
-        fonts: { status: document.fonts.status },
-        activeElement: {
-          tag: active?.tagName?.toLowerCase() || '',
-          id: active?.id || '',
-          ariaLabel: (active?.getAttribute?.('aria-label') || '').slice(0, 80),
-        },
-        animations,
-      });
+    };
+    const pagination = document.querySelector('#explore-pagination');
+    const targetLabel = `第 ${pageNumber} 頁，共 ${totalPages} 頁`;
+    const target = [...(pagination?.querySelectorAll('.explore-page-button') || [])]
+      .find(button => button.getAttribute('aria-label') === targetLabel);
+    const targetBox = rect(target);
+    const targetStyle = target ? getComputedStyle(target) : null;
+    const heading = document.getElementById('explore-achievement-heading');
+    const headingBox = rect(heading);
+    const header = document.querySelector('.site-header');
+    const headerStyle = header ? getComputedStyle(header) : null;
+    const headerBox = rect(header);
+    const active = document.activeElement;
+    const current = pagination?.querySelector('[aria-current="page"]');
+    const url = new URL(location.href);
+    const requestedValue = url.searchParams.get('value') || url.searchParams.get('category') || url.searchParams.get('village') || '';
+    const animations = document.getAnimations().filter(animation => animation.playState === 'running').slice(0, 8).map(animation => {
+      const element = animation.effect?.target;
+      const selector = element?.id ? `#${element.id}` : element?.tagName?.toLowerCase() || 'unknown';
+      return { selector, playState: animation.playState, currentTime: Number.isFinite(Number(animation.currentTime)) ? round(Number(animation.currentTime)) : null };
     });
-  }), { pageNumber, totalPages });
+    return {
+      url: {
+        path: url.pathname,
+        page: Math.max(1, Number.parseInt(url.searchParams.get('page'), 10) || 1),
+        type: url.searchParams.get('type') || '',
+        value: requestedValue.slice(0, 48),
+        hasKeyword: url.searchParams.has('q'),
+        hasStatus: url.searchParams.has('status'),
+      },
+      viewport: { width: innerWidth, height: innerHeight },
+      scroll: { x: round(scrollX), y: round(scrollY), behavior: getComputedStyle(document.documentElement).scrollBehavior },
+      target: {
+        page: pageNumber,
+        found: Boolean(target),
+        disabled: target?.disabled ?? null,
+        visible: Boolean(target && target.getClientRects().length && targetStyle.display !== 'none' && targetStyle.visibility !== 'hidden'),
+        ariaCurrent: target?.getAttribute('aria-current') || null,
+        box: targetBox,
+        transitionDuration: targetStyle?.transitionDuration || '',
+        animationName: targetStyle?.animationName || '',
+      },
+      currentPage: Number(current?.textContent.trim()) || 0,
+      results: { count: document.querySelectorAll('#explore-achievements .explore-result-card').length },
+      heading: {
+        focused: active === heading,
+        withinViewport: Boolean(headingBox && headingBox.top >= 0 && headingBox.bottom <= innerHeight),
+        box: headingBox,
+      },
+      header: {
+        className: typeof header?.className === 'string' ? header.className.slice(0, 120) : '',
+        position: headerStyle?.position || '',
+        transitionDuration: headerStyle?.transitionDuration || '',
+        animationName: headerStyle?.animationName || '',
+        box: headerBox,
+      },
+      fonts: { status: document.fonts.status },
+      activeElement: {
+        tag: active?.tagName?.toLowerCase() || '',
+        id: active?.id || '',
+        ariaLabel: (active?.getAttribute?.('aria-label') || '').slice(0, 80),
+      },
+      animations,
+    };
+  }, { pageNumber, totalPages });
 }
 async function waitForExplorePaginationSnapshot(page, pageNumber, totalPages, phase, expectedCount) {
   let lastSnapshot = null;

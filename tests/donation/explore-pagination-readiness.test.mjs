@@ -69,13 +69,32 @@ test('bounded readiness waits through a smooth-scroll and header-layout transiti
   assert.equal(ready.header.box.top, 0);
 });
 
+test('bounded readiness spaces synchronous snapshots on the host clock without animation frames', async () => {
+  const sampleTimes = [];
+  const ready = await waitForStableExplorePaginationSnapshot(
+    () => {
+      sampleTimes.push(process.hrtime.bigint());
+      return snapshot({ page: 6, headingFocused: true });
+    },
+    state => isExplorePaginationPageReady(state, 6, 10),
+    { timeoutMs: 250, stableSamples: 3 },
+  );
+
+  assert.equal(sampleTimes.length, 3);
+  assert.equal(ready.currentPage, 6);
+  for (let index = 1; index < sampleTimes.length; index += 1) {
+    const elapsedMs = Number(sampleTimes[index] - sampleTimes[index - 1]) / 1e6;
+    assert(elapsedMs >= 20, `host polling interval must be real, got ${elapsedMs.toFixed(2)}ms`);
+  }
+});
+
 test('bounded readiness returns a sanitized last snapshot when geometry never settles', async () => {
   let scrollY = 0;
   await assert.rejects(
     waitForStableExplorePaginationSnapshot(
       async () => snapshot({ scrollY: scrollY++ }),
       state => isExplorePaginationTargetReady(state, 6),
-      { timeoutMs: 50, maxSamples: 6, stableSamples: 3, label: 'page 6 target' },
+      { timeoutMs: 250, maxSamples: 6, stableSamples: 3, label: 'page 6 target' },
     ),
     error => error.lastSnapshot?.scroll?.y === 5
       && /page 6 target: UI did not become ready and geometrically stable/.test(error.message),
