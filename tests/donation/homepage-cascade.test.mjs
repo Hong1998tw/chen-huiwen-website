@@ -117,10 +117,17 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
   const hero = ruleFor(rules, '#main.home-redesign .hero', 'max-width: 780px');
   const copy = ruleFor(rules, '#main.home-redesign .hero-copy', 'max-width: 780px');
   const copyChildren = ruleFor(rules, '#main.home-redesign .hero-copy > *', 'max-width: 780px');
+  const kicker = ruleFor(rules, '#main.home-redesign .hero > .hero-copy > .kicker', 'max-width: 780px');
+  const title = ruleFor(rules, '#main.home-redesign .hero > .hero-copy > h1', 'max-width: 780px');
+  const intro = ruleFor(rules, '#main.home-redesign .hero > .hero-copy > .hero-intro', 'max-width: 780px');
+  const actions = ruleFor(rules, '#main.home-redesign .hero > .hero-copy > .hero-actions', 'max-width: 780px');
   const portrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-width: 780px');
+  const caption = ruleFor(rules, '#main.home-redesign .hero-portrait figcaption', 'max-width: 780px');
   const frame = ruleFor(rules, '#main.home-redesign .portrait-frame');
   const compactHero = ruleFor(rules, '#main.home-redesign .hero', 'max-height: 800px');
   const compactPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-height: 800px');
+  const narrowHero = ruleFor(rules, '#main.home-redesign .hero', 'max-width: 300px');
+  const narrowPortrait = ruleFor(rules, '#main.home-redesign .hero-portrait', 'max-width: 300px');
 
   assertDeclarations(baseHero, {
     display: 'grid',
@@ -152,33 +159,59 @@ test('scoped hero rules reset legacy grid placement and mobile display behavior'
     'grid-row': 'lawyer-start / lawyer-end',
   }, 'desktop lawyer link');
   assertDeclarations(hero, {
-    'grid-template-columns': 'minmax(0, 1fr)',
-    'grid-template-rows': 'auto auto auto auto',
-    'grid-template-areas': '"copy" "tasks" "lawyer" "portrait"',
+    'grid-template-columns': 'minmax(0, 1fr) minmax(0, .62fr)',
+    'grid-template-rows': 'auto auto auto auto auto auto',
+    'grid-template-areas': '"eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer"',
+    'row-gap': '18px',
+    'column-gap': '14px',
   }, 'mobile hero');
   assertDeclarations(copy, {
-    display: 'block',
-    'grid-area': 'copy',
-    'grid-column': 'copy-start / copy-end',
-    'grid-row': 'copy-start / copy-end',
+    display: 'contents',
+    'grid-area': 'auto',
+    'grid-column': 'auto',
+    'grid-row': 'auto',
   }, 'mobile hero copy');
   assertDeclarations(copyChildren, { 'grid-area': 'auto', 'grid-column': 'auto', 'grid-row': 'auto' }, 'legacy child placement reset');
+  assertDeclarations(kicker, { 'grid-area': 'eyebrow', margin: '0' }, 'mobile hero eyebrow');
+  assertDeclarations(title, { 'grid-area': 'title', margin: '0', 'font-size': 'clamp(1.875rem, 9.5vw, 3rem)' }, 'mobile hero title');
+  assertDeclarations(intro, { 'grid-area': 'intro', 'max-width': 'none', margin: '0' }, 'mobile hero introduction');
+  assertDeclarations(actions, { 'grid-area': 'actions' }, 'mobile hero actions');
   assertDeclarations(portrait, {
     'grid-area': 'portrait',
     'grid-column': 'portrait-start / portrait-end',
     'grid-row': 'portrait-start / portrait-end',
     display: 'block',
-    width: 'min(100%, 380px)',
+    position: 'relative',
+    width: '100%',
     height: 'auto',
     'min-height': '0',
-    'max-width': '380px',
+    'max-width': 'none',
     margin: '0',
+    'justify-self': 'stretch',
+    'align-self': 'start',
   }, 'mobile portrait reset');
-  assert.equal(portrait.declarations.get('justify-self'), 'center');
-  assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'portrait frame keeps its established ratio');
-  assert.equal(rules.find(rule => rule.selectors.includes('#main.home-redesign .hero-portrait figcaption') && rule.media.join(' ').includes('max-width: 780px'))?.declarations.get('display'), 'block');
+  assert.equal(frame.declarations.get('aspect-ratio'), '1.04', 'desktop portrait frame keeps its established ratio');
+  assert.equal(ruleFor(rules, '#main.home-redesign .portrait-frame', 'max-width: 780px')?.declarations.get('aspect-ratio'), '2 / 3', 'mobile portrait frame uses the source portrait ratio');
+  assertDeclarations(caption, { display: 'block', position: 'absolute', 'clip-path': 'inset(50%)' }, 'mobile caption remains visually hidden but available to assistive technology');
+  assertDeclarations(narrowHero, {
+    'grid-template-columns': 'minmax(0, 1fr)',
+    'grid-template-areas': '"eyebrow" "title" "portrait" "intro" "actions" "tasks" "lawyer"',
+  }, 'narrow text-zoom reflow');
+  assertDeclarations(narrowPortrait, { width: 'min(100%, 260px)', 'max-width': '260px', 'justify-self': 'center' }, 'narrow portrait reflow');
   assertDeclarations(compactHero, { 'row-gap': '20px', 'padding-top': '24px' }, 'short desktop hero');
   assertDeclarations(compactPortrait, { width: 'min(100%, 320px)' }, 'short desktop portrait');
+});
+
+test('canonical portrait sizes match the generated homepage image source', async () => {
+  const template = await read('templates/home-main.html');
+  const built = await read('index.html');
+  const source = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<source\b[^>]*sizes="([^"]+)"/i)?.[1];
+  const alt = html => html.match(/<figure class="portrait hero-portrait">[\s\S]*?<img\b[^>]*alt="([^"]+)"/i)?.[1];
+  const expectedSizes = '(max-width: 300px) calc(100vw - 40px), (max-width: 620px) calc(38.3vw - 20px), (max-width: 780px) calc(38.3vw - 30px), 380px';
+
+  assert.equal(source(template), expectedSizes, 'canonical template describes the new mobile portrait width');
+  assert.equal(source(built), expectedSizes, 'generated homepage uses the canonical mobile portrait width');
+  assert.equal(alt(template), alt(built), 'the source and generated portrait keep identical alternative text');
 });
 
 test('homepage selectors outrank every earlier legacy hero layout declaration', async () => {

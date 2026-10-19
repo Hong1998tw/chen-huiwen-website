@@ -21,7 +21,7 @@ const browser=await chromium.launch();
 const report={base,method:'local generated source in Chromium; not Lighthouse; no external requests',checks:[],errors:[]};
 try{
  if(!live)for(let n=0;n<60;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
- for(const width of [320,390,768,1440]){
+ for(const width of [320,360,390,430,780,781,1180,1440]){
   const ctx=await browser.newContext({viewport:{width,height:960},reducedMotion:'reduce'});
   await ctx.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
   const page=await ctx.newPage();
@@ -35,6 +35,27 @@ try{
   await page.waitForTimeout(250);
   const initial=await page.evaluate(()=>({lcp:window.__homeLcp.at(-1)||null,height:document.documentElement.scrollHeight}));
   await assertNoHorizontalOverflow(page,{directory:out+'diagnostics/',label:`homepage-${width}-layout`});
+  const heroGeometry=await page.evaluate(()=>{
+   const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+   return{hero:box('.hero'),kicker:box('.hero-copy .kicker'),title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),actions:box('.hero-actions'),tasks:box('.home-task-paths'),lawyer:box('.home-lawyer-link'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+  });
+  if(width<=780){
+   assert(heroGeometry.frame.left>=heroGeometry.title.right,JSON.stringify(heroGeometry));
+   assert(heroGeometry.frame.top<heroGeometry.title.bottom&&heroGeometry.frame.bottom>heroGeometry.title.top,JSON.stringify(heroGeometry));
+   assert(heroGeometry.frame.right<=width&&heroGeometry.frame.left>=0,JSON.stringify(heroGeometry));
+   assert(heroGeometry.frame.bottom<=heroGeometry.intro.top,JSON.stringify(heroGeometry));
+   assert(heroGeometry.intro.bottom<=heroGeometry.actions.top,JSON.stringify(heroGeometry));
+   assert(heroGeometry.actions.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));
+   assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));
+   assert(heroGeometry.tasks.bottom<=heroGeometry.lawyer.top,JSON.stringify(heroGeometry));
+   assert.equal(heroGeometry.scrollWidth,heroGeometry.viewportWidth,JSON.stringify(heroGeometry));
+   const titleLineCount=await page.locator('.hero h1 span').evaluateAll(spans=>spans.map(span=>{const range=document.createRange();range.selectNodeContents(span);return range.getClientRects().length;}));
+   assert.deepEqual(titleLineCount,[1,1],`mobile title keeps its two authored lines at ${width}px: ${JSON.stringify(titleLineCount)}`);
+  }else{
+   assert(heroGeometry.title.right<=heroGeometry.frame.left,JSON.stringify(heroGeometry));
+   assert(heroGeometry.portrait.bottom<=heroGeometry.tasks.top,JSON.stringify(heroGeometry));
+   assert.equal(heroGeometry.scrollWidth,heroGeometry.viewportWidth,JSON.stringify(heroGeometry));
+  }
   assert.equal(await page.locator('h1').count(),1);
   const main=page.locator('main.home-redesign');
   assert.deepEqual(await main.locator(':scope > section').evaluateAll(xs=>xs.map(x=>x.id||null)),[null,'recent','home-local-progress','council','contact']);
@@ -133,6 +154,20 @@ try{
   await page.locator('[data-legal-calendar]').waitFor({state:'visible'});
   await page.goto(base);await page.addStyleTag({content:'html{font-size:200%!important}'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const enlargedHero=await page.evaluate(()=>{
+   const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+   return{title:box('.hero h1'),frame:box('.hero-portrait .portrait-frame'),portrait:box('.hero-portrait'),intro:box('.hero-intro'),tasks:box('.home-task-paths'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+  });
+  if(width<=780){
+   assert(enlargedHero.frame.left>=enlargedHero.title.right,JSON.stringify(enlargedHero));
+   assert(enlargedHero.frame.top<enlargedHero.title.bottom&&enlargedHero.frame.bottom>enlargedHero.title.top,JSON.stringify(enlargedHero));
+   assert(enlargedHero.frame.bottom<=enlargedHero.intro.top,JSON.stringify(enlargedHero));
+   assert(enlargedHero.portrait.bottom<=enlargedHero.tasks.top,JSON.stringify(enlargedHero));
+   assert.equal(enlargedHero.scrollWidth,enlargedHero.viewportWidth,JSON.stringify(enlargedHero));
+  }else{
+   assert(enlargedHero.title.right<=enlargedHero.frame.left,JSON.stringify(enlargedHero));
+   assert(enlargedHero.portrait.bottom<=enlargedHero.tasks.top,JSON.stringify(enlargedHero));
+  }
   const controls=await page.locator('#home-village').evaluate(el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width,clientWidth:el.clientWidth,scrollWidth:el.scrollWidth};});
   assert(controls.left>=0&&controls.right<=width,JSON.stringify(controls));
   assert(controls.scrollWidth<=controls.clientWidth,JSON.stringify(controls));
@@ -158,7 +193,7 @@ try{
   assert(legalLayout.textRects.every(rect=>rect.left>=legalLayout.left&&rect.right<=legalLayout.right&&rect.top>=legalLayout.top&&rect.bottom<=legalLayout.bottom),JSON.stringify(legalLayout));
   assert(!['hidden','clip'].includes(legalLayout.overflowX)&&!['hidden','clip'].includes(legalLayout.overflowY),JSON.stringify(legalLayout));
   await page.screenshot({path:out+`home-${width}-text-200-top.png`});
-  report.checks.push({width,sourceParity:'PASS',portraitAlpha:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp});
+  report.checks.push({width,sourceParity:'PASS',portraitAlpha:'PASS',heroGeometry:'PASS',accessibility:'PASS',keyboard:'PASS',responsive:'PASS',pageHeight,lcpMs:initial.lcp});
   await ctx.close();
  }
 

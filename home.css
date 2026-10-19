@@ -279,33 +279,63 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
 
 @media (max-width: 780px) {
   #main.home-redesign .hero {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto;
-    grid-template-areas: "copy" "tasks" "lawyer" "portrait";
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, .62fr);
+    grid-template-rows: auto auto auto auto auto auto;
+    grid-template-areas: "eyebrow portrait" "title portrait" "intro intro" "actions actions" "tasks tasks" "lawyer lawyer";
+    row-gap: 18px;
+    column-gap: 14px;
   }
   #main.home-redesign .hero-copy {
-    display: block;
-    grid-area: copy;
-    grid-column: copy-start / copy-end;
-    grid-row: copy-start / copy-end;
+    display: contents;
+    grid-area: auto;
+    grid-column: auto;
+    grid-row: auto;
   }
   #main.home-redesign .hero-copy > * { grid-area: auto; grid-column: auto; grid-row: auto}
-  #main.home-redesign .hero h1 { font-size: clamp(46px, 11vw, 60px)}
+  #main.home-redesign .hero > .hero-copy > .kicker {
+    grid-area: eyebrow;
+    margin: 0;
+    font-size: .8125rem;
+  }
+  #main.home-redesign .hero > .hero-copy > h1 {
+    grid-area: title;
+    margin: 0;
+    font-size: clamp(1.875rem, 9.5vw, 3rem);
+  }
+  #main.home-redesign .hero > .hero-copy > .hero-intro {
+    grid-area: intro;
+    max-width: none;
+    margin: 0;
+    font-size: clamp(1rem, 2vw, 1.1875rem);
+  }
+  #main.home-redesign .hero > .hero-copy > .hero-actions { grid-area: actions; }
   #main.home-redesign .hero-portrait {
     grid-area: portrait;
     grid-column: portrait-start / portrait-end;
     grid-row: portrait-start / portrait-end;
     display: block;
-    position: static;
-    width: min(100%, 380px);
+    position: relative;
+    width: 100%;
     height: auto;
     min-height: 0;
-    max-width: 380px;
+    max-width: none;
     margin: 0;
-    justify-self: center;
+    justify-self: stretch;
+    align-self: start;
   }
-  #main.home-redesign .hero-portrait figcaption { display: block; text-align: center}
+  #main.home-redesign .portrait-frame { aspect-ratio: 2 / 3; }
+  #main.home-redesign .hero-portrait figcaption {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
   #main.home-redesign .home-task-paths {
     grid-area: tasks;
     grid-column: tasks-start / tasks-end;
@@ -341,14 +371,27 @@ body.homepage-v2 .footer-grid { padding-bottom: 0}
   .home-redesign .contact-grid { grid-template-columns: minmax(0, 1fr); gap: 20px}
 }
 
+@media (max-width: 300px) {
+  #main.home-redesign .hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto auto auto auto;
+    grid-template-areas: "eyebrow" "title" "portrait" "intro" "actions" "tasks" "lawyer";
+  }
+  #main.home-redesign .hero-portrait {
+    width: min(100%, 260px);
+    max-width: 260px;
+    justify-self: center;
+  }
+}
+
 @media (max-width: 620px) {
   .home-redesign { font-size: 16px}
   .home-redesign .wrap { width: calc(100% - 40px)}
   .home-redesign .hero { padding-top: 28px}
-  #main.home-redesign .hero-intro { font-size: 16px}
+  #main.home-redesign .hero-intro { font-size: 1rem}
   .home-redesign .hero-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px}
   .home-redesign .primary,
-  .home-redesign .outline { min-height: 48px; padding-inline: 8px; font-size: 14px}
+  .home-redesign .outline { min-height: 48px; padding-inline: 8px; font-size: .875rem}
   .home-redesign .section { padding-block: 22px}
   .home-redesign .home-recent-heading { margin-bottom: 20px}
   .home-redesign .home-recent-card-copy h3 { font-size: 22px}
