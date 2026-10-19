@@ -642,7 +642,11 @@ try {
       };
       paginationDiagnostics.push(pageDiagnostic);
       try {
-        pageDiagnostic.scrollIntoView.before = await readExplorePaginationSnapshot(page,number,totalPages);
+        pageDiagnostic.scrollIntoView.before = await withTimeout(
+          readExplorePaginationSnapshot(page,number,totalPages),
+          EXPLORE_SCROLL_SNAPSHOT_TIMEOUT_MS,
+          `Explore pagination page ${number} initial scroll snapshot`,
+        );
         latestSnapshot = pageDiagnostic.scrollIntoView.before;
         await withTimeout(
           startExplorePaginationFrameProbe(page),
