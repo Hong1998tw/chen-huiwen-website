@@ -129,8 +129,8 @@ try{
    await resetOverview();
    await page.locator('#achievement-map').scrollIntoViewIfNeeded();
    const marker=page.locator('.leaflet-marker-icon[title*="、"]').first();
-   const ids=await marker.evaluate(el=>el.title.split('、').length);
    await marker.click();
+   const ids=await page.evaluate(()=>window.HuiwenCases.getState().groupIds.length);
    const popup=page.locator('#achievement-map .map-popup-group');
    await popup.waitFor({state:'visible'});
    assert.match(await popup.locator('.map-popup-head').textContent(),new RegExp(`附近 ${ids} 項專題`));
