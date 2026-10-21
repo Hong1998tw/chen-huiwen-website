@@ -1,6 +1,7 @@
 """Focused tests for the quality command's subprocess observations."""
 import io
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -79,6 +80,7 @@ class QualityObservabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 mock.patch.object(sys, "argv", ["quality.py", "--root", directory]),
+                mock.patch.dict(os.environ, {"WORKERS_CI": ""}),
                 mock.patch.object(quality, "run") as run,
                 mock.patch.object(quality, "generated"),
                 mock.patch("sys.stdout", new_callable=io.StringIO),
@@ -103,6 +105,26 @@ class QualityObservabilityTests(unittest.TestCase):
             [call.kwargs["label"] for call in run_builder.call_args_list],
             ["generated.first_build.build_all.py", "generated.second_build.build_all.py"],
         )
+
+    def test_workers_builds_deploy_skips_only_the_unit_suites(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stream = io.StringIO()
+            with (
+                mock.patch.object(sys, "argv", ["quality.py", "--root", directory]),
+                mock.patch.dict(os.environ, {"WORKERS_CI": "1"}),
+                mock.patch.object(quality, "run") as run,
+                mock.patch.object(quality, "generated") as generated,
+                redirect_stdout(stream),
+            ):
+                self.assertEqual(quality.main(), 0)
+
+        commands = [call.args[1] for call in run.call_args_list]
+        self.assertFalse([command for command in commands if "unittest" in command])
+        self.assertEqual([command[1] for command in commands[:len(quality.VALIDATORS)]],
+                         ["scripts/" + name for name in quality.VALIDATORS])
+        self.assertIn([sys.executable, "scripts/build_public.py", "--check"], commands)
+        generated.assert_called_once()
+        self.assertIn("QUALITY_UNIT_TESTS_SKIPPED reason=WORKERS_CI", stream.getvalue())
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 """Single deterministic quality entry point. Never contacts production or private registries."""
 from python_guard import require_supported_python
 require_supported_python()
-import argparse, hashlib, shlex, subprocess, sys, time
+import argparse, hashlib, os, shlex, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -78,7 +78,12 @@ def main():
                 run(root,[sys.executable,'scripts/'+name,*extra])
         generated(root)
         run(root,[sys.executable,'scripts/build_public.py','--check'])
-        if not a.generated_only:
+        # Cloudflare Workers Builds (WORKERS_CI=1) stops a deploy build at 20 minutes. The unit
+        # suite alone outgrew that budget, and it already runs as the required `validate` check on
+        # every pull request, so the deploy build keeps validators and generated checks only.
+        if not a.generated_only and os.environ.get('WORKERS_CI')=='1':
+            print('QUALITY_UNIT_TESTS_SKIPPED reason=WORKERS_CI (covered by the required validate check)',flush=True)
+        elif not a.generated_only:
             run(root,[sys.executable,'-u','-m','unittest','discover','-v','-s','tests','-p','test_*.py'])
             run(root,[sys.executable,'-u','-m','unittest','discover','-v','-s','tests/events'])
         if a.browser:
