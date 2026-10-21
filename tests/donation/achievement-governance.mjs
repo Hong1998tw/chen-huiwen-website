@@ -114,21 +114,40 @@ try{
    await page.locator('#achievement-map').scrollIntoViewIfNeeded();
    await page.locator('.leaflet-marker-icon[title="文德國小活動中心"]').click();
    const popup=page.locator('.map-popup');
-   assert.match(await popup.locator('.case-funding-total').textContent(),/核定總經費 6,035\.7萬元/);
-   await popup.locator('summary').click();
-   assert.match(await popup.textContent(),/中央補助 2,610\.71萬元/);
-   assert.match(await popup.textContent(),/2025年5月14日/);
-   assert.match(await popup.textContent(),/非決算或已撥款/);
-   assert.equal(await popup.locator('a[href*="#case-sources"]').count(),1);
+   assert.match(await popup.locator('.map-popup-meta').textContent(),/核定總經費 6,035\.7萬元/);
+   assert.equal(await popup.locator('a[href="achievement-wende-school-center.html"]').count(),1);
+   assert.equal(await popup.locator('.map-popup-link').evaluate(link=>link.getBoundingClientRect().height>=44),true);
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-   const styles=await popup.locator('.map-popup-case.is-selected a').evaluateAll(links=>links.map(link=>({color:getComputedStyle(link).color,background:getComputedStyle(link.closest('.map-popup-case')).backgroundColor})));
-   assert(styles.length>=3);
-   assert(styles.every(style=>style.color==='rgb(37, 76, 62)'&&style.background==='rgb(237, 246, 223)'),JSON.stringify(styles));
    const axe=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
    if(axe.violations.length) await writeFile(out+`map-funding-axe-${width}.json`,JSON.stringify(axe.violations,null,2));
    const contrastFailures=axe.violations.flatMap(v=>v.nodes.map(n=>({id:v.id,target:n.target,summary:n.failureSummary})));
    assert.deepEqual(axe.violations.map(v=>v.id),[],JSON.stringify(contrastFailures));
    await page.screenshot({path:out+`map-funding-${width}.png`,fullPage:true});
+  },resetOverview);
+
+  await check(`${width}: nearby map records list status pills and reveal the rest in place`,async()=>{
+   await resetOverview();
+   await page.locator('#achievement-map').scrollIntoViewIfNeeded();
+   const marker=page.locator('.leaflet-marker-icon[title*="、"]').first();
+   const ids=await marker.evaluate(el=>el.title.split('、').length);
+   await marker.click();
+   const popup=page.locator('#achievement-map .map-popup-group');
+   await popup.waitFor({state:'visible'});
+   assert.match(await popup.locator('.map-popup-head').textContent(),new RegExp(`附近 ${ids} 項專題`));
+   assert.equal(await popup.locator('.map-popup-row.is-selected').count(),0);
+   const shown=await popup.locator('.map-popup-row:visible').count();
+   assert.equal(shown,Math.min(ids,width===390?3:4));
+   assert.equal(await popup.locator('.map-popup-row:visible .map-popup-status').count(),shown);
+   if(ids>shown){
+    await popup.locator('.map-popup-more').click();
+    assert.equal(await popup.locator('.map-popup-row:visible').count(),ids);
+    assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('map-popup-row')),true);
+   }
+   const axe=await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+   assert.deepEqual(axe.violations.map(v=>v.id),[],JSON.stringify(axe.violations.flatMap(v=>v.nodes.map(n=>({id:v.id,target:n.target})))));
+   await popup.locator('.map-popup-row').first().focus();
+   await page.keyboard.press('Escape');
+   await page.waitForFunction(()=>!document.querySelector('#achievement-map .leaflet-popup'));
   },resetOverview);
 
   await check(`${width}: related detail retains four cards and keyboard link opens its real topic filter`,async()=>{

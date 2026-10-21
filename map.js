@@ -18,7 +18,7 @@
   const data = cards.map(card => JSON.parse(card.dataset.meta));
   const textById = new Map(cards.map(card => [card.dataset.case, normalize(card.innerText)]));
   const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  let map, markers, boundaries, mapPromise, dataPromise, fullDataLoaded = false, visible = data, currentPage = 1, selectedId = null, groupIds = [], searchTimer;
+  let map, markers, boundaries, mapPromise, dataPromise, fullDataLoaded = false, visible = data, currentPage = 1, selectedId = null, groupIds = [], selectedByMarker = false, searchTimer;
   const boundaryLayers = new Map();
   list.dataset.pageSize = String(PAGE_SIZE);
   const pagination = document.createElement('nav');
@@ -128,10 +128,10 @@
       pagination.append(pageButton('下一頁', currentPage + 1, currentPage === pages));
     }
   }
-  function selectCase(id, group = [], restoreMarkerFocus = false) {
+  function selectCase(id, group = [], restoreMarkerFocus = false, byMarker = false) {
     const i = visible.findIndex(c => c.id === id);
     if (i < 0) return;
-    selectedId = id; groupIds = group.filter(id => visible.some(c => c.id === id));
+    selectedId = id; selectedByMarker = byMarker; groupIds = group.filter(id => visible.some(c => c.id === id));
     currentPage = Math.floor(i / PAGE_SIZE) + 1;
     renderCards(); syncURL(); announce();
     if (map && markers) {
@@ -154,6 +154,53 @@
     if (pts.length) map.fitBounds(L.latLngBounds(pts), {padding:[35,35],maxZoom:15,animate:false});
     else if (boundaries) map.fitBounds(boundaries.getBounds(), {padding:[15,15],animate:false});
   }
+  const STATUS_CLASS = {'持續追蹤':'is-tracking','已完成':'is-done','爭取規劃':'is-planning','政策實施':'is-policy'};
+  // Phones get a shorter map (45vh), so the collapsed list stays short enough to fit above the marker.
+  const groupPreview = () => matchMedia('(max-width: 600px)').matches ? 3 : 4;
+  function node(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  // One record: a compact link chip. Funding keeps its basis word; amounts, sources and caveats stay on the record page.
+  function singlePopup(c) {
+    const pop = node('div', 'map-popup map-popup-single'), link = node('a', 'map-popup-link'), text = node('span', 'map-popup-text');
+    link.href = `achievement-${c.id}.html`;
+    const amount = c.funding && (c.funding.total / 10000).toLocaleString('zh-TW', {maximumFractionDigits: 2}) + '萬元';
+    const detail = amount ? `${c.funding.basis} ${amount}` : c.lastRecordDate ? `最新紀錄 ${c.lastRecordDate}` : '';
+    text.append(node('strong', '', c.title), node('span', 'map-popup-meta', [c.status, detail].filter(Boolean).join(' · ')));
+    const dot = node('span', 'map-popup-dot ' + (STATUS_CLASS[c.status] || '')), go = node('span', 'map-popup-go', '→');
+    dot.setAttribute('aria-hidden', 'true'); go.setAttribute('aria-hidden', 'true');
+    link.append(dot, text, go); pop.append(link);
+    return pop;
+  }
+  // Nearby records: a short list with status pills; longer groups reveal the rest in place.
+  function groupPopup(cases, highlightId, onExpand) {
+    const pop = node('div', 'map-popup map-popup-group'), head = node('p', 'map-popup-head'), list = node('ul', 'map-popup-list'), preview = groupPreview();
+    head.append(node('span', 'map-popup-eyebrow', '放大地圖可分開查看'), node('strong', '', `附近 ${cases.length} 項專題`));
+    cases.forEach((c, i) => {
+      const item = node('li'), link = node('a', 'map-popup-row');
+      item.hidden = i >= preview;
+      link.href = `achievement-${c.id}.html`;
+      if (c.id === highlightId) { link.classList.add('is-selected'); link.setAttribute('aria-current', 'true'); }
+      link.append(node('span', 'map-popup-row-title', c.title), node('span', 'map-popup-status ' + (STATUS_CLASS[c.status] || ''), c.status));
+      item.append(link); list.append(item);
+    });
+    pop.append(head, list);
+    if (cases.length > preview) {
+      const more = node('button', 'map-popup-more', `再顯示 ${cases.length - preview} 項`);
+      more.type = 'button';
+      more.addEventListener('click', () => {
+        for (const item of list.children) item.hidden = false;
+        // Hide instead of removing: a detached click target would reach Leaflet as a map click and close the popup.
+        pop.classList.add('is-expanded'); more.hidden = true; onExpand();
+        list.children[preview].querySelector('a').focus();
+      });
+      pop.append(more);
+    }
+    return pop;
+  }
   function draw() {
     if (!map) return;
     markers.clearLayers();
@@ -171,32 +218,20 @@
       const neighbor = separated.find(group => point.distanceTo(map.latLngToLayerPoint(group[0].coordinates)) < 52);
       if (neighbor) neighbor.push(...cases); else separated.push([...cases]);
     }
+    // Keep group popups clear of the zoom control on narrow maps.
+    const groupWidth = Math.max(220, Math.min(320, root.clientWidth - 72));
     for (const cases of separated) {
       const selectedCase = cases.find(c => c.id === selectedId);
       const popupCases = selectedCase ? [selectedCase, ...cases.filter(c => c.id !== selectedCase.id)] : cases;
-      const pop = document.createElement('div'); pop.className = 'map-popup';
-      const title = document.createElement('strong'); title.textContent = selectedCase ? selectedCase.title : cases.length > 1 ? `${cases.length} 個附近專題（放大地圖可分開查看）` : cases[0].title; pop.append(title);
-      for (const c of popupCases) {
-        const item = document.createElement('section'); item.className = 'map-popup-case';
-        if (c.id === selectedId) {
-          item.classList.add('is-selected');
-          const selected = document.createElement('p'); selected.className = 'map-popup-selected'; selected.textContent = '目前選取'; item.append(selected);
-        }
-        const a = document.createElement('a'); a.href = `achievement-${c.id}.html`; a.textContent = c.title + ' →'; item.append(a);
-        if (c.funding) {
-          const f = c.funding, amount = value => (value / 10000).toLocaleString('zh-TW', {maximumFractionDigits: 2}) + '萬元';
-          const total = document.createElement('p'); total.className = 'case-funding-total'; total.textContent = f.basis + ' ' + amount(f.total); item.append(total);
-          const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = '經費與共同爭取'; details.append(summary);
-          for (const text of ['中央補助 ' + amount(f.centralGrant), f.approvedOn + ' 核定 · ' + f.approvalReference, f.collaboration, '新臺幣核定計畫口徑，非決算或已撥款。']) {
-            const p = document.createElement('p'); p.textContent = text; details.append(p);
-          }
-          const source = document.createElement('a'); source.href = f.sourceUrl; source.textContent = f.sourceTitle + ' ↗'; source.target = '_blank'; source.rel = 'noopener noreferrer'; details.append(source);
-          const full = document.createElement('a'); full.href = `achievement-${c.id}.html#case-sources`; full.textContent = '完整經費說明與來源 →'; details.append(full); item.append(details);
-        }
-        pop.append(item);
-      }
-      const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[44,44],iconAnchor:[22,22]}), title:cases.map(c=>c.title).join('、'),caseIds:cases.map(c=>c.id),keyboard:true}).bindPopup(pop,{maxWidth:320,autoPan:false}).addTo(markers);
-      marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id), document.activeElement === marker.getElement()));
+      // A marker click selects the first record only to sync the list, so the row is highlighted
+      // only when the reader picked that record from the list, the URL or the insight panel.
+      const pop = cases.length > 1 ? groupPopup(popupCases, selectedByMarker ? null : selectedId, () => marker.getPopup()?.update()) : singlePopup(cases[0]);
+      const popupOptions = cases.length > 1 ? {maxWidth:groupWidth,minWidth:Math.min(260,groupWidth),autoPanPaddingTopLeft:[56,16],autoPanPaddingBottomRight:[16,16],className:'map-popup-shell is-group'} : {maxWidth:300,autoPan:false,closeButton:false,className:'map-popup-shell is-single'};
+      const marker = L.marker(cases[0].coordinates, {icon:L.divIcon({className:'case-marker', html:`<span>${cases.length}</span>`,iconSize:[44,44],iconAnchor:[22,22]}), title:cases.map(c=>c.title).join('、'),caseIds:cases.map(c=>c.id),keyboard:true}).bindPopup(pop,popupOptions).addTo(markers);
+      marker.on('click', () => selectCase(cases[0].id, cases.map(c => c.id), document.activeElement === marker.getElement(), true));
+      pop.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { marker.closePopup(); marker.getElement()?.focus({preventScroll:true}); }
+      });
       marker.getElement()?.addEventListener('keydown', event => {
         if (event.key === ' ') { event.preventDefault(); marker.fire('click'); }
       });
