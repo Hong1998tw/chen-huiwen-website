@@ -7,7 +7,348 @@
     "reviewedAt": "2026-10-22T07:23:45+08:00",
     "note": "已逐張檢視 30 張 local-http-uncompressed PNG（15 頁 × 1440／390）：頁首、字型、版面與內容皆正常，無遮擋或破版。首頁為 PR #190 改版後版面，政績頁含 PR #192 地圖彈窗；同一 run 的 cross-source review 顯示此來源（main b4dd4e31）與 PR #193 候選 30 張像素變化為 0。選舉頁倒數天數隨日期變動，屬預期內容差異。"
   },
-  "exceptions": [],
+  "exceptions": [
+    {
+      "captureId": "home-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 471593,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 463852 → main b4dd4e31 實測 471593。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:home-390:sameOriginTransferSizeBytes",
+      "evidencePath": "home-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "home-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 581783,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 463852 → main b4dd4e31 實測 581783。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:home-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "home-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievements-390",
+      "metric": "domElementCount",
+      "observedValue": 6432,
+      "limit": 1500,
+      "reason": "e3f63ff4 採用值 6432 → main b4dd4e31 實測 6432。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 1500 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievements-390:domElementCount",
+      "evidencePath": "achievements-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievements-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 1080434,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1076482 → main b4dd4e31 實測 1080434。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievements-390:sameOriginTransferSizeBytes",
+      "evidencePath": "achievements-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievements-1440",
+      "metric": "domElementCount",
+      "observedValue": 6432,
+      "limit": 1500,
+      "reason": "e3f63ff4 採用值 6432 → main b4dd4e31 實測 6432。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 1500 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievements-1440:domElementCount",
+      "evidencePath": "achievements-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievements-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 1080434,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1076482 → main b4dd4e31 實測 1080434。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievements-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "achievements-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-metro-green-line-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 860866,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 860872 → main b4dd4e31 實測 860866。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-metro-green-line-390:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-metro-green-line-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-metro-green-line-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 860866,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 860872 → main b4dd4e31 實測 860866。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-metro-green-line-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-metro-green-line-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-wende-school-center-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 438339,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 438345 → main b4dd4e31 實測 438339。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-wende-school-center-390:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-wende-school-center-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-wende-school-center-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 438339,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 438345 → main b4dd4e31 實測 438339。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-wende-school-center-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-wende-school-center-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-special-education-support-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 565423,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 565429 → main b4dd4e31 實測 565423。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-special-education-support-390:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-special-education-support-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "achievement-special-education-support-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 565423,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 565429 → main b4dd4e31 實測 565423。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:achievement-special-education-support-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "achievement-special-education-support-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "news-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 586302,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 379526 → main b4dd4e31 實測 586302。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:news-390:sameOriginTransferSizeBytes",
+      "evidencePath": "news-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "news-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 586302,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 586308 → main b4dd4e31 實測 586302。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:news-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "news-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "news-special-education-nurse-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 457528,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 457534 → main b4dd4e31 實測 457528。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:news-special-education-nurse-390:sameOriginTransferSizeBytes",
+      "evidencePath": "news-special-education-nurse-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "news-special-education-nurse-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 457528,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 457534 → main b4dd4e31 實測 457528。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:news-special-education-nurse-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "news-special-education-nurse-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "activities-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 348956,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 348962 → main b4dd4e31 實測 348956。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:activities-390:sameOriginTransferSizeBytes",
+      "evidencePath": "activities-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "activities-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 348956,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 348962 → main b4dd4e31 實測 348956。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:activities-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "activities-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "event-campaign-headquarters-opening-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 527113,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1206552 → main b4dd4e31 實測 527113。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:event-campaign-headquarters-opening-390:sameOriginTransferSizeBytes",
+      "evidencePath": "event-campaign-headquarters-opening-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "event-campaign-headquarters-opening-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 1206546,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1206552 → main b4dd4e31 實測 1206546。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:event-campaign-headquarters-opening-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "event-campaign-headquarters-opening-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "gallery-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 1349601,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1349607 → main b4dd4e31 實測 1349601。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:gallery-390:sameOriginTransferSizeBytes",
+      "evidencePath": "gallery-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "gallery-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 1349601,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 1349607 → main b4dd4e31 實測 1349601。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:gallery-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "gallery-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "service-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 387018,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 387024 → main b4dd4e31 實測 387018。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:service-390:sameOriginTransferSizeBytes",
+      "evidencePath": "service-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "service-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 387018,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 387024 → main b4dd4e31 實測 387018。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:service-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "service-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "petition-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 342666,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 342672 → main b4dd4e31 實測 342666。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:petition-390:sameOriginTransferSizeBytes",
+      "evidencePath": "petition-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "petition-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 342666,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 342672 → main b4dd4e31 實測 342666。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:petition-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "petition-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "election-390",
+      "metric": "domElementCount",
+      "observedValue": 4835,
+      "limit": 1500,
+      "reason": "e3f63ff4 採用值 4835 → main b4dd4e31 實測 4835。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 1500 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:election-390:domElementCount",
+      "evidencePath": "election-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "election-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 916668,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 916674 → main b4dd4e31 實測 916668。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:election-390:sameOriginTransferSizeBytes",
+      "evidencePath": "election-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "election-1440",
+      "metric": "domElementCount",
+      "observedValue": 4835,
+      "limit": 1500,
+      "reason": "e3f63ff4 採用值 4835 → main b4dd4e31 實測 4835。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 1500 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:election-1440:domElementCount",
+      "evidencePath": "election-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "election-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 916668,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 916674 → main b4dd4e31 實測 916668。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:election-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "election-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "explore-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 2175751,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 2175766 → main b4dd4e31 實測 2175751。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:explore-390:sameOriginTransferSizeBytes",
+      "evidencePath": "explore-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "explore-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 2175751,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 2175766 → main b4dd4e31 實測 2175751。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:explore-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "explore-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "not-found-390",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 310126,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 310132 → main b4dd4e31 實測 310126。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:not-found-390:sameOriginTransferSizeBytes",
+      "evidencePath": "not-found-390.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    },
+    {
+      "captureId": "not-found-1440",
+      "metric": "sameOriginTransferSizeBytes",
+      "observedValue": 310126,
+      "limit": 300000,
+      "reason": "e3f63ff4 採用值 310132 → main b4dd4e31 實測 310126。延續既有預算債務，隨新版 golden（PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減後）重新記錄實測值；到期日維持原例外的 2026-11-17，不延長。不提高 300000 限值、不消除 no-new-regression 規則，債務仍未結清。",
+      "resolutionTask": "A-05-BUDGET-REVIEW:not-found-1440:sameOriginTransferSizeBytes",
+      "evidencePath": "not-found-1440.json",
+      "expiresAt": "2026-11-17T23:59:00+08:00"
+    }
+  ],
   "environment": "local-http-uncompressed",
   "baseUrl": "http://127.0.0.1:33399",
   "sourceSHA": "b4dd4e318851b40db767418ebc31568a51308557",
