@@ -418,7 +418,7 @@ try{
  await dynamicPage.locator('.map-popup').first().waitFor({state:'visible'});
  await dynamicPage.evaluate(()=>document.fonts.ready);
  const mapSession=await cdpSession(dynamicPage);
- assertCustomHan(await platformFonts(mapSession,'.map-popup'),'dynamic map popup');
+ assertCustomHan(await platformFonts(mapSession,'.map-popup strong'),'dynamic map popup');
  report.dynamic.map={popup:(await dynamicPage.locator('.map-popup').first().innerText()).slice(0,160),family:await dynamicPage.locator('.map-popup').first().evaluate(el=>getComputedStyle(el).fontFamily),fontPaths:(await fontResources(dynamicPage)).map(entry=>new URL(entry.url).pathname)};
 
  active={phase:'legal page font probe',route:'terms.html',viewport:{width:390,height:844}};report.current={...active};

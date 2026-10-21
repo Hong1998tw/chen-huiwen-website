@@ -61,11 +61,35 @@
 .case-actions button{border:1px solid #cfdccd;border-radius:20px;font:inherit;background:#fff;padding:7px 10px;cursor:pointer;color:#375a4b}
 .location-unmapped{color:#52615b;font-size:12px}
 .case-marker{display:grid;place-items:center}.case-marker span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#1e503c;color:white;box-shadow:0 2px 8px #24483455;font-size:13px;font-weight:800}
-.map-popup strong{font-size:14px}.map-popup a{display:block;margin:12px 0;font-size:13px}
-.map-popup-case.is-selected{padding:8px 10px;border-inline-start:3px solid #315d48;background:#edf6df}
-.map-popup-case.is-selected a{color:#254c3e}
-.map-popup-selected{margin:0 0 4px;color:#315d48;font-size:.76rem;font-weight:700}
-.leaflet-container{font-family:inherit}.leaflet-popup-content{max-height:280px;overflow:auto}.leaflet-control-attribution{font-size:12px!important}.leaflet-container a{color:#254c3e}
+/* Map popups: one record is a compact link chip; nearby records are a short list with status pills. */
+.map-popup-shell .leaflet-popup-content-wrapper{padding:0;border-radius:16px;box-shadow:0 10px 30px rgba(27,51,40,.12),0 2px 6px rgba(27,51,40,.14)}
+.map-popup-shell .leaflet-popup-content{margin:0;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+.map-popup-shell.is-single .leaflet-popup-content-wrapper{border-radius:24px}
+.map-popup .map-popup-link{display:flex;align-items:center;gap:10px;min-height:48px;padding:7px 8px 7px 14px;border-radius:24px;color:#1d2b24;text-decoration:none}
+.map-popup-link:hover strong{text-decoration:underline;text-underline-offset:3px}
+.map-popup-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#b26b12}
+.map-popup-dot.is-done{background:#2e7d4f}.map-popup-dot.is-planning{background:#4b6a8a}.map-popup-dot.is-policy{background:#6a4b8a}
+.map-popup-text{display:grid;gap:1px;flex:1;min-width:0}
+.map-popup-text strong,.map-popup-row-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.map-popup-text strong{font-size:14px;line-height:1.45}
+.map-popup-meta{font-size:12px;line-height:1.5;color:#55665c}
+.map-popup-go{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#1e503c;color:#fff;font-size:15px}
+.map-popup-group{padding:14px 16px 6px}
+.map-popup-head{display:grid;gap:2px;margin:0 36px 4px 0}
+.map-popup-eyebrow{font-size:12px;color:#55665c}
+.map-popup-head strong{font-size:16px;line-height:1.4;color:#1d2b24}
+.map-popup-list{list-style:none;margin:0;padding:0}
+.map-popup-list li+li{border-top:1px solid #edf1ee}
+.map-popup-group.is-expanded .map-popup-list{max-height:min(320px,24vh);overflow:auto}
+.map-popup .map-popup-row{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 0;color:#1d2b24;text-decoration:none}
+.map-popup .map-popup-row.is-selected{margin:0 -8px;padding:6px 8px;border-radius:8px;background:#edf6df}
+.map-popup-row-title{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
+.map-popup-row:hover .map-popup-row-title{text-decoration:underline;text-underline-offset:3px}
+.map-popup-status{flex:none;padding:2px 9px;border-radius:999px;background:#fff3e2;color:#8a5413;font-size:12px;font-weight:700;line-height:1.6;white-space:nowrap}
+.map-popup-status.is-done{background:#e4f4ea;color:#24704a}.map-popup-status.is-planning{background:#e8eff7;color:#3f5f80}.map-popup-status.is-policy{background:#efe9f7;color:#634a86}
+.map-popup-more{display:flex;align-items:center;width:100%;min-height:44px;padding:0;border:0;border-top:1px solid #edf1ee;background:none;color:#1e503c;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+.map-popup a:focus-visible,.map-popup-more:focus-visible{outline:3px solid #173f33;outline-offset:2px}
+.leaflet-container{font-family:inherit}.leaflet-control-attribution{font-size:12px!important}.leaflet-container a{color:#254c3e}
 [data-case][hidden]{display:none}
 #case-empty{background:#fff;border-radius:20px;padding:30px}#case-empty p{margin:16px 0}
 
@@ -99,9 +123,7 @@
 
 /* A11Y-01 / UI-02: separated 44px map controls and legible record metadata. */
 .case-marker span{width:44px;height:44px;font-size:15px}
-.map-popup a{display:flex;align-items:center;min-height:44px;line-height:1.6}
 .leaflet-container a.leaflet-popup-close-button{width:44px;height:44px;line-height:44px}
-.leaflet-popup-content{margin-right:36px}
 .map-controls label{font-size:14px}
 .case-card .case-tags span,.case-card .case-subtags span{font-size:12px;line-height:1.6}
 .case-card .case-summary{font-size:15px;line-height:1.85}
@@ -124,10 +146,10 @@
 .case-funding{margin:10px 0 0;padding:7px 12px;background:#f0f6ee;border:1px solid #d2dfcd;border-radius:12px;color:#173f33;font-size:13px;line-height:1.55}
 .case-funding-total{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-weight:700;color:#173f33}
 .case-funding-total strong{font-size:18px;font-variant-numeric:tabular-nums}
-.case-funding details{margin:0}.case-funding details>summary.case-funding-total{display:list-item;min-height:44px;padding:4px 0;line-height:1.4}.case-funding summary,.map-popup-case summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;font-weight:700}
-.case-funding summary:focus-visible,.map-popup-case summary:focus-visible{outline:3px solid #173f33;outline-offset:2px}
-.case-funding details p,.map-popup-case details p{margin:8px 0}.case-funding details a{display:block;margin-top:10px;text-decoration:underline;text-underline-offset:3px}
-.case-funding-note{font-size:12px}.map-popup-case{overflow-wrap:anywhere}.map-popup-case+.map-popup-case{border-top:1px solid #d2dfcd;margin-top:12px}.map-popup-case .case-funding-total{font-size:15px;line-height:1.6}.map-popup-case details{font-size:13px;line-height:1.6}
+.case-funding details{margin:0}.case-funding details>summary.case-funding-total{display:list-item;min-height:44px;padding:4px 0;line-height:1.4}.case-funding summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;font-weight:700}
+.case-funding summary:focus-visible{outline:3px solid #173f33;outline-offset:2px}
+.case-funding details p{margin:8px 0}.case-funding details a{display:block;margin-top:10px;text-decoration:underline;text-underline-offset:3px}
+.case-funding-note{font-size:12px}
 #case-list>.case-card{content-visibility:auto;contain-intrinsic-size:auto 260px}
 
 /* Mobile filter dialog: keep one set of controls and move it between its inline home and the modal. */
