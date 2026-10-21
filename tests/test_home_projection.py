@@ -53,12 +53,12 @@ class HomeProjectionTests(unittest.TestCase):
             self.assertEqual(len(links),1)
             self.assertEqual(links[0]['data-home-legal-month'],month)
             self.assertIn(str(int(month[-2:]))+'月',links[0].get_text())
-            self.assertEqual(len(soup.select('.home-task-paths a')),3)
+            self.assertEqual(len(soup.select('.home-task-paths a')),2)
             self.assertEqual(len(soup.select('.home-lawyer-link')),1)
             self.assertEqual(len(soup.select('a[href^="tel:"]')),0)
             self.assertNotIn('服務處地址：',soup.get_text())
 
-    def test_home_page_has_one_hero_contact_pair_and_three_task_cards(self):
+    def test_home_page_has_one_hero_contact_pair_and_two_task_cards(self):
         soup=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
         main=soup.select_one('main.home-redesign')
         self.assertEqual(len(main.select('.hero-actions a')),2)
@@ -66,7 +66,7 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertEqual(main.select_one('.hero-actions a.primary')['href'],office['phoneUrl'])
         self.assertEqual(main.select_one('.hero-actions a.primary').get_text(strip=True),'撥打服務處')
         self.assertEqual(main.select_one('.hero-actions a.outline')['href'],'https://line.me/R/ti/p/@yve2766q')
-        self.assertEqual(len(main.select('.home-task-paths a')),3)
+        self.assertEqual(len(main.select('.home-task-paths a')),2)
         self.assertEqual(len(main.select('.home-lawyer-link a[data-home-legal-month]')),1)
         self.assertEqual(len(main.select('.home-task-paths')),1)
 

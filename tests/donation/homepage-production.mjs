@@ -134,7 +134,7 @@ try{
   assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),await page.locator('.contact-grid .big-phone').getAttribute('href'));
   assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
   assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
-  assert.equal(await page.locator('.home-task-paths a').count(),3);
+  assert.equal(await page.locator('.home-task-paths a').count(),2);
   assert.equal(await page.locator('.home-lawyer-link a[data-home-legal-month]').count(),1);
   assert.equal(await page.locator('.home-lawyer-link a').getAttribute('data-home-legal-month'),schedule.month);
   assert.equal(await page.locator('.home-recent-list > li').count(),3);
@@ -205,8 +205,11 @@ try{
    if(width===390)assert(pageHeight<5000,`mobile page height ${pageHeight}px must stay below 5000px`);
    if(width===1440)assert(pageHeight<4000,`desktop page height ${pageHeight}px must stay below 4000px`);
    if(width===1440){
-    const cardHeights=await page.locator('.home-recent-list article').evaluateAll(xs=>xs.map(x=>x.getBoundingClientRect().height));
-    assert(Math.max(...cardHeights)-Math.min(...cardHeights)<1,JSON.stringify(cardHeights));
+    // Headline layout: the event spans the full row; the award and local story share the next row at equal height.
+    const cards=await page.locator('.home-recent-list article').evaluateAll(xs=>xs.map(x=>{const r=x.getBoundingClientRect();return {top:r.top,width:r.width,height:r.height};}));
+    const list=await page.locator('.home-recent-list').evaluate(el=>el.getBoundingClientRect().width);
+    assert(Math.abs(cards[0].width-list)<1,JSON.stringify({cards,list}));
+    assert(Math.abs(cards[1].top-cards[2].top)<1&&Math.abs(cards[1].height-cards[2].height)<1,JSON.stringify(cards));
    }
   });
   const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();

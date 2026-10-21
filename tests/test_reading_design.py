@@ -31,7 +31,7 @@ class ReadingDesignTests(unittest.TestCase):
         self.assertLess(str(main).index('id="home-local-progress"'), str(main).index('id="council"'))
         self.assertFalse(soup.select('.civic-tasknav'))
         self.assertEqual(len(soup.select('.home-recent-list > li')), 3)
-        self.assertEqual(len(soup.select('.home-task-paths a')), 3)
+        self.assertEqual(len(soup.select('.home-task-paths a')), 2)
         form = soup.select_one('.home-village-form')
         self.assertIsNotNone(form)
         self.assertEqual(form.get('role'), 'search')
