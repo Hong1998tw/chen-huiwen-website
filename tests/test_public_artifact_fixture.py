@@ -17,6 +17,7 @@ from public_artifact_fixture import (
     _build_cloudflare_fixture,
     _cloudflare_input_identity,
     _module_state,
+    _stable_code_constant,
     _stable_value,
     _UNSUPPORTED,
     build_fixture_key,
@@ -43,6 +44,15 @@ class ArtifactTemplateCacheTests(unittest.TestCase):
         for _ in range(100):
             builder([{'value': value} for value in range(4)])
         self.assertEqual(_stable_value(builder), before)
+
+    def test_constant_slice_in_function_code_is_cacheable(self):
+        # Python 3.14 folds constant slices such as `path[1:]` into co_consts.
+        def tail(path):
+            return path[1:]
+
+        self.assertIsNot(_stable_value(tail), _UNSUPPORTED)
+        self.assertEqual(_stable_code_constant(slice(1, None, 2), set()), {'slice': [1, None, 2]})
+        self.assertIs(_stable_code_constant(slice(object(), None, None), set()), _UNSUPPORTED)
 
     def test_real_module_key_stays_cacheable_after_50_canonical_class_calls(self):
         root = Path(__file__).resolve().parents[1]

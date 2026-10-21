@@ -103,7 +103,7 @@
 
   function scoreResult(item, query) {
     if (!query) return item.priority || 0;
-    const title = normalize(item.title), text = normalize(`${item.title} ${item.description || ''} ${item.keywords || ''}`);
+    const title=normalize(item.title),text=item.text??=normalize([item.title,item.description,item.keywords].join(' '));
     const tokens = query.split(' ').filter(Boolean);
     if (!tokens.every(token => text.includes(token))) return 0;
     const serviceIntent = (item.intents || []).some(intent => normalize(intent) === query);

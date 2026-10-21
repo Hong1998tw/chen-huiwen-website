@@ -159,6 +159,10 @@ def _stable_code_constant(value, active):
     if type(value) is tuple:
         values = [_stable_code_constant(item, active) for item in value]
         return _UNSUPPORTED if any(item is _UNSUPPORTED for item in values) else {'tuple': values}
+    if type(value) is slice:
+        # Python 3.14 folds constant slices such as `path[1:]` into co_consts.
+        values = [_stable_code_constant(item, active) for item in (value.start, value.stop, value.step)]
+        return _UNSUPPORTED if any(item is _UNSUPPORTED for item in values) else {'slice': values}
     if type(value) is frozenset:
         values = [_stable_code_constant(item, active) for item in value]
         if any(item is _UNSUPPORTED for item in values):
