@@ -204,12 +204,12 @@ class FontSubsetContractTests(unittest.TestCase):
         present = {ord(char) for char in core_text}
         self.assertTrue(expected.issubset(present), "homepage event title must not switch from system fallback after interaction")
 
-    def test_homepage_places_award_then_headquarters_then_local_story(self):
+    def test_homepage_leads_with_headquarters_then_award_then_local_story(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
         recent = soup.select_one("#recent .home-recent-list")
         self.assertEqual(
             [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
-            ["award", "headquarters", "local"],
+            ["headquarters", "award", "local"],
         )
         self.assertIn("獲選", recent.find("li", attrs={"data-home-recent-item": "award"}).get_text(" ", strip=True))
         self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))

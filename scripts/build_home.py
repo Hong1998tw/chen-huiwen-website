@@ -40,7 +40,7 @@ def public_records(root=ROOT):
 
 
 def render_services(office, schedule):
-    """Render only the three task cards and a short, source-based lawyer link."""
+    """Render only the two task cards and a short, source-based lawyer link."""
     month = int(schedule["month"].split("-")[1])
     return (
         '<nav class="home-task-paths" aria-label="首頁常用任務">'
@@ -50,9 +50,6 @@ def render_services(office, schedule):
         '<a href="achievements.html#case-results" data-home-task="local">'
         '<span>地方進度</span><strong>查找公開紀錄</strong>'
         '<small>依里別與辦理階段查看</small></a>'
-        '<a href="council-records.html" data-home-task="records">'
-        '<span>議會問政</span><strong>查詢議會紀錄</strong>'
-        '<small>質詢紀錄與官方資料</small></a>'
         '</nav>'
         f'<p class="home-lawyer-link">本月公益律師： '
         f'<a href="service.html#monthly-heading" data-home-legal-month="{e(schedule["month"])}">'
@@ -102,11 +99,12 @@ def _responsive_event_picture(image, root=ROOT):
         # original remains the safe homepage fallback.
         responsive = None
 
+    # The event leads the recent list as a wide feature: full width on phones,
+    # 40% of the content width beside its copy above 780px.
     sizes = (
         "(max-width: 620px) calc(100vw - 40px), "
         "(max-width: 780px) calc(100vw - 64px), "
-        "(max-width: 900px) calc((100vw - 64px - 28px) / 3), "
-        "(max-width: 1244px) calc((100vw - 64px - 40px) / 3), 380px"
+        "(max-width: 1244px) calc((100vw - 64px) * .4), 472px"
     )
     sources = ""
     fallback = ""

@@ -380,13 +380,13 @@ async function captureHomepage1180Screenshot() {
 try {
   await page.goto(base + 'index.html');
   await page.locator('.home-task-paths a').first().waitFor();
-  await check('homepage service, local-record and council task routes are directly available', async () => {
+  await check('homepage service and local-record task routes are directly available', async () => {
     assert.deepEqual(await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
-      'service.html#contact', 'achievements.html#case-results', 'council-records.html'
+      'service.html#contact', 'achievements.html#case-results'
     ]);
-    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map((row,index) => index===0?'award':row.querySelector('[data-home-event]')?'headquarters':'local'));
-    assert.deepEqual(order, ['award', 'headquarters', 'local']);
-    assert.match(await page.locator('#recent').innerText(), /獲選[\s\S]*總部成立[\s\S]*文德國小活動中心/);
+    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map(row => row.dataset.homeRecentItem));
+    assert.deepEqual(order, ['headquarters', 'award', 'local']);
+    assert.match(await page.locator('#recent').innerText(), /總部成立[\s\S]*獲選[\s\S]*文德國小活動中心/);
     await page.screenshot({ path: join(results, 'homepage-desktop-1440x960.png'), fullPage: false });
   });
 
@@ -398,7 +398,7 @@ try {
       const r = link.getBoundingClientRect();
       return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
     }));
-    assert.equal(boxes.length, 3);
+    assert.equal(boxes.length, 2);
     assert(boxes.every(box => box.left >= 0 && box.right <= 390 && box.top >= 0 && box.bottom <= 844));
     assert(boxes.every(box => box.width >= 44 && box.height >= 40));
     await page.screenshot({ path: join(results, 'homepage-390x844.png'), fullPage: false });
@@ -523,7 +523,7 @@ try {
       readiness.screenshot = await captureHomepage1180Screenshot();
       report.homepage1180 = readiness;
     }
-    await check(`homepage reflows at ${width}px with all three task links visible and no horizontal overflow`, async () => {
+    await check(`homepage reflows at ${width}px with both task links visible and no horizontal overflow`, async () => {
       assert(readiness.layoutStable, readiness.primaryFailure
         ? `homepage layout readiness failed: ${JSON.stringify(readiness)}`
         : `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
@@ -536,7 +536,7 @@ try {
       }
       await assertNoOverflow(width);
       const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
-      assert.equal(boxes.length,3);
+      assert.equal(boxes.length,2);
       assert(boxes.every(box=>box.left>=0&&box.top>=0&&box.right<=width&&box.bottom<=height&&box.width>=44&&box.height>=40),
         `homepage task links must fit inside ${width}×${height}: ${JSON.stringify({ readiness, boxes })}`);
       return { boxes, readiness };
