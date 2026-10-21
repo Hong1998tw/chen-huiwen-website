@@ -60,36 +60,33 @@
 .case-primary-link{font-weight:800;color:#244e3d}
 .case-actions button{border:1px solid #cfdccd;border-radius:20px;font:inherit;background:#fff;padding:7px 10px;cursor:pointer;color:#375a4b}
 .location-unmapped{color:#52615b;font-size:12px}
-.case-marker{display:grid;place-items:center}.case-marker span{display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50%;background:#1e503c;color:white;box-shadow:0 2px 8px #24483455;font-size:13px;font-weight:800}
-/* Map popups: one record is a compact link chip; nearby records are a short list with status pills. */
-.map-popup-shell .leaflet-popup-content-wrapper{padding:0;border-radius:16px;box-shadow:0 10px 30px rgba(27,51,40,.12),0 2px 6px rgba(27,51,40,.14)}
-.map-popup-shell .leaflet-popup-content{margin:0;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
-.map-popup-shell.is-single .leaflet-popup-content-wrapper{border-radius:24px}
-.map-popup .map-popup-link{display:flex;align-items:center;gap:10px;min-height:48px;padding:7px 8px 7px 14px;border-radius:24px;color:#1d2b24;text-decoration:none}
-.map-popup-link:hover strong{text-decoration:underline;text-underline-offset:3px}
-.map-popup-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#b26b12}
-.map-popup-dot.is-done{background:#2e7d4f}.map-popup-dot.is-planning{background:#4b6a8a}.map-popup-dot.is-policy{background:#6a4b8a}
-.map-popup-text{display:grid;gap:1px;flex:1;min-width:0}
-.map-popup-text strong,.map-popup-row-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.map-popup-text strong{font-size:14px;line-height:1.45}
-.map-popup-meta{font-size:12px;line-height:1.5;color:#55665c}
-.map-popup-go{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#1e503c;color:#fff;font-size:15px}
-.map-popup-group{padding:14px 16px 6px}
-.map-popup-head{display:grid;gap:2px;margin:0 36px 4px 0}
-.map-popup-eyebrow{font-size:12px;color:#55665c}
-.map-popup-head strong{font-size:16px;line-height:1.4;color:#1d2b24}
-.map-popup-list{list-style:none;margin:0;padding:0}
-.map-popup-list li+li{border-top:1px solid #edf1ee}
-.map-popup-group.is-expanded .map-popup-list{max-height:min(320px,24vh);overflow:auto}
-.map-popup .map-popup-row{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 0;color:#1d2b24;text-decoration:none}
-.map-popup .map-popup-row.is-selected{margin:0 -8px;padding:6px 8px;border-radius:8px;background:#edf6df}
-.map-popup-row-title{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
-.map-popup-row:hover .map-popup-row-title{text-decoration:underline;text-underline-offset:3px}
-.map-popup-status{flex:none;padding:2px 9px;border-radius:999px;background:#fff3e2;color:#8a5413;font-size:12px;font-weight:700;line-height:1.6;white-space:nowrap}
-.map-popup-status.is-done{background:#e4f4ea;color:#24704a}.map-popup-status.is-planning{background:#e8eff7;color:#3f5f80}.map-popup-status.is-policy{background:#efe9f7;color:#634a86}
-.map-popup-more{display:flex;align-items:center;width:100%;min-height:44px;padding:0;border:0;border-top:1px solid #edf1ee;background:none;color:#1e503c;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
-.map-popup a:focus-visible,.map-popup-more:focus-visible{outline:3px solid #173f33;outline-offset:2px}
+.case-marker{display:grid;place-items:center}.case-marker span{display:grid;place-items:center;width:44px;height:44px;border:3px solid white;border-radius:50%;background:#1e503c;color:white;box-shadow:0 2px 8px #24483455;font-size:13px;font-weight:800}
 .leaflet-container{font-family:inherit}.leaflet-control-attribution{font-size:12px!important}.leaflet-container a{color:#254c3e}
+/* Leaflet's own stylesheet loads after this file, so popup rules carry .map-popup or .leaflet-container for specificity. */
+.map-popup-shell .leaflet-popup-content-wrapper{padding:0;border-radius:16px;box-shadow:0 10px 30px #1b33281f,0 2px 6px #1b332824}
+.map-popup-shell .leaflet-popup-content{margin:0;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+.is-single .leaflet-popup-content-wrapper{border-radius:24px}
+.leaflet-container .map-popup a{display:flex;align-items:center;gap:10px;min-height:48px;color:#1d2b24;text-decoration:none}
+.map-popup a:focus-visible,.map-popup-more:focus-visible{outline:3px solid #173f33;outline-offset:2px}
+.map-popup a:hover strong,.map-popup-row:hover span:first-child{text-decoration:underline;text-underline-offset:3px}
+.map-popup .map-popup-link{padding:7px 8px 7px 14px;border-radius:24px}
+.map-popup-link>i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--c)}
+.map-popup-link>span{display:grid;gap:1px;flex:1;min-width:0}
+.map-popup-link strong,.map-popup-row span:first-child{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
+.map-popup-meta,.map-popup-head span{font-size:12px;color:#55665c}
+.map-popup-link>b{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#1e503c;color:#fff;font-size:15px;font-weight:400}
+.map-popup-group{padding:14px 16px 6px}
+.map-popup .map-popup-head{display:grid;gap:2px;margin:0 36px 4px 0}
+.map-popup-head strong{font-size:16px;line-height:1.4}
+.map-popup ul{list-style:none;margin:0;padding:0}
+.map-popup li+li{border-top:1px solid #edf1ee}
+.is-expanded ul{max-height:min(320px,24vh);overflow:auto}
+.map-popup .map-popup-row{padding:6px 0}
+.map-popup .is-selected{margin:0 -8px;padding:6px 8px;border-radius:8px;background:#edf6df}
+.map-popup-row span:first-child{flex:1;min-width:0;font-size:13.5px}
+.map-popup-status{flex:none;padding:2px 9px;border-radius:999px;background:var(--b);color:var(--c);font-size:12px;font-weight:700;line-height:1.6;white-space:nowrap}
+.st0,.st-1{--c:#8a5413;--b:#fff3e2}.st1{--c:#24704a;--b:#e4f4ea}.st2{--c:#3f5f80;--b:#e8eff7}.st3{--c:#634a86;--b:#efe9f7}
+.map-popup-more{width:100%;min-height:44px;padding:0;border:0;border-top:1px solid #edf1ee;background:none;color:#1e503c;font:inherit;font-size:13.5px;font-weight:700;text-align:left;cursor:pointer}
 [data-case][hidden]{display:none}
 #case-empty{background:#fff;border-radius:20px;padding:30px}#case-empty p{margin:16px 0}
 
@@ -101,44 +98,36 @@
 @media(max-width:780px){
  .map-controls{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px;gap:8px 10px;border-radius:18px;margin-bottom:16px}
  .map-controls>div:first-child{grid-column:1/-1}
- .map-controls label{font-size:12px;line-height:1.3;margin-bottom:5px}
+ .map-controls label{line-height:1.3;margin-bottom:5px}
  .map-controls input,.map-controls select{min-height:44px;font-size:16px;padding:9px 10px;border-radius:10px}
  .map-controls button{min-height:44px;padding:9px 12px;font-size:12px}
  .map-workspace{gap:16px;display:flex;flex-direction:column}
  .map-panel{position:static;width:100%;padding:8px;border-radius:18px}
- #achievement-map{height:min(64vh,560px);min-height:480px;border-radius:16px}
+ #achievement-map{border-radius:16px}
  .case-results{width:100%}#case-list{grid-template-columns:1fr}.case-card{padding:18px 19px}.case-card h3{font-size:20px}
  .case-card-footer{align-items:flex-start}.case-place{max-width:38%}.case-actions{justify-content:flex-end}
- .results-heading{display:block}.results-heading p{margin-top:8px}.map-head h1{font-size:40px}
- .case-actions a,.case-actions button{min-height:42px;display:inline-flex;align-items:center}.case-list{min-width:0}
+ .results-heading{display:block}.results-heading p{margin-top:8px}
+ .case-list{min-width:0}
 }
 @media(max-width:440px){
- .map-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
- .map-controls>div:first-child{grid-column:1/-1}
- .map-controls label{font-size:12px}
  .map-controls input,.map-controls select{font-size:15px}
  .map-controls button{width:100%}
  .case-card-footer{display:block}.case-place{display:block;max-width:none;margin-bottom:9px}.case-actions{justify-content:flex-start}
 }
 
 /* A11Y-01 / UI-02: separated 44px map controls and legible record metadata. */
-.case-marker span{width:44px;height:44px;font-size:15px}
 .leaflet-container a.leaflet-popup-close-button{width:44px;height:44px;line-height:44px}
 .map-controls label{font-size:14px}
-.case-card .case-tags span,.case-card .case-subtags span{font-size:12px;line-height:1.6}
+.case-card .case-tags span,.case-card .case-subtags span{line-height:1.6}
 .case-card .case-summary{font-size:15px;line-height:1.85}
 .case-card .case-place{font-size:13px}
-.case-card .case-status{font-size:12px}
 .case-actions a,.case-actions button{min-height:44px;display:inline-flex;align-items:center}
 
 /* Mobile map density: keep 44px controls while returning more vertical space to the map. */
-@media(max-width:780px){
- #achievement-map{height:min(68vh,600px);min-height:520px}
-}
 @media(max-width:440px){
  .map-controls{padding:10px;gap:5px 8px}
  .map-controls label{font-size:12px;line-height:1.2;margin-bottom:3px}
- .map-controls input,.map-controls select{min-height:44px;padding:7px 9px}
+ .map-controls input,.map-controls select{padding:7px 9px}
  .map-controls .case-live-summary{font-size:12px;line-height:1.25;padding-top:0}
 }
 
