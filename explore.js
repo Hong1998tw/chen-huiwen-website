@@ -49,10 +49,12 @@
     loadMessage.textContent = '正在載入政績、新聞與歷屆政見…';
     loadState.hidden = false;
     try {
+      // The site serves these with `max-age=0, must-revalidate`, so the default cache mode
+      // still checks for a newer version on every load; an unchanged file costs a 304 only.
       const responses = await Promise.all([
-        fetch('data/achievements-public.json',{cache:'no-store'}),
-        fetch('data/platforms.json',{cache:'no-store'}),
-        fetch('news.html',{cache:'no-store'})
+        fetch('data/achievements-public.json'),
+        fetch('data/platforms.json'),
+        fetch('news.html')
       ]);
       if (!responses.every(response => response.ok)) throw new Error('explore-data');
       const achievements = await responses[0].json();

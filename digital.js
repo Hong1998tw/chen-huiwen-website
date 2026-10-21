@@ -101,26 +101,39 @@
     section.querySelector('.share-current-page')?.addEventListener('click',shareCurrentPage);
   }
 
+  // Every keystroke scores every entry, so normalize each entry's fields once when the
+  // index loads instead of re-normalizing the whole index (several MB) per keystroke.
+  function withNormalizedFields(item) {
+    return {...item, normalized:{
+      title:normalize(item.title),
+      text:normalize(`${item.title} ${item.description || ''} ${item.keywords || ''}`),
+      intents:(item.intents||[]).map(normalize),
+      region:normalize(item.primaryRegion),
+      categories:normalize((item.categories||[]).join(' ')),
+      summary:normalize(item.summary||item.description),
+      keywords:normalize(item.keywords)
+    }};
+  }
+
   function scoreResult(item, query) {
     if (!query) return item.priority || 0;
-    const title = normalize(item.title), text = normalize(`${item.title} ${item.description || ''} ${item.keywords || ''}`);
+    const {title, text, intents} = item.normalized;
     const tokens = query.split(' ').filter(Boolean);
     if (!tokens.every(token => text.includes(token))) return 0;
-    const serviceIntent = (item.intents || []).some(intent => normalize(intent) === query);
+    const serviceIntent = intents.includes(query);
     return (serviceIntent ? 300 : 0) + 20 + (title === query ? 120 : title.startsWith(query) ? 70 : title.includes(query) ? 45 : 0) + tokens.filter(token => title.includes(token)).length * 15;
   }
 
   function searchReason(item, query) {
-    const intents=(item.intents||[]).map(normalize);
+    const {intents, region, title, categories, summary, keywords} = item.normalized;
     if(intents.includes(query))return `服務項目：${query}`;
     const tokens=query.split(' ').filter(Boolean);
-    const region=normalize(item.primaryRegion);
     if(region&&tokens.every(token=>region.includes(token)))return `地區命中：${item.primaryRegion}`;
     const fields=[
-      ['標題',normalize(item.title)],
-      ['主題',normalize((item.categories||[]).join(' '))],
-      ['摘要',normalize(item.summary||item.description)],
-      ['紀錄內容',normalize(item.keywords)]
+      ['標題',title],
+      ['主題',categories],
+      ['摘要',summary],
+      ['紀錄內容',keywords]
     ];
     const hits=fields.filter(([,value])=>value&&tokens.some(token=>value.includes(token))).map(([label])=>label);
     return hits.length?`符合欄位：${hits.join('、')}`:'符合收錄文字';
@@ -143,9 +156,9 @@
         } catch { return false; }
       });
       if (!items.length) throw Error('invalid index destinations');
-      return {items, partial:false};
+      return {items:items.map(withNormalizedFields), partial:false};
     } catch (_) {
-      return {items:STATIC_PAGES.map(([title,url,description,type],i) => ({title,url,description,type,priority:30-i})),partial:true};
+      return {items:STATIC_PAGES.map(([title,url,description,type],i) => withNormalizedFields({title,url,description,type,priority:30-i})),partial:true};
     } finally { clearTimeout(timeout); }
   }
 

@@ -12,7 +12,7 @@
  /* The 1px header border is outside this child, so reserve it within the total 64px/52px targets. */
  .nav-wrap{display:flex;flex-wrap:nowrap;gap:8px;width:100%;height:auto;min-height:63px;padding:0 16px;border-radius:0;transition:min-height .14s ease}
  .site-header.is-compact .nav-wrap{min-height:51px}
- .brand{flex:1 1 auto;gap:7px;min-width:0}.brand-mark{flex:0 0 33px}.brand-name{min-width:0;font-size:1.1rem;letter-spacing:0;white-space:normal;overflow-wrap:anywhere}.brand-role{display:flex;flex:1 1 0;flex-direction:column;align-items:flex-start;gap:0;min-width:0;border:0;padding-left:0;font-size:max(12px,.75rem);line-height:1.3;letter-spacing:0;white-space:normal;overflow-wrap:anywhere}.brand-role br,.brand-english{display:none}.brand-district{display:inline}
+ .brand{flex:1 1 auto;gap:7px;min-width:0}.brand-mark{flex:0 0 33px}.brand-name{min-width:0;font-size:1.1rem;letter-spacing:0;white-space:normal;overflow-wrap:anywhere}.brand-role{display:flex;flex:1 1 0;flex-direction:column;align-items:flex-start;gap:0;min-width:0;border:0;padding-left:0;font-size:max(12px,.75rem);line-height:1.3;letter-spacing:0;white-space:normal;overflow-wrap:anywhere}.brand-role br,.brand-english,.brand-separator{display:none}.brand-district{display:inline}
  .header-phone{display:inline-grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:50%;background:var(--green-soft);color:var(--green-dark)}
  .header-phone svg{width:20px;height:20px;fill:currentColor}
  .menu-toggle{display:none;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;width:auto;min-width:52px;height:auto;min-height:44px;white-space:nowrap;border:0;border-radius:999px;background:var(--green-soft);position:relative;z-index:102}
