@@ -20283,15 +20283,15 @@
       "bytes": 30559
     }
   ],
-  "captureToolSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
-  "checkoutSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
+  "captureToolSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
+  "checkoutSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
   "liveDeployment": null,
-  "targetUrl": "http://127.0.0.1:37905/index.html",
+  "targetUrl": "http://127.0.0.1:41767/index.html",
   "screenshotPath": "home-1440.png",
   "screenshotEnabled": true,
   "screenshotSha256": "fbe690b4dbbe6e7641ae66b30f0d5ae6cff4f790cafbf7cc6a69c44a7c779154",
   "metadataPath": "home-1440.json",
-  "capturedAt": "2026-10-21T23:57:13.163Z",
+  "capturedAt": "2026-10-22T00:23:54.586Z",
   "browserVersion": "140.0.7339.186",
   "toolVersion": "1.0.0; Playwright 1.55.1",
   "toolVersions": {
@@ -20334,7 +20334,7 @@
     "thirdPartyFailedImageCount": 0,
     "visibleImages": [
       {
-        "url": "http://127.0.0.1:37905/assets/legal/portrait.webp",
+        "url": "http://127.0.0.1:41767/assets/legal/portrait.webp",
         "originClass": "same-origin",
         "decoded": true,
         "naturalWidth": 1140,
@@ -20359,14 +20359,14 @@
       "transferSize": 24936,
       "encodedBodySize": 24636,
       "decodedBodySize": 24636,
-      "responseStart": 3.099999999976717,
-      "domContentLoadedEventEnd": 47.90000000002328,
-      "loadEventEnd": 77.5
+      "responseStart": 1.7999999999301508,
+      "domContentLoadedEventEnd": 44.59999999997672,
+      "loadEventEnd": 74.59999999997672
     },
     "fonts": {
       "ready": true,
       "status": "loaded",
-      "waitElapsedMs": 15
+      "waitElapsedMs": 12
     }
   },
   "budgetObservation": {
@@ -20378,7 +20378,7 @@
   },
   "network": [
     {
-      "url": "http://127.0.0.1:37905/index.html",
+      "url": "http://127.0.0.1:41767/index.html",
       "originClass": "same-origin",
       "resourceType": "Document",
       "status": 200,
@@ -20388,7 +20388,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-dec3795aa2e3.woff2",
+      "url": "http://127.0.0.1:41767/assets/fonts/huiwen-site-sans/generated/huiwen-index-core-dec3795aa2e3.woff2",
       "originClass": "same-origin",
       "resourceType": "Font",
       "status": 200,
@@ -20398,7 +20398,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
+      "url": "http://127.0.0.1:41767/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20408,7 +20408,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
+      "url": "http://127.0.0.1:41767/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20418,7 +20418,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
+      "url": "http://127.0.0.1:41767/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20428,7 +20428,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
+      "url": "http://127.0.0.1:41767/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20438,7 +20438,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
+      "url": "http://127.0.0.1:41767/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20448,7 +20448,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
+      "url": "http://127.0.0.1:41767/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20458,7 +20458,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
+      "url": "http://127.0.0.1:41767/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20468,7 +20468,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
+      "url": "http://127.0.0.1:41767/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20478,7 +20478,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/home.13885c1c96cfbf39c8dbc59d860633f2fe7a364af33fdc40237076107dc619a2.css",
+      "url": "http://127.0.0.1:41767/home.13885c1c96cfbf39c8dbc59d860633f2fe7a364af33fdc40237076107dc619a2.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20488,7 +20488,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/home.2768cc9e46bdc075a6ce9d3f7a013b405e18240227dc22de7ded5649d50b6995.js",
+      "url": "http://127.0.0.1:41767/home.2768cc9e46bdc075a6ce9d3f7a013b405e18240227dc22de7ded5649d50b6995.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20498,7 +20498,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/small-q.521b557d9706fe919c32210d297b27e0f2e7b981e727ea8ce37b0ca3db56aca4.js",
+      "url": "http://127.0.0.1:41767/small-q.521b557d9706fe919c32210d297b27e0f2e7b981e727ea8ce37b0ca3db56aca4.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20508,7 +20508,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/legal/portrait.webp",
+      "url": "http://127.0.0.1:41767/assets/legal/portrait.webp",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20518,7 +20518,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/events/campaign-opening-20261031-landscape-480.avif",
+      "url": "http://127.0.0.1:41767/assets/events/campaign-opening-20261031-landscape-480.avif",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20528,7 +20528,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/fengshan-home-map.svg",
+      "url": "http://127.0.0.1:41767/assets/fengshan-home-map.svg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20538,7 +20538,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/small-q.93390f7e605a716ed57f8f4d57a2f6d9af9f57a48f4ceedcecdba9bcd6bbfa9e.css",
+      "url": "http://127.0.0.1:41767/small-q.93390f7e605a716ed57f8f4d57a2f6d9af9f57a48f4ceedcecdba9bcd6bbfa9e.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,

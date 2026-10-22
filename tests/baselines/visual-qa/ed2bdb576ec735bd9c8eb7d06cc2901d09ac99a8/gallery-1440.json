@@ -20286,15 +20286,15 @@
       "bytes": 30559
     }
   ],
-  "captureToolSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
-  "checkoutSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
+  "captureToolSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
+  "checkoutSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
   "liveDeployment": null,
-  "targetUrl": "http://127.0.0.1:37905/gallery.html",
+  "targetUrl": "http://127.0.0.1:41767/gallery.html",
   "screenshotPath": "gallery-1440.png",
   "screenshotEnabled": true,
   "screenshotSha256": "74f8a9c29f98fe2c6e678832488890a2e32a1ed7f4e9bde6a9a4c7965818851f",
   "metadataPath": "gallery-1440.json",
-  "capturedAt": "2026-10-21T23:57:17.291Z",
+  "capturedAt": "2026-10-22T00:23:58.750Z",
   "browserVersion": "140.0.7339.186",
   "toolVersion": "1.0.0; Playwright 1.55.1",
   "toolVersions": {
@@ -20337,28 +20337,28 @@
     "thirdPartyFailedImageCount": 0,
     "visibleImages": [
       {
-        "url": "http://127.0.0.1:37905/assets/market-1.jpg",
+        "url": "http://127.0.0.1:41767/assets/market-1.jpg",
         "originClass": "same-origin",
         "decoded": true,
         "naturalWidth": 960,
         "naturalHeight": 720
       },
       {
-        "url": "http://127.0.0.1:37905/assets/market-2.jpg",
+        "url": "http://127.0.0.1:41767/assets/market-2.jpg",
         "originClass": "same-origin",
         "decoded": true,
         "naturalWidth": 683,
         "naturalHeight": 960
       },
       {
-        "url": "http://127.0.0.1:37905/assets/market-3.jpg",
+        "url": "http://127.0.0.1:41767/assets/market-3.jpg",
         "originClass": "same-origin",
         "decoded": true,
         "naturalWidth": 960,
         "naturalHeight": 720
       },
       {
-        "url": "http://127.0.0.1:37905/assets/market-4.jpg",
+        "url": "http://127.0.0.1:41767/assets/market-4.jpg",
         "originClass": "same-origin",
         "decoded": true,
         "naturalWidth": 960,
@@ -20384,13 +20384,13 @@
       "encodedBodySize": 13721,
       "decodedBodySize": 13721,
       "responseStart": 1.5,
-      "domContentLoadedEventEnd": 24.29999999993015,
-      "loadEventEnd": 47.199999999953434
+      "domContentLoadedEventEnd": 26.5,
+      "loadEventEnd": 48.199999999953434
     },
     "fonts": {
       "ready": true,
       "status": "loaded",
-      "waitElapsedMs": 14
+      "waitElapsedMs": 17
     }
   },
   "budgetObservation": {
@@ -20402,7 +20402,7 @@
   },
   "network": [
     {
-      "url": "http://127.0.0.1:37905/gallery.html",
+      "url": "http://127.0.0.1:41767/gallery.html",
       "originClass": "same-origin",
       "resourceType": "Document",
       "status": 200,
@@ -20412,7 +20412,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
+      "url": "http://127.0.0.1:41767/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20422,7 +20422,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
+      "url": "http://127.0.0.1:41767/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20432,7 +20432,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
+      "url": "http://127.0.0.1:41767/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20442,7 +20442,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
+      "url": "http://127.0.0.1:41767/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20452,7 +20452,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
+      "url": "http://127.0.0.1:41767/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20462,7 +20462,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
+      "url": "http://127.0.0.1:41767/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20472,7 +20472,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/fonts/huiwen-site-sans/page-core/c1d981feeb40dafccab02aa6813ebb81dea2f62f985aff5265eca7b39ae4f1c7.woff2",
+      "url": "http://127.0.0.1:41767/assets/fonts/huiwen-site-sans/page-core/c1d981feeb40dafccab02aa6813ebb81dea2f62f985aff5265eca7b39ae4f1c7.woff2",
       "originClass": "same-origin",
       "resourceType": "Font",
       "status": 200,
@@ -20482,7 +20482,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/fonts/huiwen-site-sans/page-delta/259a9f4788d0d781d7d26b706b9e01cde3881cc28c9c75866ed2e8f727eb2b11.woff2",
+      "url": "http://127.0.0.1:41767/assets/fonts/huiwen-site-sans/page-delta/259a9f4788d0d781d7d26b706b9e01cde3881cc28c9c75866ed2e8f727eb2b11.woff2",
       "originClass": "same-origin",
       "resourceType": "Font",
       "status": 200,
@@ -20492,7 +20492,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
+      "url": "http://127.0.0.1:41767/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20502,7 +20502,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
+      "url": "http://127.0.0.1:41767/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20512,7 +20512,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/market-1.jpg",
+      "url": "http://127.0.0.1:41767/assets/market-1.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20522,7 +20522,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/market-2.jpg",
+      "url": "http://127.0.0.1:41767/assets/market-2.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20532,7 +20532,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/market-3.jpg",
+      "url": "http://127.0.0.1:41767/assets/market-3.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20542,7 +20542,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/market-4.jpg",
+      "url": "http://127.0.0.1:41767/assets/market-4.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20552,7 +20552,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/greenbelt-1.jpg",
+      "url": "http://127.0.0.1:41767/assets/greenbelt-1.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20562,7 +20562,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/greenbelt-2.jpg",
+      "url": "http://127.0.0.1:41767/assets/greenbelt-2.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20572,7 +20572,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/greenbelt-3.jpg",
+      "url": "http://127.0.0.1:41767/assets/greenbelt-3.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20582,7 +20582,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/mooncake-1.jpg",
+      "url": "http://127.0.0.1:41767/assets/mooncake-1.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,
@@ -20592,7 +20592,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/mooncake-2.jpg",
+      "url": "http://127.0.0.1:41767/assets/mooncake-2.jpg",
       "originClass": "same-origin",
       "resourceType": "Image",
       "status": 200,

@@ -20283,15 +20283,15 @@
       "bytes": 30559
     }
   ],
-  "captureToolSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
-  "checkoutSHA": "d0be3f3bbe125ad4a41fd003439d17ac41966852",
+  "captureToolSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
+  "checkoutSHA": "8a5063cb39ad0b5fc097c3280adf48c60a77c3c2",
   "liveDeployment": null,
-  "targetUrl": "http://127.0.0.1:37905/election.html",
+  "targetUrl": "http://127.0.0.1:41767/election.html",
   "screenshotPath": "election-390.png",
   "screenshotEnabled": true,
   "screenshotSha256": "e5d7040291e8765b0ce1472854ca495dcf37d770e9dc4dcd52b0133a172d5f59",
   "metadataPath": "election-390.json",
-  "capturedAt": "2026-10-21T23:57:18.394Z",
+  "capturedAt": "2026-10-22T00:23:59.837Z",
   "browserVersion": "140.0.7339.186",
   "toolVersion": "1.0.0; Playwright 1.55.1",
   "toolVersions": {
@@ -20351,14 +20351,14 @@
       "transferSize": 617560,
       "encodedBodySize": 617260,
       "decodedBodySize": 617260,
-      "responseStart": 3.099999999976717,
-      "domContentLoadedEventEnd": 547.7999999999302,
-      "loadEventEnd": 567.7999999999302
+      "responseStart": 2.200000000069849,
+      "domContentLoadedEventEnd": 81.30000000004657,
+      "loadEventEnd": 155.10000000009313
     },
     "fonts": {
       "ready": true,
       "status": "loaded",
-      "waitElapsedMs": 7
+      "waitElapsedMs": 6
     }
   },
   "budgetObservation": {
@@ -20370,7 +20370,7 @@
   },
   "network": [
     {
-      "url": "http://127.0.0.1:37905/election.html",
+      "url": "http://127.0.0.1:41767/election.html",
       "originClass": "same-origin",
       "resourceType": "Document",
       "status": 200,
@@ -20380,7 +20380,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/assets/fonts/huiwen-site-sans/generated/huiwen-election-core-a2940ed936f0.woff2",
+      "url": "http://127.0.0.1:41767/assets/fonts/huiwen-site-sans/generated/huiwen-election-core-a2940ed936f0.woff2",
       "originClass": "same-origin",
       "resourceType": "Font",
       "status": 200,
@@ -20390,7 +20390,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
+      "url": "http://127.0.0.1:41767/styles.1f841d39a200faeef29379c22283ef6f0a175bf0e3a55c511f4ead1c0401652a.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20400,7 +20400,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
+      "url": "http://127.0.0.1:41767/mobile.1b776649f26fff6a51cfcf57ca9ce5e239d585e3783506984a89229a79725b9c.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20410,7 +20410,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
+      "url": "http://127.0.0.1:41767/layout.28f06ae496e8b76801ee33c316ab97c141aa073ef82b9b3942d5e503cf344be0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20420,7 +20420,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/campaign.15bd4366bbcb04a96c618be5ac300a318ad703db9f8c682329e85067c4cc1aac.css",
+      "url": "http://127.0.0.1:41767/campaign.15bd4366bbcb04a96c618be5ac300a318ad703db9f8c682329e85067c4cc1aac.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20430,7 +20430,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
+      "url": "http://127.0.0.1:41767/site.be30a63347634b30e6a246ecc22e306688635f205aaeb9844a5b8d4109aa9467.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20440,7 +20440,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/campaign.1c1a9af861084eb0055fdcb795c5709138cad150cf3c031fbf201728019473b2.js",
+      "url": "http://127.0.0.1:41767/campaign.1c1a9af861084eb0055fdcb795c5709138cad150cf3c031fbf201728019473b2.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20450,7 +20450,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/election.a3f9c45b0f274cfed1c80271da0cf2e3f1c6141c6895aaff50be47e62ed3f1be.js",
+      "url": "http://127.0.0.1:41767/election.a3f9c45b0f274cfed1c80271da0cf2e3f1c6141c6895aaff50be47e62ed3f1be.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20460,7 +20460,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
+      "url": "http://127.0.0.1:41767/civic.f450fa210a2547f6282883cd7cf6894104b94e58d52614dcb5d1cc59a431b4e0.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20470,7 +20470,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
+      "url": "http://127.0.0.1:41767/civic.37a0f4b2ae1fae2851aa063b24bef0d7891934454592a52e3b799f3fcd1e03d0.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
@@ -20480,7 +20480,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
+      "url": "http://127.0.0.1:41767/digital.ce930dd462b40ec3578faf98c9dd9a5a10d97127c0ee623594f3b155be78140d.css",
       "originClass": "same-origin",
       "resourceType": "Stylesheet",
       "status": 200,
@@ -20490,7 +20490,7 @@
       "failed": null
     },
     {
-      "url": "http://127.0.0.1:37905/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
+      "url": "http://127.0.0.1:41767/digital.4b8b178da99143d1e6bd038d699fe959c559ef15a47b789bb6af47dd70c793c5.js",
       "originClass": "same-origin",
       "resourceType": "Script",
       "status": 200,
