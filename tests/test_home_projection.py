@@ -12,6 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from build_home import (
     local_coordinate_records,
+    render_about,
     render_event,
     render_home_map_svg,
     render_home_progress,
@@ -45,6 +46,26 @@ class HomeProjectionTests(unittest.TestCase):
             light=luminance(foreground)
             self.assertGreaterEqual((light+0.05)/(dark+0.05),4.5)
 
+    def test_identity_summary_keeps_the_role_tied_to_its_record_date(self):
+        profile=json.loads((ROOT/'data/site-profile.json').read_text())
+        soup=BeautifulSoup(render_about(profile),'html.parser')
+        section=soup.select_one('section.home-about#about-summary')
+        self.assertIsNotNone(section)
+        self.assertEqual(section.h2.get_text(),'陳慧文是誰？')
+        self.assertEqual(section['aria-labelledby'],section.h2['id'])
+        stamp=section.select_one('.home-about-note time')
+        self.assertEqual(stamp['datetime'],profile['identity']['recordAsOf'])
+        self.assertIn(profile['identity']['confirmedRole'],section.get_text())
+        self.assertEqual(section.select_one('a.home-about-link')['href'],'about.html')
+        self.assertNotIn('現任',section.get_text())
+        later={**profile,'identity':{**profile['identity'],'recordAsOf':'2027-01-05','confirmedRole':'第5屆高雄市議員'}}
+        self.assertIn('2027-01-05',render_about(later))
+        self.assertIn('第5屆高雄市議員',render_about(later))
+        with self.assertRaises(ValueError):
+            render_about({**profile,'identity':{**profile['identity'],'recordAsOf':'2026-13-01'}})
+        page=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
+        self.assertEqual(len(page.select('main > section.home-about')),1)
+
     def test_service_entry_uses_canonical_month_and_office(self):
         office=load_office(ROOT)
         for month in ['2026-10','2027-02']:
@@ -70,12 +91,13 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertEqual(len(main.select('.home-lawyer-link a[data-home-legal-month]')),1)
         self.assertEqual(len(main.select('.home-task-paths')),1)
 
-    def test_home_page_has_only_the_six_requested_content_sections(self):
+    def test_home_page_has_only_the_requested_content_sections(self):
         soup=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
         main=soup.select_one('main.home-redesign')
         sections=main.select(':scope > section')
+        # about-summary: identity summary added below the first screen (AEO/GEO follow-up).
         self.assertEqual([section.get('id') for section in sections],
-                         [None,'recent','home-local-progress','council','contact'])
+                         [None,'recent','home-local-progress','about-summary','council','contact'])
         self.assertEqual(len(main.select('.home-recent-list > li')),3)
         self.assertEqual(len(main.select('[data-home-local-record]')),1)
         self.assertFalse(main.select('.civic-story-grid, #map, .filters, .place'))

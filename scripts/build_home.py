@@ -321,6 +321,7 @@ def render_home_map_svg(records, geojson):
 
 def render_home_progress(root=ROOT):
     records = public_records(root)
+    profile = json.loads((root / "data/site-profile.json").read_text())
     geojson = json.loads((root / "assets/fengshan-villages.geojson").read_text())
     counts = Counter(record.get("status", "") for record in records if record.get("status"))
     ordered_statuses = [status for status in STATUS_ORDER if status in counts]
@@ -398,11 +399,30 @@ def render_contact(office):
     )
 
 
+def render_about(profile):
+    """Identity summary for readers and answer engines; the role stays tied to its record date."""
+    identity = profile["identity"]
+    record_as_of = identity["recordAsOf"]
+    datetime.strptime(record_as_of, "%Y-%m-%d")
+    return (
+        '<section class="section wrap home-about" id="about-summary" aria-labelledby="home-about-heading">'
+        '<div><p class="kicker">認識慧文</p>'
+        '<h2 id="home-about-heading">陳慧文是誰？</h2>'
+        '<p>陳慧文，民主進步黨籍，鳳山區選出的第1至4屆高雄市議員；'
+        '曾任第8屆鳳山市民代表、第15與16屆高雄縣議員。</p>'
+        f'<p class="home-about-note">身分資料截至 <time datetime="{e(record_as_of)}">{e(record_as_of)}</time>，'
+        f'當時職務為{e(identity["confirmedRole"])}。</p></div>'
+        '<a class="home-about-link" href="about.html">完整學經歷 →</a>'
+        '</section>'
+    )
+
+
 def build(root=ROOT):
     office = load_office(root)
     schedule = validate_schedule(json.loads((root / "data/legal-schedule.json").read_text()))
     events = json.loads((root / "data/events.json").read_text())["events"]
     records = public_records(root)
+    profile = json.loads((root / "data/site-profile.json").read_text())
     geojson = json.loads((root / "assets/fengshan-villages.geojson").read_text())
     map_path = root / MAP_ASSET
     map_path.write_text(render_home_map_svg(records, geojson), encoding="utf-8")
@@ -413,6 +433,7 @@ def build(root=ROOT):
         ("HOME_EVENT", render_event(events, root)),
         ("HOME_LOCAL", render_recent_local(root)),
         ("HOME_PROGRESS", render_home_progress(root)),
+        ("HOME_ABOUT", render_about(profile)),
         ("HOME_CONTACT", render_contact(office)),
     ]
     for key, value in replacements:
