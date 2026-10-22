@@ -5,7 +5,7 @@
   "approval": {
     "reviewedBy": "Claude（AI 代理，依網站管理者 Hong1998tw 2026-10-22 指示代為審閱）",
     "reviewedAt": "2026-10-22T08:30:06+08:00",
-    "note": "已逐張檢視 30 張 local-http-uncompressed PNG（15 頁 × 1440／390）：頁首、字型、版面與內容皆正常，無遮擋或破版。來源為 A-05 run 39698162791 的 main-reference（main ed2bdb57，含 PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減）；30 張與先前逐張檢視的 b4dd4e31 截圖像素完全相同，同一 run 的 cross-source review 顯示與 PR #194 候選 0 像素變化、0 新增回歸。選舉頁倒數天數隨日期變動，屬預期內容差異。"
+    "note": "已逐張檢視 30 張 local-http-uncompressed PNG（15 頁 × 1440／390）：頁首、字型、版面與內容皆正常，無遮擋或破版。來源為 A-05 run 39698162791 的 main-reference（main ed2bdb57，含 PR #190 首頁改版、PR #192 地圖彈窗、PR #193 政績頁縮減）。其中 28 張與先前逐張檢視的 b4dd4e31 截圖像素完全相同；news-special-education-nurse-390 與 gallery-390 的差異只在照片區塊（影像解碼的細微像素差），已並排目視確認內容與版面一致。同一 run 的 cross-source review 顯示與 PR #194 候選 0 像素變化、0 新增回歸。選舉頁倒數天數隨日期變動，屬預期內容差異。"
   },
   "exceptions": [
     {
