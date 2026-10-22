@@ -38,7 +38,6 @@ ROUTES = {
             "main > .home-recent",
             "main .home-recent-event",
             "main > .home-local-progress",
-            "main > .home-about",
             "main > .home-council",
             "main > .contact-section",
         ),
