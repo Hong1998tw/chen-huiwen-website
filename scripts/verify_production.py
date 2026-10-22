@@ -48,6 +48,7 @@ CORE_PAGES = (
 )
 STATIC_FILES = (
     "robots.txt",
+    "llms.txt",
     "updates.xml",
     "sitemap.xml",
     "manifest.webmanifest",
