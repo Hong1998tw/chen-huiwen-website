@@ -59,6 +59,35 @@ class StaticDeliveryTests(unittest.TestCase):
             self.assertEqual(receipt['publicFileCount'],1)
             self.assertEqual(json.loads((artifact/'deployment.json').read_text()),receipt)
             self.assertEqual((artifact/'_headers').read_text(),expected_headers)
+    def test_redirects_answer_every_confirmed_legacy_301_without_zone_rules(self):
+        lines=build_cloudflare_public.render_redirects().splitlines()
+        rules={line.split()[0]:line.split()[1:] for line in lines}
+        self.assertEqual(len(rules),len(lines))
+        self.assertEqual(rules['/'],['/index.html','200'])
+        self.assertEqual(rules['/mktexp26/'],['/mktexp26/index.html','200'])
+        self.assertEqual(rules['/laf'],['/service.html#monthly-heading','301'])
+        # These five answered 404 in production on 2026-10-22 although the map marked them confirmed.
+        for source,target in [('/mktexp26','/activity-market.html'),
+                              ('/398bd146805480f98aecedb69d2e1070','/achievement-bade-detention.html'),
+                              ('/16-396bd146805480b1ad78e832b20b6565','/achievement-wenlong-lane16.html'),
+                              ('/d13de1081a3a49219363e5a0ace2c83b','/election.html'),
+                              ('/8-14-340-bc3304be04fa445d8423e6bd9764847a','/renwu-anju-social-housing/')]:
+            self.assertEqual(rules[source],[target,'301'])
+        for source,(target,code) in rules.items():
+            page=target.split('#')[0].lstrip('/')
+            self.assertTrue((ROOT/(page+'index.html' if page.endswith('/') or not page else page)).is_file(),source)
+    def test_redirects_reject_rows_that_leave_the_site(self):
+        with tempfile.TemporaryDirectory() as directory:
+            seo=Path(directory)/'data/seo'
+            seo.mkdir(parents=True)
+            header='source_path,target_url,status_code,preserve_query,enabled_after_cutover,notes\n'
+            for row in ['/old,https://example.test/new.html,301,false,true,x',
+                        '/old,https://www.huiwen.tw/new.html?x=1,301,false,true,x',
+                        '/old/../x,https://www.huiwen.tw/new.html,301,false,true,x',
+                        '/old,https://www.huiwen.tw/new.html,302,false,true,x']:
+                (seo/'cloudflare-redirects.csv').write_text(header+row+'\n',encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    build_cloudflare_public.render_redirects(directory)
     def test_asset_checks_use_one_explicit_automation_identity(self):
         for path in ['/', '/index.html', '/mktexp26/', '/data/case-context.json']:
             request = public_request('https://example.test' + path)

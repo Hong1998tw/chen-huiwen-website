@@ -77,6 +77,8 @@
 
 `data/seo/redirect-map.csv` 目前仍是治理資料。Runtime 301／410 的實作位置必須在 cutover 前依實際舊站／Cloudflare 架構確認，不得先假設 GitHub Pages 本身可以提供任意 server-side 301。
 
+2026-10-22 實測：`cloudflare-redirects.csv` 末 5 筆（`/398bd…`、`/16-396bd…`、`/mktexp26`、`/d13de…`、`/8-14-340…`）在正式站回 404，表示 zone Bulk Redirects 尚未含這幾筆。自此 `scripts/build_cloudflare_public.py` 的 `render_redirects()` 把 `cloudflare-redirects.csv` 中 `enabled_after_cutover=true` 的 301 一併寫進 artifact `_redirects`；zone Bulk Redirects 在 Worker 之前執行，已設定者仍一次轉址，未設定者由 `_redirects` 回 301。含尾斜線的舊目錄維持既有 noindex 跳轉頁。
+
 ## Phase 7 — Migration CI Gate
 
 正式 migration PR 至少要 PASS：

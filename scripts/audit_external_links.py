@@ -243,13 +243,9 @@ def _public_path_roster(source_root, source_paths, page_font_paths=()):
 
 def _cloudflare_wrapper_bytes(artifact_root, publication):
     import build_cloudflare_public
-    import build_public
-    redirects = ['/ /index.html 200']
-    redirects.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
-                     for path in build_public.LEGACY_PAGES)
     return {
         '_headers': build_cloudflare_public.render_headers(artifact_root, publication).encode('utf-8'),
-        '_redirects': ('\n'.join(redirects) + '\n').encode('utf-8'),
+        '_redirects': build_cloudflare_public.render_redirects().encode('utf-8'),
     }
 
 
