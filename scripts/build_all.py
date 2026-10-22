@@ -25,6 +25,7 @@ BUILD_STEPS = (
     ('build_page_content.py',),
     ('build_sitemap.py',),
     ('build_search.py',),
+    ('build_llms.py',),
     ('build_shared.py',),
     ('build_font_subsets.py',),
     ('build_shared.py',),
