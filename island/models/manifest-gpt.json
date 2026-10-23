@@ -1,0 +1,50 @@
+{
+ "props": {
+  "bench": {
+   "file": "prop-bench.glb"
+  },
+  "busstop": {
+   "file": "prop-busstop.glb"
+  },
+  "flowerbed": {
+   "file": "prop-flowerbed.glb"
+  },
+  "mailbox": {
+   "file": "prop-mailbox.glb"
+  },
+  "scooter": {
+   "file": "prop-scooter.glb"
+  },
+  "signpost": {
+   "file": "prop-signpost.glb"
+  },
+  "streetlamp": {
+   "file": "prop-streetlamp.glb"
+  },
+  "trashcan": {
+   "file": "prop-trashcan.glb"
+  },
+  "tree-banyan": {
+   "file": "prop-tree-banyan.glb"
+  },
+  "tree-palm": {
+   "file": "prop-tree-palm.glb"
+  },
+  "vending": {
+   "file": "prop-vending.glb"
+  },
+  "youbike": {
+   "file": "prop-youbike.glb"
+  }
+ },
+ "landmarks": {
+  "dingbao": {
+   "file": "dingbao.glb",
+   "name": "頂寶橋"
+  },
+  "haibang": {
+   "file": "haibang.glb",
+   "name": "海邦橋"
+  }
+ }
+}

@@ -1,0 +1,12 @@
+{
+ "character": {
+  "huiwen": {
+   "file": "huiwen.glb",
+   "name": "陳慧文"
+  },
+  "huiwen-2025": {
+   "file": "huiwen-2025.glb",
+   "name": "陳慧文（2025 Q 圖）"
+  }
+ }
+}

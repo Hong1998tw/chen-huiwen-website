@@ -1,0 +1,84 @@
+{
+ "landmarks": {
+  "LCG": {
+   "file": "dot-LCG.glb",
+   "name": "五甲龍成宮"
+  },
+  "P01": {
+   "file": "dot-P01.glb",
+   "name": "捷運鳳山西站"
+  },
+  "P02": {
+   "file": "dot-P02.glb",
+   "name": "鳳山車站"
+  },
+  "P03": {
+   "file": "dot-P03.glb",
+   "name": "曹公圳水岸"
+  },
+  "P04": {
+   "file": "dot-P04.glb",
+   "name": "鳳山中華街觀光夜市"
+  },
+  "P05": {
+   "file": "dot-P05.glb",
+   "name": "鳳山第一公有零售市場（兵仔市）"
+  },
+  "P06": {
+   "file": "dot-P06.glb",
+   "name": "鳳儀書院"
+  },
+  "P07": {
+   "file": "dot-P07.glb",
+   "name": "黃埔新村"
+  },
+  "P08": {
+   "file": "dot-P08.glb",
+   "name": "大東文化藝術中心"
+  },
+  "P09": {
+   "file": "dot-P09.glb",
+   "name": "鳳山醫院"
+  },
+  "P10": {
+   "file": "dot-P10.glb",
+   "name": "衛武營國家藝術文化中心"
+  },
+  "P11": {
+   "file": "dot-P11.glb",
+   "name": "鳳山中山公園"
+  },
+  "P12": {
+   "file": "dot-P12.glb",
+   "name": "國立鳳山高中"
+  },
+  "P13": {
+   "file": "dot-P13.glb",
+   "name": "五甲國小"
+  },
+  "Q1": {
+   "file": "dot-Q1.glb",
+   "name": "高雄市議會"
+  },
+  "X1": {
+   "file": "dot-X1.glb",
+   "name": "鳳山國小"
+  },
+  "X2": {
+   "file": "dot-X2.glb",
+   "name": "鳳山運動園區"
+  },
+  "X3": {
+   "file": "dot-X3.glb",
+   "name": "東便門與東福橋"
+  },
+  "X4": {
+   "file": "dot-X4.glb",
+   "name": "鳳山行政中心（公所）"
+  },
+  "formosa": {
+   "file": "dot-formosa-magazine.glb",
+   "name": "美麗島雜誌社"
+  }
+ }
+}

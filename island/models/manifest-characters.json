@@ -1,0 +1,80 @@
+{
+ "character": {
+  "longlong-01": {
+   "file": "longlong-01.glb",
+   "name": "百變隆隆｜阿公"
+  },
+  "longlong-02": {
+   "file": "longlong-02.glb",
+   "name": "百變隆隆｜漁民"
+  },
+  "longlong-03": {
+   "file": "longlong-03.glb",
+   "name": "百變隆隆｜機車騎士"
+  },
+  "longlong-04": {
+   "file": "longlong-04.glb",
+   "name": "百變隆隆｜追星歌迷"
+  },
+  "longlong-05": {
+   "file": "longlong-05.glb",
+   "name": "百變隆隆｜育兒家長"
+  },
+  "longlong-06": {
+   "file": "longlong-06.glb",
+   "name": "百變隆隆｜鉛球運動員"
+  },
+  "longlong-07": {
+   "file": "longlong-07.glb",
+   "name": "百變隆隆｜捷運通勤上班族"
+  },
+  "longlong-08": {
+   "file": "longlong-08.glb",
+   "name": "百變隆隆｜出國旅客"
+  },
+  "longlong-09": {
+   "file": "longlong-09.glb",
+   "name": "百變隆隆｜營建勞工"
+  },
+  "longlong-10": {
+   "file": "longlong-10.glb",
+   "name": "百變隆隆｜毛爸"
+  },
+  "longlong-11": {
+   "file": "longlong-11.glb",
+   "name": "百變隆隆｜學生"
+  },
+  "longlong-12": {
+   "file": "longlong-12.glb",
+   "name": "百變隆隆｜科技工程師"
+  },
+  "longlong-13": {
+   "file": "longlong-13.glb",
+   "name": "百變隆隆｜蔬菜攤販"
+  },
+  "longlong-14": {
+   "file": "longlong-14.glb",
+   "name": "百變隆隆｜外國訪客"
+  },
+  "longlong-15": {
+   "file": "longlong-15.glb",
+   "name": "百變隆隆｜歌仔戲表演者"
+  },
+  "longlong-16": {
+   "file": "longlong-16.glb",
+   "name": "百變隆隆｜烤肉攤商"
+  },
+  "chenqimai": {
+   "file": "chenqimai.glb",
+   "name": "陳其邁"
+  },
+  "xuzhijie": {
+   "file": "xuzhijie.glb",
+   "name": "許智傑"
+  },
+  "huiwen-corner": {
+   "file": "huiwen-corner-greeting.glb",
+   "name": "陳慧文站路口"
+  }
+ }
+}

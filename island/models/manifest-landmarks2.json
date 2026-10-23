@@ -1,0 +1,6 @@
+{"landmarks": {
+  "railpark": {"file": "dot-railpark.glb", "name": "臺鐵高雄機廠舊址親子遊樂區"},
+  "chengcing-lake": {"file": "dot-chengcing-lake.glb", "name": "澄清湖"},
+  "chengcing-baseball": {"file": "dot-chengcing-baseball.glb", "name": "澄清湖棒球場"},
+  "guoling-park": {"file": "dot-guoling-park.glb", "name": "果嶺公園"}
+}}

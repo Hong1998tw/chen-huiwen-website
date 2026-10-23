@@ -59,6 +59,11 @@ def public_asset_source_paths() -> set[str]:
         if Path(path).suffix.lower() in {'.css', '.js'} and path != 'sw.js'
     }
     allowed.update({'assets/vendor/leaflet.css', 'assets/vendor/leaflet.js'})
+    from build_public import ROOT
+    island = ROOT / 'island'
+    if island.is_dir():
+        allowed.update(path.relative_to(ROOT).as_posix() for path in island.rglob('*')
+                       if path.is_file() and path.suffix.lower() in {'.css', '.js'})
     return allowed
 
 
