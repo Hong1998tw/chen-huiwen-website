@@ -23,7 +23,7 @@
 1. 首頁、關於、選舉頁的 title／description 加入「鳳山議員」「高雄市議員」「候選人」「第9選舉區（鳳山區）」。
 2. 首頁 hero kicker 由標語改為「陳慧文・高雄市議員・鳳山區」：原本 H1 是「慧文會武會做事」，頁首可見文字沒有全名與職稱。
 3. 選舉頁 H1 改為「2026 鳳山市議員選舉資訊」，eyebrow 標明第9選舉區。
-4. Person JSON-LD（首頁與關於頁一致）：補 `sameAs`（維基百科、議會 iVOD、報導者觀測站、Threads）、`alternateName`、`areaServed`、`memberOf`（高雄市議會）、`affiliation`（民主進步黨）；選舉頁 CollectionPage 以 `about` 指向同一人。
+4. Person JSON-LD：以 main 已充實的關於頁 Person 為準（政黨、議會、學歷、維基百科／Wikidata），再補議會 iVOD、報導者觀測站 `sameAs` 與中文 `alternateName`；首頁 Person 改為與關於頁完全一致，選舉頁 CollectionPage 以 `about` 指向同一人。
 5. 兩個仍被 Google 收錄的 404 舊網址加入 301 對照（`data/seo/*.csv`）：
    - `/381bd1468054806d9f28e7f2aefaf017` → `achievement-school-case-review.html`
    - `/2cbbd146805480678940d67d8c11314b` → `news-20251217-certificate-map.html`
@@ -35,9 +35,9 @@
 
 ## 需要人工處理（站外，影響通常比站內修改更大）
 
-1. **Cloudflare Bulk Redirects**：把上方兩筆新 301 加入既有 Bulk Redirect list（`data/seo/cloudflare-redirects.csv` 末兩列），部署後以 `curl -I` 確認 301。
+1. **確認舊網址 301**：`build_cloudflare_public.py` 會把 `data/seo/cloudflare-redirects.csv` 每列寫進 artifact `_redirects`，部署後以 `curl -I` 確認兩筆新舊網址回 301。
 2. **Google Search Console**：部署後對首頁、`election.html`、`about.html` 要求建立索引，並重新提交 `sitemap.xml`。
-3. **維基百科／Wikidata**：維基百科條目沒有官網連結。可在 Wikidata 的「陳慧文」項目加「官方網站（P856）＝https://www.huiwen.tw/」。由本人或團隊編輯屬利益衝突，應依維基規範在討論頁揭露或請第三方編輯。
+3. **維基百科／Wikidata**：維基百科條目沒有官網連結。可在 Wikidata 的「陳慧文」項目（Q50093558）加「官方網站（P856）＝https://www.huiwen.tw/」。由本人或團隊編輯屬利益衝突，應依維基規範在討論頁揭露或請第三方編輯。
 4. **反向連結**：Facebook 粉專「網站」欄、Instagram／Threads／YouTube 簡介、LINE 官方帳號、民進黨高雄市黨部議員頁（dppkh.org.tw）、報導者觀測站、新聞稿末段，都應連到 `https://www.huiwen.tw/`。尤其民進黨市黨部頁已在「鳳山議員」「高雄市議員」排進前 10。
 5. **Google 商家檔案**：以「陳慧文服務處」建立或認領，網站欄填官網，可在「鳳山議員」「鳳山 議員服務處」這類在地搜尋出現地圖結果。
 6. **號次確定後**：把號次寫進首頁 title、選舉頁 H1 與 description，例如「鳳山市議員候選人 N 號 陳慧文」，因為選前很多人會搜「鳳山 N 號」。

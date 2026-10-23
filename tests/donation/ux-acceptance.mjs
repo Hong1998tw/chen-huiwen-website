@@ -900,17 +900,17 @@ try {
   await check('map cancel selection closes selected popup, clears selected styling and restores the filtered overview extent',async()=>{
     const baseline=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
     await page.locator('[data-locate="wende-school-center"]').click();
-    await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='wende-school-center'&&document.querySelector('.map-popup-selected'));
+    await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='wende-school-center'&&document.querySelector('#achievement-map .map-popup')?.innerText.includes('文德國小活動中心'));
     const selected=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
     assert(selected.zoom>baseline.zoom,JSON.stringify({baseline,selected}));
-    assert(await page.locator('.map-popup-selected').isVisible());
+    assert(await page.locator('#achievement-map .map-popup').isVisible());
     await page.locator('.insight-clear').click();
     await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId===null&&!document.querySelector('#achievement-map .leaflet-popup'));
     const restored=await page.evaluate(()=>window.HuiwenCases.getState().mapView);
     assert.equal(restored.zoom,baseline.zoom,JSON.stringify({baseline,selected,restored}));
     const boundsDelta=restored.bounds.split(',').map((value,index)=>Math.abs(Number(value)-Number(baseline.bounds.split(',')[index])));
     assert(boundsDelta.every(delta=>delta<=0.00025),JSON.stringify({baseline,restored,boundsDelta}));
-    assert.equal(await page.locator('.map-popup-selected').count(),0);
+    assert.equal(await page.locator('#achievement-map .map-popup').count(),0);
     assert.equal((await page.locator('#case-list .case-card[data-case="wende-school-center"]').getAttribute('class')).includes('is-selected'),false);
     assert.equal(new URL(page.url()).searchParams.has('case'),false);
     assert.equal(await page.locator('#map-fit').evaluate(el=>document.activeElement===el),true);

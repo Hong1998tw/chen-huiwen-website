@@ -27,7 +27,7 @@ PUBLIC_DATA = (
     'data/legal-schedule.json', 'data/service-search.json', 'data/site-profile.json',
 )
 ROOT_FILES = (
-    '.nojekyll', 'CNAME', 'robots.txt', 'sitemap.xml', 'manifest.webmanifest',
+    '.nojekyll', 'CNAME', 'robots.txt', 'llms.txt', 'sitemap.xml', 'manifest.webmanifest',
     '404.html', 'offline.html', 'styles.css', 'mobile.css', 'layout.css',
     'civic.css', 'digital.css', 'home.css', 'campaign.css', 'embeds.css',
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',

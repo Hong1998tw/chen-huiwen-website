@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Package only the reviewed public artifact for code-free Cloudflare Static Assets."""
 from pathlib import Path
+from urllib.parse import urlsplit
 import argparse
+import csv
 import hashlib
 import json
 import re
@@ -131,6 +133,30 @@ def _assert_reused_font_contract(destination, publication, font_contract):
         raise ValueError('Page-font manifest changed after source-derived validation')
 
 
+def render_redirects(source_root=ROOT):
+    """Directory rewrites plus the confirmed legacy 301 map from data/seo/cloudflare-redirects.csv.
+
+    Zone Bulk Redirects run in front of the Worker, so a row that is also configured
+    there stays a single hop; a row missing from the zone still answers 301 here.
+    """
+    # Explicit internal rewrites preserve the existing index and directory URLs.
+    lines = ['/ /index.html 200']
+    lines.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
+                 for path in build_public.LEGACY_PAGES)
+    with (Path(source_root) / 'data/seo/cloudflare-redirects.csv').open(encoding='utf-8', newline='') as fh:
+        for row in csv.DictReader(fh):
+            if row.get('enabled_after_cutover', '').lower() != 'true':
+                continue
+            source, target = row.get('source_path', ''), urlsplit(row.get('target_url', ''))
+            if (not re.fullmatch(r'/[A-Za-z0-9._~-]+', source) or row.get('status_code') != '301'
+                    or target.scheme != 'https' or target.netloc != 'www.huiwen.tw'
+                    or target.query or not target.path.startswith('/')):
+                raise ValueError('Unsafe legacy redirect row: ' + source)
+            fragment = '#' + target.fragment if target.fragment else ''
+            lines.append(f'{source} {target.path}{fragment} 301')
+    return '\n'.join(lines) + '\n'
+
+
 def add_delivery_metadata(destination, source_commit, source_root=ROOT, font_contract=None):
     """Attach the canonical deployment identity to an already-built public artifact."""
     destination = Path(destination).resolve()
@@ -150,11 +176,7 @@ def add_delivery_metadata(destination, source_commit, source_root=ROOT, font_con
         font_contract = validate_artifact_contract(destination, source_root)
     else:
         _assert_reused_font_contract(destination, manifest, font_contract)
-    # Explicit internal rewrites preserve the existing index and directory URLs.
-    aliases = ['/ /index.html 200']
-    aliases.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
-                   for path in build_public.LEGACY_PAGES)
-    (destination / '_redirects').write_text('\n'.join(aliases) + '\n', encoding='utf-8')
+    (destination / '_redirects').write_text(render_redirects(source_root), encoding='utf-8')
     (destination / '_headers').write_text(
         render_headers(destination, manifest, font_contract), encoding='utf-8'
     )
