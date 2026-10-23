@@ -15,7 +15,9 @@ import {
   sha256,
   validateDeploymentReceipt,
   verifyCaptureHash,
-  verifyCaptureMetadata
+  verifyCaptureMetadata,
+  TRANSFER_SOURCE,
+  TRANSFER_SOURCE_CDP_FALLBACK
 } from './visual-qa-lib.mjs';
 import { startStaticServer } from './static-server.mjs';
 import {
@@ -43,7 +45,9 @@ import {
 } from './visual-qa-source-integrity.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const runnerVersion = '1.0.0';
+const runnerVersion = '1.1.0';
+const NETWORK_QUIET_MS = 500;
+const NETWORK_SETTLE_TIMEOUT_MS = 10000;
 const defaultOutput = resolve(root, 'tests/donation/results/visual-qa');
 const defaultCloudflareBase = 'https://www.huiwen.tw/';
 
@@ -175,7 +179,16 @@ async function captureOne({
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   const networkById = new Map();
   let documentResponse = null;
+  // Same-origin requests still in flight; lazy images can start after `load`, so the
+  // same-origin metrics wait for this set to drain instead of racing the image fetch.
+  const settleOrigin = new URL(baseUrl).origin;
+  const pendingRequests = new Set();
+  let lastNetworkActivity = Date.now();
   cdp.on('Network.requestWillBeSent', event => {
+    if (/^https?:/.test(event.request.url) && new URL(event.request.url).origin === settleOrigin) {
+      pendingRequests.add(event.requestId);
+      lastNetworkActivity = Date.now();
+    }
     const existing = networkById.get(event.requestId) ?? {};
     networkById.set(event.requestId, {
       ...existing,
@@ -204,10 +217,12 @@ async function captureOne({
     }
   });
   cdp.on('Network.loadingFinished', event => {
+    if (pendingRequests.delete(event.requestId)) lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, encodedDataLength: event.encodedDataLength });
   });
   cdp.on('Network.loadingFailed', event => {
+    if (pendingRequests.delete(event.requestId)) lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, failed: event.errorText });
   });
@@ -237,6 +252,8 @@ async function captureOne({
   let screenshotSha256 = null;
   let screenshotError = null;
   let animationCount = 0;
+  let networkSettled = false;
+  let networkSettleElapsedMs = null;
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
@@ -278,6 +295,15 @@ async function captureOne({
       document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important');
       return animations.length;
     });
+    const settleStarted = Date.now();
+    while (Date.now() - settleStarted < NETWORK_SETTLE_TIMEOUT_MS) {
+      if (pendingRequests.size === 0 && Date.now() - lastNetworkActivity >= NETWORK_QUIET_MS) {
+        networkSettled = true;
+        break;
+      }
+      await page.waitForTimeout(50);
+    }
+    networkSettleElapsedMs = Date.now() - settleStarted;
     domElementCount = await page.evaluate(() => document.querySelectorAll('*').length);
     performanceData = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0];
@@ -307,7 +333,17 @@ async function captureOne({
           encodedBodySize: entry.encodedBodySize,
           decodedBodySize: entry.decodedBodySize
         })),
-        fontStatus: document.fonts.status
+        fontStatus: document.fonts.status,
+        // Chrome may or may not prefetch a loading="lazy" image that sits wholly outside the
+        // viewport, so its bytes vary between identical runs; they are reported, not budgeted.
+        offscreenLazyImages: [...new Set([...document.images].filter(image => {
+          if (image.loading !== 'lazy') return false;
+          const rect = image.getBoundingClientRect();
+          return rect.top >= innerHeight || rect.bottom <= 0;
+        }).map(image => {
+          const imageUrl = new URL(image.currentSrc || image.src, location.href);
+          return `${imageUrl.origin}${imageUrl.pathname}`;
+        }))]
       };
     });
     if (screenshotEnabled) {
@@ -331,13 +367,20 @@ async function captureOne({
   const sameOriginNetwork = network.filter(item => new URL(item.url).origin === targetOrigin);
   const thirdPartyNetwork = network.filter(item => new URL(item.url).origin !== targetOrigin);
   const sumKnown = (items, key) => items.reduce((sum, item) => sum + (Number.isFinite(item[key]) ? item[key] : 0), 0);
+  const offscreenLazy = new Set(performanceData?.offscreenLazyImages ?? []);
+  const withoutQuery = url => { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname}`; };
+  const isOffscreenLazy = url => offscreenLazy.has(withoutQuery(url));
   const rawSameOriginTransferSize = (performanceData?.navigation?.transferSize ?? 0) +
     sumKnown(performanceData?.sameOriginResources ?? [], 'transferSize');
+  const offscreenLazyResources = (performanceData?.sameOriginResources ?? []).filter(entry => isOffscreenLazy(entry.name));
+  const offscreenLazyNetwork = sameOriginNetwork.filter(item => isOffscreenLazy(item.url));
   const rawThirdPartyTransferSize = sumKnown(performanceData?.thirdPartyResources ?? [], 'transferSize');
   const sameOriginEncodedDataLength = sumKnown(sameOriginNetwork, 'encodedDataLength');
   const thirdPartyEncodedDataLength = sumKnown(thirdPartyNetwork, 'encodedDataLength');
   const cdpTransferFallback = rawSameOriginTransferSize === 0 && sameOriginEncodedDataLength > 0;
-  const transferBudgetBytes = cdpTransferFallback ? sameOriginEncodedDataLength : rawSameOriginTransferSize;
+  const transferBudgetBytes = cdpTransferFallback
+    ? sameOriginEncodedDataLength - sumKnown(offscreenLazyNetwork, 'encodedDataLength')
+    : rawSameOriginTransferSize - sumKnown(offscreenLazyResources, 'transferSize');
   const externalHost = new URL(baseUrl).hostname;
   const cfVerified = Boolean(documentResponse?.hasCloudflareRay || documentResponse?.server?.toLowerCase().includes('cloudflare'));
   const documentEncoding = documentResponse?.contentEncoding || 'identity';
@@ -394,6 +437,9 @@ async function captureOne({
       serviceWorkers: 'blocked',
       browserCache: 'disabled per context',
       fontsReady,
+      networkSettled,
+      networkQuietMs: NETWORK_QUIET_MS,
+      networkSettleElapsedMs,
       animationsFinished: true,
       activeAnimationsStabilized: animationCount,
       dynamicMasks: policy.capture.dynamicMasks
@@ -416,8 +462,10 @@ async function captureOne({
     metrics: {
       domElementCount,
       sameOriginTransferSizeBytes: transferBudgetBytes,
-      sameOriginTransferSizeSource: cdpTransferFallback ? 'CDP.Network.loadingFinished.encodedDataLength fallback; PerformanceResourceTiming returned zero' : 'PerformanceResourceTiming.transferSize including navigation',
+      sameOriginTransferSizeSource: cdpTransferFallback ? TRANSFER_SOURCE_CDP_FALLBACK : TRANSFER_SOURCE,
       sameOriginPerformanceTransferSizeBytes: rawSameOriginTransferSize,
+      sameOriginOffscreenLazyImagesExcluded: (cdpTransferFallback ? offscreenLazyNetwork.map(item => ({ url: publicUrl(item.url), bytes: item.encodedDataLength ?? 0 }))
+        : offscreenLazyResources.map(entry => ({ url: publicUrl(entry.name), bytes: entry.transferSize ?? 0 }))),
       sameOriginEncodedDataLengthBytes: sameOriginEncodedDataLength,
       sameOriginEncodedBytesByContentEncoding: encodedBytesByContentEncoding,
       thirdPartyPerformanceTransferSizeBytes: rawThirdPartyTransferSize,
