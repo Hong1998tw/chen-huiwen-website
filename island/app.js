@@ -917,6 +917,18 @@ function placeLabels() {
   }
 }
 
+// ── 活動宣布：首頁橫幅（資料由 data/events.json 匯出），活動結束自動消失 ──
+let upcoming = [];
+try {
+  const ev = await fetch("./dot-code-2/events.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : { events: [] }));
+  upcoming = (ev.events || []).filter((e) => e.published && e.status === "published" && islandById[e.island] && Date.parse(e.endDate || e.date) >= Date.now())
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+} catch {}
+const eventTime = (d) => new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(d));
+function eventBanner() {
+  return upcoming.slice(0, 2).map((e) => `<button type="button" class="event-banner" data-act="island" data-id="${esc(e.island)}"><span>活動宣布</span><b>${esc(e.title)}</b><small>${esc(eventTime(e.date))}｜${esc(e.place)}</small></button>`).join("");
+}
+
 // ── 相機與版面 ──────────────────────────────────────────────────
 const FRUSTUM = 138;
 let panelOpen = true;
@@ -1133,7 +1145,7 @@ function renderHome() {
   const total = data.items.length, cases = data.meta.serviceCases;
   let html = `<p class="p-kicker">做得到的承諾，看得見的改變。</p>
     <h2 class="p-title">一座島，一個承諾</h2>
-    <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>
+    <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>${eventBanner()}
     <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div><div class="stat"><b>${total.toLocaleString()}</b><span>筆政績</span></div>${cases ? `<div class="stat"><b>${cases.toLocaleString()}</b><span>件服務案件</span></div>` : ""}</div>
     <input class="search" type="search" placeholder="搜尋政績、地名、里名…" value="${esc(state.query)}" data-act="search" aria-label="搜尋">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-act="tab" data-tab="islands" aria-selected="${state.tab === "islands"}">島嶼</button><button type="button" role="tab" data-act="tab" data-tab="villages" aria-selected="${state.tab === "villages"}">鳳山各里</button></div>`;
