@@ -69,7 +69,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.manifest_bytes).hexdigest(),
                          self.publication["files"][contract.FONT_MANIFEST])
         self.assertEqual(self.manifest["schemaVersion"], 2)
-        self.assertEqual(len(self.routes), 464)
+        self.assertEqual(len(self.routes), 465)
         inventory = self.manifest["routeInventory"]
         original_markers = {
             "about.html", "achievements.html", "election.html", "explore.html", "index.html",
@@ -102,7 +102,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
             ROOT, self.artifact, build_public.public_paths(ROOT),
         )
         inactive, _public_ids = producer._inactive_and_public_ids(ROOT)
-        self.assertEqual(len(candidates), 464)
+        self.assertEqual(len(candidates), 465)
         self.assertEqual(len(skipped), 9)
         self.assertEqual(set(skipped), set(self.manifest["routeInventory"]["skippedExistingFontRoutes"]))
         self.assertFalse((set(candidates) | set(skipped)).intersection(inactive))
