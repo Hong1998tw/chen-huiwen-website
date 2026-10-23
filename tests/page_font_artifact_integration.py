@@ -94,7 +94,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
         self.assertEqual(set(self.fonts), {
             path for path in self.publication["files"] if contract.is_page_font_path(path)
         })
-        self.assertEqual(len(self.fonts), 465)
+        self.assertEqual(len(self.fonts), 466)
         self.assertTrue(all(Path(path).name == self.fonts[path]["sha256"] + ".woff2" for path in self.fonts))
 
     def test_artifact_contract_closes_source_state_and_all_legacy_font_routes(self):
