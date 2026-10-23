@@ -439,11 +439,12 @@ async function captureOne({
       fontsReady,
       networkSettled,
       networkQuietMs: NETWORK_QUIET_MS,
-      networkSettleElapsedMs,
       animationsFinished: true,
       activeAnimationsStabilized: animationCount,
       dynamicMasks: policy.capture.dynamicMasks
     },
+    // Varies run to run, so it stays out of the fixed `conditions` that cross-compare requires to match.
+    captureTiming: { networkSettleElapsedMs },
     httpStatus,
     expectedHttpStatus,
     pageErrors,
