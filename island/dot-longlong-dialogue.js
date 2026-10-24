@@ -12,12 +12,14 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
   const v=new THREE.Vector3(),local=new THREE.Vector3(),ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
   const reduced=()=>!!media?.matches;
   const allowed=x=>x && ['verified-excerpt','paraphrase','paraphrased_summary','user-provided'].includes(x.textType) && ['verified','approved','caption_verified_summary'].includes(x.status) && typeof x.displayText==='string' && x.displayText.trim();
-  // 賴瑞隆要怎麼做：只顯示 longlong-dialogue.json 帶的政見（標題、摘要、來源），沒有就不顯示
-  function renderPolicy(c){policy.replaceChildren();const ps=(c?.policies||[]).filter(p=>p&&p.title&&p.summary);policy.hidden=!ps.length;if(!ps.length)return '';
-    const h=doc.createElement('h4');h.textContent='賴瑞隆要怎麼做';policy.append(h);const ul=doc.createElement('ul');
-    for(const p of ps){const li=doc.createElement('li'),b=doc.createElement('b'),t=doc.createElement('span');b.textContent=p.title;t.textContent=p.summary;li.append(b,t);
-      let u=null;try{const x=new URL(p.sourceURL);if(['https:','http:'].includes(x.protocol))u=x.href;}catch{}if(u){const a=doc.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent='來源';li.append(a);}ul.append(li);}
-    policy.append(ul);return ps.map(p=>p.title+'：'+p.summary).join('。');}
+  // 角色台詞為主；下面一個小區塊列賴瑞隆的政見（標題＋剪短的說明＋來源），說明剪短但不拿掉
+  const shortText=(t,n=40)=>{const s=String(t||'').split(/(?<=。)/)[0].trim();if(s.length<=n)return s;const cut=Math.max(...['、','；','，','：'].map(m=>s.lastIndexOf(m,n)));return (cut>n*0.5?s.slice(0,cut):s.slice(0,n))+'…';};
+  function renderPolicy(c){policy.replaceChildren();const ps=(c?.policies||[]).filter(p=>p&&p.title).slice(0,2);policy.hidden=!ps.length;if(!ps.length)return '';
+    const h=doc.createElement('b');h.className='dot-longlong-policy-h';h.textContent='賴瑞隆政見';policy.append(h);
+    for(const p of ps){const row=doc.createElement('p'),t=doc.createElement('strong'),d=doc.createElement('span');t.textContent=p.title;d.textContent=shortText(p.summary);row.append(t,d);
+      let u=null;try{const x=new URL(p.sourceURL);if(['https:','http:'].includes(x.protocol))u=x.href;}catch{}
+      if(u){const a=doc.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent='來源';row.append(a);}policy.append(row);}
+    return ps.map(p=>p.title+'：'+shortText(p.summary)).join('；');}
   function finish(){visual.textContent=full;lastIndex=Array.from(full).length;elapsed=Infinity;}
   function start(){elapsed=0;lastIndex=-1;visual.textContent='';bubble.classList.remove('dot-longlong-pop');if(reduced())finish();else {void bubble.offsetWidth;bubble.classList.add('dot-longlong-pop');}}
   function close(restore=false){clearTimeout(autoClose);active=null;bubble.hidden=true;live.textContent='';full='';if(restore&&returnFocus?.isConnected)returnFocus.focus();returnFocus=null;}
@@ -26,7 +28,7 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
     else {full=`我是${c?.name||'百變隆隆'}，陪慧文一起顧鳳山！`;label.textContent='';label.hidden=true;}
     let url=null;try{const u=new URL(c?.sourceURL);if(['https:','http:'].includes(u.protocol))url=u.href;}catch{}
     source.hidden=!url;if(url)source.href=url;else source.removeAttribute('href');source.textContent='查看影片來源'+(c?.timecode?'（'+(typeof c.timecode==='object'?'約 '+c.timecode.startSeconds+'–'+c.timecode.endSeconds+' 秒':String(c.timecode))+'）':'');
-    const said=renderPolicy(c);live.textContent=title.textContent+'。'+full+(said?'。賴瑞隆要怎麼做：'+said:'');start();update(0);clearTimeout(autoClose);autoClose=setTimeout(()=>{if(active===id)close();},Math.max(4500,Array.from(full).length*160+3000)+(policy.hidden?0:15000));return true;
+    const said=renderPolicy(c);live.textContent=title.textContent+'。'+full+(said?'。賴瑞隆政見：'+said:'');start();update(0);clearTimeout(autoClose);autoClose=setTimeout(()=>{if(active===id)close();},Math.max(4500,Array.from(full).length*160+3000));return true;
   }
   function register(object,id,headOffset){if(disposed)throw Error('已釋放');if(records.has(id))throw Error('重複角色 '+id);object.updateWorldMatrix(true,true);
     const box=new THREE.Box3().setFromObject(object);const anchor=headOffset?new THREE.Vector3(...headOffset):object.worldToLocal(new THREE.Vector3((box.min.x+box.max.x)/2,box.max.y,(box.min.z+box.max.z)/2));
