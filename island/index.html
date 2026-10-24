@@ -83,13 +83,11 @@
   <nav class="toolbar" aria-label="地圖操作">
     <button type="button" id="btn-home">全景</button>
     <button type="button" id="btn-night" aria-pressed="false">夜晚</button>
-    <button type="button" id="btn-names" aria-pressed="true">名牌</button>
-    <button type="button" id="btn-explore" aria-expanded="false">探索</button>
     <button type="button" id="btn-list" aria-expanded="true" aria-controls="panel">清單</button>
   </nav>
 
   <aside id="panel" aria-label="政見與政績清單">
-    <div class="panel-handle" aria-hidden="true"></div>
+    <button type="button" class="panel-handle" id="panel-handle" aria-label="收合或展開清單"><span></span></button>
     <div id="panel-body"></div>
     <footer class="island-footer">
       <p><b>陳慧文服務處</b> · 07-821-2536 · 錦田路231號 · <a href="https://line.me/R/ti/p/@yve2766q" rel="noopener noreferrer" target="_blank">LINE 線上洽詢</a></p>
@@ -99,12 +97,12 @@
 
   <div id="intro" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
     <div class="intro-card">
-      <p class="intro-step" id="intro-step">1／3</p>
-      <h2 id="intro-title"></h2>
-      <p id="intro-text"></p>
+      <p class="intro-step">慧文政績島</p>
+      <h2 id="intro-title">做得到的承諾，<br>看得見的改變。</h2>
+      <p id="intro-text">中央是高雄市議會，四周每座島是一項 2026 承諾，島上站著已經做過的事。點一座島看看。</p>
       <div class="intro-actions">
-        <button type="button" class="ghost" id="intro-skip">略過</button>
-        <button type="button" class="primary" id="intro-next">下一步</button>
+        <button type="button" class="ghost" id="intro-skip">自己看</button>
+        <button type="button" class="primary" id="intro-tour">帶我走一圈</button>
       </div>
     </div>
   </div>

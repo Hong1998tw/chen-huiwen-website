@@ -864,7 +864,7 @@ const extraLabels = riverInfo.labels.map((l) => {
   el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : "#8a8f93"}">${l.kind === "river" ? "溪" : "橋"}</b>${esc(l.text)}`;
   el.addEventListener("click", () => (l.kind === "river" ? openRiver() : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
   labelsEl.append(el);
-  return { el, pos: l.pos };
+  return { el, pos: l.pos, kind: l.kind, id: l.id };
 });
 const tmp = new THREE.Vector3();
 // 選到一座島時，島上的重點政績在建物上方冒出編號名牌（HEART 的細項標示做法），點了開圖卡
@@ -948,7 +948,7 @@ function resize() {
   // 清單打開時，把畫面中心移到沒被清單遮住的區域
   const panel = $("#panel").getBoundingClientRect();
   if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.width + 16) / 2, 0, w, h);
-  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, panel.height / 2, w, h);
+  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(panel.height, h * 0.5) / 2, w, h);
   else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
@@ -982,6 +982,7 @@ canvas.addEventListener("pointerup", (e) => {
   if (longlongDialogue?.pointerUp(e, pickables)) { downAt = null; return; }
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > (e.pointerType === "mouse" ? 6 : 10)) return;
   const u = pick(e);
+  if (!u && mobile() && panelOpen && sheetState !== "peek") { setSheet("peek"); return; }
   if (u) feel?.ripple(lastHit?.point, u.item != null ? "#f3c64f" : "#ffffff");
   if (e.pointerType !== "mouse" && lastHit) { feel?.hover(lastHit.object); setTimeout(() => feel?.hover(null), 650); }
   if (u?.item != null) { openIsland(u.island, true, u.item); openCard(u.item); }
@@ -999,6 +1000,9 @@ canvas.addEventListener("pointermove", (e) => {
     const u = pick(e);
     feel?.hover(lastHit?.object || null);
     life?.hoverIsland(u?.island||null);
+    // 名牌只在滑過或選到時出現（中央議會一直在）
+    for (const [id, el] of Object.entries(labelEls)) el.classList.toggle("hover", u?.island === id);
+    for (const x of extraLabels) x.el.classList.toggle("hover", (x.kind === "river" && !!u?.river) || (x.kind === "bridge" && u?.bridge === x.id));
     let html = "";
     if (u?.item != null) {
       const it = data.items[u.item];
@@ -1027,7 +1031,7 @@ canvas.addEventListener("pointermove", (e) => {
     tooltip.style.top = `${e.clientY}px`;
   });
 });
-canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show"); feel?.hover(null); });
+canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show"); feel?.hover(null); for (const el of document.querySelectorAll(".isl-label.hover")) el.classList.remove("hover"); });
 
 // ── 清單與面板 ──────────────────────────────────────────────────
 const body = $("#panel-body");
@@ -1357,54 +1361,67 @@ body.addEventListener("compositionend", (e) => {
   if (e.target.dataset.act === "search") runSearch(e.target.value);
 });
 
-function setPanel(open) {
+const SHEET = { peek: 128 };
+let sheetState = "half";
+function sheetHeight(state) { return state === "peek" ? SHEET.peek : state === "full" ? Math.round(innerHeight * 0.9) : Math.round(innerHeight * 0.5); }
+function setSheet(state) {
+  sheetState = state;
+  document.documentElement.style.setProperty("--sheet-h", `${sheetHeight(state)}px`);
+  document.body.classList.toggle("sheet-peek", state === "peek");
+  requestAnimationFrame(resize);
+}
+function setPanel(open, state = "half") {
   panelOpen = open;
   document.body.classList.toggle("panel-closed", !open);
   $("#btn-list").setAttribute("aria-expanded", String(open));
+  if (mobile() && open) setSheet(state);
   requestAnimationFrame(resize);
 }
 $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
+// 把手：點一下在半開／只露標題之間切換；往下拖到底就收起，往上拖就全開
+{
+  const handle = $("#panel-handle");
+  let drag = null;
+  handle.addEventListener("pointerdown", (e) => { drag = { y: e.clientY, h: sheetHeight(sheetState), moved: false }; handle.setPointerCapture(e.pointerId); });
+  handle.addEventListener("pointermove", (e) => {
+    if (!drag || !mobile()) return;
+    const h = Math.max(60, Math.min(innerHeight * 0.92, drag.h + (drag.y - e.clientY)));
+    if (Math.abs(drag.y - e.clientY) > 6) drag.moved = true;
+    document.documentElement.style.setProperty("--sheet-h", `${h}px`);
+  });
+  const release = (e) => {
+    if (!drag) return;
+    const dy = drag.y - e.clientY, h = drag.h + dy;
+    drag = null;
+    if (!mobile()) return;
+    if (!drag && Math.abs(dy) <= 6) { setSheet(sheetState === "peek" ? "half" : "peek"); return; }
+    if (h < 90) { setPanel(false); return; }
+    setSheet(h > innerHeight * 0.7 ? "full" : h < innerHeight * 0.3 ? "peek" : "half");
+  };
+  handle.addEventListener("pointerup", release);
+  handle.addEventListener("pointercancel", release);
+}
 $("#btn-home").addEventListener("click", goHome);
-$("#btn-explore").addEventListener("click", (e) => {
-  const on = document.body.classList.toggle("explore-open");
-  e.currentTarget.setAttribute("aria-expanded", String(on));
-});
+
 $("#btn-night").addEventListener("click", (e) => {
   const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
   e.currentTarget.setAttribute("aria-pressed", String(on));
   e.currentTarget.textContent = on ? "白天" : "夜晚";
   extras.setNight(on);
 });
-$("#btn-names").addEventListener("click", (e) => {
-  const on = e.currentTarget.getAttribute("aria-pressed") === "true";
-  e.currentTarget.setAttribute("aria-pressed", String(!on));
-  labelsEl.hidden = on;
-});
 
 // ── 開場導覽 ────────────────────────────────────────────────────
-const INTRO = [
-  ["慧文會武\n會做事", "這是一座用政績蓋起來的島。"],
-  ["懂建設、會爭取", "每座島中央是 2026 年的承諾，\n周圍站著已經做過的事。"],
-  ["做得到的承諾，\n看得見的改變。", "點一座島，或在清單裡找你家那一里。"],
-];
-let introStep = 0;
-function showIntro(i) {
-  introStep = i;
-  $("#intro-step").textContent = `${i + 1}／${INTRO.length}`;
-  $("#intro-title").textContent = INTRO[i][0];
-  $("#intro-text").textContent = INTRO[i][1];
-  $("#intro-next").textContent = i === INTRO.length - 1 ? "開始逛島" : "下一步";
-}
+// 開場只有一張卡：自己逛，或讓導覽從中央的議會帶一圈
 function closeIntro() {
   $("#intro").hidden = true;
   try { localStorage.setItem("huiwen-island-intro", "1"); } catch {}
 }
-$("#intro-next").addEventListener("click", () => (introStep < INTRO.length - 1 ? showIntro(introStep + 1) : closeIntro()));
 $("#intro-skip").addEventListener("click", closeIntro);
+$("#intro-tour").addEventListener("click", () => { closeIntro(); life?.startTour?.(); });
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
 const startIsland = new URLSearchParams(location.search).get("island");
-if (!seen && !startIsland) { showIntro(0); $("#intro").hidden = false; }
+if (!seen && !startIsland) $("#intro").hidden = false;
 
 // Task 7 additive integration; cards module may pass these same callbacks.
 life=createIslandLife({scene,world,camera,controls,renderer,islandCenter,islandCells:Object.fromEntries(Object.entries(LAYOUT).map(([id,cells])=>[id,cells.map(c=>cellPos(...c))])),data,onIsland:openIsland,onItem:openCard});
@@ -1422,7 +1439,7 @@ feel=createInteraction({THREE,scene,camera,controls,canvas,pickables,TOP,reduced
 const huiwenGreeting=createSimulatedGreeting(huiwen);
 canvas.addEventListener('pointerup',e=>{if(!downAt || Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>6)return;const u=pick(e);if(u?.huiwen)huiwenGreeting.trigger();if(u?.figure?.startsWith('陳慧文站路口'))cornerWave?.play();});
 // ── 啟動 ────────────────────────────────────────────────────────
-if (mobile()) setPanel(false);
+if (mobile()) setPanel(true, "peek");
 resize();
 controls.target.set(0, 0, 0);
 render();
@@ -1448,6 +1465,6 @@ renderer.setAnimationLoop(()=>{
  if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}
  streetMotion.update(dt,activeTime,reducedNow);
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
- dotCards?.update(dt);controls.update();longlongDialogue?.update(dt);renderer.render(scene,camera);placeLabels();
+ dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);controls.update();longlongDialogue?.update(dt);renderer.render(scene,camera);placeLabels();
 });
 window.addEventListener('pagehide',()=>{renderer.setAnimationLoop(null);life.dispose();ticker.dispose();dotCards?.dispose();streetMotion.dispose();huiwenGreeting.dispose();actors.dispose();},{once:true});
