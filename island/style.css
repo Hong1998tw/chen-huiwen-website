@@ -332,7 +332,9 @@ body.touring .dot-life-ui button:first-child { display: none; }  /* 導覽中不
   .event-banner { padding: 8px 10px; }
   .event-banner b { font-size: 14px; }
   .stats { grid-template-columns: repeat(3, 1fr); }
-  .dot-longlong-bubble { width: min(320px, calc(100vw - 24px)) !important; }
+  /* 手機：隆隆對話改成底部抽屜，不擋角色與島 */
+  .dot-longlong-bubble { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-height: 55dvh; overflow: auto !important; z-index: 90; }
+  .dot-longlong-bubble::after { display: none; }
 }
 
 /* 島名只在滑過或選到時出現；中央議會一直顯示 */

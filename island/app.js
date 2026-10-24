@@ -734,7 +734,15 @@ try {
   const res = await fetch("./longlong-dialogue.json", { cache: "no-cache" });
   if (!res.ok) throw new Error("角色資料載入失敗");
   const cues = await res.json();
-  longlongDialogue = createLonglongDialogue({ THREE, camera, canvas, cues });
+  // 對話裡「慧文做了什麼」：對應島的前兩件代表政績（標題＋最後一筆時間軸原文），可直接開那座島
+  const islandInfo = (id) => {
+    const isl = islandById[id];
+    if (!isl) return null;
+    const items = (isl.flagships || []).slice(0, 2).map((n) => data.items[n]).filter(Boolean)
+      .map((it) => { const last = (it.h || []).at(-1) || []; const what = last[1] || ""; return { t: it.t, when: last[0] || "", what: what.length > 44 ? what.slice(0, 44) + "…" : what }; });
+    return items.length ? { name: isl.name, items, open: () => openIsland(id, true) } : null;
+  };
+  longlongDialogue = createLonglongDialogue({ THREE, camera, canvas, cues, islandInfo });
   const cells = [...Object.values(LAYOUT)].flat();
   cues.cues.forEach((c, i) => {
     const before = wanderers.length;
