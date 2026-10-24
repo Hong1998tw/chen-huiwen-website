@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ['admin/**', 'cms-page-editor.js', 'index.html', 'scripts/publish_from_cms.py', 'tests/test_standalone_cms.py', '.github/workflows/cms-*.yml']
+    paths: ['admin/**', 'board/**', 'island/board.*', 'cms-page-editor.js', 'index.html', 'scripts/publish_from_cms.py', 'tests/test_standalone_cms.py', '.github/workflows/cms-*.yml']
 permissions:
   contents: read
 jobs:
@@ -33,3 +33,6 @@ jobs:
       - run: node admin/tests/home-order.mjs
       - run: python -m unittest discover -s tests -p test_standalone_cms.py
       - run: npx --prefix admin wrangler deploy --config admin/wrangler.jsonc --dry-run --outdir /tmp/huiwen-cms-build
+      - run: node --test board/test/*.test.mjs
+      - run: node board/test/integration.mjs
+      - run: npx --prefix admin wrangler deploy --config board/wrangler.jsonc --dry-run --outdir /tmp/huiwen-board-build
