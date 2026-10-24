@@ -554,17 +554,14 @@ for (const island of islands) {
     used = Math.min(slots.length, island.flagships.length);
   }
 
-  // 其餘格位填滿街區、公園與街景小物件，像一座小城
+  // 其餘格位只放綠地、樹與街景小物件，不放無關的建築，讓地標與政績建物更清楚；約四成格位留空
   const propIds = Object.keys(glbModels.props);
   for (const slot of slots.slice(used)) {
     const g = new THREE.Group();
     const roll = rand();
-    const townIds = Object.keys(glbModels.town);
     const treeIds = propIds.filter((k) => k.startsWith("tree"));
-    if (roll < 0.6) {
-      if (townIds.length) g.add(glbClone("town", townIds[Math.floor(rand() * townIds.length)], 1.0));
-      else townBlock(g, rand, accent);
-    } else if (roll < 0.85) {
+    if (roll < 0.4) continue;
+    if (roll < 0.8) {
       g.add(cyl(1.3, 1.3, 0.06, 10, "#a9d68f"));
       if (treeIds.length) {
         for (const [x, z] of [[-0.5, -0.3], [0.6, 0.4]]) {
