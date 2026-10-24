@@ -1,0 +1,64 @@
+{
+ "templates": {
+  "bridge-2": {
+   "file": "dot-tpl-bridge-2.glb"
+  },
+  "bridge": {
+   "file": "dot-tpl-bridge.glb"
+  },
+  "care-2": {
+   "file": "dot-tpl-care-2.glb"
+  },
+  "care": {
+   "file": "dot-tpl-care.glb"
+  },
+  "culture-2": {
+   "file": "dot-tpl-culture-2.glb"
+  },
+  "culture": {
+   "file": "dot-tpl-culture.glb"
+  },
+  "market-2": {
+   "file": "dot-tpl-market-2.glb"
+  },
+  "market": {
+   "file": "dot-tpl-market.glb"
+  },
+  "office-2": {
+   "file": "dot-tpl-office-2.glb"
+  },
+  "office": {
+   "file": "dot-tpl-office.glb"
+  },
+  "park-2": {
+   "file": "dot-tpl-park-2.glb"
+  },
+  "park": {
+   "file": "dot-tpl-park.glb"
+  },
+  "road-2": {
+   "file": "dot-tpl-road-2.glb"
+  },
+  "road": {
+   "file": "dot-tpl-road.glb"
+  },
+  "school-2": {
+   "file": "dot-tpl-school-2.glb"
+  },
+  "school": {
+   "file": "dot-tpl-school.glb"
+  },
+  "station-2": {
+   "file": "dot-tpl-station-2.glb"
+  },
+  "station": {
+   "file": "dot-tpl-station.glb"
+  },
+  "water-2": {
+   "file": "dot-tpl-water-2.glb"
+  },
+  "water": {
+   "file": "dot-tpl-water.glb"
+  }
+ }
+}

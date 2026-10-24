@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "title": "百變隆隆角色對話框內容",
+  "sourceVideo": "https://www.facebook.com/reel/2102504117185204/",
+  "alternateSourceURL": "https://www.youtube.com/watch?v=CkppX6Xt-7c",
+  "language": "zh-Hant",
+  "verifiedAt": "2026-10-23T22:09:00Z",
+  "policyContext": "所述為競選影片角色對議題的提問或願望，不代表政策已實施。",
+  "defaultLabel": "改寫摘要，非原句",
+  "coverage": {
+    "roles": 16,
+    "captionVerifiedParaphrases": 12,
+    "individualLinesUnverified": 4,
+    "userProvidedScriptFound": false
+  },
+  "cues": [
+    {
+      "roleid": "longlong-01",
+      "id": "longlong-01",
+      "name": "阿公",
+      "displayText": "敬老福利會怎麼增加？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 4,
+        "endSeconds": 9,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演阿公",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "敬老卡加碼提問"
+    },
+    {
+      "roleid": "longlong-02",
+      "id": "longlong-02",
+      "name": "漁民",
+      "displayText": "漁產銷售也能得到協助嗎？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 14,
+        "endSeconds": 18,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演漁民",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "水產品銷售提問"
+    },
+    {
+      "roleid": "longlong-03",
+      "id": "longlong-03",
+      "name": "機車騎士",
+      "displayText": "道路、照明和排水能改善嗎？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 27.5,
+        "endSeconds": 29.5,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演機車騎士",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "道路照明排水提問"
+    },
+    {
+      "roleid": "longlong-04",
+      "id": "longlong-04",
+      "name": "追星歌迷",
+      "displayText": "期待更多喜愛的歌手來演出！",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 36,
+        "endSeconds": 40,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演追星歌迷",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "希望增加演唱會"
+    },
+    {
+      "roleid": "longlong-05",
+      "id": "longlong-05",
+      "name": "育兒家長",
+      "displayText": "育兒家庭的支持會再增加嗎？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 48,
+        "endSeconds": 54,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演育兒家長",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "影片提出育兒補助構想；不當作現行已實施政策"
+    },
+    {
+      "roleid": "longlong-06",
+      "id": "longlong-06",
+      "name": "鉛球運動員",
+      "displayText": "運動空間會如何改善？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 62,
+        "endSeconds": 65,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演鉛球運動員",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "運動場地提問"
+    },
+    {
+      "roleid": "longlong-07",
+      "id": "longlong-07",
+      "name": "捷運通勤上班族",
+      "displayText": "希望捷運建設早日到位。",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 76,
+        "endSeconds": 79,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演捷運通勤上班族",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "捷運進度提問"
+    },
+    {
+      "roleid": "longlong-08",
+      "id": "longlong-08",
+      "name": "出國旅客",
+      "displayText": "未來的機場規劃是什麼？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 79,
+        "endSeconds": 81,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演出國旅客",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "海上國際機場構想提問"
+    },
+    {
+      "roleid": "longlong-09",
+      "id": "longlong-09",
+      "name": "營建勞工",
+      "displayText": "勞動者會獲得哪些照顧？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 81,
+        "endSeconds": 83,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演營建勞工",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "勞工照顧提問"
+    },
+    {
+      "roleid": "longlong-10",
+      "id": "longlong-10",
+      "name": "毛爸",
+      "displayText": "帶毛孩出門，能有更多友善空間嗎？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 83,
+        "endSeconds": 85,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演毛爸",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "寵物友善空間提問"
+    },
+    {
+      "roleid": "longlong-11",
+      "id": "longlong-11",
+      "name": "學生",
+      "displayText": "畢業後，也想留在高雄發展。",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 85,
+        "endSeconds": 87,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演學生",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "在地就業與留鄉提問"
+    },
+    {
+      "roleid": "longlong-12",
+      "id": "longlong-12",
+      "name": "科技工程師",
+      "displayText": "高雄的科技產業還會怎麼發展？",
+      "textType": "paraphrased_summary",
+      "textLabel": "改寫摘要，非原句",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 87,
+        "endSeconds": 91,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": "賴瑞隆飾演科技工程師",
+      "confidence": "high",
+      "status": "caption_verified_summary",
+      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+      "note": "先進製程產業提問"
+    },
+    {
+      "roleid": "longlong-13",
+      "id": "longlong-13",
+      "name": "蔬菜攤販",
+      "displayText": null,
+      "textType": "unavailable",
+      "textLabel": "個別台詞未核實",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 91,
+        "endSeconds": 94,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": null,
+      "confidence": "unverified",
+      "status": "individual_line_unverified",
+      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+      "note": "只核實九宮格身分，未核實個別發言"
+    },
+    {
+      "roleid": "longlong-14",
+      "id": "longlong-14",
+      "name": "外國訪客",
+      "displayText": null,
+      "textType": "unavailable",
+      "textLabel": "個別台詞未核實",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 91,
+        "endSeconds": 94,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": null,
+      "confidence": "unverified",
+      "status": "individual_line_unverified",
+      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+      "note": "只核實九宮格身分，未核實個別發言"
+    },
+    {
+      "roleid": "longlong-15",
+      "id": "longlong-15",
+      "name": "歌仔戲表演者",
+      "displayText": null,
+      "textType": "unavailable",
+      "textLabel": "個別台詞未核實",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 91,
+        "endSeconds": 94,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": null,
+      "confidence": "unverified",
+      "status": "individual_line_unverified",
+      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+      "note": "只核實九宮格身分，未核實個別發言"
+    },
+    {
+      "roleid": "longlong-16",
+      "id": "longlong-16",
+      "name": "烤肉攤商",
+      "displayText": null,
+      "textType": "unavailable",
+      "textLabel": "個別台詞未核實",
+      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+      "timecode": {
+        "startSeconds": 91,
+        "endSeconds": 94,
+        "precision": "約略場景區間，非逐字對時"
+      },
+      "speaker": null,
+      "confidence": "unverified",
+      "status": "individual_line_unverified",
+      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+      "note": "只核實九宮格身分，未核實個別發言"
+    }
+  ],
+  "sharedChorus": {
+    "displayText": "我們都是高雄人",
+    "textType": "verified_short_excerpt",
+    "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+    "timecode": {
+      "startSeconds": 93,
+      "endSeconds": 95
+    },
+    "scope": "原片九宮格共同字幕，不冒稱四個角色各自的獨立台詞",
+    "defaultEnabled": false
+  }
+}

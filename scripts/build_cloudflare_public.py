@@ -143,6 +143,9 @@ def render_redirects(source_root=ROOT):
     lines = ['/ /index.html 200']
     lines.extend('/' + path.removesuffix('index.html') + ' /' + path + ' 200'
                  for path in build_public.LEGACY_PAGES)
+    # 慧文政績島：/island/ 是目錄頁，同樣用內部改寫；不帶斜線的網址導向帶斜線的正式網址
+    if (Path(source_root) / 'island/index.html').is_file():
+        lines.extend(['/island/ /island/index.html 200', '/island /island/ 301'])
     with (Path(source_root) / 'data/seo/cloudflare-redirects.csv').open(encoding='utf-8', newline='') as fh:
         for row in csv.DictReader(fh):
             if row.get('enabled_after_cutover', '').lower() != 'true':

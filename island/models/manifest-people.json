@@ -1,0 +1,46 @@
+{
+ "people": {
+  "cyclist": {
+   "file": "person-cyclist.glb"
+  },
+  "elder": {
+   "file": "person-elder.glb"
+  },
+  "firefighter": {
+   "file": "person-firefighter.glb"
+  },
+  "grandma": {
+   "file": "person-grandma.glb"
+  },
+  "nurse": {
+   "file": "person-nurse.glb"
+  },
+  "office": {
+   "file": "person-office.glb"
+  },
+  "parent": {
+   "file": "person-parent.glb"
+  },
+  "police": {
+   "file": "person-police.glb"
+  },
+  "rider": {
+   "file": "person-rider.glb"
+  },
+  "student": {
+   "file": "person-student.glb"
+  },
+  "teacher": {
+   "file": "person-teacher.glb"
+  },
+  "teen": {
+   "file": "person-teen.glb"
+  },
+  "vendor": {
+   "file": "person-vendor.glb"
+  },
+  "worker": {
+   "file": "person-worker.glb"
+  }
+ }
+}

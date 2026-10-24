@@ -42,6 +42,7 @@ LEGACY_PAGES = (
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
 VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
+ISLAND_EXTENSIONS = {'.html', '.js', '.mjs', '.css', '.json', '.glb'}
 BUILD_ONLY_FILES = {'assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding', 'lastRecordDate'}
 PUBLIC_DATA_PROJECTIONS = {
@@ -329,6 +330,12 @@ def public_paths(root=ROOT):
             raise ValueError('Sitemap has a non-canonical public URL')
         path = unquote(url.path).lstrip('/')
         paths.add(path + 'index.html' if not path or path.endswith('/') else path)
+    # 慧文政績島：獨立的 3D 靜態頁，只收 island/ 內的頁面、程式、樣式、資料與 GLB 模型。
+    island = root / 'island'
+    if island.is_dir():
+        for path in island.rglob('*'):
+            if path.is_file() and path.suffix.lower() in ISLAND_EXTENSIONS:
+                paths.add(path.relative_to(root).as_posix())
     for path in (root / 'assets').rglob('*'):
         rel = path.relative_to(root).as_posix()
         if path.is_file() and rel not in BUILD_ONLY_FILES and (path.suffix.lower() in MEDIA_EXTENSIONS or rel in VENDOR_FILES):
