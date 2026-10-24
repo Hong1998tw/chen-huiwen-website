@@ -54,8 +54,8 @@ export function createListFallback(body) {
       <h2 class="p-title">${esc(isl.name)}</h2>
       ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : isl.note ? `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note)}</p></div>` : ""}
       ${flags.length ? `<div class="hw-sum"><b>慧文做了什麼</b><p>${flags.map(esc).join("、")}。</p></div>` : ""}
-      ${items.slice(0, 80).map((n) => item(data.items[n])).join("")}${items.length > 80 ? `<p class="empty">另有 ${items.length - 80} 筆，請用搜尋查。</p>` : ""}
-      ${lai}`;
+      ${lai}
+      ${items.slice(0, 80).map((n) => item(data.items[n])).join("")}${items.length > 80 ? `<p class="empty">另有 ${items.length - 80} 筆，請用搜尋查。</p>` : ""}`;
   }
 
   function render() {
