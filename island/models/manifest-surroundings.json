@@ -1,0 +1,19 @@
+{
+ "surroundings": {
+  "P10": {
+   "file": "surround-P10.glb"
+  },
+  "P06": {
+   "file": "surround-P06.glb"
+  },
+  "P08": {
+   "file": "surround-P08.glb"
+  },
+  "Q1": {
+   "file": "surround-Q1.glb"
+  },
+  "P02": {
+   "file": "surround-P02.glb"
+  }
+ }
+}
