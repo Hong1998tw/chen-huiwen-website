@@ -78,7 +78,7 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
     // 載入進度：每個模型最多等 20 秒，逾時就用程式造型代替，不卡住整座島
     const bar = $("#loading-bar"), txt = $("#loading-text");
     let done = 0, total = 0;
-    const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中⋯ ${done}／${total}`; };
+    const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中… ${done}／${total}`; };
     const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("逾時")), 20000))]);
     for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "vehicles", "boats", "bridges"]) {
       for (const [id, m] of Object.entries(manifest[kind] || {})) {
@@ -878,7 +878,7 @@ function showItemPins(id) {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "item-pin";
-    const short = it.t.length > 10 ? it.t.slice(0, 10) + "⋯" : it.t;
+    const short = it.t.length > 10 ? it.t.slice(0, 10) + "…" : it.t;
     el.innerHTML = `<b>${k + 1}</b>${esc(short)}`;
     el.title = it.t;
     el.addEventListener("click", () => openCard(f.item));
