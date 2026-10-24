@@ -1,0 +1,11 @@
+{
+  "name": "huiwen-board",
+  "private": true,
+  "type": "module",
+  "description": "慧文政績島布告欄公開 API（Cloudflare Worker）。wrangler 與 CMS 共用 admin/node_modules。",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "integration": "node test/integration.mjs",
+    "dry-run": "npx --prefix ../admin wrangler deploy --config wrangler.jsonc --dry-run --outdir /tmp/huiwen-board-build"
+  }
+}

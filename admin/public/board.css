@@ -1,0 +1,39 @@
+/* 布告欄審核頁：沿用 style.css 的色票與按鈕；只補列表版面。 */
+.board-admin { max-width: 1100px; }
+.board-nav a { color: #e5f0e8; font-size: 14px; font-weight: 650; text-decoration: none; padding: 9px 10px; border-radius: 6px; display: inline-flex; min-height: 44px; align-items: center; }
+.board-nav a:hover { background: #ffffff24; color: white; }
+.board-list { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.board-empty { padding: 28px 4px; color: var(--muted); }
+.board-row {
+  display: grid;
+  grid-template-columns: 11.5em 8em minmax(0, 1fr) 6.5em auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 4px 14px 14px;
+  border-bottom: 1px solid var(--line);
+  background: white;
+}
+.board-row[data-status="pending"] { box-shadow: inset 4px 0 var(--color-warning); }
+.board-row[data-status="archived"] .board-body { color: var(--muted); }
+.board-time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.board-nickname { font-weight: 700; overflow-wrap: anywhere; }
+.board-body { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.board-status { justify-self: start; font-weight: 700; border: 1px solid var(--line); }
+.board-row[data-status="pending"] .board-status { background: #fff1d9; border-color: #d9ba80; color: #6d4512; }
+.board-row[data-status="published"] .board-status { background: #e9f4ea; border-color: #b9cdae; color: var(--color-success); }
+.board-row[data-status="archived"] .board-status { background: #f1f1ec; color: var(--muted); }
+.board-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.board-actions button { padding: 9px 14px; }
+.board-actions .board-delete { background: white; color: var(--color-danger); border-color: var(--color-danger); }
+.board-actions .board-delete:hover { background: #fff1f1; }
+.board-actions button:disabled { cursor: not-allowed; opacity: .45; }
+@media (max-width: 860px) {
+  .board-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 16px 4px 16px 14px; }
+  .board-time { grid-column: 1; grid-row: 1; }
+  .board-status { grid-column: 2; grid-row: 1; justify-self: end; }
+  .board-nickname { grid-column: 1 / -1; grid-row: 2; }
+  .board-body { grid-column: 1 / -1; grid-row: 3; font-size: 17px; }
+  .board-actions { grid-column: 1 / -1; grid-row: 4; justify-content: stretch; margin-top: 6px; }
+  .board-actions button { flex: 1 1 0; }
+  .board-nav { display: none; }
+}

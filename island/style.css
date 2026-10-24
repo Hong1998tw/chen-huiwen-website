@@ -7,7 +7,7 @@
   --muted: #586a64;
   --line: #d8e2dc;
   --paper: #fffdf7;
-  --sea: #bfe3e2;
+  --sea: #a6dcdc;
   --shadow: 0 10px 30px rgba(4, 62, 53, .16);
   --radius: 16px;
   --panel-w: 380px;
@@ -60,6 +60,8 @@ a { color: var(--green); }
 .brand h1 span + span { color: var(--green); }
 .brand-sub { margin: 6px 0 0; font-size: 15px; font-weight: 700; }
 .brand-sub::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; background: var(--yellow); }
+.brand-party { display: flex; align-items: center; gap: 7px; margin: 9px 0 0; padding-top: 8px; border-top: 1px solid rgba(7, 85, 72, .14); font-size: 13px; font-weight: 700; color: #009a00; letter-spacing: .12em; }
+.party-mark { width: 20px; height: 20px; flex: none; }
 
 .toolbar {
   position: absolute; top: 16px; right: calc(var(--panel-w) + 32px);
@@ -165,6 +167,8 @@ button:focus-visible, .isl-label:focus-visible { outline: 3px solid var(--yellow
   .brand h1 { font-size: 22px; }
   .brand-sub { font-size: 13px; }
   .brand-name { font-size: 12px; }
+  .brand-party { margin-top: 6px; padding-top: 6px; font-size: 12px; gap: 6px; }
+  .party-mark { width: 18px; height: 18px; }
   .toolbar { top: auto; bottom: calc(52vh + 12px); right: 12px; left: 12px; justify-content: flex-end; }
   body.panel-closed .toolbar { bottom: 16px; right: 12px; }
   #panel { top: auto; left: 0; right: 0; bottom: 0; height: 52vh; border-radius: 20px 20px 0 0; }

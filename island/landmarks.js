@@ -395,8 +395,8 @@ function buildP07(g, kit) {
   g.add(kit.box(3.0, 0.42, 0.18, C.wood, 0, 2.5, 1.45));
   g.add(kit.box(2.2, 0.24, 0.05, C.goldLight, 0, 2.6, 1.56));
   simpleGable(g, kit, 3.0, 0.5, 0, 2.92, 1.45, 0.3, C.tileDark, C.woodDark);
-  // 青年工作室旗幟
-  kit.flag(g, 1.35, 0.95, 0.2, C.orange, 1.1);
+  // 中華民國國旗
+  kit.flag(g, 1.35, 0.95, 0.2, "roc", 1.1);
   kit.tree(g, -1.7, -1.0, 1.6, C.green);
   kit.tree(g, 1.7, -0.9, 1.0, C.greenDark);
 }
