@@ -5,6 +5,8 @@ import {
   comparePngBuffers,
   resolveCapturePath,
   sha256,
+  TRANSFER_SOURCE,
+  TRANSFER_SOURCE_CDP_FALLBACK
 } from './visual-qa-lib.mjs';
 import {
   siteSourceKind,
@@ -144,8 +146,8 @@ async function verifyCaptureFiles(manifestPath, capture, expected, manifest) {
     }
   }
   if (![
-    'PerformanceResourceTiming.transferSize including navigation',
-    'CDP.Network.loadingFinished.encodedDataLength fallback; PerformanceResourceTiming returned zero',
+    TRANSFER_SOURCE,
+    TRANSFER_SOURCE_CDP_FALLBACK,
   ].includes(capture.metrics.sameOriginTransferSizeSource)) {
     throw new Error(`Capture transfer measurement source is not comparable: ${capture.id}`);
   }

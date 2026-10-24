@@ -16,7 +16,9 @@ import {
   readApprovedBaseline,
   readGitBaselineSelection,
   sha256,
-  validateBaselineExceptions
+  validateBaselineExceptions,
+  TRANSFER_SOURCE,
+  TRANSFER_SOURCE_CDP_FALLBACK
 } from './visual-qa-lib.mjs';
 import { assertAllowedOptions, protectReadOnlyBaseSource, resolveCaptureRoots } from './visual-qa-identity.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
@@ -68,7 +70,7 @@ function approvedManifest(overrides = {}) {
     metadataSha256: 'c'.repeat(64),
     environmentLabel: 'local-http-identity',
     measurementScope: 'initial-navigation-through-visible-image-decode; same-origin-resource-transfer-size; viewport-screenshot',
-    metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 120, sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
+    metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 120, sameOriginTransferSizeSource: TRANSFER_SOURCE }
   }));
   return {
     schemaVersion: 3,
@@ -157,7 +159,7 @@ async function writeGitBaseline(repositoryRoot, sourceSHA = 'd'.repeat(40), capt
       metrics: {
         sameOriginTransferSizeBytes: 1200,
         domElementCount: 120,
-        sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation'
+        sameOriginTransferSizeSource: TRANSFER_SOURCE
       }
     };
     const metadata = {
@@ -278,7 +280,7 @@ async function writeCrossSourceBundle(bundleRoot, sourceSHA, captureToolSHA, { c
       const metrics = {
         sameOriginTransferSizeBytes: 1200 + (isChangedCandidate ? 1 : 0),
         domElementCount: 120 + (isChangedCandidate ? 2 : 0),
-        sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation',
+        sameOriginTransferSizeSource: TRANSFER_SOURCE,
         sameOriginPerformanceTransferSizeBytes: 1200,
         sameOriginEncodedDataLengthBytes: 1200,
       };
@@ -1271,11 +1273,11 @@ test('identity and gzip Cloudflare negotiation are valid evidence and never misl
   assert.deepEqual(compareCaptureConditions({
     environmentLabel: gzip.environmentLabel,
     measurementScope: 'same-scope',
-    metrics: { sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
+    metrics: { sameOriginTransferSizeSource: TRANSFER_SOURCE }
   }, {
     environmentLabel: 'cloudflare-production-identity',
     measurementScope: 'same-scope',
-    metrics: { sameOriginTransferSizeSource: 'PerformanceResourceTiming.transferSize including navigation' }
+    metrics: { sameOriginTransferSizeSource: TRANSFER_SOURCE }
   }), { comparable: false, reason: 'CAPTURE_ENVIRONMENT_LABEL_MISMATCH' });
 });
 
@@ -1479,4 +1481,16 @@ test('a correctly hashed, fully approved baseline is accepted', async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('a baseline measured before off-viewport lazy images were excluded is not comparable', () => {
+  const capture = source => ({
+    environmentLabel: 'local-http-uncompressed',
+    measurementScope: 'same-scope',
+    metrics: { sameOriginTransferSizeSource: source }
+  });
+  assert.deepEqual(compareCaptureConditions(capture(TRANSFER_SOURCE), capture(TRANSFER_SOURCE)), { comparable: true, reason: null });
+  assert.deepEqual(compareCaptureConditions(capture(TRANSFER_SOURCE), capture('PerformanceResourceTiming.transferSize including navigation')),
+    { comparable: false, reason: 'TRANSFER_MEASUREMENT_SOURCE_MISMATCH' });
+  assert.notEqual(TRANSFER_SOURCE, TRANSFER_SOURCE_CDP_FALLBACK);
 });

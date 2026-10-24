@@ -288,6 +288,8 @@ export function evaluateCaptureQuality(capture, { expectedHttpStatus = 200, scre
   if (capture.screenshotError) failures.push('SCREENSHOT_ERROR');
   if (screenshotRequired && !capture.screenshotSha256) failures.push('SCREENSHOT_MISSING');
   if (capture.conditions?.fontsReady !== true) failures.push('FONTS_NOT_READY');
+  // Captures made before the settle wait existed carry no flag; only an explicit timeout fails.
+  if (capture.conditions?.networkSettled === false) failures.push('NETWORK_NOT_SETTLED');
   const pageErrors = capture.pageErrors ?? [];
   if (pageErrors.some(error => typeof error === 'string' || error.originClass === 'same-origin')) failures.push('FIRST_PARTY_PAGE_ERROR');
   if (pageErrors.some(error => typeof error === 'object' && error.originClass === 'unknown')) failures.push('PAGE_ERROR_SOURCE_UNCLASSIFIED');
@@ -306,6 +308,11 @@ export function evaluateCaptureQuality(capture, { expectedHttpStatus = 200, scre
     unclassifiedPageErrorCount: pageErrors.filter(error => typeof error === 'object' && error.originClass === 'unknown').length
   };
 }
+
+// The transfer budget counts what loads for the captured viewport. A loading="lazy" image wholly
+// outside it is reported separately: Chrome prefetches such images on some runs and not others.
+export const TRANSFER_SOURCE = 'PerformanceResourceTiming.transferSize including navigation; off-viewport lazy images excluded';
+export const TRANSFER_SOURCE_CDP_FALLBACK = 'CDP.Network.loadingFinished.encodedDataLength fallback; PerformanceResourceTiming returned zero; off-viewport lazy images excluded';
 
 export function compareCaptureConditions(candidate, baseline) {
   const reasonNames = { environmentLabel: 'ENVIRONMENT_LABEL', measurementScope: 'MEASUREMENT_SCOPE' };
