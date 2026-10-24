@@ -1304,12 +1304,22 @@ function laiPoliciesFor(id) {
 function laiPolicyCards(list) {
   return list.map((p) => `<div class="link-card lai-policy"><h4>${esc(p.title)}<small>市長政見</small></h4><p>${esc(p.summary)}</p></div>`).join("");
 }
-// 賴瑞隆是配角：每座島只在最後放一個收合區塊，只列政見標題與來源；立委政績留在「認識賴瑞隆」專頁
+// 說明剪短但不刪：取第一句，超過 n 字就在標點處截斷加「…」（文字仍是原資料，不改寫）
+function shortText(t, n = 46) {
+  const s = String(t || "").split(/(?<=。)/)[0].trim();
+  if (s.length <= n) return s;
+  const cut = Math.max(...["、", "；", "，", "："].map((m) => s.lastIndexOf(m, n)));
+  return (cut > n * 0.5 ? s.slice(0, cut) : s.slice(0, n)) + "…";
+}
+// 賴瑞隆是配角：每座島只在慧文內容之後放一個區塊；政見與立委政績都是「標題＋剪短的說明＋來源」
 function laiHTML(id) {
-  const pols = laiPoliciesFor(id);
-  if (!pols.length) return "";
-  const li = pols.map((p) => `<li>${p.sourceURL ? `<a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</li>`).join("");
-  return `<details class="lai-block"><summary>賴瑞隆的相關政見（${pols.length}）</summary><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見</button></details>`;
+  const pols = laiPoliciesFor(id), acts = laiFor(id);
+  if (!pols.length && !acts.length) return "";
+  const li = [
+    ...pols.map((p) => `<li><b>${esc(p.title)}</b><small>市長政見</small><span>${esc(shortText(p.summary))}${p.sourceURL ? ` <a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">來源</a>` : ""}</span></li>`),
+    ...acts.map((a) => `<li><b>${esc(a.title)}</b><small>立委政績${a.year ? `・${esc(a.year)}` : ""}</small><span>${esc(shortText(a.detail))}</span></li>`),
+  ].join("");
+  return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見</button></section>`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>

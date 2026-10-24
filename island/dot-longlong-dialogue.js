@@ -12,12 +12,14 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
   const v=new THREE.Vector3(),local=new THREE.Vector3(),ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
   const reduced=()=>!!media?.matches;
   const allowed=x=>x && ['verified-excerpt','paraphrase','paraphrased_summary','user-provided'].includes(x.textType) && ['verified','approved','caption_verified_summary'].includes(x.status) && typeof x.displayText==='string' && x.displayText.trim();
-  // 角色台詞為主；賴瑞隆的政見只留一行小字（標題＋來源），不搶戲
-  function renderPolicy(c){policy.replaceChildren();const p=(c?.policies||[]).find(p=>p&&p.title);policy.hidden=!p;if(!p)return '';
-    const t=doc.createElement('span');t.textContent='賴瑞隆政見：';policy.append(t);
-    let u=null;try{const x=new URL(p.sourceURL);if(['https:','http:'].includes(x.protocol))u=x.href;}catch{}
-    if(u){const a=doc.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent=p.title;policy.append(a);}else{const b=doc.createElement('span');b.textContent=p.title;policy.append(b);}
-    return p.title;}
+  // 角色台詞為主；下面一個小區塊列賴瑞隆的政見（標題＋剪短的說明＋來源），說明剪短但不拿掉
+  const shortText=(t,n=40)=>{const s=String(t||'').split(/(?<=。)/)[0].trim();if(s.length<=n)return s;const cut=Math.max(...['、','；','，','：'].map(m=>s.lastIndexOf(m,n)));return (cut>n*0.5?s.slice(0,cut):s.slice(0,n))+'…';};
+  function renderPolicy(c){policy.replaceChildren();const ps=(c?.policies||[]).filter(p=>p&&p.title).slice(0,2);policy.hidden=!ps.length;if(!ps.length)return '';
+    const h=doc.createElement('b');h.className='dot-longlong-policy-h';h.textContent='賴瑞隆政見';policy.append(h);
+    for(const p of ps){const row=doc.createElement('p'),t=doc.createElement('strong'),d=doc.createElement('span');t.textContent=p.title;d.textContent=shortText(p.summary);row.append(t,d);
+      let u=null;try{const x=new URL(p.sourceURL);if(['https:','http:'].includes(x.protocol))u=x.href;}catch{}
+      if(u){const a=doc.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent='來源';row.append(a);}policy.append(row);}
+    return ps.map(p=>p.title+'：'+shortText(p.summary)).join('；');}
   function finish(){visual.textContent=full;lastIndex=Array.from(full).length;elapsed=Infinity;}
   function start(){elapsed=0;lastIndex=-1;visual.textContent='';bubble.classList.remove('dot-longlong-pop');if(reduced())finish();else {void bubble.offsetWidth;bubble.classList.add('dot-longlong-pop');}}
   function close(restore=false){clearTimeout(autoClose);active=null;bubble.hidden=true;live.textContent='';full='';if(restore&&returnFocus?.isConnected)returnFocus.focus();returnFocus=null;}
