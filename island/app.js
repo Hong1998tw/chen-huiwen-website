@@ -1343,12 +1343,12 @@ function shortText(t, n = 46) {
 // 賴瑞隆是配角：每座島只在慧文內容之後放一個區塊；政見與立委政績都是「標題＋剪短的說明＋來源」
 function laiHTML(id) {
   const pols = laiPoliciesFor(id), acts = laiFor(id);
-  if (!pols.length && !acts.length) return "";
+  if (!pols.length && !acts.length) return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><p class="lai-none">賴瑞隆目前沒有這個主題的公開專項政見或立委政績。</p><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
   const li = [
     ...pols.map((p) => `<li><b>${esc(p.title)}</b><small>市長政見</small><span>${esc(shortText(p.summary))}${p.sourceURL ? ` <a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">來源</a>` : ""}</span></li>`),
     ...acts.map((a) => `<li><b>${esc(a.title)}</b><small>立委政績${a.year ? `・${esc(a.year)}` : ""}</small><span>${esc(shortText(a.detail))}</span></li>`),
   ].join("");
-  return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見</button></section>`;
+  return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
@@ -1415,10 +1415,10 @@ function renderIsland() {
     ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
     ${isl.highlight ? `<div class="highlight-card"><span>${esc(isl.highlight.tag)}</span><h3>${esc(isl.highlight.title)}</h3><p>${esc(isl.highlight.text)}</p></div>` : ""}
     ${huiwenSummary(isl.id)}
+    ${laiHTML(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
-    ${listHTML(idx, state.focusItem != null ? 1 : 0)}
-    ${laiHTML(isl.id)}`;
+    ${listHTML(idx, state.focusItem != null ? 1 : 0)}`;
 }
 
 function render() {
