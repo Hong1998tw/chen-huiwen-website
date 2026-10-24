@@ -37,11 +37,11 @@ const R = 10;
 const LAYOUT = {
   Q1: [[0, 0]],                                 // 中央：高雄市議會
   W1: [[-1, 0]],                                // 議會旁：性別友善島（鳳山婦幼青少年活動中心）
-  P02: [[0, -1], [0, -2]], P05: [[1, -1]], P09: [[1, 0]], P08: [[0, 1]], P12: [[-1, 1]],
+  P02: [[0, -1], [0, -2], [2, 1]], P05: [[1, -1]], P09: [[1, 0]], P08: [[0, 1]], P12: [[-1, 1]],
   P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [3, -1], [3, -2]], P10: [[2, 0]], P07: [[3, 0]],
   P03: [[-1, -1], [-2, -1]], X2: [[-2, 0], [-3, 1], [-3, 0], [-3, 2]], X3: [[-2, 1]],
   P11: [[1, 1]], P13: [[0, 2]], X1: [[-1, 2]], X4: [[-1, 3]],
-  LCG: [[2, 1]],  // 五甲龍成宮：鳳山溪出海口東側
+  // 五甲龍成宮不獨立成島：放在人行交通島第三格（鳳山溪出海口東側），當地標介紹
 };
 const AXIS_COLOR = { A1: "#4f9fc4", A2: "#e4994a", A3: "#e48f9e", A4: "#8f84cf", AX: "#6fae6a", AQ: "#075548" };
 const GRASS = { A1: "#cfe8d8", A2: "#f2e3bf", A3: "#f6dcd8", A4: "#e2def3", AX: "#d3e9c4", AQ: "#d9ece5" };
@@ -325,6 +325,7 @@ const flagshipGroups = [];
 const spotLabels = [];  // 島上第二格的實景地標名牌（美麗島雜誌社等）
 // 第二格實景地標的介紹（名稱、地址、一句話）
 const SPOT_INFO = {
+  LCG: { name: "五甲龍成宮", addr: "五甲二路722號", note: "五甲地區的信仰中心，紅瓦燕尾脊的大廟，廟埕是社區活動與節慶的聚集地。廟口周邊有兩件慧文經手的交通案：龍成宮口交通號誌評估、公共自行車站構想。" },
   formosa: { name: "美麗島雜誌社", addr: "新興區中山一路53號", note: "1979 年美麗島事件的起點，高雄民主運動的歷史現場，也是賴瑞隆長年關注的轉型正義記憶。" },
   railpark: { name: "臺鐵高雄機廠舊址親子遊樂區", addr: "輜汽路（臺鐵高雄機廠舊址）", note: "舊廠房改造成鐵道主題遊戲區，天車、桁架下有滑梯、鳥巢鞦韆與腳踏軌道車。" },
   "chengcing-lake": { name: "澄清湖", addr: "鳥松區大埤路32號", note: "高雄的大水缸，中興塔與九曲橋是幾代人的郊遊記憶，環湖步道串起鳳山與鳥松。" },
@@ -502,7 +503,7 @@ for (const island of islands) {
   // 第二格中央的主題物件：質詢島放美麗島雜誌社、人行交通島放陳慧文站路口（模型存在才放）
   // 各島第二格以後的實景地標（格序、模型類別、模型、縮放、名稱）
   const CENTERPIECE = {
-    P02: [[1, "character", "huiwen-corner", 1.25, "陳慧文站路口｜點一下打招呼"]],
+    P02: [[1, "character", "huiwen-corner", 1.25, "陳慧文站路口｜點一下打招呼"], [2, "landmarks", "LCG", 1.15, "五甲龍成宮"]],
     P06: [[1, "landmarks", "railpark", 1.75, "臺鐵高雄機廠舊址親子遊樂區"], [2, "landmarks", "formosa", 1.0, "美麗島雜誌社"]],
     X2: [[1, "landmarks", "chengcing-lake", 1.55, "澄清湖"], [2, "landmarks", "chengcing-baseball", 1.55, "澄清湖棒球場"], [3, "landmarks", "guoling-park", 1.55, "果嶺公園"]],
   };
@@ -511,6 +512,8 @@ for (const island of islands) {
     const cpModel = cells[ci] ? glbClone(kind, id, scale) : null;
     if (!cpModel) continue;
     cpModel.position.set(cells[ci].x, TOP, cells[ci].z);
+    const cpSur = kind === "landmarks" ? glbClone("surroundings", id, 1.0) : null;
+    if (cpSur) { cpSur.position.set(cells[ci].x, TOP, cells[ci].z); cpSur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(cpSur); }
     cpModel.rotation.y = FACE_CAMERA;
     cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name, spot: kind === "landmarks" ? id : undefined }; });
     if (kind === "landmarks") spotLabels.push({ text: name, island: island.id, spotId: id, pos: new THREE.Vector3(cells[ci].x, TOP + 7.5, cells[ci].z) });
@@ -1240,10 +1243,10 @@ function renderHome() {
 </button>`;
       }
     }
+    html += `<p class="axis">鳳山各里</p><button type="button" class="isl-row" data-act="tab" data-tab="villages"><span class="dot" style="background:#9a8f7a">里</span><span class="name">鳳山 63 里<small>里內路平、水溝、路燈等小工程</small></span></button>`;
     if (data.laiAchievements?.length) {
       html += `<p class="axis">認識賴瑞隆</p><button type="button" class="isl-row" data-act="lai"><span class="dot" style="background:#b8862b">賴</span><span class="name">賴瑞隆的政見與政績<small>${(data.laiPolicies || []).length} 項市長政見、${data.laiAchievements.length} 項立委政績，對照慧文在同一座島做的事</small></span></button>`;
     }
-    html += `<p class="axis">鳳山各里</p><button type="button" class="isl-row" data-act="tab" data-tab="villages"><span class="dot" style="background:#9a8f7a">里</span><span class="name">鳳山 63 里<small>里內路平、水溝、路燈等小工程</small></span></button>`;
   } else {
     const counts = {};
     data.items.forEach((it) => it.v.forEach((v) => (counts[v] = (counts[v] || 0) + 1)));
@@ -1287,7 +1290,7 @@ function renderVillage() {
 function huiwenSummary(id) {
   const isl = islandById[id];
   const names = isl.flagships.slice(0, 3).map((n) => data.items[n].t);
-  return `<div class="hw-sum"><b>慧文做了什麼</b><p>${names.length ? `${names.map(esc).join("、")}。` : ""}</p></div>`;
+  return names.length ? `<div class="hw-sum"><b>慧文做了什麼</b><p>${names.map(esc).join("、")}。</p></div>` : "";
 }
 function laiFor(id) {
   return (data.laiAchievements || []).filter((a) => a.islands.includes(id));
@@ -1301,10 +1304,12 @@ function laiPoliciesFor(id) {
 function laiPolicyCards(list) {
   return list.map((p) => `<div class="link-card lai-policy"><h4>${esc(p.title)}<small>市長政見</small></h4><p>${esc(p.summary)}</p></div>`).join("");
 }
+// 賴瑞隆是配角：每座島只在最後放一個收合區塊，只列政見標題與來源；立委政績留在「認識賴瑞隆」專頁
 function laiHTML(id) {
-  const list = laiFor(id), pols = laiPoliciesFor(id);
-  if (!list.length && !pols.length) return "";
-  return `${huiwenSummary(id)}<p class="axis">認識賴瑞隆</p>${laiPolicyCards(pols)}${laiCards(list)}`;
+  const pols = laiPoliciesFor(id);
+  if (!pols.length) return "";
+  const li = pols.map((p) => `<li>${p.sourceURL ? `<a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</li>`).join("");
+  return `<details class="lai-block"><summary>賴瑞隆的相關政見（${pols.length}）</summary><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見</button></details>`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
@@ -1370,10 +1375,11 @@ function renderIsland() {
     <p class="p-kicker">${esc(axis?.name || "")}</p><h2 class="p-title">${esc(isl.name)}</h2>
     ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
     ${isl.highlight ? `<div class="highlight-card"><span>${esc(isl.highlight.tag)}</span><h3>${esc(isl.highlight.title)}</h3><p>${esc(isl.highlight.text)}</p></div>` : ""}
-    ${laiHTML(isl.id)}
+    ${huiwenSummary(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
-    ${listHTML(idx, state.focusItem != null ? 1 : 0)}`;
+    ${listHTML(idx, state.focusItem != null ? 1 : 0)}
+    ${laiHTML(isl.id)}`;
 }
 
 function render() {
