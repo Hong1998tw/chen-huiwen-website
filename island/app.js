@@ -538,12 +538,8 @@ for (const island of islands) {
       const it = data.items[n];
       const g = new THREE.Group();
       const variants = Object.keys(glbModels.templates).filter((v) => v === it.k || v.startsWith(`${it.k}-`)).sort();
-      const model = variants.length ? glbClone("templates", variants[n % variants.length], 0.5) : null;
-      if (model) g.add(model);
-      else {
-        (TEMPLATES[it.k] || TEMPLATES.office)(g, !!it.d);
-        g.scale.setScalar(0.66);
-      }
+      // 不放通用建築（看起來像多餘的房子）；周邊實景之後由林 dot 依 Google 地圖逐島建模
+      void variants;
       g.position.set(slot.x, TOP, slot.z);
       g.rotation.y = Math.round((Math.atan2(cells[0].x - slot.x, cells[0].z - slot.z) / (Math.PI / 2))) * (Math.PI / 2);
       g.traverse((o) => { o.userData = { island: island.id, item: n }; });
@@ -738,6 +734,7 @@ addWanderer("chenqimai", "陳其邁｜高雄市長", LAYOUT.Q1[0]);
 addWanderer("xuzhijie", "許智傑｜立法委員", LAYOUT.P02[0]);
 // 百變隆隆 16 角：散在各島隨意走動，點一下出現漫畫對話框
 let longlongDialogue = null;
+const longlongTags = [];  // 百變隆隆頭上的小名牌
 try {
   const res = await fetch("./longlong-dialogue.json", { cache: "no-cache" });
   if (!res.ok) throw new Error("角色資料載入失敗");
@@ -746,8 +743,18 @@ try {
   const cells = [...Object.values(LAYOUT)].flat();
   cues.cues.forEach((c, i) => {
     const before = wanderers.length;
-    addWanderer(c.id, `百變隆隆｜${c.name}`, cells[(i * 5) % cells.length], 0.7);
-    if (wanderers.length > before) longlongDialogue.register(wanderers[wanderers.length - 1].g, c.id);
+    addWanderer(c.id, `百變隆隆｜${c.name}`, cells[(i * 5) % cells.length], 1.0);
+    if (wanderers.length > before) {
+      const w = wanderers[wanderers.length - 1];
+      longlongDialogue.register(w.g, c.id);
+      const tag = document.createElement("button");
+      tag.type = "button";
+      tag.className = "ll-tag";
+      tag.textContent = `隆隆・${c.name}`;
+      tag.addEventListener("click", () => longlongDialogue.show(c.id));
+      $("#labels").append(tag);
+      longlongTags.push({ el: tag, g: w.g });
+    }
   });
 } catch (err) { console.warn("百變隆隆互動暫未載入", err); }
 const edgeU = (from, to) => {
@@ -900,6 +907,13 @@ function showItemPins(id) {
 }
 function placeLabels() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
+  const talking = longlongDialogue?.activeObject;
+  for (const t of longlongTags) {
+    tmp.copy(t.g.position); tmp.y += 4.2; tmp.project(camera);
+    const off = tmp.z > 1 || Math.abs(tmp.x) > 1.05 || Math.abs(tmp.y) > 1.05;
+    t.el.hidden = off || t.g === talking;
+    if (!off) { t.el.style.left = `${(tmp.x * 0.5 + 0.5) * w}px`; t.el.style.top = `${(-tmp.y * 0.5 + 0.5) * h}px`; }
+  }
   // 名牌互相錯開：由下往上排，撞到已放好的就往上挪
   const placed = [];
   const pins = itemPins.map((p) => { tmp.copy(p.pos).project(camera); return { el: p.el, x: (tmp.x * 0.5 + 0.5) * w, y: (-tmp.y * 0.5 + 0.5) * h, wd: p.el.offsetWidth || 120 }; })
@@ -1276,7 +1290,7 @@ function laiPolicyCards(list) {
 function laiHTML(id) {
   const list = laiFor(id), pols = laiPoliciesFor(id);
   if (!list.length && !pols.length) return "";
-  return `<p class="axis">認識賴瑞隆</p>${laiPolicyCards(pols)}${laiCards(list)}${huiwenSummary(id)}`;
+  return `${huiwenSummary(id)}<p class="axis">認識賴瑞隆</p>${laiPolicyCards(pols)}${laiCards(list)}`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
@@ -1285,7 +1299,7 @@ function renderLai() {
   for (const isl of islands) {
     const list = laiFor(isl.id), pols = laiPoliciesFor(isl.id);
     if (!list.length && !pols.length) continue;
-    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${laiPolicyCards(pols)}${laiCards(list)}${huiwenSummary(isl.id)}`;
+    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${huiwenSummary(isl.id)}${laiPolicyCards(pols)}${laiCards(list)}`;
   }
   const otherPol = (data.laiPolicies || []).filter((p) => !p.islands.some((id) => islandById[id]));
   if (otherPol.length) html += `<p class="axis">其他市長政見</p>${laiPolicyCards(otherPol)}`;
@@ -1473,6 +1487,11 @@ function closeIntro() {
   try { localStorage.setItem("huiwen-island-intro", "1"); } catch {}
 }
 $("#intro-skip").addEventListener("click", closeIntro);
+$("#btn-night").addEventListener("click", (e) => {
+  const next = weather?.cycleMode();  // 自動 → 白天 → 夜晚 → 自動
+  e.currentTarget.textContent = { auto: "日夜", day: "白天", night: "夜晚" }[next] || "日夜";
+  e.currentTarget.setAttribute("aria-pressed", String(next !== "auto"));
+});
 $("#intro-tour").addEventListener("click", () => { closeIntro(); life?.startTour?.(); });
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}

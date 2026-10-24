@@ -11,6 +11,7 @@ export function addWeather({ THREE, scene, setNight, rng }) {
   let clock = rand() * 420;        // 從一天裡的隨機時刻開始
   let drift = 0, driftTarget = 0;  // 讓週期不那麼規律
   let night = 0;
+  let mode = "auto";  // auto／day／night（日夜按鈕切換）
 
   // ── 雨 ─────────────────────────────────────────────────────────
   const N = 2200;
@@ -33,13 +34,13 @@ export function addWeather({ THREE, scene, setNight, rng }) {
   const wet = new THREE.Color("#8ea4ab");
 
   function update(dt) {
-    if (reduced) { setNight(0); return; }
+    if (reduced) { setNight(mode === "night" ? 1 : 0); return; }
     // 日夜：sin 週期（約 7 分鐘）＋ 慢速隨機漂移，轉成 0（白天）到 1（夜晚）的平滑量
     clock += dt;
     if (Math.abs(drift - driftTarget) < 0.01) driftTarget = (rand() - 0.5) * 0.5;
     drift += (driftTarget - drift) * (1 - Math.exp(-dt / 40));
     const k = 0.5 - 0.5 * Math.cos((clock / 420) * Math.PI * 2 + drift);
-    night = THREE.MathUtils.smoothstep(k, 0.25, 0.8);
+    night = mode === "day" ? 0 : mode === "night" ? 1 : THREE.MathUtils.smoothstep(k, 0.25, 0.8);
     setNight(night);
 
     // 雨：每隔一陣子決定要不要下、下多大；雨量 20 秒內慢慢過渡
@@ -63,5 +64,6 @@ export function addWeather({ THREE, scene, setNight, rng }) {
       scene.background.lerp(wet, rainAmt * 0.45);
     }
   }
-  return { update, get night() { return night; }, get rain() { return rainAmt; } };
+  function cycleMode() { mode = { auto: "day", day: "night", night: "auto" }[mode]; return mode; }
+  return { update, cycleMode, get night() { return night; }, get rain() { return rainAmt; } };
 }

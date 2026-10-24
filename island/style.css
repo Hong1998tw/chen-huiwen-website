@@ -349,3 +349,10 @@ body.touring .dot-life-ui label, body.touring .dot-life-ui select, body.touring 
 @media (max-width: 760px) { .spot-thumb { width: 88px; height: 76px; } }
 .link-card.lai-policy { border-left: 3px solid #b8862b; }
 .link-card.lai-policy h4 small { background: #f3e9d2; color: #7a5a12; }
+
+/* 百變隆隆頭上的小名牌（點了就講話） */
+.ll-tag { position: absolute; transform: translate(-50%, -100%); padding: 2px 8px; border: 0; border-radius: 999px; background: #6b4fa3; color: #fff; font: 700 11px/1.5 inherit; white-space: nowrap; pointer-events: auto; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.2); animation: ll-bob 2.4s ease-in-out infinite; }
+.ll-tag::after { content: ""; position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); border: 4px solid transparent; border-top-color: #6b4fa3; border-bottom: 0; }
+@keyframes ll-bob { 50% { margin-top: -3px; } }
+@media (prefers-reduced-motion: reduce) { .ll-tag { animation: none; } }
+@media (max-width: 760px) { .ll-tag { font-size: 10px; padding: 1px 6px; } }
