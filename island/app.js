@@ -807,11 +807,48 @@ const traffic = addTraffic({
 });
 const sirenRed = mat("#ff3b3b"), sirenBlue = mat("#3b7bff");  // 救護車已移除，保留給動態模組的參數
 
-const tourStops = islands.map((i) => {
-  const first = LAYOUT[i.id][0];
-  const cell = cellPos(first[0], first[1]);
-  return new THREE.Vector3(cell.x + 0.5 * R * 0.94 * 0.866, TOP + 0.08, cell.z + 0.866 * R * 0.94 * 0.866);  // 地標前方的人行道
-});
+// ── 慧文巡島路線：只走環島步道與人行橋（不再直線穿過水面）─────────────────
+// 島的順序：從議會出發，每次走到「步數最少」的下一座還沒去過的島；格與格之間用 BFS 找橋。
+const cellAdj = new Map();
+for (const bp of bridgePairs) for (const [x, y] of [[bp.a, bp.b], [bp.b, bp.a]]) { const k = x.join(","); if (!cellAdj.has(k)) cellAdj.set(k, []); cellAdj.get(k).push(y.join(",")); }
+function cellPath(from, to) {
+  const prev = new Map([[from, null]]), q = [from];
+  while (q.length) { const k = q.shift(); if (k === to) break; for (const n of cellAdj.get(k) || []) if (!prev.has(n)) { prev.set(n, k); q.push(n); } }
+  if (!prev.has(to)) return null;
+  const path = []; for (let k = to; k; k = prev.get(k)) path.unshift(k);
+  return path;
+}
+const routeIslands = (() => {
+  const left = new Set(islands.map((i) => i.id)), order = [];
+  let cur = islands.find((i) => i.id === "Q1") ? "Q1" : islands[0].id;
+  while (cur) {
+    order.push(cur); left.delete(cur);
+    const from = LAYOUT[cur][0].join(",");
+    let best = null, bd = Infinity;
+    for (const id of left) { const p = cellPath(from, LAYOUT[id][0].join(",")); if (p && p.length < bd) { bd = p.length; best = id; } }
+    cur = best;
+  }
+  return order;
+})();
+const tourRoute = (() => {
+  const pts = [], key2 = (k) => k.split(",").map(Number), ring = (k, u) => { const p = hexPoint(cellPos(...key2(k)), ROAD_MID, (u + 6) % 6); return new THREE.Vector3(p.x, TOP + 0.08, p.z); };
+  let u = 0.5;
+  for (let i = 0; i < routeIslands.length; i++) {
+    const from = LAYOUT[routeIslands[i]][0].join(","), to = LAYOUT[routeIslands[(i + 1) % routeIslands.length]][0].join(",");
+    if (i === 0) pts.push({ p: ring(from, u), stop: routeIslands[0] });
+    const path = cellPath(from, to) || [from];
+    for (let j = 0; j + 1 < path.length; j++) {
+      const exitU = edgeU(key2(path[j]), key2(path[j + 1]));
+      let d = ((exitU - u + 9) % 6) - 3;  // 沿環走短的那一邊
+      for (let s = 1, n = Math.max(1, Math.ceil(Math.abs(d) / 0.25)); s <= n; s++) pts.push({ p: ring(path[j], u + (d * s) / n) });
+      u = edgeU(key2(path[j + 1]), key2(path[j]));
+      pts.push({ p: ring(path[j + 1], u) });
+    }
+    const next = routeIslands[(i + 1) % routeIslands.length];
+    if (i + 1 < routeIslands.length) pts[pts.length - 1].stop = next;
+  }
+  return pts;
+})();
 const tour = { i: 0, t: 0, wait: 2.5 };
 let longlong = null;
 if (glbModels.character.longlong) {
@@ -822,22 +859,82 @@ if (glbModels.character.longlong) {
   world.add(longlong);
   pickables.push(longlong);
 }
-huiwen.position.copy(tourStops[0]);
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __huiwen: huiwen, __camera: camera });
+huiwen.position.copy(tourRoute[0].p);
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __huiwen: huiwen, __camera: camera, __tourRoute: tourRoute, __routeIslands: routeIslands });
 function stepTour(dt) {
   if (tour.wait > 0) {
     tour.wait -= dt;
     huiwen.position.y = TOP + 0.08 + Math.abs(Math.sin(performance.now() / 300)) * 0.05;
+    if (tour.wait <= 0 && guide.on) guide.leave();
     return;
   }
-  const a = tourStops[tour.i], b = tourStops[(tour.i + 1) % tourStops.length];
-  const dist = a.distanceTo(b);
-  tour.t = Math.min(1, tour.t + (dt * 5) / dist);
+  if (guide.on && guide.paused) return;
+  const a = tourRoute[tour.i].p, b = tourRoute[(tour.i + 1) % tourRoute.length].p;
+  const dist = Math.max(0.01, a.distanceTo(b));
+  tour.t = Math.min(1, tour.t + (dt * (guide.on ? 6 : 3.5)) / dist);
   huiwen.position.lerpVectors(a, b, tour.t);
   huiwen.position.y = TOP + 0.08 + Math.abs(Math.sin(tour.t * dist * 1.6)) * 0.18;
-  huiwen.rotation.y = smoothTurn(huiwen.rotation.y,Math.atan2(b.x-a.x,b.z-a.z),dt);
-  if (tour.t >= 1) { tour.i = (tour.i + 1) % tourStops.length; tour.t = 0; tour.wait = 3; }
+  huiwen.rotation.y = smoothTurn(huiwen.rotation.y, Math.atan2(b.x - a.x, b.z - a.z), dt);
+  if (tour.t >= 1) {
+    tour.i = (tour.i + 1) % tourRoute.length; tour.t = 0;
+    const stop = tourRoute[tour.i].stop;
+    if (stop) { tour.wait = guide.on ? 7 : 2.5; if (guide.on) guide.arrive(stop); }
+  }
 }
+// ── 跟著慧文遊島：慧文沿步道帶路，到站時頭上冒一句這座島做過什麼（取既有政績資料，不另寫）──
+const guide = (() => {
+  const bubble = document.createElement("div");
+  bubble.className = "hw-bubble"; bubble.hidden = true; bubble.setAttribute("role", "status"); bubble.setAttribute("aria-live", "polite");
+  const bar = document.createElement("div");
+  bar.className = "guide-bar"; bar.hidden = true; bar.setAttribute("role", "group"); bar.setAttribute("aria-label", "跟著慧文遊島");
+  document.getElementById("app").append(bubble, bar);
+  const mk = (t, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = t; b.addEventListener("click", fn); bar.append(b); return b; };
+  const st = { on: false, paused: false, station: 0 };
+  const cut = (t, n) => (t && t.length > n ? t.slice(0, n) + "…" : t || "");
+  function lineFor(id) {
+    const isl = islandById[id];
+    if (id === "Q1") { const th = interp?.threads?.[0]; return { name: isl.name, t: th ? th.title : isl.note || "", sub: "" }; }
+    const it = data.items[(isl.flagships || [])[0]];
+    if (!it) return { name: isl.name, t: isl.pledge || isl.note || "", sub: "" };
+    const last = (it.h || []).at(-1) || [];
+    return { name: isl.name, t: it.t, sub: last[0] ? `${last[0]} ${cut(last[1], 30)}` : "" };
+  }
+  const pauseBtn = mk("暫停", () => { st.paused = !st.paused; pauseBtn.textContent = st.paused ? "繼續" : "暫停"; });
+  mk("下一站", () => { tour.wait = 0; leave(); st.paused = false; pauseBtn.textContent = "暫停"; });
+  mk("結束", () => end());
+  const count = document.createElement("span"); count.className = "guide-count"; bar.prepend(count);
+  function arrive(id) {
+    st.station = routeIslands.indexOf(id);
+    const l = lineFor(id);
+    bubble.innerHTML = `<b>${esc(l.name)}</b><span class="hw-line">${esc(l.t)}</span>${l.sub ? `<small>${esc(l.sub)}</small>` : ""}`;
+    bubble.hidden = false;
+    count.textContent = `${st.station + 1}／${routeIslands.length}`;
+    openIsland(id, false);
+  }
+  function leave() { bubble.hidden = true; }
+  function start() {
+    st.on = true; st.paused = false; bar.hidden = false; pauseBtn.textContent = "暫停";
+    tour.i = 0; tour.t = 0; huiwen.position.copy(tourRoute[0].p);
+    life?.flyTo(huiwen.position.clone().setY(0), mobile() ? 2.2 : 2.4, 0.8);
+    tour.wait = 7; arrive(routeIslands[0]);
+  }
+  function end() { st.on = false; bubble.hidden = true; bar.hidden = true; }
+  controls.addEventListener("start", () => { if (st.on) end(); });  // 使用者自己拖曳就結束導覽
+  const v = new THREE.Vector3();
+  function update(dt) {
+    if (!st.on) return;
+    if (!life?.flying) {  // 鏡頭跟在慧文身上
+      const d = huiwen.position.clone().setY(0).sub(controls.target.clone().setY(0));
+      if (d.lengthSq() > 1e-4) { const step = d.multiplyScalar(1 - Math.exp(-dt * 2.5)); controls.target.add(step); camera.position.add(step); }
+    }
+    if (!bubble.hidden) {
+      v.copy(huiwen.position); v.y += 3.4; v.project(camera);
+      bubble.style.left = `${(v.x * 0.5 + 0.5) * canvas.clientWidth}px`;
+      bubble.style.top = `${(-v.y * 0.5 + 0.5) * canvas.clientHeight}px`;
+    }
+  }
+  return { get on() { return st.on; }, get paused() { return st.paused; }, start, end, arrive, leave, update };
+})();
 function followLonglong() {
   if (!longlong) return;
   const side = new THREE.Vector3(Math.cos(huiwen.rotation.y), 0, -Math.sin(huiwen.rotation.y)).multiplyScalar(1.8);
@@ -1257,6 +1354,7 @@ function renderHome() {
     <h2 class="p-title">一座島，一個承諾</h2>
     <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>${eventBanner()}
     <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div><div class="stat"><b>${total.toLocaleString()}</b><span>筆政績</span></div>${cases ? `<div class="stat"><b>${cases.toLocaleString()}</b><span>件服務案件</span></div>` : ""}</div>
+    <button type="button" class="guide-start" data-act="guide">跟著慧文遊島 <small>她帶路，一島一句做過的事</small></button>
     <input class="search" type="search" placeholder="搜尋政績、地名、里名…" value="${esc(state.query)}" data-act="search" aria-label="搜尋">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-act="tab" data-tab="islands" aria-selected="${state.tab === "islands"}">島嶼</button><button type="button" role="tab" data-act="tab" data-tab="villages" aria-selected="${state.tab === "villages"}">鳳山各里</button></div>`;
   if (state.tab === "islands") {
@@ -1479,6 +1577,7 @@ body.addEventListener("click", (e) => {
   else if (act === "session") openSession(Number(t.dataset.n));
   else if (act === "project") { Object.assign(state, { view: "project", project: t.dataset.id, limit: 40 }); life?.showConnections(data.items.filter(x=>x.p===t.dataset.id).map(x=>x.i)); render(); body.scrollTop = 0; }
   else if (act === "lai") { state.view = "lai"; render(); body.scrollTop = 0; }
+  else if (act === "guide") { if (mobile()) setSheet("peek"); guide.start(); }
   else if (act === "tab") { Object.assign(state, { view: "home", tab: t.dataset.tab }); render(); }
   else if (act === "villages") { Object.assign(state, { view: "home", tab: "villages" }); render(); }
   else if (act === "village") { Object.assign(state, { view: "village", village: t.dataset.v, limit: 40 }); render(); body.scrollTop = 0; }
@@ -1608,7 +1707,7 @@ $("#btn-night").addEventListener("click", (e) => {
   e.currentTarget.textContent = { auto: "日夜", day: "白天", night: "夜晚" }[next] || "日夜";
   e.currentTarget.setAttribute("aria-pressed", String(next !== "auto"));
 });
-$("#intro-tour").addEventListener("click", () => { closeIntro(); life?.startTour?.(); });
+$("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
 const startIsland = new URLSearchParams(location.search).get("island");
@@ -1662,7 +1761,7 @@ renderer.setAnimationLoop(()=>{
  for(const c of railparkControllers.values()){c.setReducedMotion?.(reducedNow);c.update(dt);}
  life.update(dt,activeTime);ticker.update(dt);
  extras.update(dt,activeTime);weather?.update(dt);traffic.update(reducedNow?0:dt,activeTime);
- if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}
+ if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}guide.update(dt);
  streetMotion.update(dt,activeTime,reducedNow);
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
  dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);placeLabels();
