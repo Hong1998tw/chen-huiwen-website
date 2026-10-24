@@ -347,3 +347,5 @@ body.touring .dot-life-ui label, body.touring .dot-life-ui select, body.touring 
 .spot-note { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
 .spot-thumb { flex: none; width: 104px; height: 88px; object-fit: contain; border-radius: 10px; background: #eef4f2; }
 @media (max-width: 760px) { .spot-thumb { width: 88px; height: 76px; } }
+.link-card.lai-policy { border-left: 3px solid #b8862b; }
+.link-card.lai-policy h4 small { background: #f3e9d2; color: #7a5a12; }

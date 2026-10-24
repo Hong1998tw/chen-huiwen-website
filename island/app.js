@@ -1216,7 +1216,7 @@ function renderHome() {
       }
     }
     if (data.laiAchievements?.length) {
-      html += `<p class="axis">認識賴瑞隆</p><button type="button" class="isl-row" data-act="lai"><span class="dot" style="background:#b8862b">賴</span><span class="name">賴瑞隆做了什麼<small>${data.laiAchievements.length} 項政績，對照慧文在同一座島做的事</small></span></button>`;
+      html += `<p class="axis">認識賴瑞隆</p><button type="button" class="isl-row" data-act="lai"><span class="dot" style="background:#b8862b">賴</span><span class="name">賴瑞隆的政見與政績<small>${(data.laiPolicies || []).length} 項市長政見、${data.laiAchievements.length} 項立委政績，對照慧文在同一座島做的事</small></span></button>`;
     }
     html += `<p class="axis">鳳山各里</p><button type="button" class="isl-row" data-act="tab" data-tab="villages"><span class="dot" style="background:#9a8f7a">里</span><span class="name">鳳山 63 里<small>里內路平、水溝、路燈等小工程</small></span></button>`;
   } else {
@@ -1270,19 +1270,28 @@ function laiFor(id) {
 function laiCards(list) {
   return list.map((a) => `<div class="link-card"><h4>${esc(a.title)}${a.year ? `<small>${esc(a.year)}</small>` : ""}</h4><p>${esc(a.detail)}</p></div>`).join("");
 }
+function laiPoliciesFor(id) {
+  return (data.laiPolicies || []).filter((p) => p.islands.includes(id));
+}
+function laiPolicyCards(list) {
+  return list.map((p) => `<div class="link-card lai-policy"><h4>${esc(p.title)}<small>市長政見</small></h4><p>${esc(p.summary)}</p></div>`).join("");
+}
 function laiHTML(id) {
-  const list = laiFor(id);
-  if (!list.length) return "";
-  return `<p class="axis">認識賴瑞隆</p>${laiCards(list)}${huiwenSummary(id)}`;
+  const list = laiFor(id), pols = laiPoliciesFor(id);
+  if (!list.length && !pols.length) return "";
+  return `<p class="axis">認識賴瑞隆</p>${laiPolicyCards(pols)}${laiCards(list)}${huiwenSummary(id)}`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
     <p class="p-kicker">認識賴瑞隆</p><h2 class="p-title">賴瑞隆做了什麼</h2>`;
+  html += `<p class="p-lead">賴瑞隆的市長政見與立委政績，對照慧文在同一座島做過的事。</p>`;
   for (const isl of islands) {
-    const list = laiFor(isl.id);
-    if (!list.length) continue;
-    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${laiCards(list)}${huiwenSummary(isl.id)}`;
+    const list = laiFor(isl.id), pols = laiPoliciesFor(isl.id);
+    if (!list.length && !pols.length) continue;
+    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${laiPolicyCards(pols)}${laiCards(list)}${huiwenSummary(isl.id)}`;
   }
+  const otherPol = (data.laiPolicies || []).filter((p) => !p.islands.some((id) => islandById[id]));
+  if (otherPol.length) html += `<p class="axis">其他市長政見</p>${laiPolicyCards(otherPol)}`;
   const rest = data.laiAchievements.filter((a) => !a.islands.some((id) => islandById[id]));
   if (rest.length) html += `<p class="axis">其他政績</p>${laiCards(rest)}`;
   return html;
@@ -1494,7 +1503,7 @@ resize();
 controls.target.set(0, 0, 0);
 render();
 // 深層連結：等相機與控制器跑過第一幀再飛過去，否則會飛到錯的位置
-if (startIsland && islandById[startIsland]) requestAnimationFrame(() => requestAnimationFrame(() => openIsland(startIsland, true)));
+if (startIsland && islandById[startIsland]) setTimeout(() => openIsland(startIsland, true), 80);  // 背景分頁不跑 rAF，用 timeout 比較穩
 
 // 林 dot Task 8：圖卡、政績探索、比較、年份、分享圖卡、活動
 try {
