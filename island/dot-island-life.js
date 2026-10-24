@@ -15,7 +15,7 @@ export function createIslandLife({scene,world,camera,controls,renderer,islandCen
  function stepFlight(dt){if(!flight)return;const f=flight;f.t=Math.min(1,f.t+dt/f.duration);const k=f.t*f.t*(3-2*f.t);controls.target.lerpVectors(f.a,f.b,k);camera.position.copy(controls.target).add(f.offset);camera.zoom=THREE.MathUtils.lerp(f.z,f.end,k);camera.updateProjectionMatrix();if(f.t===1)flight=null;}
  function stopTour(){tour=null;caption.textContent='導覽已停止';}
  const stopManual=()=>{flight=null;if(tour)stopTour();};controls.addEventListener('start',stopManual);
- function visit(){if(!tour)return;const isl=tourOrder[tour.i];selected=isl.id;paint();caption.textContent=`${tour.i+1}／${tourOrder.length}　${isl.name}：${isl.pledge||isl.axis||''}`;onIsland(isl.id,false);flyTo(at(isl.id),2);}
+ function visit(){if(!tour)return;const isl=tourOrder[tour.i];selected=isl.id;paint();const axisName=(data.axes||[]).find(a=>a.id===isl.axis)?.name||'';caption.textContent=`${tour.i+1}／${tourOrder.length}　${isl.name}${isl.pledge?'：'+isl.pledge:isl.id==='Q1'?'：慧文在議會問了什麼':axisName?'：'+axisName:''}`;onIsland(isl.id,false);flyTo(at(isl.id),2);}
  button('開始導覽',()=>{tour={i:0,wait:0,paused:media.matches};visit();});
  const pause=button('暫停／繼續',()=>{if(tour)tour.paused=!tour.paused;});pause.setAttribute('aria-label','暫停或繼續導覽');
  button('下一站',()=>{if(tour){tour.i=(tour.i+1)%data.islands.length;tour.wait=0;visit();}});button('結束導覽',stopTour);

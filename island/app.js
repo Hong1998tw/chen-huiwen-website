@@ -873,7 +873,7 @@ function showItemPins(id) {
   for (const p of itemPins) p.el.remove();
   itemPins = [];
   if (!id) return;
-  flagshipGroups.filter((f) => f.island === id).slice(0, 8).forEach((f, k) => {
+  flagshipGroups.filter((f) => f.island === id).slice(0, mobile() ? 4 : 6).forEach((f, k) => {
     const it = data.items[f.item];
     const el = document.createElement("button");
     el.type = "button";
@@ -895,8 +895,14 @@ function placeLabels() {
   const placed = [];
   const pins = itemPins.map((p) => { tmp.copy(p.pos).project(camera); return { el: p.el, x: (tmp.x * 0.5 + 0.5) * w, y: (-tmp.y * 0.5 + 0.5) * h, wd: p.el.offsetWidth || 120 }; })
     .sort((a, b) => b.y - a.y);
+  // 撞到就先左右錯開，再往上疊；避免全部疊成一直排、頂到工具列
+  const hit = (p) => placed.some((q) => Math.abs(q.y - p.y) < 24 && Math.abs(q.x - p.x) < (q.wd + p.wd) / 2 + 4);
   for (const p of pins) {
-    for (let k = 0; k < 8 && placed.some((q) => Math.abs(q.y - p.y) < 24 && Math.abs(q.x - p.x) < (q.wd + p.wd) / 2 + 4); k++) p.y -= 24;
+    const ox = p.x, oy = p.y, dx = p.wd / 2 + 10;
+    outer: for (let row = 0; row < 5; row++) for (const sx of [0, dx, -dx]) {
+      p.x = ox + sx; p.y = oy - row * 26;
+      if (!hit(p)) break outer;
+    }
     placed.push(p);
     p.el.style.left = `${p.x}px`;
     p.el.style.top = `${p.y}px`;
