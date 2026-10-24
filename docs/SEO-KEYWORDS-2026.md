@@ -21,8 +21,8 @@
 ## 本次站內修改
 
 1. 首頁、關於、選舉頁的 title／description 加入「鳳山議員」「高雄市議員」「候選人」「第9選舉區（鳳山區）」。
-2. 首頁 hero kicker 由標語改為「陳慧文・高雄市議員・鳳山區」：原本 H1 是「慧文會武會做事」，頁首可見文字沒有全名與職稱。
-3. 選舉頁 H1 改為「2026 鳳山市議員選舉資訊」，eyebrow 標明第9選舉區。
+2. 首頁 hero kicker 由標語改為「陳慧文・鳳山區市議員」：原本 H1 是「慧文會武會做事」，頁首可見文字沒有全名與職稱。
+3. 選舉頁 H1 改為「2026 鳳山市議員選舉」，eyebrow 標明第9選舉區。
 4. Person JSON-LD：以 main 已充實的關於頁 Person 為準（政黨、議會、學歷、維基百科／Wikidata），再補議會 iVOD、報導者觀測站 `sameAs` 與中文 `alternateName`；首頁 Person 改為與關於頁完全一致，選舉頁 CollectionPage 以 `about` 指向同一人。
 5. 兩個仍被 Google 收錄的 404 舊網址加入 301 對照（`data/seo/*.csv`）：
    - `/381bd1468054806d9f28e7f2aefaf017` → `achievement-school-case-review.html`

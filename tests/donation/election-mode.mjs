@@ -50,7 +50,7 @@ try {
   assert(await newsFacebook.locator('[data-embed-load]').isVisible(), 'news Facebook keeps a reload fallback');
 
   await page.goto(base + 'election.html');
-  assert(await page.getByRole('heading', { name: '2026 鳳山市議員選舉資訊', exact: true }).isVisible());
+  assert(await page.getByRole('heading', { name: '2026 鳳山市議員選舉', exact: true }).isVisible());
   assert.equal(await page.locator('.campaign-nav-card').count(), 5);
   assert.equal(await page.locator('#campaign-platforms').count(), 1);
   assert.equal(await page.locator('#campaign-tracking').count(), 1);
