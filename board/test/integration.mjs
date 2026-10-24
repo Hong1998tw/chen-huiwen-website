@@ -22,7 +22,7 @@ const verifier = createServer((request, response) => {
     verifyCalls++;
     const ok = body.includes("good-token") && body.includes("integration-secret");
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ success: ok, "error-codes": ok ? [] : ["invalid-input-response"] }));
+    response.end(JSON.stringify({ success: ok, hostname: "localhost", action: "board_note", "error-codes": ok ? [] : ["invalid-input-response"] }));
   });
 });
 await new Promise((resolve) => verifier.listen(verifyPort, "127.0.0.1", resolve));
@@ -43,6 +43,7 @@ try {
   server = spawn(process.execPath, [
     ...wrangler, "dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", dir, "--test-scheduled",
     "--var", "TURNSTILE_SECRET:integration-secret",
+    "--var", "ALLOW_DEV_ORIGIN:true",
     "--var", "IP_SALT:integration-salt-0123456789",
     "--var", `TURNSTILE_VERIFY_URL:http://127.0.0.1:${verifyPort}/siteverify`,
   ], { cwd: board, stdio: ["ignore", "pipe", "pipe"] });

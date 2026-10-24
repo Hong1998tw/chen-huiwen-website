@@ -71,11 +71,18 @@ test("網址與通訊軟體帳號", () => {
     "加賴：myid88",
     "加line @shop99",
     "追蹤我 @someone_ig",
+    "加我line abc123",
+    "line id abc123",
+    "賴 abc123",
+    "bit .ly/abc",
+    "bit。ly/x",
+    "google。com",
+    "example點com",
   ]) assert.equal(code(text), "link", text);
 });
 
 test("電子郵件", () => {
-  for (const text of ["寄到 someone@gmail.com", "someone ＠ gmail . com", "abc(at)example"]) assert.equal(code(text), "email", text);
+  for (const text of ["寄到 someone@gmail.com", "someone ＠ gmail . com", "abc(at)example", "test at gmail dot com"]) assert.equal(code(text), "email", text);
 });
 
 test("電話：手機、市話、國際碼、拆開寫、國字、全形", () => {
@@ -94,6 +101,8 @@ test("電話：手機、市話、國際碼、拆開寫、國字、全形", () =>
     "０９１２３４５６７８",
     "零九一二三四五六七八",
     "0 9 1 2 3 4 5 6 7 8",
+    "09一二345678",
+    "0912345678元",
   ]) assert.equal(code(text), "phone", text);
 });
 
@@ -111,11 +120,13 @@ test("門牌地址（…號）", () => {
     "12號之3",
     "35號5樓",
     "自強一路 12-1 號",
+    "光復里 4 鄰 7 號",
+    "五甲里3號",
   ]) assert.equal(code(text), "address", text);
 });
 
 test("不雅字詞", () => {
-  for (const text of ["幹你娘", "幹 你 娘", "幹，你，娘", "靠北喔", "雞掰", "白痴", "智障", "fuck you", "FUCKING", "what the shit", "恁老師"])
+  for (const text of ["幹你娘", "幹 你 娘", "幹，你，娘", "靠北喔", "雞掰", "白痴", "智障", "fuck you", "FUCKING", "what the shit", "恁老師", "f u c k", "f.u.c.k you"])
     assert.equal(code(text), "profanity", text);
 });
 
@@ -146,6 +157,14 @@ test("正常用語不可誤擋（日期、號次、地名、常見詞）", () =>
     "Hello 慧文",
     "I love Fengshan",
     "3.5 公里自行車道",
+    "2026-11-28 8點投票",
+    "全部 10000000 元",
+    "爭取 12000000 萬元",
+    "早上8點在鳳山區公所集合",
+    "a b c 三個選項",
+    "line 很好用",
+    "賴清德也來了",
+    "晚上十點 com 到",
   ]) assert.equal(code(text), null, text);
 });
 
@@ -186,4 +205,7 @@ test("Turnstile token 與限流 IP 鍵", () => {
   assert.equal(rateLimitKey("2001:db8:1:2::9"), "2001:db8:1:2::/64");
   assert.equal(rateLimitKey("2001:db8::1"), "2001:db8:0:0::/64");
   assert.equal(rateLimitKey(""), "unknown");
+  assert.equal(rateLimitKey("::ffff:1.2.3.4"), "1.2.3.4", "IPv4-mapped IPv6 uses the embedded IPv4");
+  assert.equal(rateLimitKey("0:0:0:0:0:ffff:5.6.7.8"), "5.6.7.8");
+  assert.notEqual(rateLimitKey("::ffff:1.2.3.4"), rateLimitKey("::ffff:9.9.9.9"));
 });

@@ -14,7 +14,40 @@ export const TURNSTILE_TOKEN_MAX = 2048;
 export const BOARD_PURGE_AT = "2026-12-27T16:00:00.000Z";
 /** 限流用的雜湊 IP 只保留 1 天，之後由排程清空。 */
 export const IP_HASH_TTL_MS = 24 * 60 * 60 * 1000;
-export const ALLOWED_ORIGINS = Object.freeze(["https://www.huiwen.tw", "http://localhost:8765"]);
+/** 正式環境只允許官網。 */
+export const ALLOWED_ORIGINS = Object.freeze(["https://www.huiwen.tw"]);
+/** 本機開發來源：只有環境變數 ALLOW_DEV_ORIGIN="true"（.dev.vars 或整合測試）時才允許，正式部署不設定。 */
+export const DEV_ORIGIN = "http://localhost:8765";
+/** Turnstile siteverify 回傳必須相符的主機名稱與 action（前端 board.js 以 action: "board_note" 產生 token）。 */
+export const TURNSTILE_HOSTNAME = "www.huiwen.tw";
+export const TURNSTILE_ACTION = "board_note";
+/** 開發模式額外接受的主機名稱（本機、Cloudflare 測試金鑰回傳的 example.com）。 */
+export const DEV_TURNSTILE_HOSTNAMES = Object.freeze(["localhost", "127.0.0.1", "example.com"]);
+
+/** @param {{ALLOW_DEV_ORIGIN?: unknown}} [env] */
+export const devMode = (env) => String(env?.ALLOW_DEV_ORIGIN ?? "").toLowerCase() === "true";
+
+/** 允許的 CORS 來源；不允許時回傳 null。 */
+export function allowedOrigin(origin, env) {
+  if (!origin) return null;
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  if (devMode(env) && origin === DEV_ORIGIN) return origin;
+  return null;
+}
+
+/**
+ * 檢查 siteverify 結果：success 之外，正式環境還要求 hostname 與 action 相符。
+ * 開發模式接受本機與測試金鑰的主機名稱，action 可缺。
+ */
+export function turnstileResultOk(result, env) {
+  if (result?.success !== true) return false;
+  if (devMode(env)) {
+    const hostOk = !result.hostname || result.hostname === TURNSTILE_HOSTNAME || DEV_TURNSTILE_HOSTNAMES.includes(result.hostname);
+    const actionOk = !result.action || result.action === TURNSTILE_ACTION;
+    return hostOk && actionOk;
+  }
+  return result.hostname === TURNSTILE_HOSTNAME && result.action === TURNSTILE_ACTION;
+}
 
 export class RuleError extends Error {
   /** @param {string} code @param {string} message @param {string} [field] */
@@ -62,15 +95,17 @@ const N = `[0-9${CN_NUM}]+`;
 const EMAIL_PATTERNS = [
   /[a-z0-9._%+-]+\s*@\s*[a-z0-9-]+(?:\s*\.\s*[a-z0-9-]+)+/i,
   /[a-z0-9._%+-]+\s*[([]\s*(?:at|小老鼠)\s*[)\]]\s*[a-z0-9-]+/i,
+  /[a-z0-9._%+-]+\s+(?:at|小老鼠)\s+[a-z0-9-]+\s*(?:\.|dot)\s*[a-z]{2,}/i,
 ];
 const URL_PATTERNS = [
   /\b(?:https?|ftp):\/{0,2}/i,
   /\bwww\s*\./i,
   // 常見網域：英數字串 + 點 + 頂級網域（含 .tw 二層網域）
   /[a-z0-9-]+\.(?:com|net|org|tw|io|me|cc|co|ly|gl|gd|to|tv|app|xyz|info|biz|shop|top|link|site|online|club|vip|page|dev|ai|gov|edu|us|jp|hk|cn|so|im|gg|ee|be|ws|ink|live|news|store|tech|one|pro|art|fun|ltd|life|world)\b/i,
-  // 通訊軟體帳號：LINE ID、加賴、@帳號
+  // 通訊軟體帳號：LINE ID、加賴、@帳號（冒號可省略：「line id abc123」「賴 abc123」）
   /(?:\bline|賴)\s*(?:id)?\s*:\s*\S/i,
-  /加\s*(?:line|賴|好友)\s*:?\s*@?[a-z0-9._-]{3,}/i,
+  /(?:\bline|賴)\s*(?:id)?\s*:?\s*@?[a-z0-9._-]{4,}/i,
+  /加\s*(?:我\s*)?(?:line|賴|好友)\s*:?\s*@?[a-z0-9._-]{3,}/i,
   /(?:^|[^a-z0-9._%+-])@[a-z0-9._-]{4,}/i,
 ];
 // 身分證／居留證：1 個英文字母 + 9 碼數字；舊式居留證為 2 個英文字母 + 8 碼數字。
@@ -81,6 +116,8 @@ const ADDRESS_PATTERNS = [
   new RegExp(`(?:路|街|大道)\\s*(?:${N}\\s*段)?\\s*(?:${N}\\s*(?:巷|弄)\\s*)*${N}\\s*(?:[-之]\\s*${N}\\s*)?號`),
   new RegExp(`(?:巷|弄)\\s*${N}\\s*(?:[-之]\\s*${N}\\s*)?號`),
   new RegExp(`${N}\\s*號\\s*(?:之\\s*${N}|${N}\\s*樓)`),
+  // 里／鄰門牌：「光復里 4 鄰 7 號」
+  new RegExp(`(?:鄰|里)\\s*${N}\\s*(?:[-之]\\s*${N}\\s*)?號`),
 ];
 // 小型不雅字詞表。中文詞同時在原字串與「移除空白、符號、標點」後的字串比對（擋「幹 你 娘」）；
 // 刻意避開「幹部、實幹、能幹、垃圾車、垃圾人力、三小時、體操、林老師、靠北邊、手機八點、過去死角」等正常用語。
@@ -94,7 +131,10 @@ const PROFANITY_CJK = [
   /三小(?!時|段|節|組|項|塊|朋友|孩|學|姐|姊|兒|吃|店)/,
   /白癡|白痴|智障|腦殘|(?<![台臺])北七|王八蛋|賤人|婊子|死全家|人渣/,
 ];
-// 英文只比對原字串並要求字界，避免「push it」被壓成「pushit」誤判。
+// 英文只比對原字串並要求字界，避免「push it」被壓成「pushit」誤判；
+// 另把「單一字母 + 空白／符號」逐字拆開的寫法（f u c k、f.u.c.k）接回再比對。
+const joinSpelledLetters = (value) =>
+  value.replace(/\b[a-z](?:[\s._*\-]+[a-z]\b)+/g, (run) => run.replace(/[\s._*\-]+/g, ""));
 const PROFANITY_LATIN = /\b(?:f+u+c+k\w*|sh[i1!]t+|b[i1!]tch\w*|asshole|wtf|stfu|cunt)\b/i;
 
 /**
@@ -108,18 +148,27 @@ export function findViolation(text) {
   const compact = folded.replace(/[\s\-–—]+/g, "");
   // 不雅字詞：移除所有空白、符號、標點（含全形），避免「幹 你 娘」「f.u.c.k」規避。
   const squashed = folded.replace(/[\s\p{P}\p{S}_]+/gu, "");
+  // 網址比對用：「。｡．點」視為句點，句點前後空白移除（擋「bit .ly」「google。com」「example點com」）。
+  const dotted = folded.replace(/[。｡．]|點/g, ".").replace(/\s*\.\s*/g, ".");
+  // 電話比對用：國字數字轉阿拉伯數字（擋「09一二345678」）。
+  const digitized = folded.replace(/[零〇一二三四五六七八九]/g, (c) => String(CJK_DIGITS.indexOf(c) % 10));
 
-  if (EMAIL_PATTERNS.some((re) => re.test(folded))) return { code: "email", message: REASONS.email };
-  if (URL_PATTERNS.some((re) => re.test(folded))) return { code: "link", message: REASONS.link };
+  if (EMAIL_PATTERNS.some((re) => re.test(folded) || re.test(dotted))) return { code: "email", message: REASONS.email };
+  if (URL_PATTERNS.some((re) => re.test(folded) || re.test(dotted))) return { code: "link", message: REASONS.link };
   if (NATIONAL_ID_PATTERNS.some((re) => re.test(compact))) return { code: "national_id", message: REASONS.nationalId };
-  if (isPhoneLike(folded)) return { code: "phone", message: REASONS.phone };
+  if (isPhoneLike(folded) || isPhoneLike(digitized)) return { code: "phone", message: REASONS.phone };
   if (ADDRESS_PATTERNS.some((re) => re.test(folded))) return { code: "address", message: REASONS.address };
-  if (PROFANITY_LATIN.test(folded) || PROFANITY_CJK.some((re) => re.test(squashed) || re.test(folded)))
+  if (PROFANITY_LATIN.test(folded) || PROFANITY_LATIN.test(joinSpelledLetters(folded)) || PROFANITY_CJK.some((re) => re.test(squashed) || re.test(folded)))
     return { code: "profanity", message: REASONS.profanity };
   return null;
 }
 
-const DATE_LIKE = /^(?:19|20)[0-9]{2}[\s\-–—./]*(?:0?[1-9]|1[0-2])[\s\-–—./]*(?:0?[1-9]|[12][0-9]|3[01])$/;
+// 國字數字對照：索引即數值（零=0…九=9），〇 放在第 10 位，取 % 10 也是 0。
+const CJK_DIGITS = "零一二三四五六七八九〇";
+// 年月日（可接一個時點：「2026-11-28 8點」）。
+const DATE_LIKE = /^(?:19|20)[0-9]{2}[\s\-–—./]*(?:0?[1-9]|1[0-2])[\s\-–—./]*(?:0?[1-9]|[12][0-9]|3[01])(?:\s+[0-9]{1,2})?$/;
+// 數字後面緊接金額單位，就不是電話（「10000000 元」）。
+const MONEY_AFTER = /^\s*(?:元|塊|萬|億|千)/;
 /**
  * 台灣手機（09xx、+886 9xx）、市話（0X、+886X，含 0836 等離島區碼）、
  * 不含區碼的市話（746-1234）與 7 碼以上的長串數字（含以空白、連字號、括號、句點拆開的寫法）。
@@ -134,6 +183,7 @@ export function isPhoneLike(folded) {
     if (/^(?:886|0)9[0-9]{8}$/.test(digits)) return true; // 手機
     if (/^(?:886|0)[2-8][0-9]{6,8}$/.test(digits)) return true; // 市話（含區碼）
     if (/(?:^|[^0-9])[0-9]{3,4}[\s\-–—.][0-9]{4}$/.test(raw)) return true; // 市話（不含區碼）
+    if (MONEY_AFTER.test(folded.slice(match.index + match[0].length))) continue; // 金額
     if (digits.length >= 7) return true; // 任何可能是號碼的長串數字
   }
   // 國字數字逐位寫出的號碼（零九一二三四五六七八）
@@ -178,6 +228,9 @@ export function validTurnstileToken(token) {
 export function rateLimitKey(ip) {
   const value = String(ip || "").trim().toLowerCase();
   if (!value.includes(":")) return value || "unknown";
+  // IPv4 對應位址（::ffff:1.2.3.4 或 0:0:0:0:0:ffff:1.2.3.4）取回內嵌的 IPv4。
+  const mapped = value.match(/^(?:::|(?:0{1,4}:){5})ffff:([0-9]{1,3}(?:\.[0-9]{1,3}){3})$/);
+  if (mapped) return mapped[1];
   const [head, tail = ""] = value.split("::");
   const left = head ? head.split(":") : [];
   const right = tail ? tail.split(":") : [];

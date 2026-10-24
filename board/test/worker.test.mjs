@@ -15,7 +15,7 @@ let env, verifyCalls, verifyResult;
 beforeEach(() => {
   env = { DB: createFakeD1(), TURNSTILE_SECRET: "test-secret", IP_SALT: "0123456789abcdef-test-salt" };
   verifyCalls = [];
-  verifyResult = { success: true };
+  verifyResult = { success: true, hostname: "www.huiwen.tw", action: "board_note" };
   globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input.url;
     const form = init?.body;
@@ -66,6 +66,7 @@ test("公開清單：只列已刊登、最新 60 則、空暱稱顯示鳳山鄉�
   for (let i = 0; i < 65; i++) insert(`p-${String(i).padStart(3, "0")}`, "published", new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(), i % 2 ? "阿明" : "");
   insert("pending-1", "pending", "2026-10-30T00:00:00.000Z");
   insert("archived-1", "archived", "2026-10-30T00:00:00.000Z");
+  env.ALLOW_DEV_ORIGIN = "true";
   const response = await call({ headers: { Origin: "http://localhost:8765" } });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:8765");
@@ -117,6 +118,35 @@ test("Turnstile：缺 token 400、未通過 403、服務中斷 503，都不寫�
   assert.equal(rows().length, 0);
 });
 
+test("Turnstile：正式環境要求 hostname 與 action 相符；開發模式才接受本機主機名稱", async () => {
+  for (const [result, label] of [
+    [{ success: true, hostname: "evil.example", action: "board_note" }, "other hostname"],
+    [{ success: true, hostname: "www.huiwen.tw", action: "other_widget" }, "other action"],
+    [{ success: true, hostname: "www.huiwen.tw" }, "missing action"],
+    [{ success: true, hostname: "localhost", action: "board_note" }, "localhost in production"],
+    [{ success: true }, "no hostname"],
+  ]) {
+    verifyResult = result;
+    const response = await post(note());
+    assert.equal(response.status, 403, label);
+    assert.equal((await response.json()).code, "turnstile_failed", label);
+  }
+  assert.equal(rows().length, 0);
+  env.ALLOW_DEV_ORIGIN = "true";
+  verifyResult = { success: true, hostname: "localhost", action: "board_note" };
+  assert.equal((await post(note(), { ip: "198.51.100.30" })).status, 201);
+  verifyResult = { success: true, hostname: "evil.example", action: "board_note" };
+  assert.equal((await post(note(), { ip: "198.51.100.31" })).status, 403, "dev mode still rejects foreign hostnames");
+});
+
+test("缺少 CF-Connecting-IP：拒收，不把所有人算成同一個限流鍵", async () => {
+  const response = await post(note(), { ip: null });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, "client_ip_missing");
+  assert.equal(verifyCalls.length, 0);
+  assert.equal(rows().length, 0);
+});
+
 test("驗證網址只能覆寫成本機（測試用），其他值一律使用 Cloudflare 官方端點", async () => {
   env.TURNSTILE_VERIFY_URL = "https://evil.example/siteverify";
   assert.equal((await post(note())).status, 201);
@@ -148,7 +178,11 @@ test("限流在寫入時再檢查一次（同時送出兩則只會成功一則�
   assert.equal(rows().length, 1);
 });
 
-test("CORS 與來源：只允許正式站與本機 8765；POST 必須帶允許的 Origin", async () => {
+test("CORS 與來源：正式環境只允許官網；本機 8765 僅在 ALLOW_DEV_ORIGIN=true 時允許", async () => {
+  const devGet = await call({ headers: { Origin: "http://localhost:8765" } });
+  assert.equal(devGet.status, 403, "production rejects the dev origin");
+  assert.equal(devGet.headers.get("Access-Control-Allow-Origin"), null);
+  assert.equal((await post(note(), { origin: "http://localhost:8765" })).status, 403);
   const preflight = await call({ method: "OPTIONS", headers: { Origin: SITE, "Access-Control-Request-Method": "POST" } });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get("Access-Control-Allow-Origin"), SITE);

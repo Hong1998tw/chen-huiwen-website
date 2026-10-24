@@ -2,16 +2,17 @@
 // 只做兩件事：讀取已刊登留言、收下待審留言。審核在 CMS 後台（admin.huiwen.tw）完成。
 // 這支 Worker 與 CMS 共用 D1 資料庫，但所有 SQL 只碰 board_notes（board/test 有檢查）。
 import {
-  ALLOWED_ORIGINS,
   BOARD_PURGE_AT,
   IP_HASH_TTL_MS,
   MAX_REQUEST_BYTES,
   PUBLIC_LIMIT,
   RATE_LIMIT_MS,
   RuleError,
+  allowedOrigin,
   displayNickname,
   isPurged,
   rateLimitKey,
+  turnstileResultOk,
   validTurnstileToken,
   validateNote,
 } from "./rules.js";
@@ -40,9 +41,6 @@ const SECURITY_HEADERS = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
   "X-Robots-Tag": "noindex, nofollow",
 };
-
-/** @param {string|null} origin */
-const allowedOrigin = (origin) => (origin && ALLOWED_ORIGINS.includes(origin) ? origin : null);
 
 function respond(body, { status = 200, origin = null, cache = "no-store", headers = {} } = {}) {
   const h = new Headers(SECURITY_HEADERS);
@@ -122,7 +120,8 @@ async function verifyTurnstile(token, ip, env) {
   } catch {
     throw new HttpError(503, "verify_unavailable", "人機驗證服務暫時無法連線，請稍後再試。");
   }
-  if (result?.success !== true)
+  // 除了 success，正式環境也要求 hostname 為 www.huiwen.tw、action 為 board_note（防同金鑰的其他頁面 token）。
+  if (!turnstileResultOk(result, env))
     throw new HttpError(403, "turnstile_failed", "人機驗證未通過或已過期，請重新驗證後再送出。");
 }
 
@@ -170,7 +169,9 @@ async function submit(request, env, origin) {
   if (!validTurnstileToken(input.turnstileToken))
     throw new HttpError(400, "turnstile_missing", "請先完成人機驗證再送出。");
 
-  const ip = request.headers.get("CF-Connecting-IP") || "";
+  // Cloudflare 一定會帶 CF-Connecting-IP；缺少時不要把所有人算成同一個「unknown」。
+  const ip = (request.headers.get("CF-Connecting-IP") || "").trim();
+  if (!ip) throw new HttpError(400, "client_ip_missing", "無法確認連線來源，請重新整理頁面後再試。");
   const ipHash = await hashIp(ip, env.IP_SALT);
   const now = Date.now();
   const since = iso(now - RATE_LIMIT_MS);
@@ -200,7 +201,7 @@ function rateLimited(lastCreatedAt, now) {
 async function handle(request, env, ctx) {
   const url = new URL(request.url);
   const requestOrigin = request.headers.get("Origin");
-  const origin = allowedOrigin(requestOrigin);
+  const origin = allowedOrigin(requestOrigin, env);
   if (url.pathname !== "/api/board") throw new HttpError(404, "not_found", "找不到這個功能。");
   if (requestOrigin && !origin) throw new HttpError(403, "origin", "這個網站不能使用布告欄。");
   if (request.method === "OPTIONS") {
@@ -222,7 +223,7 @@ async function handle(request, env, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    const origin = allowedOrigin(request.headers.get("Origin"));
+    const origin = allowedOrigin(request.headers.get("Origin"), env);
     try {
       return await handle(request, env, ctx);
     } catch (error) {

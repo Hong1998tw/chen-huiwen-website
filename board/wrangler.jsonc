@@ -24,10 +24,8 @@
     }
   ],
   // 每小時：清空滿 1 天的 ip_hash；2026-12-28 00:00（台北）起刪除全部留言。
-  "triggers": { "crons": ["17 * * * *"] },
+  "triggers": { "crons": ["17 * * * *"] }
   // 機密（不放這裡）：wrangler secret put TURNSTILE_SECRET / IP_SALT --config board/wrangler.jsonc
-  "vars": {
-    // 前端用的 Turnstile site key（公開值）；建立 widget 後替換。前端由 createBoard({ siteKey }) 取用。
-    "TURNSTILE_SITEKEY": "REPLACE_WITH_TURNSTILE_SITEKEY"
-  }
+  // Turnstile site key 是前端公開值，只在島的 createBoard({ siteKey }) 傳入，Worker 不需要。
+  // 本機開發才在 board/.dev.vars 設 ALLOW_DEV_ORIGIN="true"（允許 http://localhost:8765）；正式環境不設定。
 }

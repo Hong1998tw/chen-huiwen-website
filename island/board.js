@@ -13,6 +13,7 @@ const DEFAULT_NICKNAME = "鳳山鄉親";
 const PURGE_LABEL = "2026 年 12 月 28 日";
 const MINE_KEY = "huiwen-board-mine-v1";
 const MINE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MINE_STALE_MS = 2 * 24 * 60 * 60 * 1000;
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 const NOTE_COLORS = ["#fff3a8", "#d9f2e6", "#ffe0e6", "#dcecff", "#ffe7c2"];
 const FONT = '"Huiwen Sans TC", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
@@ -163,7 +164,13 @@ export function createBoard({
     const by = el("p", { className: "hwb-note-by" },
       el("span", { className: "hwb-note-name", text: note.nickname || DEFAULT_NICKNAME }),
       el("time", { datetime: note.created_at, text: shortDate(note.created_at) }));
-    if (pending) li.append(el("span", { className: "hwb-badge", text: "待確認" }), el("span", { className: "hwb-sr", text: "（你剛送出的留言，服務團隊確認後才會公開）" }));
+    if (pending) {
+      // 超過 2 天仍未刊登：可能還在排隊，也可能未獲刊登（封存或刪除不會通知送出者）。
+      const stale = Date.now() - Date.parse(note.created_at) > MINE_STALE_MS;
+      li.append(
+        el("span", { className: "hwb-badge", text: stale ? "仍在等候確認或未獲刊登" : "待確認" }),
+        el("span", { className: "hwb-sr", text: stale ? "（你送出的留言已超過兩天仍未公開，可能還在等候確認或未獲刊登）" : "（你剛送出的留言，服務團隊確認後才會公開）" }));
+    }
     li.append(text, by);
     return li;
   }
@@ -200,6 +207,8 @@ export function createBoard({
         const data = await response.json();
         published = Array.isArray(data.notes) ? data.notes.filter((n) => n && typeof n.id === "string" && typeof n.body === "string") : [];
         closed = data.closed === true;
+        // 保存期限已到：本機暫存的待確認留言也一併清掉，不再顯示（含 3D 布告欄貼圖）。
+        if (closed && mine.length) { mine = []; writeMine(mine); }
         loaded = true;
         return render();
       } catch {
