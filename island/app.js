@@ -36,7 +36,7 @@ const mobile = () => innerWidth <= 760;
 const R = 10;
 const LAYOUT = {
   Q1: [[0, 0]],                                 // 中央：高雄市議會
-  W1: [[-1, 0]],                                // 議會旁：女性安全島（鳳山婦幼青少年活動中心）
+  W1: [[-1, 0]],                                // 議會旁：性別友善島（鳳山婦幼青少年活動中心）
   P02: [[0, -1], [0, -2]], P05: [[1, -1]], P09: [[1, 0]], P08: [[0, 1]], P12: [[-1, 1]],
   P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [3, -1], [3, -2]], P10: [[2, 0]], P07: [[3, 0]],
   P03: [[-1, -1], [-2, -1]], X2: [[-2, 0], [-3, 1], [-3, 0], [-3, 2]], X3: [[-2, 1]],
@@ -1222,7 +1222,7 @@ function renderHome() {
         const isl = islandById[id];
         html += `<button type="button" class="isl-row" data-act="island" data-id="${id}">
           <span class="dot" style="background:${AXIS_COLOR[isl.axis]}">${isl.kind === "pledge" ? id.slice(1).replace(/^0/, "") : isl.kind === "interpellation" ? "質" : "績"}</span>
-          <span class="name">${esc(isl.name)}<small>${esc(isl.pledge || (isl.kind === "interpellation" ? "在議會講了什麼，最後發展是什麼" : "2026 政見之外的長期政績"))}</small></span>
+          <span class="name">${esc(isl.name)}<small>${esc(isl.pledge || (isl.kind === "interpellation" ? "在議會講了什麼，最後發展是什麼" : isl.note || "長期推動政見"))}</small></span>
 </button>`;
       }
     }
@@ -1354,7 +1354,7 @@ function renderIsland() {
   const spotCard = spotCardHTML();
   return `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCard}
     <p class="p-kicker">${esc(axis?.name || "")}</p><h2 class="p-title">${esc(isl.name)}</h2>
-    ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<p class="p-lead">2026 政見之外，長期持續推動的政績。</p>`}
+    ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
     ${laiHTML(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
