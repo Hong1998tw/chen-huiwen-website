@@ -81,7 +81,8 @@ export function createListFallback(body) {
     d.items.forEach((it, n) => { if (!byIsland.has(it.i)) byIsland.set(it.i, []); byIsland.get(it.i).push(n); });
     const start = new URLSearchParams(location.search).get("island");
     if (start && d.islands.some((i) => i.id === start)) view = { ...view, name: "island", island: start };
-    render();
+    // 首頁清單已經預先寫在 index.html（字型契約：首屏只能出現靜態 HTML 裡的字），不用重畫
+    if (view.name === "island" || !body.hasAttribute("data-static-list")) render();
   });
 
   // 3D 起來後交棒：清單停止接管，面板交給 app.js
