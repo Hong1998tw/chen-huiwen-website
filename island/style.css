@@ -356,3 +356,9 @@ body.touring .dot-life-ui label, body.touring .dot-life-ui select, body.touring 
 @keyframes ll-bob { 50% { margin-top: -3px; } }
 @media (prefers-reduced-motion: reduce) { .ll-tag { animation: none; } }
 @media (max-width: 760px) { .ll-tag { font-size: 10px; padding: 1px 6px; } }
+
+/* 島上第一列的重點（例：性別友善島的安心哨） */
+.highlight-card { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; background: #fff1f3; border: 1.5px solid #e48f9e; }
+.highlight-card span { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #e48f9e; color: #fff; font-size: 11px; font-weight: 700; }
+.highlight-card h3 { margin: 6px 0 4px; font-size: 16px; color: #8a2f43; }
+.highlight-card p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink); }

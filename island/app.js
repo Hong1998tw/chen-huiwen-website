@@ -1355,6 +1355,7 @@ function renderIsland() {
   return `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCard}
     <p class="p-kicker">${esc(axis?.name || "")}</p><h2 class="p-title">${esc(isl.name)}</h2>
     ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
+    ${isl.highlight ? `<div class="highlight-card"><span>${esc(isl.highlight.tag)}</span><h3>${esc(isl.highlight.title)}</h3><p>${esc(isl.highlight.text)}</p></div>` : ""}
     ${laiHTML(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
