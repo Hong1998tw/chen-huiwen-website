@@ -422,3 +422,11 @@ body.no3d .brand { position: absolute; }
 .no3d-note button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--green); color: #fff; font: inherit; font-weight: 700; }
 @media (max-width: 760px) { body.no3d #panel { margin-top: 120px; border-radius: 18px 18px 0 0; } }
 body.no3d .panel-handle { display: none !important; }
+
+/* 全景島名常駐＋件數；放不下時縮成只剩編號 */
+body.labels-all .isl-label:not(.river-label):not(.dim) { opacity: 1; pointer-events: auto; }
+.isl-label .lbl-count { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: #eef3ef; color: var(--muted); font-size: 11px; font-weight: 700; }
+.isl-label.compact, .item-pin.compact { gap: 0; padding: 3px; }
+.isl-label.compact .lbl-name, .isl-label.compact .lbl-count { display: none; }
+.item-pin.compact { font-size: 0; }
+.item-pin.compact b { font-size: 11px; }

@@ -844,7 +844,8 @@ for (const island of islands) {
   const el = document.createElement("button");
   el.type = "button";
   el.className = island.id === "Q1" ? "isl-label isl-center" : "isl-label";
-  el.innerHTML = `<b style="background:${AXIS_COLOR[island.axis]}">${island.kind === "pledge" ? island.id.slice(1).replace(/^0/, "") : island.kind === "interpellation" ? "質" : "績"}</b>${esc(island.id === "Q1" ? "高雄市議會・質詢島" : island.name)}`;
+  const count = island.kind === "interpellation" ? 0 : data.items.filter((it) => it.i === island.id).length;
+  el.innerHTML = `<b style="background:${AXIS_COLOR[island.axis]}">${island.kind === "pledge" ? island.id.slice(1).replace(/^0/, "") : island.kind === "interpellation" ? "質" : "績"}</b><span class="lbl-name">${esc(island.id === "Q1" ? "高雄市議會・質詢島" : island.name)}</span>${count ? `<small class="lbl-count">${count}</small>` : ""}`;
   el.addEventListener("click", () => openIsland(island.id, true));
   labelsEl.append(el);
   labelEls[island.id] = el;
@@ -890,7 +891,7 @@ function showItemPins(id) {
 const sizeCache = new WeakMap();
 const sizeOf = (el) => { let s = sizeCache.get(el); if (!s || s.t !== el.textContent) { const ow = el.offsetWidth; s = { w: ow || 80, h: el.offsetHeight || 24, t: el.textContent }; if (ow) sizeCache.set(el, s); } return s; };
 const toScreen = (v, w, h) => (v.project(camera), { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, off: v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05 });
-const shown = (el) => el.classList.contains("hover") || el.classList.contains("active") || el.classList.contains("isl-center");
+const shown = (el) => el.classList.contains("hover") || el.classList.contains("active") || el.classList.contains("isl-center") || (el.classList.contains("isl-label") && !el.classList.contains("river-label") && document.body.classList.contains("labels-all"));
 let uiTick = 0, uiBoxes = [];
 function placeLabels() {
   const w = canvas.clientWidth, h = canvas.clientHeight, gap = matchMedia("(pointer: coarse)").matches ? 8 : 4;
@@ -900,15 +901,26 @@ function placeLabels() {
   const boxes = [...uiBoxes];
   const fits = (b) => b.l >= 0 && b.r <= w && b.t >= 0 && !boxes.some((q) => b.l < q.r + gap && b.r + gap > q.l && b.t < q.b + gap && b.b + gap > q.t);
   // 標籤錨點在底部中央（translate(-50%,-100%)）；試原位、上移、左右錯開，都撞到就藏
+  // 先試上次成功的位置（不亂跳），放不下就縮成只剩編號（HEART 的做法），再放不下才藏
   function place(el, x, y, tries, bound) {
-    const { w: bw, h: bh } = sizeOf(el);
-    for (const [dx, dy] of tries) {
-      const cx = x + dx * (bw + gap), cy = y + dy * (bh + gap);
-      const b = { l: cx - bw / 2, r: cx + bw / 2, t: cy - bh, b: cy };
-      if (bound && Math.hypot(cx - bound.x, cy - bh / 2 - bound.y) > bound.r) continue;
-      if (fits(b)) { boxes.push(b); el.style.left = `${cx}px`; el.style.top = `${cy}px`; el.classList.remove("collide"); return true; }
+    const full = sizeOf(el);
+    const order = el._last != null ? [tries[el._last], ...tries.filter((_, i) => i !== el._last)] : tries;
+    for (const compact of [false, true]) {
+      if (compact && !el.querySelector("b")) break;
+      const bw = compact ? (el.querySelector("b").offsetWidth || 22) + 12 : full.w, bh = full.h;
+      for (const t of order) {
+        const [dx, dy] = t;
+        const cx = x + dx * (bw + gap), cy = y + dy * (bh + gap);
+        const b = { l: cx - bw / 2, r: cx + bw / 2, t: cy - bh, b: cy };
+        if (bound && Math.hypot(cx - bound.x, cy - bh / 2 - bound.y) > bound.r) continue;
+        if (fits(b)) {
+          boxes.push(b); el.style.left = `${cx}px`; el.style.top = `${cy}px`;
+          el.classList.remove("collide"); el.classList.toggle("compact", compact); el._last = tries.indexOf(t);
+          return true;
+        }
+      }
     }
-    el.classList.add("collide");
+    el.classList.add("collide"); el.classList.remove("compact");
     return false;
   }
   const NEAR = [[0, 0], [0, -1], [0.55, -0.5], [-0.55, -0.5], [0, -2], [0.55, 0.5], [-0.55, 0.5]];
@@ -1000,6 +1012,20 @@ addEventListener("resize", resize);
 
 let tween = null;
 function focusOn(target, zoom) { life?.flyTo(target,zoom); }
+// 鏡頭讓位給清單：主體放在「扣掉側欄或底部抽屜後的可用區」中央（HEART 的做法）
+function safeTarget(target, zoom) {
+  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1, panel = $("#panel");
+  if (!panelOpen || !panel) return target;
+  const wpp = (camera.right - camera.left) / zoom / w;  // 正交鏡頭：每像素多少世界單位
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize();
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const fwd = dir.clone().setY(0).normalize(), sinElev = Math.max(0.3, -dir.y);
+  const t = target.clone();
+  if (mobile()) { const dy = Math.min(panel.offsetHeight, h * 0.6) / 2; t.addScaledVector(fwd, -dy * wpp / sinElev); }
+  else t.addScaledVector(right, (panel.offsetWidth + 32) / 2 * wpp);
+  return t;
+}
+let savedView = null;  // 進島前的視角，按「全部島嶼」時回到這裡
 const home = () => { focusOn(new THREE.Vector3(0, 0, 0), 1); faceFront?.(); };
 
 // ── 點選與提示 ──────────────────────────────────────────────────
@@ -1081,6 +1107,7 @@ canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show")
 // ── 清單與面板 ──────────────────────────────────────────────────
 const body = $("#panel-body");
 const state = { view: "home", tab: "islands", island: null, layer: "全部", village: null, project: null, query: "", limit: 40, focusItem: null };
+document.body.classList.add("labels-all");  // 全景：島名常駐（避讓後），選了島就只留那座
 const visibleItems = (idx) => idx;
 const byWeight = (a, b) => data.items[b].w - data.items[a].w;
 const projectById = Object.fromEntries((data.projects || []).map((p) => [p.id, p]));
@@ -1187,7 +1214,7 @@ cardEl.addEventListener("click", (e) => {
   const t = e.target.closest("[data-act=project]");
   if (t) { closeCard(); Object.assign(state, { view: "project", project: t.dataset.id, limit: 40 }); life?.showConnections(data.items.filter(x=>x.p===t.dataset.id).map(x=>x.i)); setPanel(true); render(); body.scrollTop = 0; }
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape" && !cardEl.hidden) closeCard(); });
+addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (!cardEl.hidden) closeCard(); else if (state.view === "island" && !document.querySelector(".dot-longlong-bubble:not([hidden])")) goHome(); });
 
 function listHTML(idx, highlightFirst = 0) {
   const shown = idx.slice(0, state.limit);
@@ -1386,6 +1413,8 @@ function spotFor(island, spotId) {
   return info ? { kind: "landmarks", id: island, ...info } : null;
 }
 function openIsland(id, fly, itemIdx = null, spot = null) {
+  if (state.view !== "island" && fly) savedView = { t: controls.target.clone(), z: camera.zoom, off: camera.position.clone().sub(controls.target) };
+  document.body.classList.remove("labels-all");
   life?.selectIsland(id);
   Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx, spot });
   dotCards?.selectIsland(id);
@@ -1393,17 +1422,21 @@ function openIsland(id, fly, itemIdx = null, spot = null) {
   setPanel(true);
   render();
   body.scrollTop = 0;
-  if (fly) focusOn(islandCenter[id], mobile() ? 2.1 : 2.4);
+  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(safeTarget(islandCenter[id], z), z); }
   // 點中央議會：亮線連到慧文質詢過的各島
   if (id === "Q1" && interp?.threads) life?.showConnections(["Q1", ...interp.threads.map((t) => t.island).filter(Boolean)]);
   try { history.replaceState(null, "", `?island=${id}`); } catch {}
 }
-function goHome() {
+function goHome(restore = true) {
   Object.assign(state, { view: "home", island: null, limit: 40, focusItem: null });
+  document.body.classList.add("labels-all");
   dotCards?.selectIsland(null);
   showItemPins(null);
   render();
-  home();
+  // 返回：回到進島前的視角；按「全景」才回到整座群島
+  if (restore && savedView) { life?.flyTo(savedView.t, savedView.z); const s = new THREE.Spherical().setFromVector3(savedView.off); turnView(s.theta, s.phi); }
+  else home();
+  savedView = null;
   try { history.replaceState(null, "", location.pathname); } catch {}
 }
 
@@ -1483,7 +1516,7 @@ $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
   handle.addEventListener("pointerup", release);
   handle.addEventListener("pointercancel", release);
 }
-$("#btn-home").addEventListener("click", goHome);
+$("#btn-home").addEventListener("click", () => goHome(false));
 
 // ── 視角：回正面、左右轉 45°（動畫），手機與桌機共用 ─────────────────────
 // 「正面」＝開場的鏡頭方位，地標正面都朝這個方向
