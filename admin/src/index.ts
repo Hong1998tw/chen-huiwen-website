@@ -5,6 +5,7 @@ import { validateCaseDraft } from "./case-draft.ts";
 import { validateHomeDraft } from "./home-draft.ts";
 import { validatePageSeo } from "./page-seo.ts";
 import { validateEditorialPage, validateEditorialBlocks, editorialPath, EDITORIAL_SECTIONS } from "./editorial-page.ts";
+import { boardAdmin } from "./board.ts";
 type Document = {
   id: string;
   domain: string;
@@ -265,6 +266,9 @@ async function handle(request: Request, env: Env) {
       csrf: actor.csrf,
       passwordLogin: false,
     });
+  // 布告欄審核：沿用上方 owner()、帳號角色與 CSRF 檢查。
+  const board = await boardAdmin(request, env, u);
+  if (board) return board;
   if (u.pathname === "/api/documents" && request.method === "GET")
     return json({
       documents: (
