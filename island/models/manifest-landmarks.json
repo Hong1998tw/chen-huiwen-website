@@ -79,6 +79,10 @@
   "formosa": {
    "file": "dot-formosa-magazine.glb",
    "name": "美麗島雜誌社"
+  },
+  "W1": {
+   "file": "dot-W1.glb",
+   "name": "高雄市婦幼青少年活動中心"
   }
  }
 }

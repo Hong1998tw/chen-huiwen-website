@@ -4,9 +4,9 @@
 export function addTraffic(ctx) {
   const { THREE, world, cells, bridgePairs, cellPos, edgeU, hexPoint, hexRing, R, TOP, ROAD_IN, ROAD_OUT, ROAD_MID, mat, box, cyl } = ctx;
 
-  // ── 車道邊線 ─────────────────────────────────────────────────────
+  // ── 車道邊線（只有開車模式才畫；島上目前不走車）──────────────────
   const lineMat = mat("#f6f1e2");
-  for (const c of cells) {
+  for (const c of ctx.pedestrianOnly ? [] : cells) {
     for (const rad of [ROAD_IN + 0.18, ROAD_OUT - 0.18]) {
       const ring = new THREE.Mesh(hexRing(rad + 0.05, rad - 0.05), lineMat);
       ring.position.set(c.p.x, TOP + 0.045, c.p.z);
@@ -19,7 +19,7 @@ export function addTraffic(ctx) {
   const lampOn = { r: mat("#ff4d3d", { emissive: "#ff2a1a", emissiveIntensity: 1.2 }), y: mat("#ffc93c", { emissive: "#ffb000", emissiveIntensity: 1.2 }), g: mat("#3ddc84", { emissive: "#1fcf6a", emissiveIntensity: 1.2 }) };
   const lampOff = mat("#3a3f44");
   const CYCLE = 9, GREEN = 4.5, YELLOW = 1.2;  // 秒
-  for (const bp of bridgePairs) {
+  for (const bp of ctx.pedestrianOnly ? [] : bridgePairs) {  // 不走車就不需要斑馬線與號誌
     for (const [from, to] of [[bp.a, bp.b], [bp.b, bp.a]]) {
       const key = from.join(","), c = cellPos(...from), u = edgeU(from, to);
       // 斑馬線：在路口兩側橫越車道

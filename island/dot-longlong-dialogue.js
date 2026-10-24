@@ -3,8 +3,8 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
   const records=new Map(), rows=Array.isArray(cues)?cues:(cues?.cues||cues?.roles||[]), cueMap=new Map(rows.map(x=>[x.id||x.roleId,x]));
   const root=doc.createElement('div');root.className='dot-longlong-ui';(host||doc.body).append(root);
   let autoClose=0;const bubble=doc.createElement('section');bubble.className='dot-longlong-bubble';bubble.hidden=true;bubble.setAttribute('aria-label','百變隆隆角色對話');root.append(bubble);
-  const title=doc.createElement('strong'),label=doc.createElement('small'),visual=doc.createElement('p'),live=doc.createElement('span'),source=doc.createElement('a'),actions=doc.createElement('div');
-  visual.setAttribute('aria-hidden','true');live.className='dot-longlong-sr';live.setAttribute('role','status');live.setAttribute('aria-live','polite');live.setAttribute('aria-atomic','true');source.textContent='查看影片來源';source.target='_blank';source.rel='noopener noreferrer';actions.className='dot-longlong-actions';bubble.append(title,label,visual,live,source,actions);
+  const title=doc.createElement('strong'),label=doc.createElement('small'),visual=doc.createElement('p'),live=doc.createElement('span'),source=doc.createElement('a'),actions=doc.createElement('div'),policy=doc.createElement('div');
+  visual.setAttribute('aria-hidden','true');live.className='dot-longlong-sr';live.setAttribute('role','status');live.setAttribute('aria-live','polite');live.setAttribute('aria-atomic','true');source.textContent='查看影片來源';source.target='_blank';source.rel='noopener noreferrer';actions.className='dot-longlong-actions';policy.className='dot-longlong-policy';policy.hidden=true;bubble.append(title,label,visual,policy,live,source,actions);
   const button=(text,fn,parent)=>{const b=doc.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',fn);parent.append(b);return b;};
   button('顯示全文',()=>finish(),actions);button('重播',()=>start(),actions);const closeButton=button('關閉',()=>close(true),actions);
   const picker=doc.createElement('details'),summary=doc.createElement('summary'),list=doc.createElement('div');summary.textContent='百變隆隆角色';picker.className='dot-longlong-picker';picker.append(summary,list);root.append(picker);
@@ -12,6 +12,14 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
   const v=new THREE.Vector3(),local=new THREE.Vector3(),ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
   const reduced=()=>!!media?.matches;
   const allowed=x=>x && ['verified-excerpt','paraphrase','paraphrased_summary','user-provided'].includes(x.textType) && ['verified','approved','caption_verified_summary'].includes(x.status) && typeof x.displayText==='string' && x.displayText.trim();
+  // 角色台詞為主；下面一個小區塊列賴瑞隆的政見（標題＋剪短的說明＋來源），說明剪短但不拿掉
+  const shortText=(t,n=40)=>{const s=String(t||'').split(/(?<=。)/)[0].trim();if(s.length<=n)return s;const cut=Math.max(...['、','；','，','：'].map(m=>s.lastIndexOf(m,n)));return (cut>n*0.5?s.slice(0,cut):s.slice(0,n))+'…';};
+  function renderPolicy(c){policy.replaceChildren();const ps=(c?.policies||[]).filter(p=>p&&p.title).slice(0,2);policy.hidden=!ps.length;if(!ps.length)return '';
+    const h=doc.createElement('b');h.className='dot-longlong-policy-h';h.textContent='賴瑞隆政見';policy.append(h);
+    for(const p of ps){const row=doc.createElement('p'),t=doc.createElement('strong'),d=doc.createElement('span');t.textContent=p.title;d.textContent=shortText(p.summary);row.append(t,d);
+      let u=null;try{const x=new URL(p.sourceURL);if(['https:','http:'].includes(x.protocol))u=x.href;}catch{}
+      if(u){const a=doc.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent='來源';row.append(a);}policy.append(row);}
+    return ps.map(p=>p.title+'：'+shortText(p.summary)).join('；');}
   function finish(){visual.textContent=full;lastIndex=Array.from(full).length;elapsed=Infinity;}
   function start(){elapsed=0;lastIndex=-1;visual.textContent='';bubble.classList.remove('dot-longlong-pop');if(reduced())finish();else {void bubble.offsetWidth;bubble.classList.add('dot-longlong-pop');}}
   function close(restore=false){clearTimeout(autoClose);active=null;bubble.hidden=true;live.textContent='';full='';if(restore&&returnFocus?.isConnected)returnFocus.focus();returnFocus=null;}
@@ -20,7 +28,7 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
     else {full=`我是${c?.name||'百變隆隆'}，陪慧文一起顧鳳山！`;label.textContent='';label.hidden=true;}
     let url=null;try{const u=new URL(c?.sourceURL);if(['https:','http:'].includes(u.protocol))url=u.href;}catch{}
     source.hidden=!url;if(url)source.href=url;else source.removeAttribute('href');source.textContent='查看影片來源'+(c?.timecode?'（'+(typeof c.timecode==='object'?'約 '+c.timecode.startSeconds+'–'+c.timecode.endSeconds+' 秒':String(c.timecode))+'）':'');
-    live.textContent=title.textContent+'。'+label.textContent+'。'+full;start();update(0);clearTimeout(autoClose);autoClose=setTimeout(()=>{if(active===id)close();},Math.max(4500,Array.from(full).length*160+3000));return true;
+    const said=renderPolicy(c);live.textContent=title.textContent+'。'+full+(said?'。賴瑞隆政見：'+said:'');start();update(0);clearTimeout(autoClose);autoClose=setTimeout(()=>{if(active===id)close();},Math.max(4500,Array.from(full).length*160+3000));return true;
   }
   function register(object,id,headOffset){if(disposed)throw Error('已釋放');if(records.has(id))throw Error('重複角色 '+id);object.updateWorldMatrix(true,true);
     const box=new THREE.Box3().setFromObject(object);const anchor=headOffset?new THREE.Vector3(...headOffset):object.worldToLocal(new THREE.Vector3((box.min.x+box.max.x)/2,box.max.y,(box.min.z+box.max.z)/2));
@@ -33,8 +41,11 @@ export function createLonglongDialogue({THREE,camera,canvas,cues,host=null,docum
   // Call from the existing pointer owner only. Multi-touch, cancelled gestures and drags never trigger.
   function pointerDown(e){if(e.isPrimary===false||e.button>0){gesture=null;return;}gesture={id:e.pointerId,x:e.clientX,y:e.clientY};}
   function pointerCancel(){gesture=null;}
-  function pointerMove(e){if(gesture&&(e.pointerId!==gesture.id||Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>6))gesture=null;}
-  function pointerUp(e,occluders=[]){const g=gesture;gesture=null;if(!g||g.id!==e.pointerId||Math.hypot(e.clientX-g.x,e.clientY-g.y)>6)return false;const id=pick(e,occluders);return id?show(id):false;}
+  const tol=e=>e.pointerType==='mouse'?6:12;
+  function pointerMove(e){if(gesture&&(e.pointerId!==gesture.id||Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>tol(e)))gesture=null;}
+  function pointerUp(e,occluders=[]){const g=gesture;gesture=null;if(!g||g.id!==e.pointerId||Math.hypot(e.clientX-g.x,e.clientY-g.y)>tol(e))return false;const id=(e.pointerType==='mouse'?null:near(e))||pick(e,occluders);return id?show(id):false;}
+  // 手指點：人物很小，改用螢幕距離找最近的隆隆（22px 內），不靠射線剛好打中
+  function near(e,radius=22){const r=canvas.getBoundingClientRect();let best=null,bd=radius;for(const [id,rec] of records){rec.object.updateWorldMatrix(true,false);v.copy(rec.anchor);rec.object.localToWorld(v);v.y-=1.2;v.project(camera);if(v.z>1)continue;const d=Math.hypot(r.left+(v.x+1)*r.width/2-e.clientX,r.top+(1-v.y)*r.height/2-e.clientY);if(d<bd){bd=d;best=id;}}return best;}
   function update(dt=0){if(disposed||!active)return;const r=records.get(active);if(!r)return close();if(reduced())finish();else if(Number.isFinite(elapsed)){elapsed+=Math.max(0,Math.min(dt,.1));const chars=Array.from(full),n=Math.min(chars.length,Math.floor(elapsed*32));if(n!==lastIndex){visual.textContent=chars.slice(0,n).join('');lastIndex=n;}}
     r.object.updateWorldMatrix(true,false);camera.updateMatrixWorld();v.copy(r.anchor);r.object.localToWorld(v);local.copy(v).applyMatrix4(camera.matrixWorldInverse);v.project(camera);
     const rect=canvas.getBoundingClientRect(),width=win?.innerWidth||rect.width,height=win?.innerHeight||rect.height;const bw=bubble.offsetWidth||300,bh=bubble.offsetHeight||190;
