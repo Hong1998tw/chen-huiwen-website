@@ -1,0 +1,64 @@
+{
+ "surroundings": {
+  "LCG": {
+   "file": "surround-LCG.glb"
+  },
+  "P01": {
+   "file": "surround-P01.glb"
+  },
+  "P02": {
+   "file": "surround-P02.glb"
+  },
+  "P03": {
+   "file": "surround-P03.glb"
+  },
+  "P04": {
+   "file": "surround-P04.glb"
+  },
+  "P05": {
+   "file": "surround-P05.glb"
+  },
+  "P06": {
+   "file": "surround-P06.glb"
+  },
+  "P07": {
+   "file": "surround-P07.glb"
+  },
+  "P08": {
+   "file": "surround-P08.glb"
+  },
+  "P09": {
+   "file": "surround-P09.glb"
+  },
+  "P10": {
+   "file": "surround-P10.glb"
+  },
+  "P11": {
+   "file": "surround-P11.glb"
+  },
+  "P12": {
+   "file": "surround-P12.glb"
+  },
+  "P13": {
+   "file": "surround-P13.glb"
+  },
+  "Q1": {
+   "file": "surround-Q1.glb"
+  },
+  "W1": {
+   "file": "surround-W1.glb"
+  },
+  "X1": {
+   "file": "surround-X1.glb"
+  },
+  "X2": {
+   "file": "surround-X2.glb"
+  },
+  "X3": {
+   "file": "surround-X3.glb"
+  },
+  "X4": {
+   "file": "surround-X4.glb"
+  }
+ }
+}

@@ -66,10 +66,10 @@ const data = await fetch("./island-data.json", { cache: "no-cache" }).then((r) =
 const scenery = await import("./landmarks.js").catch(() => null);
 
 // Colab 生成的精細模型（models/manifest.json）；有模型就用，沒有就用程式造型
-const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, people: {}, town: {}, vehicles: {}, boats: {}, bridges: {} };
+const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, people: {}, town: {}, vehicles: {}, boats: {}, bridges: {}, surroundings: {} };
 {
   // 各生成流程各寫一份清單，避免互相覆蓋；這裡合併讀取
-  const parts = await Promise.all(["manifest", "manifest-landmarks", "manifest-templates", "manifest-characters", "manifest-gpt", "manifest-people", "manifest-city", "manifest-landmarks2", "manifest-templates2"]
+  const parts = await Promise.all(["manifest", "manifest-landmarks", "manifest-templates", "manifest-characters", "manifest-gpt", "manifest-people", "manifest-city", "manifest-landmarks2", "manifest-templates2", "manifest-surroundings"]
     .map((n) => fetch(`./models/${n}.json`, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)));
   const manifest = {};
   for (const part of parts.filter(Boolean)) for (const [kind, list] of Object.entries(part)) Object.assign(manifest[kind] ||= {}, list);
@@ -82,7 +82,7 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
     let done = 0, total = 0;
     const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中… ${done}／${total}`; };
     const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("逾時")), 20000))]);
-    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "vehicles", "boats", "bridges"]) {
+    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "vehicles", "boats", "bridges", "surroundings"]) {
       for (const [id, m] of Object.entries(manifest[kind] || {})) {
         total++;
         jobs.push(withTimeout(loader.loadAsync(`./models/${m.file}`)).then((gltf) => {
@@ -493,6 +493,9 @@ for (const island of islands) {
   lm.position.set(cells[0].x, TOP, cells[0].z);
   lm.rotation.y = FACE_CAMERA;  // 林 dot 的地標以正面最精細，轉向預設鏡頭
   lm.traverse((o) => { o.userData = { island: island.id, landmark: true }; });
+  // 林 dot 依 Google 地圖做的周邊實景（街道、量體、綠地），鋪在地標周圍
+  const sur = glbClone("surroundings", island.id, 1.0);
+  if (sur) { sur.position.set(cells[0].x, TOP, cells[0].z); sur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(sur); }
   world.add(lm);
   pickables.push(lm);
 
