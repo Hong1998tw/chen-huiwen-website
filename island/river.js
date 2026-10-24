@@ -58,7 +58,8 @@ export function addRiver(ctx) {
   }
 
   // 頂寶橋：橋面、白色鋼拱、藍色欄杆
-  const dingbao = riverBridge([1, -2], [2, -2], (g, len) => {
+  const dingbao = riverBridge([0, 0], [0, -1],  // 使用者指定：一端接市議會島（質詢島），另一端接人行交通島
+    (g, len) => {
     g.add(box(len, 0.32, 2.2, "#d8d2c6", 0, TOP - 0.1, 0));
     for (const z of [-1.1, 1.1]) {
       g.add(box(len, 0.32, 0.08, "#3f7fb8", 0, TOP + 0.22, z));
@@ -74,7 +75,8 @@ export function addRiver(ctx) {
   }, "dingbao");
 
   // 海邦橋：跨前鎮河（不在鳳山溪上），放在鳳山溪以東的另一道水道
-  const haibang = riverBridge([2, 0], [3, 0], (g, len) => {
+  const haibang = riverBridge([0, 0], [1, 0],  // 使用者指定：一端接市議會島；另一端是文史觀光島的美麗島雜誌社格
+    (g, len) => {
     g.add(box(len, 0.32, 2.4, "#d8d2c6", 0, TOP - 0.1, 0));
     for (const z of [-1.2, 1.2]) g.add(box(len, 0.3, 0.08, "#f4efe4", 0, TOP + 0.22, z));
     for (const x of [-len * 0.22, len * 0.22]) {
@@ -94,7 +96,7 @@ export function addRiver(ctx) {
   const labels = [
     { text: "鳳山溪", pos: curve.getPointAt(0.62).setY(1.2), kind: "river" },
     { text: "頂寶橋", pos: dingbao.pos, kind: "bridge", id: "dingbao" },
-    { text: "海邦橋（前鎮河）", pos: haibang.pos, kind: "bridge", id: "haibang" },
+    { text: "海邦橋", pos: haibang.pos, kind: "bridge", id: "haibang" },
   ];
 
   function update(dt) {
@@ -114,6 +116,6 @@ export function addRiver(ctx) {
     pickables: [river, dingbao.g, haibang.g],
     labels,
     // 這兩處由頂寶橋、海邦橋取代通用的道路橋
-    skipPairs: new Set(["1,-2|2,-2", "2,0|3,0"]),
+    skipPairs: new Set(["0,-1|0,0", "0,0|1,0"]),
   };
 }

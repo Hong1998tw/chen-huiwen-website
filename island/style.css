@@ -7,7 +7,7 @@
   --muted: #586a64;
   --line: #d8e2dc;
   --paper: #fffdf7;
-  --sea: #bfe3e2;
+  --sea: #a6dcdc;
   --shadow: 0 10px 30px rgba(4, 62, 53, .16);
   --radius: 16px;
   --panel-w: 380px;
@@ -60,6 +60,8 @@ a { color: var(--green); }
 .brand h1 span + span { color: var(--green); }
 .brand-sub { margin: 6px 0 0; font-size: 15px; font-weight: 700; }
 .brand-sub::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; background: var(--yellow); }
+.brand-party { display: flex; align-items: center; gap: 7px; margin: 9px 0 0; padding-top: 8px; border-top: 1px solid rgba(7, 85, 72, .14); font-size: 13px; font-weight: 700; color: #009a00; letter-spacing: .12em; }
+.party-mark { width: 20px; height: 20px; flex: none; }
 
 .toolbar {
   position: absolute; top: 16px; right: calc(var(--panel-w) + 32px);
@@ -165,6 +167,8 @@ button:focus-visible, .isl-label:focus-visible { outline: 3px solid var(--yellow
   .brand h1 { font-size: 22px; }
   .brand-sub { font-size: 13px; }
   .brand-name { font-size: 12px; }
+  .brand-party { margin-top: 6px; padding-top: 6px; font-size: 12px; gap: 6px; }
+  .party-mark { width: 18px; height: 18px; }
   .toolbar { top: auto; bottom: calc(52vh + 12px); right: 12px; left: 12px; justify-content: flex-end; }
   body.panel-closed .toolbar { bottom: 16px; right: 12px; }
   #panel { top: auto; left: 0; right: 0; bottom: 0; height: 52vh; border-radius: 20px 20px 0 0; }
@@ -332,7 +336,9 @@ body.touring .dot-life-ui button:first-child { display: none; }  /* 導覽中不
   .event-banner { padding: 8px 10px; }
   .event-banner b { font-size: 14px; }
   .stats { grid-template-columns: repeat(3, 1fr); }
-  .dot-longlong-bubble { width: min(320px, calc(100vw - 24px)) !important; }
+  /* 手機：隆隆對話改成底部抽屜，不擋角色與島 */
+  .dot-longlong-bubble { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-height: 55dvh; overflow: auto !important; z-index: 90; }
+  .dot-longlong-bubble::after { display: none; }
 }
 
 /* 島名只在滑過或選到時出現；中央議會一直顯示 */
@@ -422,3 +428,35 @@ body.no3d .brand { position: absolute; }
 .no3d-note button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--green); color: #fff; font: inherit; font-weight: 700; }
 @media (max-width: 760px) { body.no3d #panel { margin-top: 120px; border-radius: 18px 18px 0 0; } }
 body.no3d .panel-handle { display: none !important; }
+
+/* 全景島名常駐＋件數；放不下時縮成只剩編號 */
+body.labels-all .isl-label:not(.river-label):not(.dim) { opacity: 1; pointer-events: auto; }
+.isl-label .lbl-count { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: #eef3ef; color: var(--muted); font-size: 11px; font-weight: 700; }
+.isl-label.compact, .item-pin.compact { gap: 0; padding: 3px; }
+.isl-label.compact .lbl-name, .isl-label.compact .lbl-count { display: none; }
+.item-pin.compact { font-size: 0; }
+.item-pin.compact b { font-size: 11px; }
+/* 手機上視角鈕變五顆：工具列放不下時換行靠右 */
+@media (max-width: 760px) { .toolbar { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; } }
+.lai-block { margin: 0 0 16px; }
+.lai-block .lai-none { margin: 0 0 4px; }
+
+/* 跟著慧文遊島 */
+.guide-start { display: block; width: 100%; margin: 0 0 12px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--yellow); color: var(--ink); font-weight: 900; font-size: 15px; text-align: left; }
+.guide-start small { display: block; font-weight: 400; font-size: 12px; color: #5b4a12; }
+.hw-bubble { position: absolute; z-index: 30; transform: translate(-50%, -100%); max-width: 280px; padding: 8px 12px; border: 2px solid #1f4d43; border-radius: 14px; background: #fffaf0; color: var(--ink); font-size: 13px; line-height: 1.5; pointer-events: none; box-shadow: 3px 4px 0 rgba(31, 77, 67, .18); }
+.hw-bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 12px; height: 12px; background: #fffaf0; border-right: 2px solid #1f4d43; border-bottom: 2px solid #1f4d43; transform: translateX(-50%) rotate(45deg); }
+.hw-bubble b { display: block; font-size: 12px; color: var(--green); }
+.hw-bubble .hw-line { display: block; font-weight: 700; }
+.hw-bubble small { display: block; color: var(--muted); font-size: 12px; }
+.guide-bar { position: absolute; z-index: 40; left: calc((100% - var(--panel-w) - 32px) / 2); bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: var(--paper); box-shadow: var(--shadow); }
+.guide-bar button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: #eef5f3; font-weight: 700; }
+.guide-count { padding: 0 8px 0 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+@media (max-width: 760px) {
+  .hw-bubble { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hw-bubble .hw-line { overflow: hidden; text-overflow: ellipsis; }
+  .hw-bubble small { display: none; }
+  .guide-bar { left: auto; right: 12px; top: 12px; bottom: auto; transform: none; }
+  .guide-bar button { padding: 0 12px; }
+}
+.guide-bar[hidden], .hw-bubble[hidden] { display: none !important; }

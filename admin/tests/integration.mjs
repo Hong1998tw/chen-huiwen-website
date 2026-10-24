@@ -15,6 +15,7 @@ const port = 18794,
   issuer = `http://127.0.0.1:${issuerPort}`;
 const email = "cms-test@example.com",
   emailHash = createHash("sha256").update(email).digest("hex");
+const boardIds = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"];
 const retryablePageFailure = "網站剛有其他更新；本輪不建立發布請求，下一輪會以最新版本重新檢查。";
 const { privateKey, publicKey } = await generateKeyPair("RS256");
 const jwk = {
@@ -90,6 +91,12 @@ try {
     process.execPath,
     [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
       "--command", `INSERT INTO page_edits(path,payload,base_commit,version,publication_status,updated_at,actor) VALUES('service-guides.html','{"fields":{}}','${"a".repeat(40)}',1,'published','2026-09-27T00:00:00Z','github:126787497'); INSERT INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor,lease,lease_until,attempts,pr_number,message,commit_sha) VALUES('stale-release','service-guides.html',1,'{"fields":{}}','${"a".repeat(40)}','publish','failed','2026-09-27T00:00:00Z','2026-09-27T00:01:00Z','github:126787497',NULL,NULL,1,NULL,'${retryablePageFailure}',NULL);`],
+    { cwd: root, stdio: "pipe" },
+  );
+  execFileSync(
+    process.execPath,
+    [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir,
+      "--command", `INSERT INTO board_notes(id,nickname,body,status,created_at,reviewed_at,ip_hash) VALUES('${boardIds[0]}','','謝謝議員修好路燈','pending','2026-10-20T01:00:00.000Z',NULL,'${"a".repeat(64)}'),('${boardIds[1]}','阿明','人行道變好走了','published','2026-10-19T01:00:00.000Z','2026-10-19T02:00:00.000Z',NULL),('${boardIds[2]}','五甲鄰居','公園很漂亮','pending','2026-10-21T01:00:00.000Z',NULL,NULL);`],
     { cwd: root, stdio: "pipe" },
   );
   server = spawn(
@@ -178,6 +185,29 @@ try {
       },
       body: JSON.stringify(body),
     });
+  // 布告欄審核：沿用 owner()、帳號角色與 CSRF；只有確認、封存、刪除三個動作。
+  assert.equal((await fetch(origin + "/api/board-notes")).status, 401, "board review requires the authenticated owner");
+  assert.equal((await fetch(origin + "/board")).status, 401, "board review page requires the authenticated owner");
+  let boardNotes = await fetch(origin + "/api/board-notes", { headers }).then((r) => r.json());
+  assert.deepEqual(boardNotes.notes.map((n) => n.id), [boardIds[2], boardIds[0], boardIds[1]], "pending notes first, newest first");
+  assert.equal(boardNotes.notes[1].nickname, "鳳山鄉親", "blank nickname shows the default");
+  assert.equal("ip_hash" in boardNotes.notes[0], false, "the review list never exposes the IP hash");
+  assert.equal((await mutate(`/api/board-notes/${boardIds[0]}/publish`, "POST", {}, { "X-CSRF-Token": "forged" })).status, 403, "board actions require CSRF");
+  assert.equal((await mutate(`/api/board-notes/${boardIds[0]}/publish`, "POST", {}, { Origin: "https://evil.example" })).status, 403, "board actions require the admin origin");
+  const approved = await mutate(`/api/board-notes/${boardIds[0]}/publish`, "POST", {});
+  assert.equal(approved.status, 200, await approved.clone().text());
+  assert.equal((await approved.json()).status, "published");
+  const archived = await mutate(`/api/board-notes/${boardIds[2]}/archive`, "POST", {}).then((r) => r.json());
+  assert.equal(archived.status, "archived");
+  assert.equal((await mutate(`/api/board-notes/${boardIds[1]}`, "DELETE", {})).status, 200);
+  assert.equal((await mutate(`/api/board-notes/${boardIds[1]}`, "DELETE", {})).status, 404, "a deleted note is gone permanently");
+  assert.equal((await mutate("/api/board-notes/not-a-uuid/publish", "POST", {})).status, 404);
+  assert.equal((await mutate(`/api/board-notes/${boardIds[0]}/hide`, "POST", {})).status, 404, "no extra moderation actions exist");
+  boardNotes = await fetch(origin + "/api/board-notes", { headers }).then((r) => r.json());
+  assert.deepEqual(boardNotes.notes.map((n) => [n.id, n.status]), [[boardIds[2], "archived"], [boardIds[0], "published"]]);
+  const boardPage = await fetch(origin + "/board", { headers });
+  assert.equal(boardPage.status, 200);
+  assert.match(await boardPage.text(), /布告欄審核/);
   const retryReceipt = await mutate("/api/page-draft/retry", "POST", {id:"stale-release",version:1});
   assert.equal(retryReceipt.status,202,await retryReceipt.clone().text());
   const retriedRelease = await retryReceipt.json();

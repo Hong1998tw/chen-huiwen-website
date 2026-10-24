@@ -10,7 +10,7 @@ export function createActors() {
     clone(kind,id,scale=1) {
       const a=assets.get(`${kind}/${id}`); if(!a)return null;
       const root=new THREE.Group(), model=skeletonClone(a.scene); model.scale.setScalar(scale);root.add(model);
-      const mixer=new THREE.AnimationMixer(model), clip=a.animations.find(c=>c.name.toLowerCase()==='walk');
+      const mixer=new THREE.AnimationMixer(model), clip=a.animations.find(c=>c.name.toLowerCase()==='walk')||a.animations.find(c=>c.name.toLowerCase()==='idle');
       const walk=clip?mixer.clipAction(clip):null; walk?.play();
       const record={root,mixer,walk,model};instances.set(root,record);active.add(record);return root;
     },

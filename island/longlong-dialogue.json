@@ -45,7 +45,8 @@
      "summary": "無障礙步道與樂齡公園、銀髮健身俱樂部。",
      "sourceURL": "https://www.zenolai.tw/policy/youth/9"
     }
-   ]
+   ],
+   "island": "P09"
   },
   {
    "roleid": "longlong-02",
@@ -111,7 +112,8 @@
      "summary": "從治水到治城：國土規劃、公園綠地、滯洪池、防災整備、AI 預警，每項公共建設兼具防災功能。",
      "sourceURL": "https://www.cna.com.tw/news/aloc/202607130291.aspx"
     }
-   ]
+   ],
+   "island": "P02"
   },
   {
    "roleid": "longlong-04",
@@ -144,7 +146,8 @@
      "summary": "座椅更新、指標智慧化、平面層廁所、草皮跑道養護、寄物升級。",
      "sourceURL": "https://www.zenolai.tw/news/events/127"
     }
-   ]
+   ],
+   "island": "P04"
   },
   {
    "roleid": "longlong-05",
@@ -177,7 +180,8 @@
      "summary": "孕哺枕、產檢乘車補助最高 50 趟、生育津貼每胎 3 萬提高到 5 萬。",
      "sourceURL": "https://www.zenolai.tw/policy/youth/9"
     }
-   ]
+   ],
+   "island": "P08"
   },
   {
    "roleid": "longlong-06",
@@ -210,7 +214,8 @@
      "summary": "座椅更新、指標智慧化、平面層廁所、草皮跑道養護、寄物升級。",
      "sourceURL": "https://www.zenolai.tw/news/events/127"
     }
-   ]
+   ],
+   "island": "X2"
   },
   {
    "roleid": "longlong-07",
@@ -243,7 +248,8 @@
      "summary": "LaLaport 結合衛武營藝文圈升級商圈；促成捷運黃線如期通車、推動 O10 衛武營站聯開；活化無線電信所與黃埔新村；大東與衛武營藝術之丘；整平拓寬人行道、升級通學步道。",
      "sourceURL": "https://www.zenolai.tw/news/media/90"
     }
-   ]
+   ],
+   "island": "P01"
   },
   {
    "roleid": "longlong-08",
@@ -330,7 +336,8 @@
      "summary": "寵物友善環境與公園、國際寵物展、高雄毛經濟品牌、人才培育鏈。",
      "sourceURL": "https://www.zenolai.tw/policy/youth/11"
     }
-   ]
+   ],
+   "island": "P11"
   },
   {
    "roleid": "longlong-11",
@@ -363,7 +370,8 @@
      "summary": "全國首部綜合性青年發展自治條例、青年公共參與預算翻倍、上任 3 個月內召開青年事務發展會報。",
      "sourceURL": "https://www.zenolai.tw/news/media/124"
     }
-   ]
+   ],
+   "island": "P07"
   },
   {
    "roleid": "longlong-12",
@@ -423,7 +431,8 @@
      "summary": "改善市場設施與營業環境，協助攤商數位行銷與多元銷售通路。",
      "sourceURL": "https://www.zenolai.tw/news/events/127"
     }
-   ]
+   ],
+   "island": "P05"
   },
   {
    "roleid": "longlong-14",
@@ -456,7 +465,8 @@
      "summary": "雙語預算倍增至每年 10 億、一校一國際共學夥伴、教師減壓與國際培力、偏鄉雙語。",
      "sourceURL": "https://www.zenolai.tw/policy/education/12"
     }
-   ]
+   ],
+   "island": "P06"
   },
   {
    "roleid": "longlong-15",
@@ -483,7 +493,8 @@
      "summary": "61 座圖書館生活圈、歷史場域街區營造、傳統技藝接班、劇場人口倍增與文化幣；鳳山列為四大文化內容基地之一。",
      "sourceURL": "https://www.zenolai.tw/policy/culture/16"
     }
-   ]
+   ],
+   "island": "P06"
   },
   {
    "roleid": "longlong-16",
@@ -510,7 +521,8 @@
      "summary": "改善市場設施與營業環境，協助攤商數位行銷與多元銷售通路。",
      "sourceURL": "https://www.zenolai.tw/news/events/127"
     }
-   ]
+   ],
+   "island": "P04"
   }
  ],
  "sharedChorus": {

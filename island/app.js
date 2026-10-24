@@ -7,6 +7,7 @@ import { addBackdrop } from "./backdrop.js";
 import { addWeather } from "./weather.js";
 import { createIslandCards } from "./dot-code-2/dot-code-2.js";
 import { createRailparkLife } from "./railpark-life.mjs";
+import { createBoard, drawBoardCanvas } from "./board.js";
 const railparkControllers = new Map();
 function bindRailpark(instance) {
   if (!instance?.getObjectByName("RailparkSwingPivot")) return instance;
@@ -17,6 +18,7 @@ let dotCards = null;
 import { createLonglongDialogue } from "./dot-longlong-dialogue.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { addSceneExtras } from "./dot-scene-extras.js";
+import { addIslandDress } from "./dot-island-dress.js";
 import { addRiver } from "./river.js";
 import { addTraffic } from "./dot-traffic.js";
 import {createActors,createStreetMotion,createSimulatedGreeting,turn as smoothTurn} from './dot-motion.js';
@@ -37,14 +39,17 @@ const R = 10;
 const LAYOUT = {
   Q1: [[0, 0]],                                 // 中央：高雄市議會
   W1: [[-1, 0]],                                // 議會旁：性別友善島（鳳山婦幼青少年活動中心）
-  P02: [[0, -1], [0, -2], [2, 1]], P05: [[1, -1]], P09: [[1, 0]], P08: [[0, 1]], P12: [[-1, 1]],
-  P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [3, -1], [3, -2]], P10: [[2, 0]], P07: [[3, 0]],
-  P03: [[-1, -1], [-2, -1]], X2: [[-2, 0], [-3, 1], [-3, 0], [-3, 2]], X3: [[-2, 1]],
-  P11: [[1, 1]], P13: [[0, 2]], X1: [[-1, 2]], X4: [[-1, 3]],
+  // 使用者指定：鳳山車站、親子遊樂園、美麗島雜誌社、棒球場、果嶺公園五處都緊鄰議會島（各以步道橋相連）
+  // 鳳山車站＝P02 第一格；親子遊樂園、美麗島＝P06 第二、三格；棒球場、果嶺公園＝X2 第三、四格
+  P02: [[0, -1], [0, -2], [2, 1]], P05: [[3, -2]], P09: [[3, -1]], P08: [[-3, 0]], P12: [[-3, 2]],
+  P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [1, -1], [1, 0]], P10: [[2, 0]], P07: [[1, 1]],  // 使用者指定：黃埔新村與中山公園（P11）互換位置
+  P03: [[-1, -1], [-2, -1]], X2: [[-2, 0], [-3, 1], [-1, 1], [0, 1]], X3: [[-2, 1]],
+  P11: [[3, 0]], P13: [[0, 2]], X1: [[-1, 2]], X4: [[-1, 3]],
   // 五甲龍成宮不獨立成島：放在人行交通島第三格（鳳山溪出海口東側），當地標介紹
 };
 const AXIS_COLOR = { A1: "#4f9fc4", A2: "#e4994a", A3: "#e48f9e", A4: "#8f84cf", AX: "#6fae6a", AQ: "#075548" };
-const GRASS = { A1: "#cfe8d8", A2: "#f2e3bf", A3: "#f6dcd8", A4: "#e2def3", AX: "#d3e9c4", AQ: "#d9ece5" };
+const GRASS = { A1: "#a2d58c", A2: "#afd986", A3: "#a8d793", A4: "#a1d29a", AX: "#9dd388", AQ: "#a3d6a0" };  // 島內草地：各軸略帶不同綠
+const EDGE = { A1: "#3f93c8", A2: "#ec8a36", A3: "#ea6f86", A4: "#7c6cd2", AX: "#56a84c", AQ: "#1f8a6e" };     // 島緣色帶：主軸色再飽和一點（HEART 的珊瑚邊）
 const LAYERS = ["政績", "會勘"];
 
 const SPACING = 1.42;  // 格與格之間留一段水道（HEART 的做法），橋只跨水道
@@ -66,6 +71,7 @@ const data = await fetch("./island-data.json", { cache: "no-cache" }).then((r) =
 const scenery = await import("./landmarks.js").catch(() => null);
 
 // Colab 生成的精細模型（models/manifest.json）；有模型就用，沒有就用程式造型
+let loadLater = null;  // 第一幀之後才載的模型（周邊實景）
 const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, people: {}, town: {}, vehicles: {}, boats: {}, bridges: {}, surroundings: {} };
 {
   // 各生成流程各寫一份清單，避免互相覆蓋；這裡合併讀取
@@ -76,18 +82,18 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
   if (Object.keys(manifest).length) {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const jobs = [];
     // 載入進度：每個模型最多等 20 秒，逾時就用程式造型代替，不卡住整座島
     const bar = $("#loading-bar"), txt = $("#loading-text");
-    let done = 0, total = 0;
+    let done = 0, total = 1;
     const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中… ${done}／${total}`; };
     const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("逾時")), 20000))]);
     const NO_CARS = new Set(["scooter", "busstop"]);
-    const WALK_MAT = { road: new THREE.MeshStandardMaterial({ color: "#e2d3b5", roughness: 0.9, flatShading: true }), plaza: new THREE.MeshStandardMaterial({ color: "#ece3cf", roughness: 0.9, flatShading: true }) };  // 島上不放車：不載車輛、車道橋、機車與公車站牌
-    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "boats", "surroundings"]) {
+    const WALK_MAT = { road: new THREE.MeshStandardMaterial({ color: "#efd3ad", roughness: 0.9, flatShading: true }), plaza: new THREE.MeshStandardMaterial({ color: "#a6d784", roughness: 0.95, flatShading: true }), lawn: new THREE.MeshStandardMaterial({ color: "#93cd6c", roughness: 0.95, flatShading: true }), base: new THREE.MeshStandardMaterial({ color: "#bddd98", roughness: 0.95, flatShading: true }) };  // 島上不放車：不載車輛、車道橋、機車與公車站牌；原本的停車場改成草地
+    // 分階段載入：島體、地標、人物先載；周邊實景等第一幀畫出來之後再補（templates、town 沒有用到，不載）
+    loadLater = () => loadKinds(["surroundings"], () => {});
+    const loadKinds = (kinds, tick) => { const jobs = []; for (const kind of kinds) {
       for (const [id, m] of Object.entries(manifest[kind] || {})) {
         if (kind === "props" && NO_CARS.has(id)) continue;
-        total++;
         jobs.push(withTimeout(loader.loadAsync(`./models/${m.file}`)).then((gltf) => {
           gltf.scene.traverse((o) => {
             if (!o.isMesh) return;
@@ -101,16 +107,32 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
               if (/lane/i.test(n)) o.visible = false;
               else if (/road/i.test(n)) o.material = WALK_MAT.road;
               else if (/parking/i.test(n)) o.material = WALK_MAT.plaza;
+              else if (/lawn|grass/i.test(n) && !/sport/i.test(n)) o.material = WALK_MAT.lawn;  // 周邊實景的草皮綠一點
+              else if (!Array.isArray(o.material) && /^(pastel_)?ground(\.\d+)?$|^neutral(\.\d+)?$/i.test(o.material?.name || "")) o.material = WALK_MAT.base;  // 底板改淺草綠，步道與廣場維持淺色（只換地面，建築與地標不動）
             }
           });
+          if (kind === "landmarks" && id === "P07") rocFlagsP07(gltf.scene);  // 黃埔新村門口的旗子一律用中華民國國旗
           actors.remember(kind,id,gltf);
       glbModels[kind][id] = gltf.scene;
           gltf.scene.userData.clips = gltf.animations || [];  // 走路等動畫片段
         }).catch((err) => console.warn("模型載入失敗", id, err)).finally(tick));
       }
-    }
-    await Promise.all(jobs);
+    } return Promise.all(jobs); };
+    total = ["landmarks", "character", "props", "people", "boats"].reduce((n, k) => n + Object.keys(manifest[k] || {}).length, 0);
+    await loadKinds(["landmarks", "character", "props", "people", "boats"], tick);
   }
+}
+const surroundSlots = [];
+function placeSurroundings() {
+  for (const sl of surroundSlots) {
+    const sur = glbClone("surroundings", sl.id, 1.0);
+    if (!sur) continue;
+    sur.position.set(sl.x, TOP, sl.z);
+    sur.traverse((o) => { o.receiveShadow = true; o.userData = { island: sl.island }; });
+    world.add(sur);
+    dressBlockers.push(sur);
+  }
+  if (mobile()) renderer.shadowMap.needsUpdate = true;
 }
 const mixers = [];
 const glbClone = (kind,id,scale=1) => bindRailpark(actors.clone(kind,id,scale));
@@ -143,7 +165,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#bfe3e2");
+scene.background = new THREE.Color("#f3eee2");
 
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 1000);
 camera.position.set(70, 95, 120);
@@ -159,9 +181,14 @@ controls.minPolarAngle = 0.45;
 controls.maxPolarAngle = 1.1;
 controls.screenSpacePanning = false;
 
-const hemi = new THREE.HemisphereLight("#fffdf2", "#7fb8b3", 1.6);
+const hemi = new THREE.HemisphereLight("#eef6fa", "#8f8270", 1.0);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight("#fff3dc", 2.2);
+const amb = new THREE.AmbientLight("#ffffff", 0.7);  // 環境補光：陰影面不發黑
+scene.add(amb);
+const fill = new THREE.DirectionalLight("#bfd6ff", 0.35);  // 冷色補光，從鏡頭右側打
+fill.position.set(80, 50, -20);
+scene.add(fill);
+const sun = new THREE.DirectionalLight("#fff1de", 2.7);
 sun.position.set(-60, 120, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(mobile() ? 1024 : 2048, mobile() ? 1024 : 2048);
@@ -169,7 +196,7 @@ Object.assign(sun.shadow.camera, { left: -135, right: 135, top: 135, bottom: -13
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-const sea = new THREE.Mesh(new THREE.CircleGeometry(400, 64), new THREE.MeshStandardMaterial({ color: "#a9d9d8", roughness: 1 }));
+const sea = new THREE.Mesh(new THREE.CircleGeometry(400, 64), new THREE.MeshStandardMaterial({ color: "#1f9cb6", roughness: 1 }));
 sea.rotation.x = -Math.PI / 2;
 sea.position.y = -1.6;
 sea.receiveShadow = true;
@@ -220,8 +247,63 @@ function tree(g, x, z, s = 1, color = "#5d9c5a") {
   g.add(cyl(0.12 * s, 0.15 * s, 0.6 * s, 5, "#8a6a4a", x, 0, z));
   g.add(cone(0.6 * s, 1.5 * s, 6, color, x, 0.5 * s, z));
 }
+// 中華民國國旗（紅底、左上青天白日）：畫在 canvas 上當貼圖，比例 3:2
+function rocFlagMaterial() {  // 模型載入比這段程式早跑，快取放在函式上，不用 let（避免 TDZ）
+  if (rocFlagMaterial.cached) return rocFlagMaterial.cached;
+  const c = document.createElement("canvas");
+  c.width = 240; c.height = 160;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fe0000"; ctx.fillRect(0, 0, 240, 160);
+  ctx.fillStyle = "#000095"; ctx.fillRect(0, 0, 120, 80);
+  ctx.translate(60, 40);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  for (let i = 0; i < 24; i++) {
+    const a = (i * Math.PI) / 12 - Math.PI / 2, r = i % 2 ? 15.7 : 30;
+    ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+  }
+  ctx.fill();
+  ctx.fillStyle = "#000095"; ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return (rocFlagMaterial.cached = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8, side: THREE.DoubleSide }));
+}
+// 黃埔新村（林 dot 的 dot-P07.glb）門柱上兩面紅旗是合併在同一個網格裡的：把旗面頂點收掉，原位換上國旗
+// 旗面範圍是模型本地座標（x 兩段、y 0.184–0.264、z 0.531–0.536），旗桿不在範圍內
+function rocFlagsP07(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.rocDone) return;
+    o.userData.rocDone = true;
+    const flags = [[-0.2902, -0.1702], [0.2702, 0.3903]], y0 = 0.1841, y1 = 0.2642, z0 = 0.5311, z1 = 0.5363, e = 0.002;
+    const geo = o.geometry.clone(), pos = geo.attributes.position;
+    let hit = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      if (y < y0 - e || y > y1 + e || z < z0 - e || z > z1 + e) continue;
+      const f = flags.find(([a, b]) => x > a - e && x < b + e);
+      if (f) { pos.setXYZ(i, (f[0] + f[1]) / 2, (y0 + y1) / 2, (z0 + z1) / 2); hit++; }
+    }
+    if (!hit) return;
+    pos.needsUpdate = true;
+    o.geometry = geo;
+    for (const [a, b] of flags) {
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(b - a, y1 - y0), rocFlagMaterial());
+      f.position.set((a + b) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      f.castShadow = true;
+      o.add(f);
+    }
+  });
+  return root;
+}
 function flag(g, x, y, z, color = "#f3d36a", h = 2.2) {
   g.add(cyl(0.05, 0.05, h, 4, "#4b5a56", x, y, z));
+  if (color === "roc") {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 0.04), rocFlagMaterial());
+    f.position.set(x + 0.47, y + h - 0.6 + 0.3, z);
+    g.add(f);
+    return;
+  }
   const f = box(0.9, 0.5, 0.04, color, x + 0.47, y + h - 0.6, z);
   f.castShadow = false;
   g.add(f);
@@ -331,10 +413,14 @@ const world = new THREE.Group();
 scene.add(world);
 const pickables = [];
 const islandCenter = {};
+const BOARD_SPOT = [-2.2, 3.9];  // 鄉親布告欄在議會島上的位置（相對格中心）
+const landmarkByIsland = {};
 const flagshipGroups = [];
 const spotLabels = [];  // 島上第二格的實景地標名牌（美麗島雜誌社等）
 // 第二格實景地標的介紹（名稱、地址、一句話）
 const SPOT_INFO = {
+  "whistle-w1": { name: "競選小物：安心哨", addr: "", note: "競選期間發送的防身哨子。夜歸、通勤或獨處時遇到危險，吹哨能立刻引起旁人注意、爭取求助時間。慧文長期推動婦女權益、家暴與性暴力防治。" },
+  "whistle-p03": { name: "競選小物：安心哨", addr: "", note: "競選期間發送的防身哨子。地震或淹水受困時，吹哨比大聲呼喊省力、聲音傳得更遠，方便救援的人找到你。" },
   LCG: { name: "五甲龍成宮", addr: "五甲二路722號", note: "五甲地區的信仰中心，紅瓦燕尾脊的大廟，廟埕是社區活動與節慶的聚集地。廟口周邊有兩件慧文經手的交通案：龍成宮口交通號誌評估、公共自行車站構想。" },
   formosa: { name: "美麗島雜誌社", addr: "新興區中山一路53號", note: "1979 年美麗島事件的起點，高雄民主運動的歷史現場，也是賴瑞隆長年關注的轉型正義記憶。" },
   railpark: { name: "臺鐵高雄機廠舊址親子遊樂區", addr: "輜汽路（臺鐵高雄機廠舊址）", note: "舊廠房改造成鐵道主題遊戲區，天車、桁架下有滑梯、鳥巢鞦韆與腳踏軌道車。" },
@@ -343,6 +429,18 @@ const SPOT_INFO = {
   "guoling-park": { name: "果嶺公園", addr: "鳥松區澄清湖畔（原高爾夫球場）", note: "原高爾夫球場開放成市民公園，起伏的果嶺草坡、老樹與木球場地保留下來。" },
 };
 const walkers = [];
+const sceneFolks = [];  // 站著聊天的生活小場景人物
+const dressBlockers = [], dressAvoid = [], dressCells = [];  // 島上綠意：高度圖要畫的物件、要閃開的點、每格（是否有中央地標）
+const PEOPLE_SCENE = {
+  Q1: ["office", "office", "police"], P01: ["office", "student"], P02: ["parent", "grandma", "schoolkid", "delivery"], P03: ["firefighter", "worker", "volunteer"],
+  P04: ["vendor", "teen", "delivery"], P05: ["vendor", "grandma", "uncle"], P06: ["elder", "parent", "uncle"], P07: ["teen", "office"],
+  P08: ["parent", "stroller", "student"], P09: ["nurse", "wheelchair"], P10: ["wheelchair", "parent"], P11: ["parent", "teen"], P12: ["teacher", "student"],
+  P13: ["parent", "schoolkid"], X1: ["teacher", "schoolkid", "student"], X2: ["cyclist", "elder", "teen"], X3: ["elder", "office"],
+  X4: ["lizhang", "volunteer", "elder"], W1: ["stroller", "nurse"],
+};
+// Task 20 新人物（輪椅、嬰兒車等）只站在生活小場景，不放進繞島走路的路人
+const DEBUG_PEOPLE = new URLSearchParams(location.search).has("debug");
+const SCENE_ONLY = new Set(["schoolkid", "stroller", "wheelchair", "delivery", "volunteer", "lizhang", "uncle"]);
 const cars = [];
 
 const allCells = Object.values(LAYOUT).flat().map(([q, r]) => hexToWorld(q, r));
@@ -382,6 +480,10 @@ function groundMat(axis) {
     g2.fillStyle = GRASS[axis];
     g2.fillRect(0, 0, 128, 128);
     const r2 = rng(axis.charCodeAt(1) * 97);
+    for (let i = 0; i < 14; i++) {  // 深淺不一的草皮斑塊
+      g2.fillStyle = r2() < 0.5 ? "rgba(70,140,60,0.16)" : "rgba(220,245,180,0.22)";
+      g2.beginPath(); g2.ellipse(r2() * 128, r2() * 128, 10 + r2() * 18, 7 + r2() * 12, r2() * 3, 0, Math.PI * 2); g2.fill();
+    }
     for (let i = 0; i < 900; i++) {
       g2.fillStyle = r2() < 0.5 ? "rgba(255,255,255,0.18)" : "rgba(60,90,60,0.10)";
       g2.fillRect(r2() * 128, r2() * 128, 2, 2);
@@ -395,13 +497,31 @@ function groundMat(axis) {
   return groundTex[axis];
 }
 
+// 崖面貼圖：上緣一圈主軸色（島緣色帶），接一條奶油色細線，下面是暖沙色
+const cliffMats = {};
+function cliffMat(axis) {
+  if (!cliffMats[axis]) {
+    const cv = document.createElement("canvas");
+    cv.width = 4; cv.height = 64;
+    const g2 = cv.getContext("2d");
+    const grad = g2.createLinearGradient(0, 0, 0, 64);
+    grad.addColorStop(0, "#efd29c"); grad.addColorStop(0.55, "#f2d9a8"); grad.addColorStop(1, "#d9b783");
+    g2.fillStyle = grad; g2.fillRect(0, 0, 4, 64);
+    g2.fillStyle = EDGE[axis]; g2.fillRect(0, 0, 4, 10);
+    g2.fillStyle = "#fff4dc"; g2.fillRect(0, 10, 4, 1.5);
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    cliffMats[axis] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, flatShading: true });
+  }
+  return cliffMats[axis];
+}
 const TOP = 0.5, ROAD_IN = 0.75 * R, ROAD_OUT = 0.9 * R, ROAD_MID = 0.825 * R, INNER = 0.72 * R;
 const topGeo = new THREE.CircleGeometry(R, 6).rotateX(-Math.PI / 2).rotateY(Math.PI / 6);
 const cliffGeo = new THREE.CylinderGeometry(R, R * 1.04, 3.6, 6, 1);
-const roadGeo = hexRing(ROAD_OUT, ROAD_IN), walkGeo = hexRing(R * 0.985, ROAD_OUT), curbGeo = hexRing(ROAD_IN, ROAD_IN - 0.25);
+const roadGeo = hexRing(ROAD_OUT, ROAD_IN), walkGeo = hexRing(R * 0.96, ROAD_OUT), curbGeo = hexRing(ROAD_IN, ROAD_IN - 0.25), edgeGeo = hexRing(R * 1.005, R * 0.96);
 const shallowGeo = hexRing(R * 1.16, R * 0.99);
-const asphalt = mat("#d9c7a6"), paving = mat("#eadfca"), curbMat = mat("#cdbf9f");  // 島上不走車：環狀道路改成步道鋪面
-const shallowMat = new THREE.MeshBasicMaterial({ color: "#cdeee9", transparent: true, opacity: 0.6, depthWrite: false });
+const asphalt = mat("#d98a5f"), paving = mat("#f6e7cb"), curbMat = mat("#fbf1dc");  // 島上不走車：環狀步道鋪暖色紅磚，外側人行道淺米色
+const shallowMat = new THREE.MeshBasicMaterial({ color: "#b2efe4", transparent: true, opacity: 0.55, depthWrite: false });  // 顏色由日夜切換
 const dashGeo = new THREE.BoxGeometry(0.9, 0.03, 0.16);
 const dashMat = mat("#f6f1e2");
 
@@ -444,10 +564,10 @@ for (const island of islands) {
 
   cells.forEach((c, ci) => {
     const cellKey = LAYOUT[island.id][ci].join(",");
-    const cliff = new THREE.Mesh(cliffGeo, mat("#e6d6b4"));
+    const cliff = new THREE.Mesh(cliffGeo, cliffMat(island.axis));
     cliff.position.set(c.x, TOP - 1.8, c.z);
-    const band = new THREE.Mesh(hexRing(R * 1.005, R * 0.9), mat(accent));
-    band.position.set(c.x, TOP - 0.02, c.z);
+    const band = new THREE.Mesh(edgeGeo, mat(EDGE[island.axis]));
+    band.position.set(c.x, TOP + 0.07, c.z);
     const top = new THREE.Mesh(topGeo, groundMat(island.axis));
     top.position.set(c.x, TOP, c.z);
     const road = new THREE.Mesh(roadGeo, asphalt);
@@ -458,19 +578,34 @@ for (const island of islands) {
     curb.position.set(c.x, TOP + 0.08, c.z);
     const shallow = new THREE.Mesh(shallowGeo, shallowMat);
     shallow.position.set(c.x, -0.95, c.z);
-    for (const m of [cliff, top, road, walk, curb]) { m.receiveShadow = true; m.userData = { island: island.id }; }
+    for (const m of [cliff, top, road, walk, curb, band]) { m.receiveShadow = true; m.userData = { island: island.id }; }
     cliff.castShadow = true;
     world.add(cliff, band, top, road, walk, curb, shallow);
     pickables.push(cliff, top);
     // 步道上的居民（島上不放車）
-    const peopleIds = Object.keys(glbModels.people);
-    for (let w = 0; w < 3; w++) {
+    const peopleIds = Object.keys(glbModels.people).filter((id) => !SCENE_ONLY.has(id));
+    for (let w = 0; w < (mobile() ? 3 : 5); w++) {  // 桌機多兩位路人，島上熱鬧一點
       let p;
       if (peopleIds.length) p = glbClone("people", peopleIds[Math.floor(rand() * peopleIds.length)], 0.8);
       else p = walkingPerson(rand);
       p.traverse((m) => (m.castShadow = true));
       world.add(p);
       walkers.push({ key:cellKey, p, limbs: p.userData.limbs, c, u: rand() * 6, s: (0.03 + rand() * 0.03) * (rand() < 0.5 ? -1 : 1), rad: R * 0.94 });
+    }
+    // 生活小場景：依島的主題，在第一格步道旁站幾位聊天的人（用現有 14 種人物，不新建模）
+    const group = ci === 0 ? PEOPLE_SCENE[island.id] : null;
+    if (group && peopleIds.length) {
+      const u0 = 1.62 + rand() * 0.06;  // 站在面向預設鏡頭的那段步道（兩座橋之間），不被地標擋住
+      group.forEach((pid, k) => {
+        if (!glbModels.people[pid]) return;
+        const p = glbClone("people", pid, 0.8), at = hexPoint(c, R * 0.94, (u0 + k * 0.12) % 6), mid = hexPoint(c, R * 0.94, (u0 + (group.length - 1) * 0.06) % 6);
+        p.position.set(at.x, TOP + 0.08, at.z);
+        p.rotation.y = Math.atan2(mid.x - at.x, mid.z - at.z) + (k === 0 ? 0 : Math.PI / 6);
+        p.traverse((m) => (m.castShadow = true));
+        world.add(p);
+        sceneFolks.push(p);
+        if (DEBUG_PEOPLE) (window.__sceneFolks ||= []).push({ pid, island: island.id, x: p.position.x, z: p.position.z });
+      });
     }
   });
 
@@ -484,10 +619,11 @@ for (const island of islands) {
   lm.rotation.y = FACE_CAMERA;  // 林 dot 的地標以正面最精細，轉向預設鏡頭
   lm.traverse((o) => { o.userData = { island: island.id, landmark: true }; });
   // 林 dot 依 Google 地圖做的周邊實景（街道、量體、綠地），鋪在地標周圍
-  const sur = glbClone("surroundings", island.id, 1.0);
-  if (sur) { sur.position.set(cells[0].x, TOP, cells[0].z); sur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(sur); }
+  surroundSlots.push({ id: island.id, island: island.id, x: cells[0].x, z: cells[0].z });  // 周邊實景第一幀之後才補上
   world.add(lm);
+  landmarkByIsland[island.id] = lm;
   pickables.push(lm);
+  dressBlockers.push(lm);
 
   // 第二格中央的主題物件：質詢島放美麗島雜誌社、人行交通島放陳慧文站路口（模型存在才放）
   // 各島第二格以後的實景地標（格序、模型類別、模型、縮放、名稱）
@@ -501,17 +637,20 @@ for (const island of islands) {
     const cpModel = cells[ci] ? glbClone(kind, id, scale) : null;
     if (!cpModel) continue;
     cpModel.position.set(cells[ci].x, TOP, cells[ci].z);
-    const cpSur = kind === "landmarks" ? glbClone("surroundings", id, 1.0) : null;
-    if (cpSur) { cpSur.position.set(cells[ci].x, TOP, cells[ci].z); cpSur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(cpSur); }
+    if (kind === "landmarks") surroundSlots.push({ id, island: island.id, x: cells[ci].x, z: cells[ci].z });
     cpModel.rotation.y = FACE_CAMERA;
     cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name, spot: kind === "landmarks" ? id : undefined }; });
     if (kind === "landmarks") spotLabels.push({ text: name, island: island.id, spotId: id, pos: new THREE.Vector3(cells[ci].x, TOP + 7.5, cells[ci].z) });
     world.add(cpModel);
     pickables.push(cpModel);
+    dressBlockers.push(cpModel);
     taken.add(ci);
     if (id === "huiwen-corner") setupCornerWave(cpModel, glbModels.character[id]?.userData.clips || []);
   }
-  const slots = cells.flatMap((c, ci) => cellSlots(c, ci === 0 || taken.has(ci)));
+  let slots = cells.flatMap((c, ci) => cellSlots(c, ci === 0 || taken.has(ci)));
+  // 議會島前左方留給鄉親布告欄：那一帶的錨點不放質詢柱
+  if (island.id === "Q1") slots = slots.filter((sl) => Math.hypot(sl.x - (cells[0].x + BOARD_SPOT[0]), sl.z - (cells[0].z + BOARD_SPOT[1])) > 3.2);
+  cells.forEach((c, ci) => dressCells.push({ c, hero: ci === 0 || taken.has(ci) }));
   let used = 0;
 
   if (island.kind === "interpellation" && interp?.threads) {
@@ -523,6 +662,7 @@ for (const island of islands) {
       g.position.set(slots[k].x, TOP, slots[k].z);
       g.traverse((o) => { o.userData = { island: island.id, thread: k }; });
       world.add(g);
+      dressBlockers.push(g);
       pickables.push(g);
     });
     used = Math.min(slots.length, interp.threads.length);
@@ -540,6 +680,7 @@ for (const island of islands) {
       g.traverse((o) => { o.userData = { island: island.id, item: n }; });
       world.add(g);
       pickables.push(g);
+      if (k < 6) dressAvoid.push({ x: slot.x, z: slot.z, r: 1.0 });  // 會冒出政績名牌的前六個錨點
       flagshipGroups.push({ group: g, done: !!it.d, island: island.id, item: n });
     });
     used = Math.min(slots.length, island.flagships.length);
@@ -570,6 +711,7 @@ for (const island of islands) {
     g.rotation.y = Math.floor(rand() * 4) * (Math.PI / 2);
     g.traverse((o) => { o.userData = { island: island.id }; });
     world.add(g);
+    dressBlockers.push(g);
   }
 }
 
@@ -662,9 +804,9 @@ function roadBridge(a, b) {
 }
 
 // ── 場景細節：島間步道橋、岸邊、海浪、船、雲、日夜 ──────────────────
-const backdrop = addBackdrop({ THREE, scene, box, cyl, cone, tree, rng });
+const backdrop = addBackdrop({ THREE, scene, box, cyl, cone, tree, rng, R, mobile: mobile(), avoid: allCells.map((v) => v.clone().sub(mid)) });
 let weather = null;
-const extras = addSceneExtras({ THREE, scene, world, islands, LAYOUT, hexToWorld, mid, R, mat, box, cyl, cone, tree, sun, hemi, rng, boatModels: glbModels.boats });
+const extras = addSceneExtras({ THREE, scene, world, islands, LAYOUT, hexToWorld, mid, R, mat, box, cyl, cone, tree, sun, hemi, amb, fill, renderer, shallowMat, backdrop, rng, boatModels: glbModels.boats });
 const riverInfo = addRiver({ THREE, world, cellPos, R, SPACING, mat, box, cyl, bridgeEnds, TOP, models: glbModels.landmarks });
 for (const bp of bridgePairs) if (!riverInfo.skipPairs.has([bp.a, bp.b].map((x) => x.join(",")).sort().join("|"))) roadBridge(bp.a, bp.b);
 pickables.push(...riverInfo.pickables);
@@ -711,6 +853,7 @@ if (glbModels.character["huiwen-2025"] && islandCenter.Q1) {
   q.traverse((o) => { o.castShadow = true; o.userData = { huiwen: true, island: "Q1" }; });
   world.add(q);
   pickables.push(q);
+  dressAvoid.push({ x: q.position.x, z: q.position.z, r: 1.4 });
 }
 // 陳其邁、許智傑在島上隨意走動：沿環島道路逛一段，走到橋頭就過橋到隔壁的島（模型生成後才出現）
 const wanderers = [];
@@ -734,7 +877,15 @@ try {
   const res = await fetch("./longlong-dialogue.json", { cache: "no-cache" });
   if (!res.ok) throw new Error("角色資料載入失敗");
   const cues = await res.json();
-  longlongDialogue = createLonglongDialogue({ THREE, camera, canvas, cues });
+  // 對話裡「慧文做了什麼」：對應島的前兩件代表政績（標題＋最後一筆時間軸原文），可直接開那座島
+  const islandInfo = (id) => {
+    const isl = islandById[id];
+    if (!isl) return null;
+    const items = (isl.flagships || []).slice(0, 2).map((n) => data.items[n]).filter(Boolean)
+      .map((it) => { const last = (it.h || []).at(-1) || []; const what = last[1] || ""; return { t: it.t, when: last[0] || "", what: what.length > 44 ? what.slice(0, 44) + "…" : what }; });
+    return items.length ? { name: isl.name, items, open: () => openIsland(id, true) } : null;
+  };
+  longlongDialogue = createLonglongDialogue({ THREE, camera, canvas, cues, islandInfo });
   const cells = [...Object.values(LAYOUT)].flat();
   cues.cues.forEach((c, i) => {
     const before = wanderers.length;
@@ -748,7 +899,7 @@ try {
       tag.textContent = `隆隆・${c.name}`;
       tag.addEventListener("click", () => longlongDialogue.show(c.id));
       $("#labels").append(tag);
-      longlongTags.push({ el: tag, g: w.g });
+      longlongTags.push({ el: tag, g: w.g, label: `百變隆隆｜${c.name}`, hoverUntil: 0 });
     }
   });
 } catch (err) { console.warn("百變隆隆互動暫未載入", err); }
@@ -799,11 +950,48 @@ const traffic = addTraffic({
 });
 const sirenRed = mat("#ff3b3b"), sirenBlue = mat("#3b7bff");  // 救護車已移除，保留給動態模組的參數
 
-const tourStops = islands.map((i) => {
-  const first = LAYOUT[i.id][0];
-  const cell = cellPos(first[0], first[1]);
-  return new THREE.Vector3(cell.x + 0.5 * R * 0.94 * 0.866, TOP + 0.08, cell.z + 0.866 * R * 0.94 * 0.866);  // 地標前方的人行道
-});
+// ── 慧文巡島路線：只走環島步道與人行橋（不再直線穿過水面）─────────────────
+// 島的順序：從議會出發，每次走到「步數最少」的下一座還沒去過的島；格與格之間用 BFS 找橋。
+const cellAdj = new Map();
+for (const bp of bridgePairs) for (const [x, y] of [[bp.a, bp.b], [bp.b, bp.a]]) { const k = x.join(","); if (!cellAdj.has(k)) cellAdj.set(k, []); cellAdj.get(k).push(y.join(",")); }
+function cellPath(from, to) {
+  const prev = new Map([[from, null]]), q = [from];
+  while (q.length) { const k = q.shift(); if (k === to) break; for (const n of cellAdj.get(k) || []) if (!prev.has(n)) { prev.set(n, k); q.push(n); } }
+  if (!prev.has(to)) return null;
+  const path = []; for (let k = to; k; k = prev.get(k)) path.unshift(k);
+  return path;
+}
+const routeIslands = (() => {
+  const left = new Set(islands.map((i) => i.id)), order = [];
+  let cur = islands.find((i) => i.id === "Q1") ? "Q1" : islands[0].id;
+  while (cur) {
+    order.push(cur); left.delete(cur);
+    const from = LAYOUT[cur][0].join(",");
+    let best = null, bd = Infinity;
+    for (const id of left) { const p = cellPath(from, LAYOUT[id][0].join(",")); if (p && p.length < bd) { bd = p.length; best = id; } }
+    cur = best;
+  }
+  return order;
+})();
+const tourRoute = (() => {
+  const pts = [], key2 = (k) => k.split(",").map(Number), ring = (k, u) => { const p = hexPoint(cellPos(...key2(k)), ROAD_MID, (u + 6) % 6); return new THREE.Vector3(p.x, TOP + 0.08, p.z); };
+  let u = 0.5;
+  for (let i = 0; i < routeIslands.length; i++) {
+    const from = LAYOUT[routeIslands[i]][0].join(","), to = LAYOUT[routeIslands[(i + 1) % routeIslands.length]][0].join(",");
+    if (i === 0) pts.push({ p: ring(from, u), stop: routeIslands[0] });
+    const path = cellPath(from, to) || [from];
+    for (let j = 0; j + 1 < path.length; j++) {
+      const exitU = edgeU(key2(path[j]), key2(path[j + 1]));
+      let d = ((exitU - u + 9) % 6) - 3;  // 沿環走短的那一邊
+      for (let s = 1, n = Math.max(1, Math.ceil(Math.abs(d) / 0.25)); s <= n; s++) pts.push({ p: ring(path[j], u + (d * s) / n) });
+      u = edgeU(key2(path[j + 1]), key2(path[j]));
+      pts.push({ p: ring(path[j + 1], u) });
+    }
+    const next = routeIslands[(i + 1) % routeIslands.length];
+    if (i + 1 < routeIslands.length) pts[pts.length - 1].stop = next;
+  }
+  return pts;
+})();
 const tour = { i: 0, t: 0, wait: 2.5 };
 let longlong = null;
 if (glbModels.character.longlong) {
@@ -814,22 +1002,82 @@ if (glbModels.character.longlong) {
   world.add(longlong);
   pickables.push(longlong);
 }
-huiwen.position.copy(tourStops[0]);
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __huiwen: huiwen, __camera: camera });
+huiwen.position.copy(tourRoute[0].p);
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __huiwen: huiwen, __camera: camera, __tourRoute: tourRoute, __routeIslands: routeIslands, __renderer: renderer, __getDress: () => dress });
 function stepTour(dt) {
   if (tour.wait > 0) {
     tour.wait -= dt;
     huiwen.position.y = TOP + 0.08 + Math.abs(Math.sin(performance.now() / 300)) * 0.05;
+    if (tour.wait <= 0 && guide.on) guide.leave();
     return;
   }
-  const a = tourStops[tour.i], b = tourStops[(tour.i + 1) % tourStops.length];
-  const dist = a.distanceTo(b);
-  tour.t = Math.min(1, tour.t + (dt * 5) / dist);
+  if (guide.on && guide.paused) return;
+  const a = tourRoute[tour.i].p, b = tourRoute[(tour.i + 1) % tourRoute.length].p;
+  const dist = Math.max(0.01, a.distanceTo(b));
+  tour.t = Math.min(1, tour.t + (dt * (guide.on ? 6 : 3.5)) / dist);
   huiwen.position.lerpVectors(a, b, tour.t);
   huiwen.position.y = TOP + 0.08 + Math.abs(Math.sin(tour.t * dist * 1.6)) * 0.18;
-  huiwen.rotation.y = smoothTurn(huiwen.rotation.y,Math.atan2(b.x-a.x,b.z-a.z),dt);
-  if (tour.t >= 1) { tour.i = (tour.i + 1) % tourStops.length; tour.t = 0; tour.wait = 3; }
+  huiwen.rotation.y = smoothTurn(huiwen.rotation.y, Math.atan2(b.x - a.x, b.z - a.z), dt);
+  if (tour.t >= 1) {
+    tour.i = (tour.i + 1) % tourRoute.length; tour.t = 0;
+    const stop = tourRoute[tour.i].stop;
+    if (stop) { tour.wait = guide.on ? 7 : 2.5; if (guide.on) guide.arrive(stop); }
+  }
 }
+// ── 跟著慧文遊島：慧文沿步道帶路，到站時頭上冒一句這座島做過什麼（取既有政績資料，不另寫）──
+const guide = (() => {
+  const bubble = document.createElement("div");
+  bubble.className = "hw-bubble"; bubble.hidden = true; bubble.setAttribute("role", "status"); bubble.setAttribute("aria-live", "polite");
+  const bar = document.createElement("div");
+  bar.className = "guide-bar"; bar.hidden = true; bar.setAttribute("role", "group"); bar.setAttribute("aria-label", "跟著慧文遊島");
+  document.getElementById("app").append(bubble, bar);
+  const mk = (t, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = t; b.addEventListener("click", fn); bar.append(b); return b; };
+  const st = { on: false, paused: false, station: 0 };
+  const cut = (t, n) => (t && t.length > n ? t.slice(0, n) + "…" : t || "");
+  function lineFor(id) {
+    const isl = islandById[id];
+    if (id === "Q1") { const th = interp?.threads?.[0]; return { name: isl.name, t: th ? th.title : isl.note || "", sub: "" }; }
+    const it = data.items[(isl.flagships || [])[0]];
+    if (!it) return { name: isl.name, t: isl.pledge || isl.note || "", sub: "" };
+    const last = (it.h || []).at(-1) || [];
+    return { name: isl.name, t: it.t, sub: last[0] ? `${last[0]} ${cut(last[1], 30)}` : "" };
+  }
+  const pauseBtn = mk("暫停", () => { st.paused = !st.paused; pauseBtn.textContent = st.paused ? "繼續" : "暫停"; });
+  mk("下一站", () => { tour.wait = 0; leave(); st.paused = false; pauseBtn.textContent = "暫停"; });
+  mk("結束", () => end());
+  const count = document.createElement("span"); count.className = "guide-count"; bar.prepend(count);
+  function arrive(id) {
+    st.station = routeIslands.indexOf(id);
+    const l = lineFor(id);
+    bubble.innerHTML = `<b>${esc(l.name)}</b><span class="hw-line">${esc(l.t)}</span>${l.sub ? `<small>${esc(l.sub)}</small>` : ""}`;
+    bubble.hidden = false;
+    count.textContent = `${st.station + 1}／${routeIslands.length}`;
+    openIsland(id, false);
+  }
+  function leave() { bubble.hidden = true; }
+  function start() {
+    st.on = true; st.paused = false; bar.hidden = false; pauseBtn.textContent = "暫停";
+    tour.i = 0; tour.t = 0; huiwen.position.copy(tourRoute[0].p);
+    life?.flyTo(huiwen.position.clone().setY(0), mobile() ? 2.2 : 2.4, 0.8);
+    tour.wait = 7; arrive(routeIslands[0]);
+  }
+  function end() { st.on = false; bubble.hidden = true; bar.hidden = true; }
+  controls.addEventListener("start", () => { if (st.on) end(); });  // 使用者自己拖曳就結束導覽
+  const v = new THREE.Vector3();
+  function update(dt) {
+    if (!st.on) return;
+    if (!life?.flying) {  // 鏡頭跟在慧文身上
+      const d = huiwen.position.clone().setY(0).sub(controls.target.clone().setY(0));
+      if (d.lengthSq() > 1e-4) { const step = d.multiplyScalar(1 - Math.exp(-dt * 2.5)); controls.target.add(step); camera.position.add(step); }
+    }
+    if (!bubble.hidden) {
+      v.copy(huiwen.position); v.y += 3.4; v.project(camera);
+      bubble.style.left = `${(v.x * 0.5 + 0.5) * canvas.clientWidth}px`;
+      bubble.style.top = `${(-v.y * 0.5 + 0.5) * canvas.clientHeight}px`;
+    }
+  }
+  return { get on() { return st.on; }, get paused() { return st.paused; }, start, end, arrive, leave, update };
+})();
 function followLonglong() {
   if (!longlong) return;
   const side = new THREE.Vector3(Math.cos(huiwen.rotation.y), 0, -Math.sin(huiwen.rotation.y)).multiplyScalar(1.8);
@@ -844,7 +1092,8 @@ for (const island of islands) {
   const el = document.createElement("button");
   el.type = "button";
   el.className = island.id === "Q1" ? "isl-label isl-center" : "isl-label";
-  el.innerHTML = `<b style="background:${AXIS_COLOR[island.axis]}">${island.kind === "pledge" ? island.id.slice(1).replace(/^0/, "") : island.kind === "interpellation" ? "質" : "績"}</b>${esc(island.id === "Q1" ? "高雄市議會・質詢島" : island.name)}`;
+  const count = island.kind === "interpellation" ? 0 : data.items.filter((it) => it.i === island.id).length;
+  el.innerHTML = `<b style="background:${AXIS_COLOR[island.axis]}">${island.kind === "pledge" ? island.id.slice(1).replace(/^0/, "") : island.kind === "interpellation" ? "質" : "績"}</b><span class="lbl-name">${esc(island.id === "Q1" ? "高雄市議會・質詢島" : island.name)}</span>${count ? `<small class="lbl-count">${count}</small>` : ""}`;
   el.addEventListener("click", () => openIsland(island.id, true));
   labelsEl.append(el);
   labelEls[island.id] = el;
@@ -853,6 +1102,88 @@ for (const island of islands) {
 const itemByTitle = (prefix) => data.items.findIndex((it) => it.t.startsWith(prefix));
 const BRIDGE_ITEM = { dingbao: itemByTitle("頂寶橋"), haibang: itemByTitle("海邦橋") };
 function openRiver() { Object.assign(state, { view: "project", project: "fengshanriver", limit: 40 }); setPanel(true); render(); body.scrollTop = 0; }
+// ── 競選小物：安心哨（性別友善島）──────────────────────────────────────
+// 規格寫死：哨子上只印「陳慧文」三個字，不放黨徽、號次、圖案或其他文字。程式生成，不用外部模型。
+function buildWhistle() {
+  const g = new THREE.Group();
+  const yellow = new THREE.MeshStandardMaterial({ color: "#f3c64f", roughness: 0.45 });
+  const dark = new THREE.MeshStandardMaterial({ color: "#2b3a36", roughness: 0.6 });
+  // 哨身：橫放的圓筒，前端接扁方的吹嘴，上方開出音孔
+  // 哨身：圓筒橫躺、軸朝左右，側面看是圓的（印字的那一面）
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.9, 40), yellow);
+  body.rotation.z = Math.PI / 2; body.position.set(0, 0.95, 0);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 1.5), yellow);  // 吹嘴從圓筒頂端往前伸
+  mouth.position.set(0, 1.65, 0.85);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.34), dark);
+  slot.position.set(0, 1.9, 0.12);
+  // 尾端吊環與掛繩
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.08, 10, 24), dark);
+  ring.position.set(0, 1.05, -1.15); ring.rotation.y = Math.PI / 2;
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.05, 8, 40), new THREE.MeshStandardMaterial({ color: "#1f6b45", roughness: 0.8 }));
+  cord.position.set(-1.6, 0.18, -0.9); cord.rotation.x = Math.PI / 2;
+  // 側面字樣：只有「陳慧文」
+  const cv = document.createElement("canvas"); cv.width = 512; cv.height = 200;
+  const cx = cv.getContext("2d");
+  cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200);
+  cx.fillStyle = "#1f4d43"; cx.font = '900 132px "PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
+  cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const label = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 });
+  for (const side of [1, -1]) {
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.59), label);
+    plate.position.set(side * 0.455, 0.95, 0); plate.rotation.y = side * Math.PI / 2;
+    g.add(plate);
+  }
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 0.18, 32), new THREE.MeshStandardMaterial({ color: "#efe6d2", roughness: 0.9 }));
+  base.position.y = 0.09;
+  g.add(base, body, mouth, slot, ring, cord);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+// 兩座島各放一支：性別友善島（防身求救）、防災韌性島（受困求救）
+function placeWhistle(islandId, spotId, dx, dz) {
+  if (!islandCenter[islandId]) return;
+  const c = cellPos(...LAYOUT[islandId][0]);
+  const w = buildWhistle();
+  w.position.set(c.x + dx, TOP, c.z + dz);
+  w.rotation.y = Math.atan2(camera.position.x, camera.position.z) - Math.PI / 2;  // 印「陳慧文」的側面正對預設鏡頭
+  w.scale.setScalar(1.15);
+  w.traverse((o) => { o.userData = { island: islandId, spot: spotId }; });
+  world.add(w);
+  pickables.push(w);
+  dressBlockers.push(w); dressAvoid.push({ x: w.position.x, z: w.position.z, r: 2.6 });
+  if (new URLSearchParams(location.search).has("debug")) (window.__whistles ||= {})[islandId] = w;
+  glbModels.landmarks[spotId] = buildWhistle();  // 地標卡右邊的 3D 縮圖也用同一個哨子
+  spotLabels.push({ text: "競選小物：安心哨", island: islandId, spotId, pos: new THREE.Vector3(w.position.x, TOP + 3.4, w.position.z) });
+}
+placeWhistle("W1", "whistle-w1", 3.4, 2.4);
+placeWhistle("P03", "whistle-p03", 3.4, 2.4);
+
+// 鄉親布告欄（先審後刊）：議會島上立一塊軟木看板，貼圖只畫已刊登的留言（加上這台裝置自己待確認的）；
+// 點看板或工具列「布告欄」開對話框，右上角「管理」連到 CMS 審核頁。
+const BOARD_SITEKEY = "0x4AAAAAAFkExIoW_if_XX1O";  // Turnstile site key（公開值）
+const boardTex = new THREE.CanvasTexture(drawBoardCanvas([]));
+boardTex.colorSpace = THREE.SRGBColorSpace;
+const board = createBoard({ apiBase: "https://board.huiwen.tw", adminUrl: "https://admin.huiwen.tw/board", siteKey: BOARD_SITEKEY,
+  onNotes: (notes) => { boardTex.image = drawBoardCanvas(notes); boardTex.needsUpdate = true; } });
+(function placeBoard() {
+  const c = cellPos(...LAYOUT.Q1[0]);
+  const g = new THREE.Group();
+  for (const s of [-1, 1]) g.add(cyl(0.11, 0.13, 2.9, 6, "#7a5a3c", s * 1.75, 0, 0));
+  g.add(box(3.8, 2.45, 0.16, "#8a6440", 0, 0.75, -0.02));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.25), new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.9 }));
+  face.position.set(0, 0.75 + 1.225, 0.07);
+  g.add(face, box(4.1, 0.14, 0.4, "#c4553f", 0, 3.18, 0));
+  g.position.set(c.x + BOARD_SPOT[0], TOP, c.z + BOARD_SPOT[1]);
+  g.rotation.y = Math.atan2(camera.position.x, camera.position.z);  // 看板正面朝預設鏡頭
+  g.scale.setScalar(1.1);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } o.userData = { island: "Q1", board: true }; });
+  world.add(g);
+  pickables.push(g);
+  dressBlockers.push(g); dressAvoid.push({ x: g.position.x, z: g.position.z, r: 3 });
+  if (new URLSearchParams(location.search).has("debug")) window.__board = { group: g, board };
+})();
+setTimeout(() => board.refresh(), 1500);  // 進站後讀已刊登留言，畫到看板上（不擋第一幀）
 const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.text, pos: s.pos, kind: "spot", id: s.text, island: s.island }))].map((l) => {
   const el = document.createElement("button");
   el.type = "button";
@@ -863,6 +1194,8 @@ const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.te
   return { el, pos: l.pos, kind: l.kind, id: l.id, island: l.island };
 });
 const tmp = new THREE.Vector3();
+let selCache = { id: undefined, cells: [] };  // 選到的島有哪幾格（百變隆隆名牌判斷「靠近」用）
+const selectedCells = () => { const id = state.view === "island" ? state.island : null; if (selCache.id !== id) selCache = { id, cells: id && LAYOUT[id] ? LAYOUT[id].map((c) => cellPos(...c)) : [] }; return selCache.cells; };
 // 選到一座島時，島上的重點政績在建物上方冒出編號名牌（HEART 的細項標示做法），點了開圖卡
 let itemPins = [];
 function showItemPins(id) {
@@ -890,7 +1223,7 @@ function showItemPins(id) {
 const sizeCache = new WeakMap();
 const sizeOf = (el) => { let s = sizeCache.get(el); if (!s || s.t !== el.textContent) { const ow = el.offsetWidth; s = { w: ow || 80, h: el.offsetHeight || 24, t: el.textContent }; if (ow) sizeCache.set(el, s); } return s; };
 const toScreen = (v, w, h) => (v.project(camera), { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, off: v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05 });
-const shown = (el) => el.classList.contains("hover") || el.classList.contains("active") || el.classList.contains("isl-center");
+const shown = (el) => el.classList.contains("hover") || el.classList.contains("active") || el.classList.contains("isl-center") || (el.classList.contains("isl-label") && !el.classList.contains("river-label") && document.body.classList.contains("labels-all"));
 let uiTick = 0, uiBoxes = [];
 function placeLabels() {
   const w = canvas.clientWidth, h = canvas.clientHeight, gap = matchMedia("(pointer: coarse)").matches ? 8 : 4;
@@ -900,15 +1233,26 @@ function placeLabels() {
   const boxes = [...uiBoxes];
   const fits = (b) => b.l >= 0 && b.r <= w && b.t >= 0 && !boxes.some((q) => b.l < q.r + gap && b.r + gap > q.l && b.t < q.b + gap && b.b + gap > q.t);
   // 標籤錨點在底部中央（translate(-50%,-100%)）；試原位、上移、左右錯開，都撞到就藏
+  // 先試上次成功的位置（不亂跳），放不下就縮成只剩編號（HEART 的做法），再放不下才藏
   function place(el, x, y, tries, bound) {
-    const { w: bw, h: bh } = sizeOf(el);
-    for (const [dx, dy] of tries) {
-      const cx = x + dx * (bw + gap), cy = y + dy * (bh + gap);
-      const b = { l: cx - bw / 2, r: cx + bw / 2, t: cy - bh, b: cy };
-      if (bound && Math.hypot(cx - bound.x, cy - bh / 2 - bound.y) > bound.r) continue;
-      if (fits(b)) { boxes.push(b); el.style.left = `${cx}px`; el.style.top = `${cy}px`; el.classList.remove("collide"); return true; }
+    const full = sizeOf(el);
+    const order = el._last != null ? [tries[el._last], ...tries.filter((_, i) => i !== el._last)] : tries;
+    for (const compact of [false, true]) {
+      if (compact && !el.querySelector("b")) break;
+      const bw = compact ? (el.querySelector("b").offsetWidth || 22) + 12 : full.w, bh = full.h;
+      for (const t of order) {
+        const [dx, dy] = t;
+        const cx = x + dx * (bw + gap), cy = y + dy * (bh + gap);
+        const b = { l: cx - bw / 2, r: cx + bw / 2, t: cy - bh, b: cy };
+        if (bound && Math.hypot(cx - bound.x, cy - bh / 2 - bound.y) > bound.r) continue;
+        if (fits(b)) {
+          boxes.push(b); el.style.left = `${cx}px`; el.style.top = `${cy}px`;
+          el.classList.remove("collide"); el.classList.toggle("compact", compact); el._last = tries.indexOf(t);
+          return true;
+        }
+      }
     }
-    el.classList.add("collide");
+    el.classList.add("collide"); el.classList.remove("compact");
     return false;
   }
   const NEAR = [[0, 0], [0, -1], [0.55, -0.5], [-0.55, -0.5], [0, -2], [0.55, 0.5], [-0.55, 0.5]];
@@ -929,10 +1273,15 @@ function placeLabels() {
   }
   // 3. 溪、橋、景點名牌（滑過時才出現）
   for (const { el, pos } of extraLabels) { const p = toScreen(tmp.copy(pos), w, h); if (!shown(el) || p.off) { el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; continue; } place(el, p.x, p.y, NEAR); }
-  // 4. 百變隆隆名牌：優先序最低，擠的時候先讓位
+  // 4. 百變隆隆名牌：全景時不一次掛 16 個，只在滑過角色、角色走到選到的島旁、或放大到 1.8 倍以上才出現；優先序最低
+  const zoomed = camera.zoom > 1.8, near = selectedCells(), now = performance.now();
   for (const t of longlongTags) {
-    const p = toScreen(tmp.copy(t.g.position).setY(t.g.position.y + 4.2), w, h);
-    t.el.hidden = p.off || t.g === talking;
+    const g = t.g.position;
+    let want = zoomed || now < t.hoverUntil;
+    for (let i = 0; !want && i < near.length; i++) if (Math.hypot(near[i].x - g.x, near[i].z - g.z) < R * 1.3) want = true;
+    if (!want) want = t.el.matches(":hover");
+    const p = toScreen(tmp.copy(g).setY(g.y + 4.2), w, h);
+    t.el.hidden = p.off || t.g === talking || !want;
     if (!t.el.hidden) place(t.el, p.x, p.y, [[0, 0], [0, -1]]);
   }
 }
@@ -1000,6 +1349,20 @@ addEventListener("resize", resize);
 
 let tween = null;
 function focusOn(target, zoom) { life?.flyTo(target,zoom); }
+// 鏡頭讓位給清單：主體放在「扣掉側欄或底部抽屜後的可用區」中央（HEART 的做法）
+function safeTarget(target, zoom) {
+  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1, panel = $("#panel");
+  if (!panelOpen || !panel) return target;
+  const wpp = (camera.right - camera.left) / zoom / w;  // 正交鏡頭：每像素多少世界單位
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize();
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const fwd = dir.clone().setY(0).normalize(), sinElev = Math.max(0.3, -dir.y);
+  const t = target.clone();
+  if (mobile()) { const dy = Math.min(panel.offsetHeight, h * 0.6) / 2; t.addScaledVector(fwd, -dy * wpp / sinElev); }
+  else t.addScaledVector(right, (panel.offsetWidth + 32) / 2 * wpp);
+  return t;
+}
+let savedView = null;  // 進島前的視角，按「全部島嶼」時回到這裡
 const home = () => { focusOn(new THREE.Vector3(0, 0, 0), 1); faceFront?.(); };
 
 // ── 點選與提示 ──────────────────────────────────────────────────
@@ -1013,7 +1376,27 @@ function pick(ev) {
   raycaster.setFromCamera(pointer, camera);
   const hit = raycaster.intersectObjects(pickables, true).find((h) => h.object.visible);
   lastHit = hit || null;
-  return hit?.object.userData;
+  const u = hit?.object.userData;
+  // 手指點：只點到島地時，改找畫面上 26px 內最近的政績建物、地標或人物（小東西不必剛好點中）
+  if (ev.pointerType && ev.pointerType !== "mouse" && !(u && (u.item != null || u.landmark || u.figure || u.spot || u.longlong || u.huiwen || u.thread != null))) {
+    const near = nearestTarget(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
+    if (near) { lastHit = { object: near.obj, point: near.pos }; return near.obj.userData; }
+  }
+  return u;
+}
+const _np = new THREE.Vector3();
+function nearestTarget(x, y, w, h, radius = 26) {
+  let best = null, bd = radius;
+  const cands = [...flagshipGroups.filter((f) => f.island === state.island).map((f) => f.group), ...pickables.filter((o) => o.userData && (o.userData.landmark || o.userData.figure || o.userData.huiwen))];
+  for (const obj of cands) {
+    if (!obj.visible) continue;
+    obj.getWorldPosition(_np); _np.y += 1.2;
+    const pos = _np.clone(); _np.project(camera);
+    if (_np.z > 1) continue;
+    const d = Math.hypot((_np.x * 0.5 + 0.5) * w - x, (-_np.y * 0.5 + 0.5) * h - y);
+    if (d < bd) { bd = d; best = { obj, pos }; }
+  }
+  return best;
 }
 let downAt = null;
 canvas.addEventListener("pointerdown", (e) => {
@@ -1031,6 +1414,7 @@ canvas.addEventListener("pointerup", (e) => {
   if (e.pointerType !== "mouse" && lastHit) { feel?.hover(lastHit.object); setTimeout(() => feel?.hover(null), 650); }
   if (u?.item != null) { openIsland(u.island, true, u.item); openCard(u.item); }
   else if (u?.thread != null) {const th=interp.threads[u.thread];life?.showConnections(['Q1',th?.island]);if(th?.island)openIsland(th.island,true); }
+  else if (u?.board) board.open();
   else if (u?.river) openRiver();
   else if (u?.bridge && BRIDGE_ITEM[u.bridge] >= 0) openCard(BRIDGE_ITEM[u.bridge]);
   else if (u?.spot || u?.landmark) openIsland(u.island, true, null, spotFor(u.island, u.spot));
@@ -1048,6 +1432,7 @@ canvas.addEventListener("pointermove", (e) => {
     // 名牌只在滑過或選到時出現（中央議會一直在）
     for (const [id, el] of Object.entries(labelEls)) el.classList.toggle("hover", u?.island === id);
     for (const x of extraLabels) x.el.classList.toggle("hover", (x.kind === "river" && !!u?.river) || (x.kind === "bridge" && u?.bridge === x.id) || (x.kind === "spot" && u?.figure === x.id));
+    for (const t of longlongTags) if (u?.figure === t.label) t.hoverUntil = performance.now() + 1500;  // 滑過百變隆隆：名牌留 1.5 秒，來得及點
     let html = "";
     if (u?.item != null) {
       const it = data.items[u.item];
@@ -1081,6 +1466,7 @@ canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show")
 // ── 清單與面板 ──────────────────────────────────────────────────
 const body = $("#panel-body");
 const state = { view: "home", tab: "islands", island: null, layer: "全部", village: null, project: null, query: "", limit: 40, focusItem: null };
+document.body.classList.add("labels-all");  // 全景：島名常駐（避讓後），選了島就只留那座
 const visibleItems = (idx) => idx;
 const byWeight = (a, b) => data.items[b].w - data.items[a].w;
 const projectById = Object.fromEntries((data.projects || []).map((p) => [p.id, p]));
@@ -1187,7 +1573,7 @@ cardEl.addEventListener("click", (e) => {
   const t = e.target.closest("[data-act=project]");
   if (t) { closeCard(); Object.assign(state, { view: "project", project: t.dataset.id, limit: 40 }); life?.showConnections(data.items.filter(x=>x.p===t.dataset.id).map(x=>x.i)); setPanel(true); render(); body.scrollTop = 0; }
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape" && !cardEl.hidden) closeCard(); });
+addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (!cardEl.hidden) closeCard(); else if (state.view === "island" && !document.querySelector(".dot-longlong-bubble:not([hidden])")) goHome(); });
 
 function listHTML(idx, highlightFirst = 0) {
   const shown = idx.slice(0, state.limit);
@@ -1202,6 +1588,7 @@ function renderHome() {
     <h2 class="p-title">一座島，一個承諾</h2>
     <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>${eventBanner()}
     <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div><div class="stat"><b>${total.toLocaleString()}</b><span>筆政績</span></div>${cases ? `<div class="stat"><b>${cases.toLocaleString()}</b><span>件服務案件</span></div>` : ""}</div>
+    <button type="button" class="guide-start" data-act="guide">跟著慧文遊島 <small>她帶路，一島一句做過的事</small></button>
     <input class="search" type="search" placeholder="搜尋政績、地名、里名…" value="${esc(state.query)}" data-act="search" aria-label="搜尋">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-act="tab" data-tab="islands" aria-selected="${state.tab === "islands"}">島嶼</button><button type="button" role="tab" data-act="tab" data-tab="villages" aria-selected="${state.tab === "villages"}">鳳山各里</button></div>`;
   if (state.tab === "islands") {
@@ -1288,12 +1675,12 @@ function shortText(t, n = 46) {
 // 賴瑞隆是配角：每座島只在慧文內容之後放一個區塊；政見與立委政績都是「標題＋剪短的說明＋來源」
 function laiHTML(id) {
   const pols = laiPoliciesFor(id), acts = laiFor(id);
-  if (!pols.length && !acts.length) return "";
+  if (!pols.length && !acts.length) return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><p class="lai-none">賴瑞隆目前沒有這個主題的公開專項政見或立委政績。</p><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
   const li = [
     ...pols.map((p) => `<li><b>${esc(p.title)}</b><small>市長政見</small><span>${esc(shortText(p.summary))}${p.sourceURL ? ` <a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">來源</a>` : ""}</span></li>`),
     ...acts.map((a) => `<li><b>${esc(a.title)}</b><small>立委政績${a.year ? `・${esc(a.year)}` : ""}</small><span>${esc(shortText(a.detail))}</span></li>`),
   ].join("");
-  return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見</button></section>`;
+  return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><ul>${li}</ul><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
@@ -1360,10 +1747,10 @@ function renderIsland() {
     ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
     ${isl.highlight ? `<div class="highlight-card"><span>${esc(isl.highlight.tag)}</span><h3>${esc(isl.highlight.title)}</h3><p>${esc(isl.highlight.text)}</p></div>` : ""}
     ${huiwenSummary(isl.id)}
+    ${laiHTML(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
-    ${listHTML(idx, state.focusItem != null ? 1 : 0)}
-    ${laiHTML(isl.id)}`;
+    ${listHTML(idx, state.focusItem != null ? 1 : 0)}`;
 }
 
 function render() {
@@ -1386,6 +1773,8 @@ function spotFor(island, spotId) {
   return info ? { kind: "landmarks", id: island, ...info } : null;
 }
 function openIsland(id, fly, itemIdx = null, spot = null) {
+  if (state.view !== "island" && fly) savedView = { t: controls.target.clone(), z: camera.zoom, off: camera.position.clone().sub(controls.target) };
+  document.body.classList.remove("labels-all");
   life?.selectIsland(id);
   Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx, spot });
   dotCards?.selectIsland(id);
@@ -1393,17 +1782,21 @@ function openIsland(id, fly, itemIdx = null, spot = null) {
   setPanel(true);
   render();
   body.scrollTop = 0;
-  if (fly) focusOn(islandCenter[id], mobile() ? 2.1 : 2.4);
+  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(safeTarget(islandCenter[id], z), z); }
   // 點中央議會：亮線連到慧文質詢過的各島
   if (id === "Q1" && interp?.threads) life?.showConnections(["Q1", ...interp.threads.map((t) => t.island).filter(Boolean)]);
   try { history.replaceState(null, "", `?island=${id}`); } catch {}
 }
-function goHome() {
+function goHome(restore = true) {
   Object.assign(state, { view: "home", island: null, limit: 40, focusItem: null });
+  document.body.classList.add("labels-all");
   dotCards?.selectIsland(null);
   showItemPins(null);
   render();
-  home();
+  // 返回：回到進島前的視角；按「全景」才回到整座群島
+  if (restore && savedView) { life?.flyTo(savedView.t, savedView.z); const s = new THREE.Spherical().setFromVector3(savedView.off); turnView(s.theta, s.phi); }
+  else home();
+  savedView = null;
   try { history.replaceState(null, "", location.pathname); } catch {}
 }
 
@@ -1418,6 +1811,7 @@ body.addEventListener("click", (e) => {
   else if (act === "session") openSession(Number(t.dataset.n));
   else if (act === "project") { Object.assign(state, { view: "project", project: t.dataset.id, limit: 40 }); life?.showConnections(data.items.filter(x=>x.p===t.dataset.id).map(x=>x.i)); render(); body.scrollTop = 0; }
   else if (act === "lai") { state.view = "lai"; render(); body.scrollTop = 0; }
+  else if (act === "guide") { if (mobile()) setSheet("peek"); guide.start(); }
   else if (act === "tab") { Object.assign(state, { view: "home", tab: t.dataset.tab }); render(); }
   else if (act === "villages") { Object.assign(state, { view: "home", tab: "villages" }); render(); }
   else if (act === "village") { Object.assign(state, { view: "village", village: t.dataset.v, limit: 40 }); render(); body.scrollTop = 0; }
@@ -1460,6 +1854,7 @@ function setPanel(open, state = "half") {
   requestAnimationFrame(resize);
 }
 $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
+$("#btn-board")?.addEventListener("click", (e) => board.open(e.currentTarget));
 // 把手：點一下在半開／只露標題之間切換；往下拖到底就收起，往上拖就全開
 {
   const handle = $("#panel-handle");
@@ -1483,7 +1878,7 @@ $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
   handle.addEventListener("pointerup", release);
   handle.addEventListener("pointercancel", release);
 }
-$("#btn-home").addEventListener("click", goHome);
+$("#btn-home").addEventListener("click", () => goHome(false));
 
 // ── 視角：回正面、左右轉 45°（動畫），手機與桌機共用 ─────────────────────
 // 「正面」＝開場的鏡頭方位，地標正面都朝這個方向
@@ -1504,6 +1899,7 @@ function stepView(dt) {
 }
 controls.addEventListener("start", () => { viewAnim = null; });
 const faceFront = () => turnView(VIEW_HOME.theta, VIEW_HOME.phi);
+const zoomBy = (f) => life?.flyTo(controls.target.clone(), THREE.MathUtils.clamp(camera.zoom * f, controls.minZoom, controls.maxZoom), 0.35);
 const turnBy = (deg) => { const s = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); turnView(s.theta + THREE.MathUtils.degToRad(deg)); };
 {
   const icon = (d) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -1513,6 +1909,8 @@ const turnBy = (deg) => { const s = new THREE.Spherical().setFromVector3(camera.
     ["向左轉", "M9 5 4 9l5 4M4 9h9a6 6 0 0 1 0 12h-2", () => turnBy(-45)],
     ["回正面", "M12 3v4M12 17v4M3 12h4M17 12h4M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0", faceFront],
     ["向右轉", "M15 5l5 4-5 4M20 9h-9a6 6 0 0 0 0 12h2", () => turnBy(45)],
+    ["放大", "M12 5v14M5 12h14", () => zoomBy(1.4)],
+    ["縮小", "M5 12h14", () => zoomBy(1 / 1.4)],
   ]) {
     const b = document.createElement("button");
     b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.innerHTML = icon(d);
@@ -1544,7 +1942,10 @@ $("#btn-night").addEventListener("click", (e) => {
   e.currentTarget.textContent = { auto: "日夜", day: "白天", night: "夜晚" }[next] || "日夜";
   e.currentTarget.setAttribute("aria-pressed", String(next !== "auto"));
 });
-$("#intro-tour").addEventListener("click", () => { closeIntro(); life?.startTour?.(); });
+$("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
+if (new URLSearchParams(location.search).has("debug")) window.__fly = (x, z, zoom) => life?.flyTo(new THREE.Vector3(x, 0, z), zoom, 0.01);
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3 });
+if (new URLSearchParams(location.search).has("debug")) window.__flyIsland = (id, zoom) => { const c = landmarkByIsland[id]?.position; if (c) life?.flyTo(new THREE.Vector3(c.x, 0, c.z), zoom, 0.01); };
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
 const startIsland = new URLSearchParams(location.search).get("island");
@@ -1562,6 +1963,14 @@ canvas.addEventListener('pointerleave',()=>life.hoverIsland(null));
 // 滑鼠與觸控手感：懸停浮起、點擊漣漪、雙擊聚焦、平移範圍
 feel=createInteraction({THREE,scene,camera,controls,canvas,pickables,TOP,reduced:()=>life.reduced,onDoubleTap:(e)=>{pick(e);const p=lastHit?.point;if(p)focusOn(new THREE.Vector3(p.x,0,p.z),Math.min(5,Math.max(camera.zoom*1.7,2.2)));}});
 { const ld = $("#loading"); ld?.classList.add("done"); setTimeout(() => ld?.remove(), 700); }
+// 第一幀之後補周邊實景，再依俯視高度圖擺島上綠意（行道樹、花圃、遮陽傘、長椅）
+let dress = null;
+function dressIslands() {
+  try { dress = addIslandDress({ THREE, scene, renderer, world, cells: dressCells, blockers: dressBlockers, avoid: dressAvoid, R, TOP, rng, mobile: mobile() }); }
+  catch (err) { console.warn("島上綠意暫未載入", err); }
+  if (mobile()) renderer.shadowMap.needsUpdate = true;
+}
+setTimeout(() => (loadLater ? loadLater() : Promise.resolve()).then(placeSurroundings).catch((err) => console.warn("周邊實景載入失敗", err)).then(dressIslands), 400);
 // Rig-free simulated greeting: no extra arms and no GLB skeleton requirement.
 const huiwenGreeting=createSimulatedGreeting(huiwen);
 canvas.addEventListener('pointerup',e=>{if(!downAt || Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>6)return;const u=pick(e);if(u?.huiwen)huiwenGreeting.trigger();if(u?.figure?.startsWith('陳慧文站路口'))cornerWave?.play();});
@@ -1580,7 +1989,7 @@ try {
     onProject: (id) => { Object.assign(state, { view: "project", project: id, limit: 40 }); render(); } });
   if (state.island) dotCards.selectIsland(state.island);
 } catch (err) { console.warn("圖卡模組暫未載入", err); dotCards = null; }
-weather = addWeather({ THREE, scene, setNight: extras.setNight, rng });
+weather = addWeather({ THREE, scene, setNight: extras.setNight, setWet: extras.setWet, rng });
 const clock = new THREE.Clock();
 // 拖曳、縮放、轉視角時全速渲染；手機上陰影在移動中先不重算（太陽固定，鏡頭動不影響陰影），停下來再補
 let userMoving = false, movedAt = 0;
@@ -1591,6 +2000,21 @@ const moving = () => userMoving || !!viewAnim || life?.flying || performance.now
 if (mobile()) renderer.shadowMap.autoUpdate = false;
 let shadowTick = 0;
 let activeTime=0,frameAccumulator=0;
+// 依實際幀率自動降級（手機門檻 24 fps、桌機 40 fps）：先關即時陰影、再降解析度、最後減半路人；主角、地標、文字不動
+const quality = { t0: performance.now(), n: 0, level: 0 };
+function adaptQuality() {
+  if (quality.level >= 3 || document.hidden) { quality.t0 = performance.now(); quality.n = 0; return; }
+  quality.n++;
+  const sec = (performance.now() - quality.t0) / 1000;
+  if (sec < 5) return;
+  const fps = quality.n / sec; quality.t0 = performance.now(); quality.n = 0;
+  if (fps >= (mobile() ? 24 : 40)) return;
+  quality.level++;
+  if (quality.level === 1) { sun.castShadow = false; renderer.shadowMap.needsUpdate = true; }
+  else if (quality.level === 2) renderer.setPixelRatio(1);
+  else { walkers.forEach((w, i) => { if (i % 2) w.p.visible = false; }); sceneFolks.forEach((p, i) => { if (i % 2) p.visible = false; }); }
+  console.info("畫質自動調低", quality.level, Math.round(fps), "fps");
+}
 renderer.setAnimationLoop(()=>{
  let dt=Math.min(clock.getDelta(),.05);if(document.hidden){frameAccumulator=0;return;}
  frameAccumulator+=dt;if(mobile() && !moving() && frameAccumulator<1/30)return;dt=Math.min(frameAccumulator,.1);frameAccumulator=0;
@@ -1598,9 +2022,10 @@ renderer.setAnimationLoop(()=>{
  for(const c of railparkControllers.values()){c.setReducedMotion?.(reducedNow);c.update(dt);}
  life.update(dt,activeTime);ticker.update(dt);
  extras.update(dt,activeTime);weather?.update(dt);traffic.update(reducedNow?0:dt,activeTime);
- if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}
+ if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}guide.update(dt);
  streetMotion.update(dt,activeTime,reducedNow);
+ for(const p of sceneFolks) actors.update(p,dt,true,reducedNow);  // 小場景人物的待機動畫
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
- dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);placeLabels();
+ dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;backdrop.follow(camera,controls.target);renderer.render(scene,camera);adaptQuality();placeLabels();
 });
 window.addEventListener('pagehide',()=>{renderer.setAnimationLoop(null);life.dispose();ticker.dispose();dotCards?.dispose();streetMotion.dispose();huiwenGreeting.dispose();actors.dispose();},{once:true});
