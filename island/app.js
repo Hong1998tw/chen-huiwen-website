@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { createInteraction } from "./interaction.js";
 import { addBackdrop } from "./backdrop.js";
+import { addWeather } from "./weather.js";
 import { createIslandCards } from "./dot-code-2/dot-code-2.js";
 import { createRailparkLife } from "./railpark-life.mjs";
 const railparkControllers = new Map();
@@ -320,6 +321,15 @@ scene.add(world);
 const pickables = [];
 const islandCenter = {};
 const flagshipGroups = [];
+const spotLabels = [];  // 島上第二格的實景地標名牌（美麗島雜誌社等）
+// 第二格實景地標的介紹（名稱、地址、一句話）
+const SPOT_INFO = {
+  formosa: { name: "美麗島雜誌社", addr: "新興區中山一路53號", note: "1979 年美麗島事件的起點，高雄民主運動的歷史現場，也是賴瑞隆長年關注的轉型正義記憶。" },
+  railpark: { name: "臺鐵高雄機廠舊址親子遊樂區", addr: "輜汽路（臺鐵高雄機廠舊址）", note: "舊廠房改造成鐵道主題遊戲區，天車、桁架下有滑梯、鳥巢鞦韆與腳踏軌道車。" },
+  "chengcing-lake": { name: "澄清湖", addr: "鳥松區大埤路32號", note: "高雄的大水缸，中興塔與九曲橋是幾代人的郊遊記憶，環湖步道串起鳳山與鳥松。" },
+  "chengcing-baseball": { name: "澄清湖棒球場", addr: "鳥松區大埤路113號", note: "兩萬席的國際棒球場，整修後重新成為南臺灣職棒與國際賽的主場。" },
+  "guoling-park": { name: "果嶺公園", addr: "鳥松區澄清湖畔（原高爾夫球場）", note: "原高爾夫球場開放成市民公園，起伏的果嶺草坡、老樹與木球場地保留下來。" },
+};
 const walkers = [];
 const cars = [];
 
@@ -499,7 +509,8 @@ for (const island of islands) {
     if (!cpModel) continue;
     cpModel.position.set(cells[ci].x, TOP, cells[ci].z);
     cpModel.rotation.y = FACE_CAMERA;
-    cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name }; });
+    cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name, spot: kind === "landmarks" ? id : undefined }; });
+    if (kind === "landmarks") spotLabels.push({ text: name, island: island.id, spotId: id, pos: new THREE.Vector3(cells[ci].x, TOP + 7.5, cells[ci].z) });
     world.add(cpModel);
     pickables.push(cpModel);
     taken.add(ci);
@@ -664,6 +675,7 @@ function roadBridge(a, b) {
 
 // ── 場景細節：島間步道橋、岸邊、海浪、船、雲、日夜 ──────────────────
 const backdrop = addBackdrop({ THREE, scene, box, cyl, cone, tree, rng });
+let weather = null;
 const extras = addSceneExtras({ THREE, scene, world, islands, LAYOUT, hexToWorld, mid, R, mat, box, cyl, cone, tree, sun, hemi, rng, boatModels: glbModels.boats });
 const riverInfo = addRiver({ THREE, world, cellPos, R, SPACING, mat, box, cyl, bridgeEnds, TOP, models: glbModels.landmarks });
 for (const bp of bridgePairs) if (!riverInfo.skipPairs.has([bp.a, bp.b].map((x) => x.join(",")).sort().join("|"))) roadBridge(bp.a, bp.b);
@@ -857,14 +869,14 @@ for (const island of islands) {
 const itemByTitle = (prefix) => data.items.findIndex((it) => it.t.startsWith(prefix));
 const BRIDGE_ITEM = { dingbao: itemByTitle("頂寶橋"), haibang: itemByTitle("海邦橋") };
 function openRiver() { Object.assign(state, { view: "project", project: "fengshanriver", limit: 40 }); setPanel(true); render(); body.scrollTop = 0; }
-const extraLabels = riverInfo.labels.map((l) => {
+const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.text, pos: s.pos, kind: "spot", id: s.text, island: s.island }))].map((l) => {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "isl-label river-label";
-  el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : "#8a8f93"}">${l.kind === "river" ? "溪" : "橋"}</b>${esc(l.text)}`;
-  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
+  el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : l.kind === "spot" ? "#c0573f" : "#8a8f93"}">${l.kind === "river" ? "溪" : l.kind === "spot" ? "景" : "橋"}</b>${esc(l.text)}`;
+  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
   labelsEl.append(el);
-  return { el, pos: l.pos, kind: l.kind, id: l.id };
+  return { el, pos: l.pos, kind: l.kind, id: l.id, island: l.island };
 });
 const tmp = new THREE.Vector3();
 // 選到一座島時，島上的重點政績在建物上方冒出編號名牌（HEART 的細項標示做法），點了開圖卡
@@ -935,6 +947,36 @@ function eventBanner() {
   return upcoming.slice(0, 2).map((e) => `<button type="button" class="event-banner" data-act="island" data-id="${esc(e.island)}"><span>活動宣布</span><b>${esc(e.title)}</b><small>${esc(eventTime(e.date))}｜${esc(e.place)}</small></button>`).join("");
 }
 
+// ── 地標 3D 縮圖：離屏小畫布，每個模型只畫一次 ──
+const thumbCache = new Map();
+let thumbCtx = null;
+async function thumbnail(kind, id) {
+  const key = `${kind}/${id}`;
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  const src = glbModels[kind]?.[id];
+  if (!src) { thumbCache.set(key, null); return null; }
+  if (!thumbCtx) {
+    const r = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+    r.setSize(260, 220, false); r.setPixelRatio(1); r.outputColorSpace = THREE.SRGBColorSpace;
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight("#ffffff", "#9ab", 1.9));
+    const d = new THREE.DirectionalLight("#fff3dc", 2.0); d.position.set(-5, 10, 7); sc.add(d);
+    thumbCtx = { r, sc, cam: new THREE.PerspectiveCamera(28, 260 / 220, 0.1, 500) };
+  }
+  const { r, sc, cam } = thumbCtx;
+  const m = src.clone(true);
+  sc.add(m);
+  const box = new THREE.Box3().setFromObject(m), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+  const dist = (size * 0.6) / Math.tan(THREE.MathUtils.degToRad(14));
+  cam.position.copy(c).add(new THREE.Vector3(0.75, 0.55, 1).normalize().multiplyScalar(dist));
+  cam.lookAt(c);
+  r.render(sc, cam);
+  const url = r.domElement.toDataURL("image/png");
+  sc.remove(m);
+  thumbCache.set(key, url);
+  return url;
+}
+
 // ── 相機與版面 ──────────────────────────────────────────────────
 const FRUSTUM = 138;
 let panelOpen = true;
@@ -989,6 +1031,7 @@ canvas.addEventListener("pointerup", (e) => {
   else if (u?.thread != null) {const th=interp.threads[u.thread];life?.showConnections(['Q1',th?.island]);if(th?.island)openIsland(th.island,true); }
   else if (u?.river) openRiver();
   else if (u?.bridge && BRIDGE_ITEM[u.bridge] >= 0) openCard(BRIDGE_ITEM[u.bridge]);
+  else if (u?.spot || u?.landmark) openIsland(u.island, true, null, spotFor(u.island, u.spot));
   else if (u?.island) openIsland(u.island, true);
 });
 let hoverFrame = 0;
@@ -1002,7 +1045,7 @@ canvas.addEventListener("pointermove", (e) => {
     life?.hoverIsland(u?.island||null);
     // 名牌只在滑過或選到時出現（中央議會一直在）
     for (const [id, el] of Object.entries(labelEls)) el.classList.toggle("hover", u?.island === id);
-    for (const x of extraLabels) x.el.classList.toggle("hover", (x.kind === "river" && !!u?.river) || (x.kind === "bridge" && u?.bridge === x.id));
+    for (const x of extraLabels) x.el.classList.toggle("hover", (x.kind === "river" && !!u?.river) || (x.kind === "bridge" && u?.bridge === x.id) || (x.kind === "spot" && u?.figure === x.id));
     let html = "";
     if (u?.item != null) {
       const it = data.items[u.item];
@@ -1250,7 +1293,7 @@ function interpSessions() {
 }
 
 function renderInterp(isl) {
-  let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
+  let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCardHTML()}
     <p class="p-kicker">議會</p><h2 class="p-title">${esc(isl.name)}</h2>
     <p class="p-lead">慧文在議會問了什麼，同一件事最後發展是什麼。</p>`;
   if (!interp) return html + `<p class="empty">質詢資料整理中。</p>`;
@@ -1273,6 +1316,11 @@ function renderInterp(isl) {
   return html;
 }
 
+// 地標卡（點島上的意象圖後出現在島名上方）
+function spotCardHTML() {
+  const sp = state.spot;
+  return sp ? `<div class="spot-card"><div class="spot-text"><p class="spot-kicker">地標</p><h3>${esc(sp.name)}</h3>${sp.addr ? `<p class="spot-addr">${esc(sp.addr)}</p>` : ""}<p class="spot-note">${esc(sp.note || "")}</p></div><img class="spot-thumb" data-thumb="${esc(sp.kind)}/${esc(sp.id)}" alt="${esc(sp.name)} 3D 模型"></div>` : "";
+}
 function renderIsland() {
   const isl = islandById[state.island];
   if (isl.kind === "interpellation") return renderInterp(isl);
@@ -1283,7 +1331,8 @@ function renderIsland() {
   idx.sort(byWeight);
   if (state.focusItem != null) idx = [state.focusItem, ...idx.filter((n) => n !== state.focusItem)];
   const axis = axisById[isl.axis];
-  return `<button type="button" class="back" data-act="home">← 全部島嶼</button>
+  const spotCard = spotCardHTML();
+  return `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCard}
     <p class="p-kicker">${esc(axis?.name || "")}</p><h2 class="p-title">${esc(isl.name)}</h2>
     ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<p class="p-lead">2026 政見之外，長期持續推動的政績。</p>`}
     ${laiHTML(isl.id)}
@@ -1299,13 +1348,20 @@ function render() {
     el.classList.toggle("active", state.view === "island" && state.island === id);
     el.classList.toggle("dim", state.view === "island" && state.island !== id);
   }
+  for (const x of extraLabels) if (x.kind === "spot") x.el.classList.toggle("active", state.view === "island" && state.island === x.island);
+  for (const img of body.querySelectorAll("img[data-thumb]")) { const [k, id] = img.dataset.thumb.split("/"); thumbnail(k, id).then((url) => { if (url) img.src = url; else img.remove(); }); }
   const input = body.querySelector(".search");
   if (input && state.view === "search") { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 
-function openIsland(id, fly, itemIdx = null) {
+function spotFor(island, spotId) {
+  if (spotId) return SPOT_INFO[spotId] ? { kind: "landmarks", id: spotId, ...SPOT_INFO[spotId] } : null;
+  const info = scenery?.LANDMARK_INFO?.[island];
+  return info ? { kind: "landmarks", id: island, ...info } : null;
+}
+function openIsland(id, fly, itemIdx = null, spot = null) {
   life?.selectIsland(id);
-  Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx });
+  Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx, spot });
   dotCards?.selectIsland(id);
   showItemPins(id);
   setPanel(true);
@@ -1403,12 +1459,6 @@ $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
 }
 $("#btn-home").addEventListener("click", goHome);
 
-$("#btn-night").addEventListener("click", (e) => {
-  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
-  e.currentTarget.setAttribute("aria-pressed", String(on));
-  e.currentTarget.textContent = on ? "白天" : "夜晚";
-  extras.setNight(on);
-});
 
 // ── 開場導覽 ────────────────────────────────────────────────────
 // 開場只有一張卡：自己逛，或讓導覽從中央的議會帶一圈
@@ -1453,6 +1503,7 @@ try {
     onProject: (id) => { Object.assign(state, { view: "project", project: id, limit: 40 }); render(); } });
   if (state.island) dotCards.selectIsland(state.island);
 } catch (err) { console.warn("圖卡模組暫未載入", err); dotCards = null; }
+weather = addWeather({ THREE, scene, setNight: extras.setNight, rng });
 const clock = new THREE.Clock();
 let activeTime=0,frameAccumulator=0;
 renderer.setAnimationLoop(()=>{
@@ -1461,7 +1512,7 @@ renderer.setAnimationLoop(()=>{
  const reducedNow=life.reduced;activeTime+=reducedNow?0:dt;
  for(const c of railparkControllers.values()){c.setReducedMotion?.(reducedNow);c.update(dt);}
  life.update(dt,activeTime);ticker.update(dt);
- extras.update(dt,activeTime);traffic.update(reducedNow?0:dt,activeTime);
+ extras.update(dt,activeTime);weather?.update(dt);traffic.update(reducedNow?0:dt,activeTime);
  if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}
  streetMotion.update(dt,activeTime,reducedNow);
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
