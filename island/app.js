@@ -1257,12 +1257,16 @@ function placeLabels() {
   }
   const NEAR = [[0, 0], [0, -1], [0.55, -0.5], [-0.55, -0.5], [0, -2], [0.55, 0.5], [-0.55, 0.5]];
   // 1. 島名：選到的、滑過的、議會
+  // 名牌站在自己島「面向鏡頭那一側」的步道上：原本掛在地標上方 7–10 單位，畫面上會浮到後面那座島上，點下去開到別座島
+  const toCam = camera.position.clone().sub(controls.target).setY(0).normalize();
   const isl = islands.map((island) => {
     const first = LAYOUT[island.id][0];
-    tmp.copy(cellPos(first[0], first[1])); tmp.y = island.kind === "pledge" ? 10 : 7;
+    tmp.copy(cellPos(first[0], first[1])).addScaledVector(toCam, R * 0.62); tmp.y = TOP + 1.2;
     return { el: labelEls[island.id], p: toScreen(tmp, w, h), pr: labelEls[island.id].classList.contains("active") ? 3 : labelEls[island.id].classList.contains("isl-center") ? 2 : 1 };
   }).sort((a, b) => b.pr - a.pr);
-  for (const { el, p } of isl) { if (!shown(el) || p.off) { el.classList.remove("collide"); el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; continue; } place(el, p.x, p.y, NEAR); }
+  // 島名撞到時只往左右、往下讓，不往上推（往上會疊到後面那座島，點了開錯島）；放不下就縮成編號或藏起來
+  const ISL_NEAR = [[0, 0], [0.55, 0], [-0.55, 0], [0, 0.6], [0.55, 0.6], [-0.55, 0.6]];
+  for (const { el, p } of isl) { if (!shown(el) || p.off) { el.classList.remove("collide"); el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; continue; } place(el, p.x, p.y, ISL_NEAR); }
   // 2. 政績名牌：只在選到的島範圍內排，不蓋到別的島
   if (itemPins.length) {
     const c = toScreen(tmp.copy(islandCenter[state.island] || itemPins[0].pos).setY(4), w, h);
@@ -1339,9 +1343,10 @@ function resize() {
   camera.left = (-f * aspect) / 2; camera.right = (f * aspect) / 2;
   camera.top = f / 2; camera.bottom = -f / 2;
   // 清單打開時，把畫面中心移到沒被清單遮住的區域
-  const panel = $("#panel").getBoundingClientRect();
-  if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.width + 16) / 2, 0, w, h);
-  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(panel.height, h * 0.5) / 2, w, h);
+  // 抽屜高度有 0.2 秒動畫，量 getBoundingClientRect 會拿到動畫中途的高度；手機改用抽屜的目標高度
+  const panel = $("#panel");
+  if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.offsetWidth + 16) / 2, 0, w, h);
+  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(sheetHeight(sheetState), h * 0.5) / 2, w, h);
   else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
@@ -1349,19 +1354,6 @@ addEventListener("resize", resize);
 
 let tween = null;
 function focusOn(target, zoom) { life?.flyTo(target,zoom); }
-// 鏡頭讓位給清單：主體放在「扣掉側欄或底部抽屜後的可用區」中央（HEART 的做法）
-function safeTarget(target, zoom) {
-  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1, panel = $("#panel");
-  if (!panelOpen || !panel) return target;
-  const wpp = (camera.right - camera.left) / zoom / w;  // 正交鏡頭：每像素多少世界單位
-  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize();
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  const fwd = dir.clone().setY(0).normalize(), sinElev = Math.max(0.3, -dir.y);
-  const t = target.clone();
-  if (mobile()) { const dy = Math.min(panel.offsetHeight, h * 0.6) / 2; t.addScaledVector(fwd, -dy * wpp / sinElev); }
-  else t.addScaledVector(right, (panel.offsetWidth + 32) / 2 * wpp);
-  return t;
-}
 let savedView = null;  // 進島前的視角，按「全部島嶼」時回到這裡
 const home = () => { focusOn(new THREE.Vector3(0, 0, 0), 1); faceFront?.(); };
 
@@ -1782,7 +1774,9 @@ function openIsland(id, fly, itemIdx = null, spot = null) {
   setPanel(true);
   render();
   body.scrollTop = 0;
-  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(safeTarget(islandCenter[id], z), z); }
+  // 鏡頭讓位給清單由 resize() 的 setViewOffset 負責（畫面中心已在可用區中央），這裡不再另外平移目標，否則會位移兩次
+  // 多格的島（人行交通、文史觀光、公園運動）各格分散，平均位置會落在別的島或海上；鏡頭改對準第一格（地標所在）
+  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(LAYOUT[id] ? cellPos(...LAYOUT[id][0]) : islandCenter[id], z); }
   // 點中央議會：亮線連到慧文質詢過的各島
   if (id === "Q1" && interp?.threads) life?.showConnections(["Q1", ...interp.threads.map((t) => t.island).filter(Boolean)]);
   try { history.replaceState(null, "", `?island=${id}`); } catch {}
@@ -1944,7 +1938,7 @@ $("#btn-night").addEventListener("click", (e) => {
 });
 $("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
 if (new URLSearchParams(location.search).has("debug")) window.__fly = (x, z, zoom) => life?.flyTo(new THREE.Vector3(x, 0, z), zoom, 0.01);
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3 });
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3, __islandCenter: islandCenter, __controls: controls, __state: state });
 if (new URLSearchParams(location.search).has("debug")) window.__flyIsland = (id, zoom) => { const c = landmarkByIsland[id]?.position; if (c) life?.flyTo(new THREE.Vector3(c.x, 0, c.z), zoom, 0.01); };
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
