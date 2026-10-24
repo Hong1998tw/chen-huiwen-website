@@ -82,8 +82,11 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
     let done = 0, total = 0;
     const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中… ${done}／${total}`; };
     const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("逾時")), 20000))]);
-    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "vehicles", "boats", "bridges", "surroundings"]) {
+    const NO_CARS = new Set(["scooter", "busstop"]);
+    const WALK_MAT = { road: new THREE.MeshStandardMaterial({ color: "#e2d3b5", roughness: 0.9, flatShading: true }), plaza: new THREE.MeshStandardMaterial({ color: "#ece3cf", roughness: 0.9, flatShading: true }) };  // 島上不放車：不載車輛、車道橋、機車與公車站牌
+    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "boats", "surroundings"]) {
       for (const [id, m] of Object.entries(manifest[kind] || {})) {
+        if (kind === "props" && NO_CARS.has(id)) continue;
         total++;
         jobs.push(withTimeout(loader.loadAsync(`./models/${m.file}`)).then((gltf) => {
           gltf.scene.traverse((o) => {
@@ -92,6 +95,13 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
             o.receiveShadow = true;
             // 生成模型常把 metallic 設成 1，沒有環境貼圖時會發黑，改成非金屬
             for (const m of [].concat(o.material || [])) { m.metalness = 0; m.roughness = Math.max(m.roughness ?? 1, 0.75); }
+            // 周邊實景裡的馬路改成步道：road 換鋪面色、lane 標線藏起來、parking 改成廣場
+            if (kind === "surroundings") {
+              const n = [].concat(o.material || []).map((m) => m.name || "").join(" ") + " " + (o.name || "");
+              if (/lane/i.test(n)) o.visible = false;
+              else if (/road/i.test(n)) o.material = WALK_MAT.road;
+              else if (/parking/i.test(n)) o.material = WALK_MAT.plaza;
+            }
           });
           actors.remember(kind,id,gltf);
       glbModels[kind][id] = gltf.scene;
@@ -390,7 +400,7 @@ const topGeo = new THREE.CircleGeometry(R, 6).rotateX(-Math.PI / 2).rotateY(Math
 const cliffGeo = new THREE.CylinderGeometry(R, R * 1.04, 3.6, 6, 1);
 const roadGeo = hexRing(ROAD_OUT, ROAD_IN), walkGeo = hexRing(R * 0.985, ROAD_OUT), curbGeo = hexRing(ROAD_IN, ROAD_IN - 0.25);
 const shallowGeo = hexRing(R * 1.16, R * 0.99);
-const asphalt = mat("#6b7276"), paving = mat("#eadfca"), curbMat = mat("#d6cbb7");
+const asphalt = mat("#d9c7a6"), paving = mat("#eadfca"), curbMat = mat("#cdbf9f");  // 島上不走車：環狀道路改成步道鋪面
 const shallowMat = new THREE.MeshBasicMaterial({ color: "#cdeee9", transparent: true, opacity: 0.6, depthWrite: false });
 const dashGeo = new THREE.BoxGeometry(0.9, 0.03, 0.16);
 const dashMat = mat("#f6f1e2");
@@ -452,28 +462,7 @@ for (const island of islands) {
     cliff.castShadow = true;
     world.add(cliff, band, top, road, walk, curb, shallow);
     pickables.push(cliff, top);
-    // 車道虛線
-    for (let u = 0; u < 6; u += 0.25) {
-      const p0 = hexPoint(c, ROAD_MID, u), p1 = hexPoint(c, ROAD_MID, u + 0.01);
-      const dash = new THREE.Mesh(dashGeo, dashMat);
-      dash.position.set(p0.x, TOP + 0.05, p0.z);
-      dash.rotation.y = -Math.atan2(p1.z - p0.z, p1.x - p0.x);
-      world.add(dash);
-    }
-    // 環島道路上的車與人行道上的居民
-    for (let k = 0; k < 2; k++) {
-      const vehicleIds = Object.keys(glbModels.vehicles);
-      let car;
-      if (vehicleIds.length) car = glbClone("vehicles", vehicleIds[Math.floor(rand() * vehicleIds.length)], 0.6);
-      else {
-        car = new THREE.Group();
-        const col = ["#e4994a", "#4f9fc4", "#f3d36a", "#e48f9e", "#ffffff"][Math.floor(rand() * 5)];
-        car.add(box(1.3, 0.38, 0.7, col, 0, 0.12, 0), box(0.7, 0.3, 0.62, "#dfeef2", -0.05, 0.5, 0));
-        for (const [x, z] of [[-0.42, -0.36], [0.42, -0.36], [-0.42, 0.36], [0.42, 0.36]]) g2wheel(car, x, z);
-      }
-      world.add(car);
-      cars.push({ obj: car, c, key: cellKey, u: rand() * 6, speed: (0.12 + rand() * 0.06) * (k ? -1 : 1), lane: k ? ROAD_MID + 0.35 : ROAD_MID - 0.35 });
-    }
+    // 步道上的居民（島上不放車）
     const peopleIds = Object.keys(glbModels.people);
     for (let w = 0; w < 3; w++) {
       let p;
@@ -643,7 +632,7 @@ function bridgeEnds(a, b) {
 function roadBridge(a, b) {
   const { pa, pb } = bridgeEnds(a, b);
   const len = pa.distanceTo(pb), yaw = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
-  const bridgeIds = Object.keys(glbModels.bridges);
+  const bridgeIds = [];  // 不用車道橋模型，一律做人行橋
   if (bridgeIds.length) {
     const g = new THREE.Group();
     const m = glbModels.bridges[bridgeIds[(a[0] * 7 + a[1] * 3 + 99) % bridgeIds.length]].clone(true);
@@ -659,10 +648,10 @@ function roadBridge(a, b) {
   const N = 10;
   for (let s = 0; s < N; s++) {
     const t = (s + 0.5) / N, lift = Math.sin(t * Math.PI) * 0.55;
-    const seg = box(len / N + 0.05, 0.22, 2.0, "#7a8085", (t - 0.5) * len, TOP + lift - 0.1, 0);
+    const seg = box(len / N + 0.05, 0.2, 1.6, "#c9a77c", (t - 0.5) * len, TOP + lift - 0.1, 0);  // 木棧橋面
     seg.rotation.z = Math.cos(t * Math.PI) * 0.17;
     g.add(seg);
-    for (const z of [-1.05, 1.05]) g.add(box(len / N + 0.05, 0.3, 0.1, "#f4efe4", (t - 0.5) * len, TOP + lift + 0.12, z));
+    for (const z of [-0.85, 0.85]) g.add(box(len / N + 0.05, 0.45, 0.08, "#f4efe4", (t - 0.5) * len, TOP + lift + 0.2, z));  // 欄杆
   }
   for (const x of [-len / 2 + 0.6, len / 2 - 0.6]) g.add(cyl(0.22, 0.28, 2.4, 8, "#cfc6b4", x, -1.9, 0));
   const m = pa.clone().add(pb).multiplyScalar(0.5);
@@ -805,25 +794,10 @@ function stepWanderers(dt) {
 }
 // ── 交通：車道線、斑馬線、智慧號誌、高架捷運 ───────────────────────
 const traffic = addTraffic({
-  THREE, world, bridgePairs, cellPos, edgeU, hexPoint, hexRing, R, TOP, ROAD_IN, ROAD_OUT, ROAD_MID, mat, box, cyl,
+  THREE, world, bridgePairs, cellPos, edgeU, hexPoint, hexRing, R, TOP, ROAD_IN, ROAD_OUT, ROAD_MID, mat, box, cyl, pedestrianOnly: true,
   cells: [...cellIsland.keys()].map((k) => ({ p: cellPos(...k.split(",").map(Number)) })),
 });
-// 鳳山醫院（照顧不離職島）周邊的救護車：閃警示燈，不受號誌限制
-const sirenRed = mat("#ff3b3b", { emissive: "#ff1a1a", emissiveIntensity: 1.5 });
-const sirenBlue = mat("#3b7bff", { emissive: "#1a5cff", emissiveIntensity: 1.5 });
-{
-  const key = LAYOUT.P09[0].join(","), c = cellPos(...LAYOUT.P09[0]);
-  let amb = glbModels.vehicles.ambulance ? glbClone("vehicles", "ambulance", 0.6) : null;
-  if (!amb) {
-    amb = new THREE.Group();
-    amb.add(box(1.6, 0.7, 0.8, "#ffffff", 0, 0.12, 0), box(1.62, 0.12, 0.82, "#e0453a", 0, 0.45, 0), box(0.5, 0.35, 0.74, "#cfe6ee", 0.62, 0.55, 0));
-    for (const [x, z] of [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.4], [0.5, 0.4]]) g2wheel(amb, x, z);
-  }
-  const siren = box(0.3, 0.12, 0.3, "#ff3b3b", 0, 0.95, 0);
-  amb.add(siren);
-  world.add(amb);
-  cars.push({ obj: amb, c, key, u: 1, speed: 0.22, lane: ROAD_MID - 0.35, siren });
-}
+const sirenRed = mat("#ff3b3b"), sirenBlue = mat("#3b7bff");  // 救護車已移除，保留給動態模組的參數
 
 const tourStops = islands.map((i) => {
   const first = LAYOUT[i.id][0];
