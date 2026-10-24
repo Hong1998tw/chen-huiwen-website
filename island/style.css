@@ -455,3 +455,4 @@ body.labels-all .isl-label:not(.river-label):not(.dim) { opacity: 1; pointer-eve
   .guide-bar { left: auto; right: 12px; top: 12px; bottom: auto; transform: none; }
   .guide-bar button { padding: 0 12px; }
 }
+.guide-bar[hidden], .hw-bubble[hidden] { display: none !important; }
