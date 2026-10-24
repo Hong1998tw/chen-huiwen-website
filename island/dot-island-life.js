@@ -31,7 +31,7 @@ export function createIslandLife({scene,world,camera,controls,renderer,islandCen
  const changed=()=>{if(media.matches){if(flight)stepFlight(1e3);if(tour)tour.paused=true;}};media.addEventListener('change',changed);
  return {get reduced(){return media.matches;},get touring(){return !!tour;},startTour(){tour={i:0,wait:0,paused:media.matches};visit();},selectIsland(id){selected=id;paint();},hoverIsland(id){hover=id;paint();},showConnections,flyTo,exportPhoto,
  update(dt,t){if(document.hidden)return;stepFlight(dt);if(tour&&!tour.paused&&!media.matches){tour.wait+=dt;if(tour.wait>7){tour.wait=0;tour.i++;if(tour.i>=tourOrder.length){tour=null;caption.textContent='導覽結束';}else visit();}}if(!media.matches){for(const l of lines)l.material.opacity=.65+.15*Math.sin(t*1.5);}elapsed=t;},
- dispose(){controls.removeEventListener('start',stopManual);media.removeEventListener('change',changed);clearLines();owned.forEach(o=>o.dispose());world.remove(root);ui.remove();}};
+ get flying(){return !!flight;},dispose(){controls.removeEventListener('start',stopManual);media.removeEventListener('change',changed);clearLines();owned.forEach(o=>o.dispose());world.remove(root);ui.remove();}};
 }
 export function createTicker({element,items,onItem,reduced=()=>false}){
  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());

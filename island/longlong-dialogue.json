@@ -1,333 +1,527 @@
 {
-  "schemaVersion": 1,
-  "title": "百變隆隆角色對話框內容",
-  "sourceVideo": "https://www.facebook.com/reel/2102504117185204/",
-  "alternateSourceURL": "https://www.youtube.com/watch?v=CkppX6Xt-7c",
-  "language": "zh-Hant",
-  "verifiedAt": "2026-10-23T22:09:00Z",
-  "policyContext": "所述為競選影片角色對議題的提問或願望，不代表政策已實施。",
-  "defaultLabel": "改寫摘要，非原句",
-  "coverage": {
-    "roles": 16,
-    "captionVerifiedParaphrases": 12,
-    "individualLinesUnverified": 4,
-    "userProvidedScriptFound": false
-  },
-  "cues": [
+ "schemaVersion": 1,
+ "title": "百變隆隆角色對話框內容",
+ "sourceVideo": "https://www.facebook.com/reel/2102504117185204/",
+ "alternateSourceURL": "https://www.youtube.com/watch?v=CkppX6Xt-7c",
+ "language": "zh-Hant",
+ "verifiedAt": "2026-10-23T22:09:00Z",
+ "policyContext": "所述為競選影片角色對議題的提問或願望，不代表政策已實施。",
+ "defaultLabel": "改寫摘要，非原句",
+ "coverage": {
+  "roles": 16,
+  "captionVerifiedParaphrases": 12,
+  "individualLinesUnverified": 4,
+  "userProvidedScriptFound": false
+ },
+ "cues": [
+  {
+   "roleid": "longlong-01",
+   "id": "longlong-01",
+   "name": "阿公",
+   "displayText": "敬老福利會怎麼增加？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 4,
+    "endSeconds": 9,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演阿公",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "敬老卡加碼提問",
+   "policies": [
     {
-      "roleid": "longlong-01",
-      "id": "longlong-01",
-      "name": "阿公",
-      "displayText": "敬老福利會怎麼增加？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 4,
-        "endSeconds": 9,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演阿公",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "敬老卡加碼提問"
+     "id": "Z12",
+     "title": "敬老卡點數 7,200 提高到 15,000 點",
+     "summary": "點數倍增，並擴大到運動與醫療折抵。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/9"
     },
     {
-      "roleid": "longlong-02",
-      "id": "longlong-02",
-      "name": "漁民",
-      "displayText": "漁產銷售也能得到協助嗎？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 14,
-        "endSeconds": 18,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演漁民",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "水產品銷售提問"
-    },
-    {
-      "roleid": "longlong-03",
-      "id": "longlong-03",
-      "name": "機車騎士",
-      "displayText": "道路、照明和排水能改善嗎？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 27.5,
-        "endSeconds": 29.5,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演機車騎士",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "道路照明排水提問"
-    },
-    {
-      "roleid": "longlong-04",
-      "id": "longlong-04",
-      "name": "追星歌迷",
-      "displayText": "期待更多喜愛的歌手來演出！",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 36,
-        "endSeconds": 40,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演追星歌迷",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "希望增加演唱會"
-    },
-    {
-      "roleid": "longlong-05",
-      "id": "longlong-05",
-      "name": "育兒家長",
-      "displayText": "育兒家庭的支持會再增加嗎？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 48,
-        "endSeconds": 54,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演育兒家長",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "影片提出育兒補助構想；不當作現行已實施政策"
-    },
-    {
-      "roleid": "longlong-06",
-      "id": "longlong-06",
-      "name": "鉛球運動員",
-      "displayText": "運動空間會如何改善？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 62,
-        "endSeconds": 65,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演鉛球運動員",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "運動場地提問"
-    },
-    {
-      "roleid": "longlong-07",
-      "id": "longlong-07",
-      "name": "捷運通勤上班族",
-      "displayText": "希望捷運建設早日到位。",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 76,
-        "endSeconds": 79,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演捷運通勤上班族",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "捷運進度提問"
-    },
-    {
-      "roleid": "longlong-08",
-      "id": "longlong-08",
-      "name": "出國旅客",
-      "displayText": "未來的機場規劃是什麼？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 79,
-        "endSeconds": 81,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演出國旅客",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "海上國際機場構想提問"
-    },
-    {
-      "roleid": "longlong-09",
-      "id": "longlong-09",
-      "name": "營建勞工",
-      "displayText": "勞動者會獲得哪些照顧？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 81,
-        "endSeconds": 83,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演營建勞工",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "勞工照顧提問"
-    },
-    {
-      "roleid": "longlong-10",
-      "id": "longlong-10",
-      "name": "毛爸",
-      "displayText": "帶毛孩出門，能有更多友善空間嗎？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 83,
-        "endSeconds": 85,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演毛爸",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "寵物友善空間提問"
-    },
-    {
-      "roleid": "longlong-11",
-      "id": "longlong-11",
-      "name": "學生",
-      "displayText": "畢業後，也想留在高雄發展。",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 85,
-        "endSeconds": 87,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演學生",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "在地就業與留鄉提問"
-    },
-    {
-      "roleid": "longlong-12",
-      "id": "longlong-12",
-      "name": "科技工程師",
-      "displayText": "高雄的科技產業還會怎麼發展？",
-      "textType": "paraphrased_summary",
-      "textLabel": "改寫摘要，非原句",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 87,
-        "endSeconds": 91,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": "賴瑞隆飾演科技工程師",
-      "confidence": "high",
-      "status": "caption_verified_summary",
-      "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
-      "note": "先進製程產業提問"
-    },
-    {
-      "roleid": "longlong-13",
-      "id": "longlong-13",
-      "name": "蔬菜攤販",
-      "displayText": null,
-      "textType": "unavailable",
-      "textLabel": "個別台詞未核實",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 91,
-        "endSeconds": 94,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": null,
-      "confidence": "unverified",
-      "status": "individual_line_unverified",
-      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
-      "note": "只核實九宮格身分，未核實個別發言"
-    },
-    {
-      "roleid": "longlong-14",
-      "id": "longlong-14",
-      "name": "外國訪客",
-      "displayText": null,
-      "textType": "unavailable",
-      "textLabel": "個別台詞未核實",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 91,
-        "endSeconds": 94,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": null,
-      "confidence": "unverified",
-      "status": "individual_line_unverified",
-      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
-      "note": "只核實九宮格身分，未核實個別發言"
-    },
-    {
-      "roleid": "longlong-15",
-      "id": "longlong-15",
-      "name": "歌仔戲表演者",
-      "displayText": null,
-      "textType": "unavailable",
-      "textLabel": "個別台詞未核實",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 91,
-        "endSeconds": 94,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": null,
-      "confidence": "unverified",
-      "status": "individual_line_unverified",
-      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
-      "note": "只核實九宮格身分，未核實個別發言"
-    },
-    {
-      "roleid": "longlong-16",
-      "id": "longlong-16",
-      "name": "烤肉攤商",
-      "displayText": null,
-      "textType": "unavailable",
-      "textLabel": "個別台詞未核實",
-      "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-      "timecode": {
-        "startSeconds": 91,
-        "endSeconds": 94,
-        "precision": "約略場景區間，非逐字對時"
-      },
-      "speaker": null,
-      "confidence": "unverified",
-      "status": "individual_line_unverified",
-      "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
-      "note": "只核實九宮格身分，未核實個別發言"
+     "id": "Z13",
+     "title": "高雄好樂齡",
+     "summary": "無障礙步道與樂齡公園、銀髮健身俱樂部。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/9"
     }
-  ],
-  "sharedChorus": {
-    "displayText": "我們都是高雄人",
-    "textType": "verified_short_excerpt",
-    "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
-    "timecode": {
-      "startSeconds": 93,
-      "endSeconds": 95
+   ]
+  },
+  {
+   "roleid": "longlong-02",
+   "id": "longlong-02",
+   "name": "漁民",
+   "displayText": "漁產銷售也能得到協助嗎？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 14,
+    "endSeconds": 18,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演漁民",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "水產品銷售提問",
+   "policies": [
+    {
+     "id": "Z08",
+     "title": "漁業五大亮點",
+     "summary": "「高雄首選」品牌、AI 養殖與遠洋、老舊漁船汰換、海上緊急醫療諮詢、前鎮漁港浚深與產銷中心。",
+     "sourceURL": "https://www.zenolai.tw/policy/ai/8"
     },
-    "scope": "原片九宮格共同字幕，不冒稱四個角色各自的獨立台詞",
-    "defaultEnabled": false
+    {
+     "id": "Z35",
+     "title": "農漁產業升級願景",
+     "summary": "「高雄首選」與「高雄海味」品牌、與台南屏東整合通路、AI 智慧養殖、冷鏈產銷。",
+     "sourceURL": "https://www.ctwant.com/article/503420/"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-03",
+   "id": "longlong-03",
+   "name": "機車騎士",
+   "displayText": "道路、照明和排水能改善嗎？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 27.5,
+    "endSeconds": 29.5,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演機車騎士",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "道路照明排水提問",
+   "policies": [
+    {
+     "id": "Z37",
+     "title": "智慧交通、安全通行",
+     "summary": "CityGPT 整合交通資料，改善號誌調控與路口設計，落實人本交通。",
+     "sourceURL": "https://www.zenolai.tw/news/events/127"
+    },
+    {
+     "id": "Z29",
+     "title": "韌性高雄工程 2.0",
+     "summary": "從治水到治城：國土規劃、公園綠地、滯洪池、防災整備、AI 預警，每項公共建設兼具防災功能。",
+     "sourceURL": "https://www.cna.com.tw/news/aloc/202607130291.aspx"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-04",
+   "id": "longlong-04",
+   "name": "追星歌迷",
+   "displayText": "期待更多喜愛的歌手來演出！",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 36,
+    "endSeconds": 40,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演追星歌迷",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "希望增加演唱會",
+   "policies": [
+    {
+     "id": "Z22",
+     "title": "文化高雄・世界舞台（7 大政策 18 項計畫）",
+     "summary": "61 座圖書館生活圈、歷史場域街區營造、傳統技藝接班、劇場人口倍增與文化幣；鳳山列為四大文化內容基地之一。",
+     "sourceURL": "https://www.zenolai.tw/policy/culture/16"
+    },
+    {
+     "id": "Z39",
+     "title": "世運主場館五大升級",
+     "summary": "座椅更新、指標智慧化、平面層廁所、草皮跑道養護、寄物升級。",
+     "sourceURL": "https://www.zenolai.tw/news/events/127"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-05",
+   "id": "longlong-05",
+   "name": "育兒家長",
+   "displayText": "育兒家庭的支持會再增加嗎？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 48,
+    "endSeconds": 54,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演育兒家長",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "影片提出育兒補助構想；不當作現行已實施政策",
+   "policies": [
+    {
+     "id": "Z10",
+     "title": "高雄好養育",
+     "summary": "育兒津貼最高每月 1 萬、0 到 6 歲每月加碼 1,000、增設公托與準公托、每年 60 小時延托券。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/9"
+    },
+    {
+     "id": "Z09",
+     "title": "高雄好孕來",
+     "summary": "孕哺枕、產檢乘車補助最高 50 趟、生育津貼每胎 3 萬提高到 5 萬。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/9"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-06",
+   "id": "longlong-06",
+   "name": "鉛球運動員",
+   "displayText": "運動空間會如何改善？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 62,
+    "endSeconds": 65,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演鉛球運動員",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "運動場地提問",
+   "policies": [
+    {
+     "id": "Z28",
+     "title": "一區一運動中心與複合式小型場館",
+     "summary": "每個行政區都有運動中心，鼓勵企業與社區成立運動社團。",
+     "sourceURL": "https://www.cna.com.tw/news/aloc/202607040145.aspx"
+    },
+    {
+     "id": "Z39",
+     "title": "世運主場館五大升級",
+     "summary": "座椅更新、指標智慧化、平面層廁所、草皮跑道養護、寄物升級。",
+     "sourceURL": "https://www.zenolai.tw/news/events/127"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-07",
+   "id": "longlong-07",
+   "name": "捷運通勤上班族",
+   "displayText": "希望捷運建設早日到位。",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 76,
+    "endSeconds": 79,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演捷運通勤上班族",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "捷運進度提問",
+   "policies": [
+    {
+     "id": "Z31",
+     "title": "高雄交通新願景：2 大面向 8 項計畫",
+     "summary": "軌道：紫線、青線（連結鳳山、仁武、楠梓）、藍線、旗美線；國道：國一高架化、國 7、高屏二快、台 86 延伸。",
+     "sourceURL": "https://www.cna.com.tw/news/aipl/202501080248.aspx"
+    },
+    {
+     "id": "Z24",
+     "title": "鳳山宜居新願景：亞洲藝文新都心",
+     "summary": "LaLaport 結合衛武營藝文圈升級商圈；促成捷運黃線如期通車、推動 O10 衛武營站聯開；活化無線電信所與黃埔新村；大東與衛武營藝術之丘；整平拓寬人行道、升級通學步道。",
+     "sourceURL": "https://www.zenolai.tw/news/media/90"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-08",
+   "id": "longlong-08",
+   "name": "出國旅客",
+   "displayText": "未來的機場規劃是什麼？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 79,
+    "endSeconds": 81,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演出國旅客",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "海上國際機場構想提問",
+   "policies": [
+    {
+     "id": "Z04",
+     "title": "爭取新設 24 小時海上國際機場",
+     "summary": "小港機場新航廈 880 億、年量 1,650 萬人次；中期大客機與國際航線；長期評估南星海上機場。",
+     "sourceURL": "https://www.zenolai.tw/policy/vision/4"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-09",
+   "id": "longlong-09",
+   "name": "營建勞工",
+   "displayText": "勞動者會獲得哪些照顧？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 81,
+    "endSeconds": 83,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演營建勞工",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "勞工照顧提問",
+   "policies": [
+    {
+     "id": "Z47",
+     "title": "勞工七星級守護行動",
+     "summary": "創造機會、提高薪資、保障安全、維護職場尊嚴；高科技就業機會倍增、協助傳產升級與綠色轉型；職安加強監管、導入 AI 預警並把心理健康納入職場安全；升級勞工大學、強化工會功能。",
+     "sourceURL": "https://www.storm.mg/article/11125944"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-10",
+   "id": "longlong-10",
+   "name": "毛爸",
+   "displayText": "帶毛孩出門，能有更多友善空間嗎？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 83,
+    "endSeconds": 85,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演毛爸",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "寵物友善空間提問",
+   "policies": [
+    {
+     "id": "Z16",
+     "title": "毛孩四個寶",
+     "summary": "30 座社區型寵物公園、寵物友善商家認證、校犬與療癒犬課程、查緝非法繁殖與提升收容所照護。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/17"
+    },
+    {
+     "id": "Z15",
+     "title": "人寵共好四大策略",
+     "summary": "寵物友善環境與公園、國際寵物展、高雄毛經濟品牌、人才培育鏈。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/11"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-11",
+   "id": "longlong-11",
+   "name": "學生",
+   "displayText": "畢業後，也想留在高雄發展。",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 85,
+    "endSeconds": 87,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演學生",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "在地就業與留鄉提問",
+   "policies": [
+    {
+     "id": "Z14",
+     "title": "雄青五力",
+     "summary": "大港青年實習 2.0（轉正獎勵最高 1.5 萬、通勤補助最高 2,000）、海外圓夢補助、創業加速、社宅與租金補貼、心理健康。",
+     "sourceURL": "https://www.zenolai.tw/policy/youth/10"
+    },
+    {
+     "id": "Z25",
+     "title": "《高雄市青年發展自治條例》與青年參與",
+     "summary": "全國首部綜合性青年發展自治條例、青年公共參與預算翻倍、上任 3 個月內召開青年事務發展會報。",
+     "sourceURL": "https://www.zenolai.tw/news/media/124"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-12",
+   "id": "longlong-12",
+   "name": "科技工程師",
+   "displayText": "高雄的科技產業還會怎麼發展？",
+   "textType": "paraphrased_summary",
+   "textLabel": "改寫摘要，非原句",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 87,
+    "endSeconds": 91,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": "賴瑞隆飾演科技工程師",
+   "confidence": "high",
+   "status": "caption_verified_summary",
+   "verificationMethod": "直接檢視原片燒錄字幕與同框角色",
+   "note": "先進製程產業提問",
+   "policies": [
+    {
+     "id": "Z05",
+     "title": "AI 政策：主權 AI 與 CityGPT 城市大腦",
+     "summary": "高階人才校際園區、AI 算力暨應用服務中心、CityGPT 用在交通、防災與道路維護，AI 賦能百工百業。",
+     "sourceURL": "https://www.zenolai.tw/policy/ai/5"
+    },
+    {
+     "id": "Z44",
+     "title": "大亞灣 AI 專區",
+     "summary": "亞灣約 590 公頃、電力自給率 134%；AI 算力暨應用服務、半導體封測中心、國家校際人才中心。",
+     "sourceURL": "https://www.zenolai.tw/news/media/160"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-13",
+   "id": "longlong-13",
+   "name": "蔬菜攤販",
+   "displayText": null,
+   "textType": "unavailable",
+   "textLabel": "個別台詞未核實",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 91,
+    "endSeconds": 94,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": null,
+   "confidence": "unverified",
+   "status": "individual_line_unverified",
+   "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+   "note": "只核實九宮格身分，未核實個別發言",
+   "policies": [
+    {
+     "id": "Z36",
+     "title": "市場升級、產業共榮",
+     "summary": "改善市場設施與營業環境，協助攤商數位行銷與多元銷售通路。",
+     "sourceURL": "https://www.zenolai.tw/news/events/127"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-14",
+   "id": "longlong-14",
+   "name": "外國訪客",
+   "displayText": null,
+   "textType": "unavailable",
+   "textLabel": "個別台詞未核實",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 91,
+    "endSeconds": 94,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": null,
+   "confidence": "unverified",
+   "status": "individual_line_unverified",
+   "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+   "note": "只核實九宮格身分，未核實個別發言",
+   "policies": [
+    {
+     "id": "Z23",
+     "title": "觀光五願景：世界的高雄",
+     "summary": "觀光高雄隊與 AI 行銷、活化 205 兵工廠、盛事城套票、深度旅遊廊帶、智慧低碳旅遊。",
+     "sourceURL": "https://www.zenolai.tw/policy/culture/19"
+    },
+    {
+     "id": "Z17",
+     "title": "2030 雙語之都七大行動",
+     "summary": "雙語預算倍增至每年 10 億、一校一國際共學夥伴、教師減壓與國際培力、偏鄉雙語。",
+     "sourceURL": "https://www.zenolai.tw/policy/education/12"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-15",
+   "id": "longlong-15",
+   "name": "歌仔戲表演者",
+   "displayText": null,
+   "textType": "unavailable",
+   "textLabel": "個別台詞未核實",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 91,
+    "endSeconds": 94,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": null,
+   "confidence": "unverified",
+   "status": "individual_line_unverified",
+   "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+   "note": "只核實九宮格身分，未核實個別發言",
+   "policies": [
+    {
+     "id": "Z22",
+     "title": "文化高雄・世界舞台（7 大政策 18 項計畫）",
+     "summary": "61 座圖書館生活圈、歷史場域街區營造、傳統技藝接班、劇場人口倍增與文化幣；鳳山列為四大文化內容基地之一。",
+     "sourceURL": "https://www.zenolai.tw/policy/culture/16"
+    }
+   ]
+  },
+  {
+   "roleid": "longlong-16",
+   "id": "longlong-16",
+   "name": "烤肉攤商",
+   "displayText": null,
+   "textType": "unavailable",
+   "textLabel": "個別台詞未核實",
+   "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+   "timecode": {
+    "startSeconds": 91,
+    "endSeconds": 94,
+    "precision": "約略場景區間，非逐字對時"
+   },
+   "speaker": null,
+   "confidence": "unverified",
+   "status": "individual_line_unverified",
+   "verificationMethod": "原片九宮格角色確認；沒有個別字幕可可靠對應",
+   "note": "只核實九宮格身分，未核實個別發言",
+   "policies": [
+    {
+     "id": "Z36",
+     "title": "市場升級、產業共榮",
+     "summary": "改善市場設施與營業環境，協助攤商數位行銷與多元銷售通路。",
+     "sourceURL": "https://www.zenolai.tw/news/events/127"
+    }
+   ]
   }
+ ],
+ "sharedChorus": {
+  "displayText": "我們都是高雄人",
+  "textType": "verified_short_excerpt",
+  "sourceURL": "https://www.facebook.com/reel/2102504117185204/",
+  "timecode": {
+   "startSeconds": 93,
+   "endSeconds": 95
+  },
+  "scope": "原片九宮格共同字幕，不冒稱四個角色各自的獨立台詞",
+  "defaultEnabled": false
+ }
 }
