@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>慧文官網｜布告欄審核</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/board.css" />
+    <script src="/board-admin.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到內容</a>
+    <header>
+      <a class="brand" href="/"
+        >文 <span>官網內容管理<small>HUIWEN / EDITORIAL</small></span></a
+      >
+      <nav class="board-nav" aria-label="後台">
+        <a href="/">← 回內容管理</a>
+      </nav>
+      <div class="user-nav">
+        <span id="identity">驗證登入中</span
+        ><a href="/cdn-cgi/access/logout">登出</a>
+      </div>
+    </header>
+    <main id="main" tabindex="-1" class="board-admin">
+      <div class="intro">
+        <div>
+          <p class="eyebrow">慧文政績島・鄉親布告欄</p>
+          <h1>布告欄審核</h1>
+          <p>新留言先停在這裡；按「確認」後才會出現在政績島的布告欄。「封存」保留紀錄但不顯示；「刪除」會永久移除。</p>
+          <p>所有留言（含封存）將於 2026 年 12 月 28 日統一刪除。</p>
+        </div>
+      </div>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <ol id="board-notes" class="board-list" aria-label="布告欄留言" aria-busy="true">
+        <li class="board-empty">正在讀取留言…</li>
+      </ol>
+    </main>
+  </body>
+</html>
