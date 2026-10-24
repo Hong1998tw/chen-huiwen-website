@@ -54,8 +54,8 @@ export function createListFallback(body) {
       <h2 class="p-title">${esc(isl.name)}</h2>
       ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : isl.note ? `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note)}</p></div>` : ""}
       ${flags.length ? `<div class="hw-sum"><b>慧文做了什麼</b><p>${flags.map(esc).join("、")}。</p></div>` : ""}
-      ${items.slice(0, 80).map((n) => item(data.items[n])).join("")}${items.length > 80 ? `<p class="empty">另有 ${items.length - 80} 筆，請用搜尋查。</p>` : ""}
-      ${lai}`;
+      ${lai}
+      ${items.slice(0, 80).map((n) => item(data.items[n])).join("")}${items.length > 80 ? `<p class="empty">另有 ${items.length - 80} 筆，請用搜尋查。</p>` : ""}`;
   }
 
   function render() {
@@ -81,7 +81,8 @@ export function createListFallback(body) {
     d.items.forEach((it, n) => { if (!byIsland.has(it.i)) byIsland.set(it.i, []); byIsland.get(it.i).push(n); });
     const start = new URLSearchParams(location.search).get("island");
     if (start && d.islands.some((i) => i.id === start)) view = { ...view, name: "island", island: start };
-    render();
+    // 首頁清單已經預先寫在 index.html（字型契約：首屏只能出現靜態 HTML 裡的字），不用重畫
+    if (view.name === "island" || !body.hasAttribute("data-static-list")) render();
   });
 
   // 3D 起來後交棒：清單停止接管，面板交給 app.js
