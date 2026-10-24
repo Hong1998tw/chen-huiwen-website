@@ -432,12 +432,15 @@ const walkers = [];
 const sceneFolks = [];  // 站著聊天的生活小場景人物
 const dressBlockers = [], dressAvoid = [], dressCells = [];  // 島上綠意：高度圖要畫的物件、要閃開的點、每格（是否有中央地標）
 const PEOPLE_SCENE = {
-  Q1: ["office", "office", "police"], P01: ["office", "student"], P02: ["parent", "grandma"], P03: ["firefighter", "worker"],
-  P04: ["vendor", "teen", "office"], P05: ["vendor", "grandma", "grandma"], P06: ["elder", "parent", "student"], P07: ["teen", "office"],
-  P08: ["parent", "student"], P09: ["nurse", "elder"], P10: ["elder", "parent"], P11: ["parent", "teen"], P12: ["teacher", "student"],
-  P13: ["parent", "student"], X1: ["teacher", "student", "student"], X2: ["cyclist", "elder", "teen"], X3: ["elder", "office"],
-  X4: ["office", "police"], W1: ["parent", "nurse"],
+  Q1: ["office", "office", "police"], P01: ["office", "student"], P02: ["parent", "grandma", "schoolkid", "delivery"], P03: ["firefighter", "worker", "volunteer"],
+  P04: ["vendor", "teen", "delivery"], P05: ["vendor", "grandma", "uncle"], P06: ["elder", "parent", "uncle"], P07: ["teen", "office"],
+  P08: ["parent", "stroller", "student"], P09: ["nurse", "wheelchair"], P10: ["wheelchair", "parent"], P11: ["parent", "teen"], P12: ["teacher", "student"],
+  P13: ["parent", "schoolkid"], X1: ["teacher", "schoolkid", "student"], X2: ["cyclist", "elder", "teen"], X3: ["elder", "office"],
+  X4: ["lizhang", "volunteer", "elder"], W1: ["stroller", "nurse"],
 };
+// Task 20 新人物（輪椅、嬰兒車等）只站在生活小場景，不放進繞島走路的路人
+const DEBUG_PEOPLE = new URLSearchParams(location.search).has("debug");
+const SCENE_ONLY = new Set(["schoolkid", "stroller", "wheelchair", "delivery", "volunteer", "lizhang", "uncle"]);
 const cars = [];
 
 const allCells = Object.values(LAYOUT).flat().map(([q, r]) => hexToWorld(q, r));
@@ -580,7 +583,7 @@ for (const island of islands) {
     world.add(cliff, band, top, road, walk, curb, shallow);
     pickables.push(cliff, top);
     // 步道上的居民（島上不放車）
-    const peopleIds = Object.keys(glbModels.people);
+    const peopleIds = Object.keys(glbModels.people).filter((id) => !SCENE_ONLY.has(id));
     for (let w = 0; w < (mobile() ? 3 : 5); w++) {  // 桌機多兩位路人，島上熱鬧一點
       let p;
       if (peopleIds.length) p = glbClone("people", peopleIds[Math.floor(rand() * peopleIds.length)], 0.8);
@@ -592,7 +595,7 @@ for (const island of islands) {
     // 生活小場景：依島的主題，在第一格步道旁站幾位聊天的人（用現有 14 種人物，不新建模）
     const group = ci === 0 ? PEOPLE_SCENE[island.id] : null;
     if (group && peopleIds.length) {
-      const u0 = 3.6 + rand() * 0.8;
+      const u0 = 1.62 + rand() * 0.06;  // 站在面向預設鏡頭的那段步道（兩座橋之間），不被地標擋住
       group.forEach((pid, k) => {
         if (!glbModels.people[pid]) return;
         const p = glbClone("people", pid, 0.8), at = hexPoint(c, R * 0.94, (u0 + k * 0.12) % 6), mid = hexPoint(c, R * 0.94, (u0 + (group.length - 1) * 0.06) % 6);
@@ -601,6 +604,7 @@ for (const island of islands) {
         p.traverse((m) => (m.castShadow = true));
         world.add(p);
         sceneFolks.push(p);
+        if (DEBUG_PEOPLE) (window.__sceneFolks ||= []).push({ pid, island: island.id, x: p.position.x, z: p.position.z });
       });
     }
   });
@@ -1940,6 +1944,7 @@ $("#btn-night").addEventListener("click", (e) => {
 });
 $("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
 if (new URLSearchParams(location.search).has("debug")) window.__fly = (x, z, zoom) => life?.flyTo(new THREE.Vector3(x, 0, z), zoom, 0.01);
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3 });
 if (new URLSearchParams(location.search).has("debug")) window.__flyIsland = (id, zoom) => { const c = landmarkByIsland[id]?.position; if (c) life?.flyTo(new THREE.Vector3(c.x, 0, c.z), zoom, 0.01); };
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
@@ -2019,6 +2024,7 @@ renderer.setAnimationLoop(()=>{
  extras.update(dt,activeTime);weather?.update(dt);traffic.update(reducedNow?0:dt,activeTime);
  if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}guide.update(dt);
  streetMotion.update(dt,activeTime,reducedNow);
+ for(const p of sceneFolks) actors.update(p,dt,true,reducedNow);  // 小場景人物的待機動畫
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
  dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;backdrop.follow(camera,controls.target);renderer.render(scene,camera);adaptQuality();placeLabels();
 });

@@ -41,6 +41,27 @@
   },
   "worker": {
    "file": "person-worker.glb"
+  },
+  "schoolkid": {
+   "file": "person-schoolkid.glb"
+  },
+  "stroller": {
+   "file": "person-stroller.glb"
+  },
+  "wheelchair": {
+   "file": "person-wheelchair.glb"
+  },
+  "delivery": {
+   "file": "person-delivery.glb"
+  },
+  "volunteer": {
+   "file": "person-volunteer.glb"
+  },
+  "lizhang": {
+   "file": "person-lizhang.glb"
+  },
+  "uncle": {
+   "file": "person-uncle.glb"
   }
  }
 }
