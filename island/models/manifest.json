@@ -1,12 +1,12 @@
 {
  "character": {
   "huiwen": {
-   "file": "huiwen.glb",
-   "name": "陳慧文"
+   "file": "huiwen-wave.glb",
+   "name": "陳慧文（v6 概念圖版）"
   },
   "huiwen-2025": {
-   "file": "huiwen-2025.glb",
-   "name": "陳慧文（2025 Q 圖）"
+   "file": "huiwen-wave.glb",
+   "name": "陳慧文（v6 概念圖版，議會前）"
   }
  }
 }
