@@ -66,6 +66,7 @@ const data = await fetch("./island-data.json", { cache: "no-cache" }).then((r) =
 const scenery = await import("./landmarks.js").catch(() => null);
 
 // Colab 生成的精細模型（models/manifest.json）；有模型就用，沒有就用程式造型
+let loadLater = null;  // 第一幀之後才載的模型（周邊實景）
 const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, people: {}, town: {}, vehicles: {}, boats: {}, bridges: {}, surroundings: {} };
 {
   // 各生成流程各寫一份清單，避免互相覆蓋；這裡合併讀取
@@ -76,18 +77,18 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
   if (Object.keys(manifest).length) {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const jobs = [];
     // 載入進度：每個模型最多等 20 秒，逾時就用程式造型代替，不卡住整座島
     const bar = $("#loading-bar"), txt = $("#loading-text");
-    let done = 0, total = 0;
+    let done = 0, total = 1;
     const tick = () => { done++; if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`; if (txt) txt.textContent = `小島建造中… ${done}／${total}`; };
     const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("逾時")), 20000))]);
     const NO_CARS = new Set(["scooter", "busstop"]);
     const WALK_MAT = { road: new THREE.MeshStandardMaterial({ color: "#e2d3b5", roughness: 0.9, flatShading: true }), plaza: new THREE.MeshStandardMaterial({ color: "#ece3cf", roughness: 0.9, flatShading: true }) };  // 島上不放車：不載車輛、車道橋、機車與公車站牌
-    for (const kind of ["landmarks", "templates", "character", "props", "people", "town", "boats", "surroundings"]) {
+    // 分階段載入：島體、地標、人物先載；周邊實景等第一幀畫出來之後再補（templates、town 沒有用到，不載）
+    loadLater = () => loadKinds(["surroundings"], () => {});
+    const loadKinds = (kinds, tick) => { const jobs = []; for (const kind of kinds) {
       for (const [id, m] of Object.entries(manifest[kind] || {})) {
         if (kind === "props" && NO_CARS.has(id)) continue;
-        total++;
         jobs.push(withTimeout(loader.loadAsync(`./models/${m.file}`)).then((gltf) => {
           gltf.scene.traverse((o) => {
             if (!o.isMesh) return;
@@ -108,9 +109,21 @@ const glbModels = { landmarks: {}, templates: {}, character: {}, props: {}, peop
           gltf.scene.userData.clips = gltf.animations || [];  // 走路等動畫片段
         }).catch((err) => console.warn("模型載入失敗", id, err)).finally(tick));
       }
-    }
-    await Promise.all(jobs);
+    } return Promise.all(jobs); };
+    total = ["landmarks", "character", "props", "people", "boats"].reduce((n, k) => n + Object.keys(manifest[k] || {}).length, 0);
+    await loadKinds(["landmarks", "character", "props", "people", "boats"], tick);
   }
+}
+const surroundSlots = [];
+function placeSurroundings() {
+  for (const sl of surroundSlots) {
+    const sur = glbClone("surroundings", sl.id, 1.0);
+    if (!sur) continue;
+    sur.position.set(sl.x, TOP, sl.z);
+    sur.traverse((o) => { o.receiveShadow = true; o.userData = { island: sl.island }; });
+    world.add(sur);
+  }
+  if (mobile()) renderer.shadowMap.needsUpdate = true;
 }
 const mixers = [];
 const glbClone = (kind,id,scale=1) => bindRailpark(actors.clone(kind,id,scale));
@@ -335,6 +348,8 @@ const flagshipGroups = [];
 const spotLabels = [];  // 島上第二格的實景地標名牌（美麗島雜誌社等）
 // 第二格實景地標的介紹（名稱、地址、一句話）
 const SPOT_INFO = {
+  "whistle-w1": { name: "競選小物：安心哨", addr: "", note: "競選期間發送的防身哨子，哨子上只印「陳慧文」三個字。夜歸、通勤或獨處時遇到危險，吹哨能立刻引起旁人注意、爭取求助時間。放在性別友善島，是因為慧文長期推動婦女權益、家暴與性暴力防治。" },
+  "whistle-p03": { name: "競選小物：安心哨", addr: "", note: "同一款競選小物，哨子上只印「陳慧文」三個字。地震或淹水受困時，吹哨比大聲呼喊省力、聲音傳得更遠，方便救援的人找到你。放在防災韌性島，是因為慧文長期關注防汛與防災整備。" },
   LCG: { name: "五甲龍成宮", addr: "五甲二路722號", note: "五甲地區的信仰中心，紅瓦燕尾脊的大廟，廟埕是社區活動與節慶的聚集地。廟口周邊有兩件慧文經手的交通案：龍成宮口交通號誌評估、公共自行車站構想。" },
   formosa: { name: "美麗島雜誌社", addr: "新興區中山一路53號", note: "1979 年美麗島事件的起點，高雄民主運動的歷史現場，也是賴瑞隆長年關注的轉型正義記憶。" },
   railpark: { name: "臺鐵高雄機廠舊址親子遊樂區", addr: "輜汽路（臺鐵高雄機廠舊址）", note: "舊廠房改造成鐵道主題遊戲區，天車、桁架下有滑梯、鳥巢鞦韆與腳踏軌道車。" },
@@ -343,6 +358,14 @@ const SPOT_INFO = {
   "guoling-park": { name: "果嶺公園", addr: "鳥松區澄清湖畔（原高爾夫球場）", note: "原高爾夫球場開放成市民公園，起伏的果嶺草坡、老樹與木球場地保留下來。" },
 };
 const walkers = [];
+const sceneFolks = [];  // 站著聊天的生活小場景人物
+const PEOPLE_SCENE = {
+  Q1: ["office", "office", "police"], P01: ["office", "student"], P02: ["parent", "grandma"], P03: ["firefighter", "worker"],
+  P04: ["vendor", "teen", "office"], P05: ["vendor", "grandma", "grandma"], P06: ["elder", "parent", "student"], P07: ["teen", "office"],
+  P08: ["parent", "student"], P09: ["nurse", "elder"], P10: ["elder", "parent"], P11: ["parent", "teen"], P12: ["teacher", "student"],
+  P13: ["parent", "student"], X1: ["teacher", "student", "student"], X2: ["cyclist", "elder", "teen"], X3: ["elder", "office"],
+  X4: ["office", "police"], W1: ["parent", "nurse"],
+};
 const cars = [];
 
 const allCells = Object.values(LAYOUT).flat().map(([q, r]) => hexToWorld(q, r));
@@ -464,13 +487,27 @@ for (const island of islands) {
     pickables.push(cliff, top);
     // 步道上的居民（島上不放車）
     const peopleIds = Object.keys(glbModels.people);
-    for (let w = 0; w < 3; w++) {
+    for (let w = 0; w < (mobile() ? 3 : 5); w++) {  // 桌機多兩位路人，島上熱鬧一點
       let p;
       if (peopleIds.length) p = glbClone("people", peopleIds[Math.floor(rand() * peopleIds.length)], 0.8);
       else p = walkingPerson(rand);
       p.traverse((m) => (m.castShadow = true));
       world.add(p);
       walkers.push({ key:cellKey, p, limbs: p.userData.limbs, c, u: rand() * 6, s: (0.03 + rand() * 0.03) * (rand() < 0.5 ? -1 : 1), rad: R * 0.94 });
+    }
+    // 生活小場景：依島的主題，在第一格步道旁站幾位聊天的人（用現有 14 種人物，不新建模）
+    const group = ci === 0 ? PEOPLE_SCENE[island.id] : null;
+    if (group && peopleIds.length) {
+      const u0 = 3.6 + rand() * 0.8;
+      group.forEach((pid, k) => {
+        if (!glbModels.people[pid]) return;
+        const p = glbClone("people", pid, 0.8), at = hexPoint(c, R * 0.94, (u0 + k * 0.12) % 6), mid = hexPoint(c, R * 0.94, (u0 + (group.length - 1) * 0.06) % 6);
+        p.position.set(at.x, TOP + 0.08, at.z);
+        p.rotation.y = Math.atan2(mid.x - at.x, mid.z - at.z) + (k === 0 ? 0 : Math.PI / 6);
+        p.traverse((m) => (m.castShadow = true));
+        world.add(p);
+        sceneFolks.push(p);
+      });
     }
   });
 
@@ -484,8 +521,7 @@ for (const island of islands) {
   lm.rotation.y = FACE_CAMERA;  // 林 dot 的地標以正面最精細，轉向預設鏡頭
   lm.traverse((o) => { o.userData = { island: island.id, landmark: true }; });
   // 林 dot 依 Google 地圖做的周邊實景（街道、量體、綠地），鋪在地標周圍
-  const sur = glbClone("surroundings", island.id, 1.0);
-  if (sur) { sur.position.set(cells[0].x, TOP, cells[0].z); sur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(sur); }
+  surroundSlots.push({ id: island.id, island: island.id, x: cells[0].x, z: cells[0].z });  // 周邊實景第一幀之後才補上
   world.add(lm);
   pickables.push(lm);
 
@@ -501,8 +537,7 @@ for (const island of islands) {
     const cpModel = cells[ci] ? glbClone(kind, id, scale) : null;
     if (!cpModel) continue;
     cpModel.position.set(cells[ci].x, TOP, cells[ci].z);
-    const cpSur = kind === "landmarks" ? glbClone("surroundings", id, 1.0) : null;
-    if (cpSur) { cpSur.position.set(cells[ci].x, TOP, cells[ci].z); cpSur.traverse((o) => { o.receiveShadow = true; o.userData = { island: island.id }; }); world.add(cpSur); }
+    if (kind === "landmarks") surroundSlots.push({ id, island: island.id, x: cells[ci].x, z: cells[ci].z });
     cpModel.rotation.y = FACE_CAMERA;
     cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name, spot: kind === "landmarks" ? id : undefined }; });
     if (kind === "landmarks") spotLabels.push({ text: name, island: island.id, spotId: id, pos: new THREE.Vector3(cells[ci].x, TOP + 7.5, cells[ci].z) });
@@ -959,6 +994,61 @@ for (const island of islands) {
 const itemByTitle = (prefix) => data.items.findIndex((it) => it.t.startsWith(prefix));
 const BRIDGE_ITEM = { dingbao: itemByTitle("頂寶橋"), haibang: itemByTitle("海邦橋") };
 function openRiver() { Object.assign(state, { view: "project", project: "fengshanriver", limit: 40 }); setPanel(true); render(); body.scrollTop = 0; }
+// ── 競選小物：安心哨（性別友善島）──────────────────────────────────────
+// 規格寫死：哨子上只印「陳慧文」三個字，不放黨徽、號次、圖案或其他文字。程式生成，不用外部模型。
+function buildWhistle() {
+  const g = new THREE.Group();
+  const yellow = new THREE.MeshStandardMaterial({ color: "#f3c64f", roughness: 0.45 });
+  const dark = new THREE.MeshStandardMaterial({ color: "#2b3a36", roughness: 0.6 });
+  // 哨身：橫放的圓筒，前端接扁方的吹嘴，上方開出音孔
+  // 哨身：圓筒橫躺、軸朝左右，側面看是圓的（印字的那一面）
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.9, 40), yellow);
+  body.rotation.z = Math.PI / 2; body.position.set(0, 0.95, 0);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 1.5), yellow);  // 吹嘴從圓筒頂端往前伸
+  mouth.position.set(0, 1.65, 0.85);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.34), dark);
+  slot.position.set(0, 1.9, 0.12);
+  // 尾端吊環與掛繩
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.08, 10, 24), dark);
+  ring.position.set(0, 1.05, -1.15); ring.rotation.y = Math.PI / 2;
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.05, 8, 40), new THREE.MeshStandardMaterial({ color: "#1f6b45", roughness: 0.8 }));
+  cord.position.set(-1.6, 0.18, -0.9); cord.rotation.x = Math.PI / 2;
+  // 側面字樣：只有「陳慧文」
+  const cv = document.createElement("canvas"); cv.width = 512; cv.height = 200;
+  const cx = cv.getContext("2d");
+  cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200);
+  cx.fillStyle = "#1f4d43"; cx.font = '900 132px "PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
+  cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const label = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 });
+  for (const side of [1, -1]) {
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.59), label);
+    plate.position.set(side * 0.455, 0.95, 0); plate.rotation.y = side * Math.PI / 2;
+    g.add(plate);
+  }
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 0.18, 32), new THREE.MeshStandardMaterial({ color: "#efe6d2", roughness: 0.9 }));
+  base.position.y = 0.09;
+  g.add(base, body, mouth, slot, ring, cord);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+// 兩座島各放一支：性別友善島（防身求救）、防災韌性島（受困求救）
+function placeWhistle(islandId, spotId, dx, dz) {
+  if (!islandCenter[islandId]) return;
+  const c = cellPos(...LAYOUT[islandId][0]);
+  const w = buildWhistle();
+  w.position.set(c.x + dx, TOP, c.z + dz);
+  w.rotation.y = Math.atan2(camera.position.x, camera.position.z) - Math.PI / 2;  // 印「陳慧文」的側面正對預設鏡頭
+  w.scale.setScalar(1.15);
+  w.traverse((o) => { o.userData = { island: islandId, spot: spotId }; });
+  world.add(w);
+  pickables.push(w);
+  if (new URLSearchParams(location.search).has("debug")) (window.__whistles ||= {})[islandId] = w;
+  glbModels.landmarks[spotId] = buildWhistle();  // 地標卡右邊的 3D 縮圖也用同一個哨子
+  spotLabels.push({ text: "競選小物：安心哨", island: islandId, spotId, pos: new THREE.Vector3(w.position.x, TOP + 3.4, w.position.z) });
+}
+placeWhistle("W1", "whistle-w1", 3.4, 2.4);
+placeWhistle("P03", "whistle-p03", 3.4, 2.4);
 const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.text, pos: s.pos, kind: "spot", id: s.text, island: s.island }))].map((l) => {
   const el = document.createElement("button");
   el.type = "button";
@@ -1708,6 +1798,7 @@ $("#btn-night").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(next !== "auto"));
 });
 $("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
+if (new URLSearchParams(location.search).has("debug")) window.__fly = (x, z, zoom) => life?.flyTo(new THREE.Vector3(x, 0, z), zoom, 0.01);
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
 const startIsland = new URLSearchParams(location.search).get("island");
@@ -1725,6 +1816,7 @@ canvas.addEventListener('pointerleave',()=>life.hoverIsland(null));
 // 滑鼠與觸控手感：懸停浮起、點擊漣漪、雙擊聚焦、平移範圍
 feel=createInteraction({THREE,scene,camera,controls,canvas,pickables,TOP,reduced:()=>life.reduced,onDoubleTap:(e)=>{pick(e);const p=lastHit?.point;if(p)focusOn(new THREE.Vector3(p.x,0,p.z),Math.min(5,Math.max(camera.zoom*1.7,2.2)));}});
 { const ld = $("#loading"); ld?.classList.add("done"); setTimeout(() => ld?.remove(), 700); }
+setTimeout(() => loadLater?.().then(placeSurroundings), 400);  // 第一幀之後補周邊實景
 // Rig-free simulated greeting: no extra arms and no GLB skeleton requirement.
 const huiwenGreeting=createSimulatedGreeting(huiwen);
 canvas.addEventListener('pointerup',e=>{if(!downAt || Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>6)return;const u=pick(e);if(u?.huiwen)huiwenGreeting.trigger();if(u?.figure?.startsWith('陳慧文站路口'))cornerWave?.play();});
@@ -1754,6 +1846,21 @@ const moving = () => userMoving || !!viewAnim || life?.flying || performance.now
 if (mobile()) renderer.shadowMap.autoUpdate = false;
 let shadowTick = 0;
 let activeTime=0,frameAccumulator=0;
+// 依實際幀率自動降級（手機門檻 24 fps、桌機 40 fps）：先關即時陰影、再降解析度、最後減半路人；主角、地標、文字不動
+const quality = { t0: performance.now(), n: 0, level: 0 };
+function adaptQuality() {
+  if (quality.level >= 3 || document.hidden) { quality.t0 = performance.now(); quality.n = 0; return; }
+  quality.n++;
+  const sec = (performance.now() - quality.t0) / 1000;
+  if (sec < 5) return;
+  const fps = quality.n / sec; quality.t0 = performance.now(); quality.n = 0;
+  if (fps >= (mobile() ? 24 : 40)) return;
+  quality.level++;
+  if (quality.level === 1) { sun.castShadow = false; renderer.shadowMap.needsUpdate = true; }
+  else if (quality.level === 2) renderer.setPixelRatio(1);
+  else { walkers.forEach((w, i) => { if (i % 2) w.p.visible = false; }); sceneFolks.forEach((p, i) => { if (i % 2) p.visible = false; }); }
+  console.info("畫質自動調低", quality.level, Math.round(fps), "fps");
+}
 renderer.setAnimationLoop(()=>{
  let dt=Math.min(clock.getDelta(),.05);if(document.hidden){frameAccumulator=0;return;}
  frameAccumulator+=dt;if(mobile() && !moving() && frameAccumulator<1/30)return;dt=Math.min(frameAccumulator,.1);frameAccumulator=0;
@@ -1764,6 +1871,6 @@ renderer.setAnimationLoop(()=>{
  if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}guide.update(dt);
  streetMotion.update(dt,activeTime,reducedNow);
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
- dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);placeLabels();
+ dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);stepView(dt);controls.update();longlongDialogue?.update(dt);if(mobile()&&!moving()&&++shadowTick%3===0)renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);adaptQuality();placeLabels();
 });
 window.addEventListener('pagehide',()=>{renderer.setAnimationLoop(null);life.dispose();ticker.dispose();dotCards?.dispose();streetMotion.dispose();huiwenGreeting.dispose();actors.dispose();},{once:true});
