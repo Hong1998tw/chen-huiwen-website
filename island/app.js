@@ -1039,7 +1039,27 @@ function pick(ev) {
   raycaster.setFromCamera(pointer, camera);
   const hit = raycaster.intersectObjects(pickables, true).find((h) => h.object.visible);
   lastHit = hit || null;
-  return hit?.object.userData;
+  const u = hit?.object.userData;
+  // 手指點：只點到島地時，改找畫面上 26px 內最近的政績建物、地標或人物（小東西不必剛好點中）
+  if (ev.pointerType && ev.pointerType !== "mouse" && !(u && (u.item != null || u.landmark || u.figure || u.spot || u.longlong || u.huiwen || u.thread != null))) {
+    const near = nearestTarget(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
+    if (near) { lastHit = { object: near.obj, point: near.pos }; return near.obj.userData; }
+  }
+  return u;
+}
+const _np = new THREE.Vector3();
+function nearestTarget(x, y, w, h, radius = 26) {
+  let best = null, bd = radius;
+  const cands = [...flagshipGroups.filter((f) => f.island === state.island).map((f) => f.group), ...pickables.filter((o) => o.userData && (o.userData.landmark || o.userData.figure || o.userData.huiwen))];
+  for (const obj of cands) {
+    if (!obj.visible) continue;
+    obj.getWorldPosition(_np); _np.y += 1.2;
+    const pos = _np.clone(); _np.project(camera);
+    if (_np.z > 1) continue;
+    const d = Math.hypot((_np.x * 0.5 + 0.5) * w - x, (-_np.y * 0.5 + 0.5) * h - y);
+    if (d < bd) { bd = d; best = { obj, pos }; }
+  }
+  return best;
 }
 let downAt = null;
 canvas.addEventListener("pointerdown", (e) => {
@@ -1537,6 +1557,7 @@ function stepView(dt) {
 }
 controls.addEventListener("start", () => { viewAnim = null; });
 const faceFront = () => turnView(VIEW_HOME.theta, VIEW_HOME.phi);
+const zoomBy = (f) => life?.flyTo(controls.target.clone(), THREE.MathUtils.clamp(camera.zoom * f, controls.minZoom, controls.maxZoom), 0.35);
 const turnBy = (deg) => { const s = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); turnView(s.theta + THREE.MathUtils.degToRad(deg)); };
 {
   const icon = (d) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -1546,6 +1567,8 @@ const turnBy = (deg) => { const s = new THREE.Spherical().setFromVector3(camera.
     ["向左轉", "M9 5 4 9l5 4M4 9h9a6 6 0 0 1 0 12h-2", () => turnBy(-45)],
     ["回正面", "M12 3v4M12 17v4M3 12h4M17 12h4M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0", faceFront],
     ["向右轉", "M15 5l5 4-5 4M20 9h-9a6 6 0 0 0 0 12h2", () => turnBy(45)],
+    ["放大", "M12 5v14M5 12h14", () => zoomBy(1.4)],
+    ["縮小", "M5 12h14", () => zoomBy(1 / 1.4)],
   ]) {
     const b = document.createElement("button");
     b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.innerHTML = icon(d);
