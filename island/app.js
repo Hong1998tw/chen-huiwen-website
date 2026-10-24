@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { createInteraction } from "./interaction.js";
 import { addBackdrop } from "./backdrop.js";
+import { addWeather } from "./weather.js";
 import { createIslandCards } from "./dot-code-2/dot-code-2.js";
 import { createRailparkLife } from "./railpark-life.mjs";
 const railparkControllers = new Map();
@@ -34,9 +35,10 @@ const mobile = () => innerWidth <= 760;
 // 刻意留幾格海面，讓島群不要太密。
 const R = 10;
 const LAYOUT = {
-  Q1: [[0, 0], [-1, 0]],                       // 中央：高雄市議會＋美麗島雜誌社
+  Q1: [[0, 0]],                                 // 中央：高雄市議會
+  W1: [[-1, 0]],                                // 議會旁：性別友善島（鳳山婦幼青少年活動中心）
   P02: [[0, -1], [0, -2]], P05: [[1, -1]], P09: [[1, 0]], P08: [[0, 1]], P12: [[-1, 1]],
-  P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [3, -1]], P10: [[2, 0]], P07: [[3, 0]],
+  P01: [[1, -2]], P04: [[2, -2]], P06: [[2, -1], [3, -1], [3, -2]], P10: [[2, 0]], P07: [[3, 0]],
   P03: [[-1, -1], [-2, -1]], X2: [[-2, 0], [-3, 1], [-3, 0], [-3, 2]], X3: [[-2, 1]],
   P11: [[1, 1]], P13: [[0, 2]], X1: [[-1, 2]], X4: [[-1, 3]],
   LCG: [[2, 1]],  // 五甲龍成宮：鳳山溪出海口東側
@@ -320,6 +322,15 @@ scene.add(world);
 const pickables = [];
 const islandCenter = {};
 const flagshipGroups = [];
+const spotLabels = [];  // 島上第二格的實景地標名牌（美麗島雜誌社等）
+// 第二格實景地標的介紹（名稱、地址、一句話）
+const SPOT_INFO = {
+  formosa: { name: "美麗島雜誌社", addr: "新興區中山一路53號", note: "1979 年美麗島事件的起點，高雄民主運動的歷史現場，也是賴瑞隆長年關注的轉型正義記憶。" },
+  railpark: { name: "臺鐵高雄機廠舊址親子遊樂區", addr: "輜汽路（臺鐵高雄機廠舊址）", note: "舊廠房改造成鐵道主題遊戲區，天車、桁架下有滑梯、鳥巢鞦韆與腳踏軌道車。" },
+  "chengcing-lake": { name: "澄清湖", addr: "鳥松區大埤路32號", note: "高雄的大水缸，中興塔與九曲橋是幾代人的郊遊記憶，環湖步道串起鳳山與鳥松。" },
+  "chengcing-baseball": { name: "澄清湖棒球場", addr: "鳥松區大埤路113號", note: "兩萬席的國際棒球場，整修後重新成為南臺灣職棒與國際賽的主場。" },
+  "guoling-park": { name: "果嶺公園", addr: "鳥松區澄清湖畔（原高爾夫球場）", note: "原高爾夫球場開放成市民公園，起伏的果嶺草坡、老樹與木球場地保留下來。" },
+};
 const walkers = [];
 const cars = [];
 
@@ -488,9 +499,8 @@ for (const island of islands) {
   // 第二格中央的主題物件：質詢島放美麗島雜誌社、人行交通島放陳慧文站路口（模型存在才放）
   // 各島第二格以後的實景地標（格序、模型類別、模型、縮放、名稱）
   const CENTERPIECE = {
-    Q1: [[1, "landmarks", "formosa", 1.0, "美麗島雜誌社"]],
     P02: [[1, "character", "huiwen-corner", 1.25, "陳慧文站路口｜點一下打招呼"]],
-    P06: [[1, "landmarks", "railpark", 1.75, "臺鐵高雄機廠舊址親子遊樂區"]],
+    P06: [[1, "landmarks", "railpark", 1.75, "臺鐵高雄機廠舊址親子遊樂區"], [2, "landmarks", "formosa", 1.0, "美麗島雜誌社"]],
     X2: [[1, "landmarks", "chengcing-lake", 1.55, "澄清湖"], [2, "landmarks", "chengcing-baseball", 1.55, "澄清湖棒球場"], [3, "landmarks", "guoling-park", 1.55, "果嶺公園"]],
   };
   const taken = new Set();
@@ -499,7 +509,8 @@ for (const island of islands) {
     if (!cpModel) continue;
     cpModel.position.set(cells[ci].x, TOP, cells[ci].z);
     cpModel.rotation.y = FACE_CAMERA;
-    cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name }; });
+    cpModel.traverse((o) => { o.castShadow = true; o.receiveShadow = true; o.userData = { island: island.id, figure: name, spot: kind === "landmarks" ? id : undefined }; });
+    if (kind === "landmarks") spotLabels.push({ text: name, island: island.id, spotId: id, pos: new THREE.Vector3(cells[ci].x, TOP + 7.5, cells[ci].z) });
     world.add(cpModel);
     pickables.push(cpModel);
     taken.add(ci);
@@ -527,12 +538,8 @@ for (const island of islands) {
       const it = data.items[n];
       const g = new THREE.Group();
       const variants = Object.keys(glbModels.templates).filter((v) => v === it.k || v.startsWith(`${it.k}-`)).sort();
-      const model = variants.length ? glbClone("templates", variants[n % variants.length], 0.5) : null;
-      if (model) g.add(model);
-      else {
-        (TEMPLATES[it.k] || TEMPLATES.office)(g, !!it.d);
-        g.scale.setScalar(0.66);
-      }
+      // 不放通用建築（看起來像多餘的房子）；周邊實景之後由林 dot 依 Google 地圖逐島建模
+      void variants;
       g.position.set(slot.x, TOP, slot.z);
       g.rotation.y = Math.round((Math.atan2(cells[0].x - slot.x, cells[0].z - slot.z) / (Math.PI / 2))) * (Math.PI / 2);
       g.traverse((o) => { o.userData = { island: island.id, item: n }; });
@@ -543,17 +550,14 @@ for (const island of islands) {
     used = Math.min(slots.length, island.flagships.length);
   }
 
-  // 其餘格位填滿街區、公園與街景小物件，像一座小城
+  // 其餘格位只放綠地、樹與街景小物件，不放無關的建築，讓地標與政績建物更清楚；約四成格位留空
   const propIds = Object.keys(glbModels.props);
   for (const slot of slots.slice(used)) {
     const g = new THREE.Group();
     const roll = rand();
-    const townIds = Object.keys(glbModels.town);
     const treeIds = propIds.filter((k) => k.startsWith("tree"));
-    if (roll < 0.6) {
-      if (townIds.length) g.add(glbClone("town", townIds[Math.floor(rand() * townIds.length)], 1.0));
-      else townBlock(g, rand, accent);
-    } else if (roll < 0.85) {
+    if (roll < 0.4) continue;
+    if (roll < 0.8) {
       g.add(cyl(1.3, 1.3, 0.06, 10, "#a9d68f"));
       if (treeIds.length) {
         for (const [x, z] of [[-0.5, -0.3], [0.6, 0.4]]) {
@@ -664,6 +668,7 @@ function roadBridge(a, b) {
 
 // ── 場景細節：島間步道橋、岸邊、海浪、船、雲、日夜 ──────────────────
 const backdrop = addBackdrop({ THREE, scene, box, cyl, cone, tree, rng });
+let weather = null;
 const extras = addSceneExtras({ THREE, scene, world, islands, LAYOUT, hexToWorld, mid, R, mat, box, cyl, cone, tree, sun, hemi, rng, boatModels: glbModels.boats });
 const riverInfo = addRiver({ THREE, world, cellPos, R, SPACING, mat, box, cyl, bridgeEnds, TOP, models: glbModels.landmarks });
 for (const bp of bridgePairs) if (!riverInfo.skipPairs.has([bp.a, bp.b].map((x) => x.join(",")).sort().join("|"))) roadBridge(bp.a, bp.b);
@@ -729,6 +734,7 @@ addWanderer("chenqimai", "陳其邁｜高雄市長", LAYOUT.Q1[0]);
 addWanderer("xuzhijie", "許智傑｜立法委員", LAYOUT.P02[0]);
 // 百變隆隆 16 角：散在各島隨意走動，點一下出現漫畫對話框
 let longlongDialogue = null;
+const longlongTags = [];  // 百變隆隆頭上的小名牌
 try {
   const res = await fetch("./longlong-dialogue.json", { cache: "no-cache" });
   if (!res.ok) throw new Error("角色資料載入失敗");
@@ -737,8 +743,18 @@ try {
   const cells = [...Object.values(LAYOUT)].flat();
   cues.cues.forEach((c, i) => {
     const before = wanderers.length;
-    addWanderer(c.id, `百變隆隆｜${c.name}`, cells[(i * 5) % cells.length], 0.7);
-    if (wanderers.length > before) longlongDialogue.register(wanderers[wanderers.length - 1].g, c.id);
+    addWanderer(c.id, `百變隆隆｜${c.name}`, cells[(i * 5) % cells.length], 1.0);
+    if (wanderers.length > before) {
+      const w = wanderers[wanderers.length - 1];
+      longlongDialogue.register(w.g, c.id);
+      const tag = document.createElement("button");
+      tag.type = "button";
+      tag.className = "ll-tag";
+      tag.textContent = `隆隆・${c.name}`;
+      tag.addEventListener("click", () => longlongDialogue.show(c.id));
+      $("#labels").append(tag);
+      longlongTags.push({ el: tag, g: w.g });
+    }
   });
 } catch (err) { console.warn("百變隆隆互動暫未載入", err); }
 const edgeU = (from, to) => {
@@ -857,14 +873,14 @@ for (const island of islands) {
 const itemByTitle = (prefix) => data.items.findIndex((it) => it.t.startsWith(prefix));
 const BRIDGE_ITEM = { dingbao: itemByTitle("頂寶橋"), haibang: itemByTitle("海邦橋") };
 function openRiver() { Object.assign(state, { view: "project", project: "fengshanriver", limit: 40 }); setPanel(true); render(); body.scrollTop = 0; }
-const extraLabels = riverInfo.labels.map((l) => {
+const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.text, pos: s.pos, kind: "spot", id: s.text, island: s.island }))].map((l) => {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "isl-label river-label";
-  el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : "#8a8f93"}">${l.kind === "river" ? "溪" : "橋"}</b>${esc(l.text)}`;
-  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
+  el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : l.kind === "spot" ? "#c0573f" : "#8a8f93"}">${l.kind === "river" ? "溪" : l.kind === "spot" ? "景" : "橋"}</b>${esc(l.text)}`;
+  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
   labelsEl.append(el);
-  return { el, pos: l.pos };
+  return { el, pos: l.pos, kind: l.kind, id: l.id, island: l.island };
 });
 const tmp = new THREE.Vector3();
 // 選到一座島時，島上的重點政績在建物上方冒出編號名牌（HEART 的細項標示做法），點了開圖卡
@@ -873,7 +889,7 @@ function showItemPins(id) {
   for (const p of itemPins) p.el.remove();
   itemPins = [];
   if (!id) return;
-  flagshipGroups.filter((f) => f.island === id).slice(0, 8).forEach((f, k) => {
+  flagshipGroups.filter((f) => f.island === id).slice(0, mobile() ? 4 : 6).forEach((f, k) => {
     const it = data.items[f.item];
     const el = document.createElement("button");
     el.type = "button";
@@ -891,12 +907,25 @@ function showItemPins(id) {
 }
 function placeLabels() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
+  const talking = longlongDialogue?.activeObject;
+  for (const t of longlongTags) {
+    tmp.copy(t.g.position); tmp.y += 4.2; tmp.project(camera);
+    const off = tmp.z > 1 || Math.abs(tmp.x) > 1.05 || Math.abs(tmp.y) > 1.05;
+    t.el.hidden = off || t.g === talking;
+    if (!off) { t.el.style.left = `${(tmp.x * 0.5 + 0.5) * w}px`; t.el.style.top = `${(-tmp.y * 0.5 + 0.5) * h}px`; }
+  }
   // 名牌互相錯開：由下往上排，撞到已放好的就往上挪
   const placed = [];
   const pins = itemPins.map((p) => { tmp.copy(p.pos).project(camera); return { el: p.el, x: (tmp.x * 0.5 + 0.5) * w, y: (-tmp.y * 0.5 + 0.5) * h, wd: p.el.offsetWidth || 120 }; })
     .sort((a, b) => b.y - a.y);
+  // 撞到就先左右錯開，再往上疊；避免全部疊成一直排、頂到工具列
+  const hit = (p) => placed.some((q) => Math.abs(q.y - p.y) < 24 && Math.abs(q.x - p.x) < (q.wd + p.wd) / 2 + 4);
   for (const p of pins) {
-    for (let k = 0; k < 8 && placed.some((q) => Math.abs(q.y - p.y) < 24 && Math.abs(q.x - p.x) < (q.wd + p.wd) / 2 + 4); k++) p.y -= 24;
+    const ox = p.x, oy = p.y, dx = p.wd / 2 + 10;
+    outer: for (let row = 0; row < 5; row++) for (const sx of [0, dx, -dx]) {
+      p.x = ox + sx; p.y = oy - row * 26;
+      if (!hit(p)) break outer;
+    }
     placed.push(p);
     p.el.style.left = `${p.x}px`;
     p.el.style.top = `${p.y}px`;
@@ -929,6 +958,36 @@ function eventBanner() {
   return upcoming.slice(0, 2).map((e) => `<button type="button" class="event-banner" data-act="island" data-id="${esc(e.island)}"><span>活動宣布</span><b>${esc(e.title)}</b><small>${esc(eventTime(e.date))}｜${esc(e.place)}</small></button>`).join("");
 }
 
+// ── 地標 3D 縮圖：離屏小畫布，每個模型只畫一次 ──
+const thumbCache = new Map();
+let thumbCtx = null;
+async function thumbnail(kind, id) {
+  const key = `${kind}/${id}`;
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  const src = glbModels[kind]?.[id];
+  if (!src) { thumbCache.set(key, null); return null; }
+  if (!thumbCtx) {
+    const r = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+    r.setSize(260, 220, false); r.setPixelRatio(1); r.outputColorSpace = THREE.SRGBColorSpace;
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight("#ffffff", "#9ab", 1.9));
+    const d = new THREE.DirectionalLight("#fff3dc", 2.0); d.position.set(-5, 10, 7); sc.add(d);
+    thumbCtx = { r, sc, cam: new THREE.PerspectiveCamera(28, 260 / 220, 0.1, 500) };
+  }
+  const { r, sc, cam } = thumbCtx;
+  const m = src.clone(true);
+  sc.add(m);
+  const box = new THREE.Box3().setFromObject(m), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+  const dist = (size * 0.6) / Math.tan(THREE.MathUtils.degToRad(14));
+  cam.position.copy(c).add(new THREE.Vector3(0.75, 0.55, 1).normalize().multiplyScalar(dist));
+  cam.lookAt(c);
+  r.render(sc, cam);
+  const url = r.domElement.toDataURL("image/png");
+  sc.remove(m);
+  thumbCache.set(key, url);
+  return url;
+}
+
 // ── 相機與版面 ──────────────────────────────────────────────────
 const FRUSTUM = 138;
 let panelOpen = true;
@@ -942,7 +1001,7 @@ function resize() {
   // 清單打開時，把畫面中心移到沒被清單遮住的區域
   const panel = $("#panel").getBoundingClientRect();
   if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.width + 16) / 2, 0, w, h);
-  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, panel.height / 2, w, h);
+  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(panel.height, h * 0.5) / 2, w, h);
   else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
@@ -976,12 +1035,14 @@ canvas.addEventListener("pointerup", (e) => {
   if (longlongDialogue?.pointerUp(e, pickables)) { downAt = null; return; }
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > (e.pointerType === "mouse" ? 6 : 10)) return;
   const u = pick(e);
+  if (!u && mobile() && panelOpen && sheetState !== "peek") { setSheet("peek"); return; }
   if (u) feel?.ripple(lastHit?.point, u.item != null ? "#f3c64f" : "#ffffff");
   if (e.pointerType !== "mouse" && lastHit) { feel?.hover(lastHit.object); setTimeout(() => feel?.hover(null), 650); }
   if (u?.item != null) { openIsland(u.island, true, u.item); openCard(u.item); }
   else if (u?.thread != null) {const th=interp.threads[u.thread];life?.showConnections(['Q1',th?.island]);if(th?.island)openIsland(th.island,true); }
   else if (u?.river) openRiver();
   else if (u?.bridge && BRIDGE_ITEM[u.bridge] >= 0) openCard(BRIDGE_ITEM[u.bridge]);
+  else if (u?.spot || u?.landmark) openIsland(u.island, true, null, spotFor(u.island, u.spot));
   else if (u?.island) openIsland(u.island, true);
 });
 let hoverFrame = 0;
@@ -993,6 +1054,9 @@ canvas.addEventListener("pointermove", (e) => {
     const u = pick(e);
     feel?.hover(lastHit?.object || null);
     life?.hoverIsland(u?.island||null);
+    // 名牌只在滑過或選到時出現（中央議會一直在）
+    for (const [id, el] of Object.entries(labelEls)) el.classList.toggle("hover", u?.island === id);
+    for (const x of extraLabels) x.el.classList.toggle("hover", (x.kind === "river" && !!u?.river) || (x.kind === "bridge" && u?.bridge === x.id) || (x.kind === "spot" && u?.figure === x.id));
     let html = "";
     if (u?.item != null) {
       const it = data.items[u.item];
@@ -1021,7 +1085,7 @@ canvas.addEventListener("pointermove", (e) => {
     tooltip.style.top = `${e.clientY}px`;
   });
 });
-canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show"); feel?.hover(null); });
+canvas.addEventListener("pointerleave", () => { tooltip.classList.remove("show"); feel?.hover(null); for (const el of document.querySelectorAll(".isl-label.hover")) el.classList.remove("hover"); });
 
 // ── 清單與面板 ──────────────────────────────────────────────────
 const body = $("#panel-body");
@@ -1158,12 +1222,12 @@ function renderHome() {
         const isl = islandById[id];
         html += `<button type="button" class="isl-row" data-act="island" data-id="${id}">
           <span class="dot" style="background:${AXIS_COLOR[isl.axis]}">${isl.kind === "pledge" ? id.slice(1).replace(/^0/, "") : isl.kind === "interpellation" ? "質" : "績"}</span>
-          <span class="name">${esc(isl.name)}<small>${esc(isl.pledge || (isl.kind === "interpellation" ? "在議會講了什麼，最後發展是什麼" : "2026 政見之外的長期政績"))}</small></span>
+          <span class="name">${esc(isl.name)}<small>${esc(isl.pledge || (isl.kind === "interpellation" ? "在議會講了什麼，最後發展是什麼" : isl.note || "長期推動政見"))}</small></span>
 </button>`;
       }
     }
     if (data.laiAchievements?.length) {
-      html += `<p class="axis">認識賴瑞隆</p><button type="button" class="isl-row" data-act="lai"><span class="dot" style="background:#b8862b">賴</span><span class="name">賴瑞隆做了什麼<small>${data.laiAchievements.length} 項政績，對照慧文在同一座島做的事</small></span></button>`;
+      html += `<p class="axis">認識賴瑞隆</p><button type="button" class="isl-row" data-act="lai"><span class="dot" style="background:#b8862b">賴</span><span class="name">賴瑞隆的政見與政績<small>${(data.laiPolicies || []).length} 項市長政見、${data.laiAchievements.length} 項立委政績，對照慧文在同一座島做的事</small></span></button>`;
     }
     html += `<p class="axis">鳳山各里</p><button type="button" class="isl-row" data-act="tab" data-tab="villages"><span class="dot" style="background:#9a8f7a">里</span><span class="name">鳳山 63 里<small>里內路平、水溝、路燈等小工程</small></span></button>`;
   } else {
@@ -1217,19 +1281,28 @@ function laiFor(id) {
 function laiCards(list) {
   return list.map((a) => `<div class="link-card"><h4>${esc(a.title)}${a.year ? `<small>${esc(a.year)}</small>` : ""}</h4><p>${esc(a.detail)}</p></div>`).join("");
 }
+function laiPoliciesFor(id) {
+  return (data.laiPolicies || []).filter((p) => p.islands.includes(id));
+}
+function laiPolicyCards(list) {
+  return list.map((p) => `<div class="link-card lai-policy"><h4>${esc(p.title)}<small>市長政見</small></h4><p>${esc(p.summary)}</p></div>`).join("");
+}
 function laiHTML(id) {
-  const list = laiFor(id);
-  if (!list.length) return "";
-  return `<p class="axis">認識賴瑞隆</p>${laiCards(list)}${huiwenSummary(id)}`;
+  const list = laiFor(id), pols = laiPoliciesFor(id);
+  if (!list.length && !pols.length) return "";
+  return `${huiwenSummary(id)}<p class="axis">認識賴瑞隆</p>${laiPolicyCards(pols)}${laiCards(list)}`;
 }
 function renderLai() {
   let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
     <p class="p-kicker">認識賴瑞隆</p><h2 class="p-title">賴瑞隆做了什麼</h2>`;
+  html += `<p class="p-lead">賴瑞隆的市長政見與立委政績，對照慧文在同一座島做過的事。</p>`;
   for (const isl of islands) {
-    const list = laiFor(isl.id);
-    if (!list.length) continue;
-    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${laiCards(list)}${huiwenSummary(isl.id)}`;
+    const list = laiFor(isl.id), pols = laiPoliciesFor(isl.id);
+    if (!list.length && !pols.length) continue;
+    html += `<p class="axis"><button type="button" class="back" style="margin:0" data-act="island" data-id="${isl.id}">${esc(isl.name)} →</button></p>${huiwenSummary(isl.id)}${laiPolicyCards(pols)}${laiCards(list)}`;
   }
+  const otherPol = (data.laiPolicies || []).filter((p) => !p.islands.some((id) => islandById[id]));
+  if (otherPol.length) html += `<p class="axis">其他市長政見</p>${laiPolicyCards(otherPol)}`;
   const rest = data.laiAchievements.filter((a) => !a.islands.some((id) => islandById[id]));
   if (rest.length) html += `<p class="axis">其他政績</p>${laiCards(rest)}`;
   return html;
@@ -1240,7 +1313,7 @@ function interpSessions() {
 }
 
 function renderInterp(isl) {
-  let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>
+  let html = `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCardHTML()}
     <p class="p-kicker">議會</p><h2 class="p-title">${esc(isl.name)}</h2>
     <p class="p-lead">慧文在議會問了什麼，同一件事最後發展是什麼。</p>`;
   if (!interp) return html + `<p class="empty">質詢資料整理中。</p>`;
@@ -1263,6 +1336,11 @@ function renderInterp(isl) {
   return html;
 }
 
+// 地標卡（點島上的意象圖後出現在島名上方）
+function spotCardHTML() {
+  const sp = state.spot;
+  return sp ? `<div class="spot-card"><div class="spot-text"><p class="spot-kicker">地標</p><h3>${esc(sp.name)}</h3>${sp.addr ? `<p class="spot-addr">${esc(sp.addr)}</p>` : ""}<p class="spot-note">${esc(sp.note || "")}</p></div><img class="spot-thumb" data-thumb="${esc(sp.kind)}/${esc(sp.id)}" alt="${esc(sp.name)} 3D 模型"></div>` : "";
+}
 function renderIsland() {
   const isl = islandById[state.island];
   if (isl.kind === "interpellation") return renderInterp(isl);
@@ -1273,9 +1351,11 @@ function renderIsland() {
   idx.sort(byWeight);
   if (state.focusItem != null) idx = [state.focusItem, ...idx.filter((n) => n !== state.focusItem)];
   const axis = axisById[isl.axis];
-  return `<button type="button" class="back" data-act="home">← 全部島嶼</button>
+  const spotCard = spotCardHTML();
+  return `<button type="button" class="back" data-act="home">← 全部島嶼</button>${spotCard}
     <p class="p-kicker">${esc(axis?.name || "")}</p><h2 class="p-title">${esc(isl.name)}</h2>
-    ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<p class="p-lead">2026 政見之外，長期持續推動的政績。</p>`}
+    ${isl.pledge ? `<div class="pledge"><small>2026 政見</small><p>${esc(isl.pledge)}</p></div>` : `<div class="pledge"><small>長期推動政見</small><p>${esc(isl.note || isl.name)}</p></div>`}
+    ${isl.highlight ? `<div class="highlight-card"><span>${esc(isl.highlight.tag)}</span><h3>${esc(isl.highlight.title)}</h3><p>${esc(isl.highlight.text)}</p></div>` : ""}
     ${laiHTML(isl.id)}
     ${hearingsHTML(isl.id)}
     ${layers.length > 1 ? `<div class="chips">${["全部", ...layers].map((l) => `<button type="button" data-act="layer" data-layer="${l}" aria-pressed="${state.layer === l}">${l === "會勘" ? "會勘紀錄" : l}</button>`).join("")}</div>` : ""}
@@ -1289,13 +1369,20 @@ function render() {
     el.classList.toggle("active", state.view === "island" && state.island === id);
     el.classList.toggle("dim", state.view === "island" && state.island !== id);
   }
+  for (const x of extraLabels) if (x.kind === "spot") x.el.classList.toggle("active", state.view === "island" && state.island === x.island);
+  for (const img of body.querySelectorAll("img[data-thumb]")) { const [k, id] = img.dataset.thumb.split("/"); thumbnail(k, id).then((url) => { if (url) img.src = url; else img.remove(); }); }
   const input = body.querySelector(".search");
   if (input && state.view === "search") { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 
-function openIsland(id, fly, itemIdx = null) {
+function spotFor(island, spotId) {
+  if (spotId) return SPOT_INFO[spotId] ? { kind: "landmarks", id: spotId, ...SPOT_INFO[spotId] } : null;
+  const info = scenery?.LANDMARK_INFO?.[island];
+  return info ? { kind: "landmarks", id: island, ...info } : null;
+}
+function openIsland(id, fly, itemIdx = null, spot = null) {
   life?.selectIsland(id);
-  Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx });
+  Object.assign(state, { view: "island", island: id, layer: "全部", limit: 40, focusItem: itemIdx, spot });
   dotCards?.selectIsland(id);
   showItemPins(id);
   setPanel(true);
@@ -1351,54 +1438,66 @@ body.addEventListener("compositionend", (e) => {
   if (e.target.dataset.act === "search") runSearch(e.target.value);
 });
 
-function setPanel(open) {
+const SHEET = { peek: 128 };
+let sheetState = "half";
+function sheetHeight(state) { return state === "peek" ? SHEET.peek : state === "full" ? Math.round(innerHeight * 0.9) : Math.round(innerHeight * 0.5); }
+function setSheet(state) {
+  sheetState = state;
+  document.documentElement.style.setProperty("--sheet-h", `${sheetHeight(state)}px`);
+  document.body.classList.toggle("sheet-peek", state === "peek");
+  requestAnimationFrame(resize);
+}
+function setPanel(open, state = "half") {
   panelOpen = open;
   document.body.classList.toggle("panel-closed", !open);
   $("#btn-list").setAttribute("aria-expanded", String(open));
+  if (mobile() && open) setSheet(state);
   requestAnimationFrame(resize);
 }
 $("#btn-list").addEventListener("click", () => setPanel(!panelOpen));
+// 把手：點一下在半開／只露標題之間切換；往下拖到底就收起，往上拖就全開
+{
+  const handle = $("#panel-handle");
+  let drag = null;
+  handle.addEventListener("pointerdown", (e) => { drag = { y: e.clientY, h: sheetHeight(sheetState), moved: false }; handle.setPointerCapture(e.pointerId); });
+  handle.addEventListener("pointermove", (e) => {
+    if (!drag || !mobile()) return;
+    const h = Math.max(60, Math.min(innerHeight * 0.92, drag.h + (drag.y - e.clientY)));
+    if (Math.abs(drag.y - e.clientY) > 6) drag.moved = true;
+    document.documentElement.style.setProperty("--sheet-h", `${h}px`);
+  });
+  const release = (e) => {
+    if (!drag) return;
+    const dy = drag.y - e.clientY, h = drag.h + dy;
+    drag = null;
+    if (!mobile()) return;
+    if (!drag && Math.abs(dy) <= 6) { setSheet(sheetState === "peek" ? "half" : "peek"); return; }
+    if (h < 90) { setPanel(false); return; }
+    setSheet(h > innerHeight * 0.7 ? "full" : h < innerHeight * 0.3 ? "peek" : "half");
+  };
+  handle.addEventListener("pointerup", release);
+  handle.addEventListener("pointercancel", release);
+}
 $("#btn-home").addEventListener("click", goHome);
-$("#btn-explore").addEventListener("click", (e) => {
-  const on = document.body.classList.toggle("explore-open");
-  e.currentTarget.setAttribute("aria-expanded", String(on));
-});
-$("#btn-night").addEventListener("click", (e) => {
-  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
-  e.currentTarget.setAttribute("aria-pressed", String(on));
-  e.currentTarget.textContent = on ? "白天" : "夜晚";
-  extras.setNight(on);
-});
-$("#btn-names").addEventListener("click", (e) => {
-  const on = e.currentTarget.getAttribute("aria-pressed") === "true";
-  e.currentTarget.setAttribute("aria-pressed", String(!on));
-  labelsEl.hidden = on;
-});
+
 
 // ── 開場導覽 ────────────────────────────────────────────────────
-const INTRO = [
-  ["慧文會武\n會做事", "這是一座用政績蓋起來的島。"],
-  ["懂建設、會爭取", "每座島中央是 2026 年的承諾，\n周圍站著已經做過的事。"],
-  ["做得到的承諾，\n看得見的改變。", "點一座島，或在清單裡找你家那一里。"],
-];
-let introStep = 0;
-function showIntro(i) {
-  introStep = i;
-  $("#intro-step").textContent = `${i + 1}／${INTRO.length}`;
-  $("#intro-title").textContent = INTRO[i][0];
-  $("#intro-text").textContent = INTRO[i][1];
-  $("#intro-next").textContent = i === INTRO.length - 1 ? "開始逛島" : "下一步";
-}
+// 開場只有一張卡：自己逛，或讓導覽從中央的議會帶一圈
 function closeIntro() {
   $("#intro").hidden = true;
   try { localStorage.setItem("huiwen-island-intro", "1"); } catch {}
 }
-$("#intro-next").addEventListener("click", () => (introStep < INTRO.length - 1 ? showIntro(introStep + 1) : closeIntro()));
 $("#intro-skip").addEventListener("click", closeIntro);
+$("#btn-night").addEventListener("click", (e) => {
+  const next = weather?.cycleMode();  // 自動 → 白天 → 夜晚 → 自動
+  e.currentTarget.textContent = { auto: "日夜", day: "白天", night: "夜晚" }[next] || "日夜";
+  e.currentTarget.setAttribute("aria-pressed", String(next !== "auto"));
+});
+$("#intro-tour").addEventListener("click", () => { closeIntro(); life?.startTour?.(); });
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
 const startIsland = new URLSearchParams(location.search).get("island");
-if (!seen && !startIsland) { showIntro(0); $("#intro").hidden = false; }
+if (!seen && !startIsland) $("#intro").hidden = false;
 
 // Task 7 additive integration; cards module may pass these same callbacks.
 life=createIslandLife({scene,world,camera,controls,renderer,islandCenter,islandCells:Object.fromEntries(Object.entries(LAYOUT).map(([id,cells])=>[id,cells.map(c=>cellPos(...c))])),data,onIsland:openIsland,onItem:openCard});
@@ -1416,12 +1515,12 @@ feel=createInteraction({THREE,scene,camera,controls,canvas,pickables,TOP,reduced
 const huiwenGreeting=createSimulatedGreeting(huiwen);
 canvas.addEventListener('pointerup',e=>{if(!downAt || Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>6)return;const u=pick(e);if(u?.huiwen)huiwenGreeting.trigger();if(u?.figure?.startsWith('陳慧文站路口'))cornerWave?.play();});
 // ── 啟動 ────────────────────────────────────────────────────────
-if (mobile()) setPanel(false);
+if (mobile()) setPanel(true, "peek");
 resize();
 controls.target.set(0, 0, 0);
 render();
 // 深層連結：等相機與控制器跑過第一幀再飛過去，否則會飛到錯的位置
-if (startIsland && islandById[startIsland]) requestAnimationFrame(() => requestAnimationFrame(() => openIsland(startIsland, true)));
+if (startIsland && islandById[startIsland]) setTimeout(() => openIsland(startIsland, true), 80);  // 背景分頁不跑 rAF，用 timeout 比較穩
 
 // 林 dot Task 8：圖卡、政績探索、比較、年份、分享圖卡、活動
 try {
@@ -1430,6 +1529,7 @@ try {
     onProject: (id) => { Object.assign(state, { view: "project", project: id, limit: 40 }); render(); } });
   if (state.island) dotCards.selectIsland(state.island);
 } catch (err) { console.warn("圖卡模組暫未載入", err); dotCards = null; }
+weather = addWeather({ THREE, scene, setNight: extras.setNight, rng });
 const clock = new THREE.Clock();
 let activeTime=0,frameAccumulator=0;
 renderer.setAnimationLoop(()=>{
@@ -1438,10 +1538,10 @@ renderer.setAnimationLoop(()=>{
  const reducedNow=life.reduced;activeTime+=reducedNow?0:dt;
  for(const c of railparkControllers.values()){c.setReducedMotion?.(reducedNow);c.update(dt);}
  life.update(dt,activeTime);ticker.update(dt);
- extras.update(dt,activeTime);traffic.update(reducedNow?0:dt,activeTime);
+ extras.update(dt,activeTime);weather?.update(dt);traffic.update(reducedNow?0:dt,activeTime);
  if(!reducedNow){stepTour(dt);followLonglong();stepWanderers(dt);riverInfo.update(dt);}
  streetMotion.update(dt,activeTime,reducedNow);
  huiwenGreeting.update(dt,reducedNow);feel.update(dt);if(!reducedNow)backdrop.update(dt);cornerWave?.update(dt,reducedNow);
- dotCards?.update(dt);controls.update();longlongDialogue?.update(dt);renderer.render(scene,camera);placeLabels();
+ dotCards?.update(dt);document.body.classList.toggle('touring',!!life.touring);controls.update();longlongDialogue?.update(dt);renderer.render(scene,camera);placeLabels();
 });
 window.addEventListener('pagehide',()=>{renderer.setAnimationLoop(null);life.dispose();ticker.dispose();dotCards?.dispose();streetMotion.dispose();huiwenGreeting.dispose();actors.dispose();},{once:true});

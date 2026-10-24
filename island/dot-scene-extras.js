@@ -111,10 +111,10 @@ export function addSceneExtras(ctx) {
   const uniforms={dotTime:{value:0},dotMotion:{value:1}};
   waveMat.onBeforeCompile=shader=>{Object.assign(shader.uniforms,uniforms);shader.vertexShader='uniform float dotTime; uniform float dotMotion;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n transformed.y += dotMotion * (.10*sin(position.x*.08+dotTime*.6)+.10*cos(position.z*.07+dotTime*.5));');shader.fragmentShader='uniform float dotTime; uniform float dotMotion;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <dithering_fragment>','gl_FragColor.rgb += dotMotion * .012 * sin(gl_FragCoord.x*.045+gl_FragCoord.y*.03+dotTime*.6);\n#include <dithering_fragment>');};
   waveMat.customProgramCacheKey=()=>"dot-water-r169-v1";
-  function setNight(on){nightTarget=on?1:0;if(motion.matches)night=nightTarget;}
+  function setNight(on){nightTarget=typeof on==='number'?on:(on?1:0);if(motion.matches)night=nightTarget;}
 
   function update(dt, t) {
-    night += (nightTarget-night)*(motion.matches?1:1-Math.exp(-dt*2));
+    night += (nightTarget-night)*(motion.matches?1:1-Math.exp(-dt*0.6));
     scene.background.copy(dayBg).lerp(nightBg,night);sun.intensity=THREE.MathUtils.lerp(DAY.sun,NIGHT.sun,night);hemi.intensity=THREE.MathUtils.lerp(DAY.hemi,NIGHT.hemi,night);waveMat.color.copy(daySea).lerp(nightSea,night);lampMat.emissiveIntensity=night*.9;
     uniforms.dotTime.value=t;uniforms.dotMotion.value=motion.matches?0:1;
     if(motion.matches)dt=0;
