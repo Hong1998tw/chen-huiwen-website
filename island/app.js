@@ -1367,6 +1367,7 @@ function renderIsland() {
 }
 
 function render() {
+  window.__listFallback?.handOff();  // 3D 起來了，面板從先行清單交給這裡
   const html = state.view === "project" ? renderProject() : state.view === "lai" ? renderLai() : state.view === "island" ? renderIsland() : state.view === "village" ? renderVillage() : state.view === "search" ? renderSearch() : renderHome();
   body.innerHTML = html;
   for (const [id, el] of Object.entries(labelEls)) {

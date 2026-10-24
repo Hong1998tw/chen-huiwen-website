@@ -407,3 +407,18 @@ body:not(.panel-closed) .ctrl-hint { left: calc((100% - var(--panel-w) - 32px) /
 .lai-block li span { display: block; line-height: 1.55; }
 .lai-block a { color: var(--muted); }
 .lai-block .lai-more { border: 0; background: none; padding: 4px 0; color: var(--green); font-size: 13px; text-decoration: underline; cursor: pointer; }
+
+/* 清單先行：3D 載入中面板浮在載入畫面上面，可以先讀 */
+body:has(#loading:not(.done)) #panel { z-index: 60; }
+/* 只有清單的閱讀模式（3D 無法顯示時） */
+body.no3d #scene, body.no3d #labels, body.no3d .toolbar, body.no3d #tooltip, body.no3d #citylog, body.no3d #intro, body.no3d .ctrl-hint { display: none !important; }
+body.no3d #panel { position: relative; inset: auto; width: min(760px, 100%); height: auto; max-height: none; margin: 132px auto 24px; transform: none !important; border-radius: 18px; }
+html:has(body.no3d), body.no3d { overflow: auto; height: auto; }
+body.no3d #app { position: static; min-height: 100dvh; }
+body.no3d #panel-body { overflow: visible; }
+body.no3d .brand { position: absolute; }
+.no3d-note { margin: 12px 16px 0; padding: 12px 14px; border-radius: 12px; background: #fff4d6; font-size: 14px; line-height: 1.6; }
+.no3d-note p { margin: 0 0 8px; }
+.no3d-note button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--green); color: #fff; font: inherit; font-weight: 700; }
+@media (max-width: 760px) { body.no3d #panel { margin-top: 120px; border-radius: 18px 18px 0 0; } }
+body.no3d .panel-handle { display: none !important; }
