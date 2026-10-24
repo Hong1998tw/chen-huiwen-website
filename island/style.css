@@ -436,3 +436,22 @@ body.labels-all .isl-label:not(.river-label):not(.dim) { opacity: 1; pointer-eve
 @media (max-width: 760px) { .toolbar { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; } }
 .lai-block { margin: 0 0 16px; }
 .lai-block .lai-none { margin: 0 0 4px; }
+
+/* 跟著慧文遊島 */
+.guide-start { display: block; width: 100%; margin: 0 0 12px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--yellow); color: var(--ink); font-weight: 900; font-size: 15px; text-align: left; }
+.guide-start small { display: block; font-weight: 400; font-size: 12px; color: #5b4a12; }
+.hw-bubble { position: absolute; z-index: 30; transform: translate(-50%, -100%); max-width: 280px; padding: 8px 12px; border: 2px solid #1f4d43; border-radius: 14px; background: #fffaf0; color: var(--ink); font-size: 13px; line-height: 1.5; pointer-events: none; box-shadow: 3px 4px 0 rgba(31, 77, 67, .18); }
+.hw-bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 12px; height: 12px; background: #fffaf0; border-right: 2px solid #1f4d43; border-bottom: 2px solid #1f4d43; transform: translateX(-50%) rotate(45deg); }
+.hw-bubble b { display: block; font-size: 12px; color: var(--green); }
+.hw-bubble .hw-line { display: block; font-weight: 700; }
+.hw-bubble small { display: block; color: var(--muted); font-size: 12px; }
+.guide-bar { position: absolute; z-index: 40; left: calc((100% - var(--panel-w) - 32px) / 2); bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: var(--paper); box-shadow: var(--shadow); }
+.guide-bar button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: #eef5f3; font-weight: 700; }
+.guide-count { padding: 0 8px 0 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+@media (max-width: 760px) {
+  .hw-bubble { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hw-bubble .hw-line { overflow: hidden; text-overflow: ellipsis; }
+  .hw-bubble small { display: none; }
+  .guide-bar { left: auto; right: 12px; top: 12px; bottom: auto; transform: none; }
+  .guide-bar button { padding: 0 12px; }
+}
