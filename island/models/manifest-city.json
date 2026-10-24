@@ -1,0 +1,88 @@
+{
+ "town": {
+  "town-apartment-1": {
+   "file": "town-apartment-1.glb"
+  },
+  "town-apartment-2": {
+   "file": "town-apartment-2.glb"
+  },
+  "town-breakfast": {
+   "file": "town-breakfast.glb"
+  },
+  "town-clinic": {
+   "file": "town-clinic.glb"
+  },
+  "town-park-pavilion": {
+   "file": "town-park-pavilion.glb"
+  },
+  "town-shophouse-1": {
+   "file": "town-shophouse-1.glb"
+  },
+  "town-shophouse-2": {
+   "file": "town-shophouse-2.glb"
+  },
+  "town-store": {
+   "file": "town-store.glb"
+  },
+  "town-temple-small": {
+   "file": "town-temple-small.glb"
+  },
+  "town-tiantou-1": {
+   "file": "town-tiantou-1.glb"
+  },
+  "town-tiantou-2": {
+   "file": "town-tiantou-2.glb"
+  },
+  "town-tiantou-3": {
+   "file": "town-tiantou-3.glb"
+  }
+ },
+ "vehicles": {
+  "ambulance": {
+   "file": "ambulance.glb"
+  },
+  "bus": {
+   "file": "bus.glb"
+  },
+  "car-1": {
+   "file": "car-1.glb"
+  },
+  "car-2": {
+   "file": "car-2.glb"
+  },
+  "garbage-truck": {
+   "file": "garbage-truck.glb"
+  },
+  "police-car": {
+   "file": "police-car.glb"
+  },
+  "scooter-rider": {
+   "file": "scooter-rider.glb"
+  },
+  "taxi": {
+   "file": "taxi.glb"
+  },
+  "truck": {
+   "file": "truck.glb"
+  }
+ },
+ "boats": {
+  "boat-ferry": {
+   "file": "boat-ferry.glb"
+  },
+  "boat-fishing": {
+   "file": "boat-fishing.glb"
+  },
+  "boat-sail": {
+   "file": "boat-sail.glb"
+  }
+ },
+ "bridges": {
+  "bridge-road-1": {
+   "file": "bridge-road-1.glb"
+  },
+  "bridge-road-2": {
+   "file": "bridge-road-2.glb"
+  }
+ }
+}

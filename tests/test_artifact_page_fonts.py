@@ -182,7 +182,7 @@ class Q9FontProducerTests(unittest.TestCase):
     def test_public_html_inventory_covers_every_full_tc_route_and_explains_redirects(self):
         paths = build_public.public_paths(ROOT)
         eligible, skipped, excluded = fonts.public_html_route_inventory(ROOT, ROOT, paths)
-        self.assertEqual((len(eligible), len(skipped), len(excluded)), (464, 9, 5))
+        self.assertEqual((len(eligible), len(skipped), len(excluded)), (465, 9, 5))
         self.assertEqual(len([route for route in eligible if route == Path(route).name and fonts.ROUTE_RE.fullmatch(route)]), 445)
         self.assertTrue({
             "404.html", "offline.html", "renwu-anju-social-housing/index.html",
@@ -326,7 +326,7 @@ class Q9FontProducerTests(unittest.TestCase):
         glyph_to_codepoints = {}
         for codepoint, glyph in self.tc_cmap.items():
             glyph_to_codepoints.setdefault(glyph, set()).add(codepoint)
-        self.assertEqual(len(self.public_specs), 464)
+        self.assertEqual(len(self.public_specs), 465)
         for spec in self.public_specs.values():
             route_set = set(spec["codepoints"])
             delta = route_set - common
