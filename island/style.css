@@ -430,3 +430,5 @@ body.labels-all .isl-label:not(.river-label):not(.dim) { opacity: 1; pointer-eve
 .isl-label.compact .lbl-name, .isl-label.compact .lbl-count { display: none; }
 .item-pin.compact { font-size: 0; }
 .item-pin.compact b { font-size: 11px; }
+/* 手機上視角鈕變五顆：工具列放不下時換行靠右 */
+@media (max-width: 760px) { .toolbar { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; } }
