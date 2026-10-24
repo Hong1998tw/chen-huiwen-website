@@ -15,7 +15,7 @@ export function createIslandLife({scene,world,camera,controls,renderer,islandCen
  function stepFlight(dt){if(!flight)return;const f=flight;f.t=Math.min(1,f.t+dt/f.duration);const k=f.t*f.t*(3-2*f.t);controls.target.lerpVectors(f.a,f.b,k);camera.position.copy(controls.target).add(f.offset);camera.zoom=THREE.MathUtils.lerp(f.z,f.end,k);camera.updateProjectionMatrix();if(f.t===1)flight=null;}
  function stopTour(){tour=null;caption.textContent='導覽已停止';}
  const stopManual=()=>{flight=null;if(tour)stopTour();};controls.addEventListener('start',stopManual);
- function visit(){if(!tour)return;const isl=tourOrder[tour.i];selected=isl.id;paint();caption.textContent=`${tour.i+1}／${tourOrder.length}　${isl.name}：${isl.pledge||isl.axis||''}`;onIsland(isl.id,false);flyTo(at(isl.id),2);}
+ function visit(){if(!tour)return;const isl=tourOrder[tour.i];selected=isl.id;paint();const axisName=(data.axes||[]).find(a=>a.id===isl.axis)?.name||'';caption.textContent=`${tour.i+1}／${tourOrder.length}　${isl.name}${isl.pledge?'：'+isl.pledge:isl.id==='Q1'?'：慧文在議會問了什麼':axisName?'：'+axisName:''}`;onIsland(isl.id,false);flyTo(at(isl.id),2);}
  button('開始導覽',()=>{tour={i:0,wait:0,paused:media.matches};visit();});
  const pause=button('暫停／繼續',()=>{if(tour)tour.paused=!tour.paused;});pause.setAttribute('aria-label','暫停或繼續導覽');
  button('下一站',()=>{if(tour){tour.i=(tour.i+1)%data.islands.length;tour.wait=0;visit();}});button('結束導覽',stopTour);
@@ -29,7 +29,7 @@ export function createIslandLife({scene,world,camera,controls,renderer,islandCen
   renderer.render(scene,camera);const c=document.createElement('canvas');c.width=1200;c.height=800;const ctx=c.getContext('2d');ctx.fillStyle='#f5f1e8';ctx.fillRect(0,0,1200,800);ctx.drawImage(renderer.domElement,0,0,1200,700);ctx.fillStyle='#283b3d';ctx.font='bold 26px sans-serif';ctx.fillText('慧文政績島',32,745);ctx.font='18px sans-serif';ctx.fillText(data.islands.find(x=>x.id===selected)?.name||'一起探索生活的改變',32,777);const blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('canvas')),'image/png'));const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='慧文政績島_照片卡.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  const changed=()=>{if(media.matches){if(flight)stepFlight(1e3);if(tour)tour.paused=true;}};media.addEventListener('change',changed);
- return {get reduced(){return media.matches;},selectIsland(id){selected=id;paint();},hoverIsland(id){hover=id;paint();},showConnections,flyTo,exportPhoto,
+ return {get reduced(){return media.matches;},get touring(){return !!tour;},startTour(){tour={i:0,wait:0,paused:media.matches};visit();},selectIsland(id){selected=id;paint();},hoverIsland(id){hover=id;paint();},showConnections,flyTo,exportPhoto,
  update(dt,t){if(document.hidden)return;stepFlight(dt);if(tour&&!tour.paused&&!media.matches){tour.wait+=dt;if(tour.wait>7){tour.wait=0;tour.i++;if(tour.i>=tourOrder.length){tour=null;caption.textContent='導覽結束';}else visit();}}if(!media.matches){for(const l of lines)l.material.opacity=.65+.15*Math.sin(t*1.5);}elapsed=t;},
  dispose(){controls.removeEventListener('start',stopManual);media.removeEventListener('change',changed);clearLines();owned.forEach(o=>o.dispose());world.remove(root);ui.remove();}};
 }

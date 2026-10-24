@@ -300,3 +300,65 @@ body:has(#intro:not([hidden])) #dot-cards-ui { visibility: hidden; }
 .island-footer p { margin: 0; }
 .island-footer a { color: var(--green); }
 @media (max-width: 760px) { .island-footer { display: none; } }
+
+/* ── 少即是多：第一眼只留地圖、標題卡、三顆按鈕、清單 ── */
+#dot-cards-ui, #citylog, #btn-explore, #btn-names { display: none !important; }
+body:not(.touring) .dot-life-ui { display: none !important; }
+body.touring .dot-life-ui { display: flex !important; top: auto !important; bottom: 20px !important; left: 50% !important; right: auto !important; transform: translateX(-50%); max-width: calc(100vw - 24px); }
+body.touring .dot-life-ui button:first-child { display: none; }  /* 導覽中不再顯示「開始導覽」 */
+.intro-card h2 { font-size: 26px; line-height: 1.3; }
+.intro-step { letter-spacing: .08em; }
+.stats { gap: 8px; }
+.stat b { font-size: 22px; }
+.stat span { font-size: 11px; }
+.dot-card-dialog .dot-muted { display: none; }
+#panel-handle { display: none; border: 0; background: transparent; padding: 0; }
+
+/* 手機：抽屜三段高度（只露標題／半開／全開），把手可拖、可點；點地圖收成只露標題 */
+@media (max-width: 760px) {
+  :root { --sheet-h: 50dvh; }
+  #panel { height: var(--sheet-h); max-height: 92dvh; transition: transform .25s ease, height .2s ease; }
+  #panel-handle { display: block; width: 100%; height: 28px; margin: 0; flex: none; cursor: grab; touch-action: none; }
+  #panel-handle span { display: block; width: 44px; height: 5px; margin: 10px auto 0; border-radius: 3px; background: var(--line); }
+  .toolbar { bottom: calc(var(--sheet-h) + 12px); transition: bottom .2s ease; }
+  body.panel-closed .toolbar { bottom: 16px; }
+  body.sheet-peek #panel-body { overflow: hidden; }
+  body.sheet-peek .island-footer { display: none; }
+  .event-banner { padding: 8px 10px; }
+  .event-banner b { font-size: 14px; }
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .dot-longlong-bubble { width: min(220px, 70vw) !important; }
+}
+
+/* 島名只在滑過或選到時出現；中央議會一直顯示 */
+.isl-label { opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+.isl-label.hover, .isl-label.active, .isl-label.isl-center, body.touring .isl-label.active { opacity: 1; pointer-events: auto; }
+.isl-label.dim { opacity: 0; }
+.isl-label.isl-center.dim { opacity: .55; }
+body.touring .dot-life-ui label, body.touring .dot-life-ui select, body.touring .dot-life-ui button:last-of-type { display: none !important; }
+
+/* 地標卡：點島上的意象圖後，出現在島名上方 */
+.spot-card { display: flex; gap: 12px; align-items: flex-start; margin: 8px 0 14px; padding: 12px 12px 12px 14px; border-radius: 14px; background: #fff; border: 1px solid rgba(31, 77, 67, .14); box-shadow: 0 4px 14px rgba(4, 62, 53, .08); }
+.spot-text { flex: 1; min-width: 0; }
+.spot-kicker { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #c0573f; }
+.spot-card h3 { margin: 2px 0 2px; font-size: 17px; line-height: 1.3; }
+.spot-addr { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.spot-addr::before { content: "📍 "; }
+.spot-note { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.spot-thumb { flex: none; width: 104px; height: 88px; object-fit: contain; border-radius: 10px; background: #eef4f2; }
+@media (max-width: 760px) { .spot-thumb { width: 88px; height: 76px; } }
+.link-card.lai-policy { border-left: 3px solid #b8862b; }
+.link-card.lai-policy h4 small { background: #f3e9d2; color: #7a5a12; }
+
+/* 百變隆隆頭上的小名牌（點了就講話） */
+.ll-tag { position: absolute; transform: translate(-50%, -100%); padding: 2px 8px; border: 0; border-radius: 999px; background: #6b4fa3; color: #fff; font: 700 11px/1.5 inherit; white-space: nowrap; pointer-events: auto; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.2); animation: ll-bob 2.4s ease-in-out infinite; }
+.ll-tag::after { content: ""; position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); border: 4px solid transparent; border-top-color: #6b4fa3; border-bottom: 0; }
+@keyframes ll-bob { 50% { margin-top: -3px; } }
+@media (prefers-reduced-motion: reduce) { .ll-tag { animation: none; } }
+@media (max-width: 760px) { .ll-tag { font-size: 10px; padding: 1px 6px; } }
+
+/* 島上第一列的重點（例：性別友善島的安心哨） */
+.highlight-card { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; background: #fff1f3; border: 1.5px solid #e48f9e; }
+.highlight-card span { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #e48f9e; color: #fff; font-size: 11px; font-weight: 700; }
+.highlight-card h3 { margin: 6px 0 4px; font-size: 16px; color: #8a2f43; }
+.highlight-card p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink); }
