@@ -1189,7 +1189,7 @@ const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.te
   el.type = "button";
   el.className = "isl-label river-label";
   el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : l.kind === "spot" ? "#c0573f" : "#8a8f93"}">${l.kind === "river" ? "溪" : l.kind === "spot" ? "景" : "橋"}</b>${esc(l.text)}`;
-  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
+  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId), new THREE.Vector3(l.pos.x, 0, l.pos.z)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
   labelsEl.append(el);
   return { el, pos: l.pos, kind: l.kind, id: l.id, island: l.island };
 });
@@ -1257,12 +1257,16 @@ function placeLabels() {
   }
   const NEAR = [[0, 0], [0, -1], [0.55, -0.5], [-0.55, -0.5], [0, -2], [0.55, 0.5], [-0.55, 0.5]];
   // 1. 島名：選到的、滑過的、議會
+  // 名牌站在自己島「面向鏡頭那一側」的步道上：原本掛在地標上方 7–10 單位，畫面上會浮到後面那座島上，點下去開到別座島
+  const toCam = camera.position.clone().sub(controls.target).setY(0).normalize();
   const isl = islands.map((island) => {
     const first = LAYOUT[island.id][0];
-    tmp.copy(cellPos(first[0], first[1])); tmp.y = island.kind === "pledge" ? 10 : 7;
+    tmp.copy(cellPos(first[0], first[1])).addScaledVector(toCam, R * 0.62); tmp.y = TOP + 1.2;
     return { el: labelEls[island.id], p: toScreen(tmp, w, h), pr: labelEls[island.id].classList.contains("active") ? 3 : labelEls[island.id].classList.contains("isl-center") ? 2 : 1 };
   }).sort((a, b) => b.pr - a.pr);
-  for (const { el, p } of isl) { if (!shown(el) || p.off) { el.classList.remove("collide"); el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; continue; } place(el, p.x, p.y, NEAR); }
+  // 島名撞到時只往左右、往下讓，不往上推（往上會疊到後面那座島，點了開錯島）；放不下就縮成編號或藏起來
+  const ISL_NEAR = [[0, 0], [0.55, 0], [-0.55, 0], [0, 0.6], [0.55, 0.6], [-0.55, 0.6]];
+  for (const { el, p } of isl) { if (!shown(el) || p.off) { el.classList.remove("collide"); el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; continue; } place(el, p.x, p.y, ISL_NEAR); }
   // 2. 政績名牌：只在選到的島範圍內排，不蓋到別的島
   if (itemPins.length) {
     const c = toScreen(tmp.copy(islandCenter[state.island] || itemPins[0].pos).setY(4), w, h);
@@ -1339,9 +1343,10 @@ function resize() {
   camera.left = (-f * aspect) / 2; camera.right = (f * aspect) / 2;
   camera.top = f / 2; camera.bottom = -f / 2;
   // 清單打開時，把畫面中心移到沒被清單遮住的區域
-  const panel = $("#panel").getBoundingClientRect();
-  if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.width + 16) / 2, 0, w, h);
-  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(panel.height, h * 0.5) / 2, w, h);
+  // 抽屜高度有 0.2 秒動畫，量 getBoundingClientRect 會拿到動畫中途的高度；手機改用抽屜的目標高度
+  const panel = $("#panel");
+  if (panelOpen && !mobile()) camera.setViewOffset(w, h, (panel.offsetWidth + 16) / 2, 0, w, h);
+  else if (panelOpen && mobile()) camera.setViewOffset(w, h, 0, Math.min(sheetHeight(sheetState), h * 0.5) / 2, w, h);
   else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
@@ -1349,19 +1354,6 @@ addEventListener("resize", resize);
 
 let tween = null;
 function focusOn(target, zoom) { life?.flyTo(target,zoom); }
-// 鏡頭讓位給清單：主體放在「扣掉側欄或底部抽屜後的可用區」中央（HEART 的做法）
-function safeTarget(target, zoom) {
-  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1, panel = $("#panel");
-  if (!panelOpen || !panel) return target;
-  const wpp = (camera.right - camera.left) / zoom / w;  // 正交鏡頭：每像素多少世界單位
-  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize();
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  const fwd = dir.clone().setY(0).normalize(), sinElev = Math.max(0.3, -dir.y);
-  const t = target.clone();
-  if (mobile()) { const dy = Math.min(panel.offsetHeight, h * 0.6) / 2; t.addScaledVector(fwd, -dy * wpp / sinElev); }
-  else t.addScaledVector(right, (panel.offsetWidth + 32) / 2 * wpp);
-  return t;
-}
 let savedView = null;  // 進島前的視角，按「全部島嶼」時回到這裡
 const home = () => { focusOn(new THREE.Vector3(0, 0, 0), 1); faceFront?.(); };
 
@@ -1370,6 +1362,13 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const tooltip = $("#tooltip");
 let lastHit = null;
+// 點到的物件（地標、人物）在 world 座標裡的位置，給鏡頭對準用
+function hitSpot() {
+  if (!lastHit?.object) return null;
+  let o = lastHit.object; while (o.parent && o.parent !== world) o = o.parent;
+  if (o.parent !== world) return null;
+  return new THREE.Vector3(o.position.x, 0, o.position.z);
+}
 function pick(ev) {
   const r = canvas.getBoundingClientRect();
   pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
@@ -1412,13 +1411,13 @@ canvas.addEventListener("pointerup", (e) => {
   if (!u && mobile() && panelOpen && sheetState !== "peek") { setSheet("peek"); return; }
   if (u) feel?.ripple(lastHit?.point, u.item != null ? "#f3c64f" : "#ffffff");
   if (e.pointerType !== "mouse" && lastHit) { feel?.hover(lastHit.object); setTimeout(() => feel?.hover(null), 650); }
-  if (u?.item != null) { openIsland(u.island, true, u.item); openCard(u.item); }
+  if (u?.item != null) { openIsland(u.island, true, u.item, null, hitSpot()); openCard(u.item); }
   else if (u?.thread != null) {const th=interp.threads[u.thread];life?.showConnections(['Q1',th?.island]);if(th?.island)openIsland(th.island,true); }
   else if (u?.board) board.open();
   else if (u?.river) openRiver();
   else if (u?.bridge && BRIDGE_ITEM[u.bridge] >= 0) openCard(BRIDGE_ITEM[u.bridge]);
-  else if (u?.spot || u?.landmark) openIsland(u.island, true, null, spotFor(u.island, u.spot));
-  else if (u?.island) openIsland(u.island, true);
+  else if (u?.island && (u.spot || u.landmark || u.figure)) openIsland(u.island, true, null, spotFor(u.island, u.spot), hitSpot());
+  else if (u?.island) openIsland(u.island, true, null, null, hitSpot());
 });
 let hoverFrame = 0;
 canvas.addEventListener("pointermove", (e) => {
@@ -1675,7 +1674,7 @@ function shortText(t, n = 46) {
 // 賴瑞隆是配角：每座島只在慧文內容之後放一個區塊；政見與立委政績都是「標題＋剪短的說明＋來源」
 function laiHTML(id) {
   const pols = laiPoliciesFor(id), acts = laiFor(id);
-  if (!pols.length && !acts.length) return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><p class="lai-none">賴瑞隆目前沒有這個主題的公開專項政見或立委政績。</p><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
+  if (!pols.length && !acts.length) return "";  // 這座島沒有賴瑞隆的相關政見或政績就整塊不顯示
   const li = [
     ...pols.map((p) => `<li><b>${esc(p.title)}</b><small>市長政見</small><span>${esc(shortText(p.summary))}${p.sourceURL ? ` <a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">來源</a>` : ""}</span></li>`),
     ...acts.map((a) => `<li><b>${esc(a.title)}</b><small>立委政績${a.year ? `・${esc(a.year)}` : ""}</small><span>${esc(shortText(a.detail))}</span></li>`),
@@ -1772,7 +1771,7 @@ function spotFor(island, spotId) {
   const info = scenery?.LANDMARK_INFO?.[island];
   return info ? { kind: "landmarks", id: island, ...info } : null;
 }
-function openIsland(id, fly, itemIdx = null, spot = null) {
+function openIsland(id, fly, itemIdx = null, spot = null, at = null) {
   if (state.view !== "island" && fly) savedView = { t: controls.target.clone(), z: camera.zoom, off: camera.position.clone().sub(controls.target) };
   document.body.classList.remove("labels-all");
   life?.selectIsland(id);
@@ -1782,7 +1781,10 @@ function openIsland(id, fly, itemIdx = null, spot = null) {
   setPanel(true);
   render();
   body.scrollTop = 0;
-  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(safeTarget(islandCenter[id], z), z); }
+  // 鏡頭讓位給清單由 resize() 的 setViewOffset 負責（畫面中心已在可用區中央），這裡不再另外平移目標，否則會位移兩次
+  // 多格的島（人行交通、文史觀光、公園運動）各格分散，平均位置會落在別的島或海上；鏡頭改對準第一格（地標所在）
+  // 點的是島上的某個地標或人物（龍成宮、陳慧文站路口…）時，鏡頭對準點到的位置 at，不跳回第一格
+  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(at || (LAYOUT[id] ? cellPos(...LAYOUT[id][0]) : islandCenter[id]), z); }
   // 點中央議會：亮線連到慧文質詢過的各島
   if (id === "Q1" && interp?.threads) life?.showConnections(["Q1", ...interp.threads.map((t) => t.island).filter(Boolean)]);
   try { history.replaceState(null, "", `?island=${id}`); } catch {}
@@ -1944,7 +1946,7 @@ $("#btn-night").addEventListener("click", (e) => {
 });
 $("#intro-tour").addEventListener("click", () => { closeIntro(); guide.start(); });
 if (new URLSearchParams(location.search).has("debug")) window.__fly = (x, z, zoom) => life?.flyTo(new THREE.Vector3(x, 0, z), zoom, 0.01);
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3 });
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __cam: camera, __world: world, __V3: THREE.Vector3, __islandCenter: islandCenter, __controls: controls, __state: state });
 if (new URLSearchParams(location.search).has("debug")) window.__flyIsland = (id, zoom) => { const c = landmarkByIsland[id]?.position; if (c) life?.flyTo(new THREE.Vector3(c.x, 0, c.z), zoom, 0.01); };
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
