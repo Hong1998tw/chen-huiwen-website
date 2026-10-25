@@ -137,6 +137,15 @@ async function resolveSharedJpFallbackFont() {
   return { path, sha256 };
 }
 
+// 政績島自帶的思源黑體子集（island/fonts）：只在島頁允許，摘要以發布清單為準。
+function resolveIslandRouteFonts() {
+  const fonts = Object.entries(publication.files)
+    .filter(([path]) => /^island\/fonts\/[a-z0-9-]+\.woff2$/.test(path))
+    .map(([path, sha256]) => ({ path: `/${path}`, sha256 }));
+  for (const font of fonts) assert.match(font.sha256 || '', /^[a-f0-9]{64}$/, `island route font has no manifest digest: ${font.path}`);
+  return fonts;
+}
+
 function waitForCmsPreviewNavigation(page, timeout = 15000) {
   return page.waitForEvent('framenavigated', {
     predicate: (frame) => {
@@ -962,7 +971,10 @@ async function finalizeFontOnlyRoute(state) {
         assert.ok(font, `${route}: route preload font is missing from the producer manifest: ${path}`);
         return { path: `/${path}`, bytes: font.bytes, sha256: font.sha256 };
       }),
-      expectedSharedFallbackFonts: expectedSharedFallbackFontsForRoute(routeRow, sharedJpFallbackFont),
+      expectedSharedFallbackFonts: [
+        ...expectedSharedFallbackFontsForRoute(routeRow, sharedJpFallbackFont),
+        ...(route === 'island/index.html' ? resolveIslandRouteFonts() : []),
+      ],
       fullTcPath: `/${fullTcPath}`,
       routeOrigin: new URL(base).origin,
       observationClosed,
