@@ -19,3 +19,6 @@ schedule-private*.xlsx
 artifacts/astra-redesign/
 
 /_site/
+
+# wrangler 本機開發狀態，不進版控
+.wrangler/
