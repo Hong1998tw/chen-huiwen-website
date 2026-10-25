@@ -64,6 +64,12 @@ def generated(root):
             offset=next((i for i,(a,b) in enumerate(zip(old,new)) if a!=b),min(len(old),len(new)))
             print(f'{name}: first difference at {offset}; before={old[max(0,offset-60):offset+120]!r}; after={new[max(0,offset-60):offset+120]!r}',file=sys.stderr)
         raise RuntimeError('GENERATED_STALE: rebuild, review and commit generated outputs before checking')
+    # Cloudflare Workers Builds (WORKERS_CI=1) times out long deploy builds. The second build only
+    # proves determinism, which the required `validate` check already proves on every pull request,
+    # so the deploy build keeps the stale-output check above and skips this repeat.
+    if os.environ.get('WORKERS_CI')=='1':
+        print('QUALITY_DETERMINISM_REBUILD_SKIPPED reason=WORKERS_CI (covered by the required validate check)',flush=True)
+        return
     for name in BUILDERS: run(root,[sys.executable,'scripts/'+name],label=f'generated.second_build.{name}')
     if before != snapshot(root): raise RuntimeError('GENERATED_NONDETERMINISTIC')
 

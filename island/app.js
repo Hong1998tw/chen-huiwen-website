@@ -1124,10 +1124,12 @@ function buildWhistle() {
   // 側面字樣：只有「陳慧文」
   const cv = document.createElement("canvas"); cv.width = 512; cv.height = 200;
   const cx = cv.getContext("2d");
-  cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200);
-  cx.fillStyle = "#1f4d43"; cx.font = '900 132px "PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
-  cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106);
+  const WHISTLE_FONT = '900 132px "Huiwen Island Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+  const drawName = () => { cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200); cx.fillStyle = "#1f4d43"; cx.font = WHISTLE_FONT; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106); };
+  drawName();
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  // 字型載入後重畫，哨身字也用思源黑體
+  document.fonts?.load(WHISTLE_FONT, "陳慧文").then(() => { drawName(); tex.needsUpdate = true; }).catch(() => {});
   const label = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 });
   for (const side of [1, -1]) {
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.59), label);
@@ -1582,11 +1584,10 @@ function listHTML(idx, highlightFirst = 0) {
 }
 
 function renderHome() {
-  const total = data.items.length, cases = data.meta.serviceCases;
   let html = `<p class="p-kicker">做得到的承諾，看得見的改變。</p>
     <h2 class="p-title">一座島，一個承諾</h2>
     <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>${eventBanner()}
-    <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div><div class="stat"><b>${total.toLocaleString()}</b><span>筆政績</span></div>${cases ? `<div class="stat"><b>${cases.toLocaleString()}</b><span>件服務案件</span></div>` : ""}</div>
+    <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div></div>
     <button type="button" class="guide-start" data-act="guide">跟著慧文遊島 <small>她帶路，一島一句做過的事</small></button>
     <input class="search" type="search" placeholder="搜尋政績、地名、里名…" value="${esc(state.query)}" data-act="search" aria-label="搜尋">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-act="tab" data-tab="islands" aria-selected="${state.tab === "islands"}">島嶼</button><button type="button" role="tab" data-act="tab" data-tab="villages" aria-selected="${state.tab === "villages"}">鳳山各里</button></div>`;
