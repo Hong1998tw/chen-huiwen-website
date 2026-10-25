@@ -148,7 +148,7 @@ export function createBoard({
     el("div", { className: "hwb-sheet" },
       el("div", { className: "hwb-grip", "aria-hidden": "true" }),
       el("header", { className: "hwb-head" },
-        el("div", { className: "hwb-head-text" }, el("p", { className: "hwb-kicker", text: "慧文政績島" }), title),
+        el("div", { className: "hwb-head-text" }, el("p", { className: "hwb-kicker", text: "隆洋慧聚｜陳慧文議員 政績島" }), title),
         el("div", { className: "hwb-head-tools" }, admin, closeButton)),
       desc,
       el("div", { className: "hwb-scroll", role: "region", tabindex: "0", "aria-label": "布告欄留言（可捲動）" }, listStatus, notesList, retry),
