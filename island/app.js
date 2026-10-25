@@ -1667,7 +1667,7 @@ function shortText(t, n = 46) {
 // 賴瑞隆是配角：每座島只在慧文內容之後放一個區塊；政見與立委政績都是「標題＋剪短的說明＋來源」
 function laiHTML(id) {
   const pols = laiPoliciesFor(id), acts = laiFor(id);
-  if (!pols.length && !acts.length) return `<section class="lai-block"><h4>賴瑞隆在這座島的政見與政績</h4><p class="lai-none">賴瑞隆目前沒有這個主題的公開專項政見或立委政績。</p><button type="button" class="lai-more" data-act="lai">看賴瑞隆的完整政見與政績</button></section>`;
+  if (!pols.length && !acts.length) return "";  // 這座島沒有賴瑞隆的相關政見或政績就整塊不顯示
   const li = [
     ...pols.map((p) => `<li><b>${esc(p.title)}</b><small>市長政見</small><span>${esc(shortText(p.summary))}${p.sourceURL ? ` <a href="${esc(p.sourceURL)}" target="_blank" rel="noopener">來源</a>` : ""}</span></li>`),
     ...acts.map((a) => `<li><b>${esc(a.title)}</b><small>立委政績${a.year ? `・${esc(a.year)}` : ""}</small><span>${esc(shortText(a.detail))}</span></li>`),
