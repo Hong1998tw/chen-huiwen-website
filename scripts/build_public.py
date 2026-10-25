@@ -42,7 +42,7 @@ LEGACY_PAGES = (
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
 VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
-ISLAND_EXTENSIONS = {'.html', '.js', '.mjs', '.css', '.json', '.glb'}
+ISLAND_EXTENSIONS = {'.html', '.js', '.mjs', '.css', '.json', '.glb', '.woff2', '.txt'}
 BUILD_ONLY_FILES = {'assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding', 'lastRecordDate'}
 PUBLIC_DATA_PROJECTIONS = {
