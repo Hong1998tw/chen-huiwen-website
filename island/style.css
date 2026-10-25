@@ -1,3 +1,9 @@
+/* 島上全部文字用思源黑體（Noto Sans TC＝Source Han Sans TC），子集只收島上會出現的字 */
+@font-face{font-family:"Huiwen Island Sans";src:url("fonts/island-sans-400.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Huiwen Island Sans";src:url("fonts/island-sans-700.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Huiwen Island Sans";src:url("fonts/island-sans-800.woff2") format("woff2");font-weight:800;font-style:normal;font-display:swap}
+@font-face{font-family:"Huiwen Island Sans";src:url("fonts/island-sans-900.woff2") format("woff2");font-weight:900;font-style:normal;font-display:swap}
+button, input, textarea, select { font-family: inherit; }
 :root {
   --green: #075548;
   --green-dark: #043e35;
@@ -11,7 +17,7 @@
   --shadow: 0 10px 30px rgba(4, 62, 53, .16);
   --radius: 16px;
   --panel-w: 380px;
-  font-family: var(--huiwen-font-family, "Huiwen Sans TC"), "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-family: "Huiwen Island Sans", var(--huiwen-font-family, "Huiwen Sans TC"), "PingFang TC", "Microsoft JhengHei", sans-serif;
   color: var(--ink);
 }
 * { box-sizing: border-box; }

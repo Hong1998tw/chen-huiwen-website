@@ -18,7 +18,7 @@
   background: var(--hwb-paper);
   color: var(--hwb-ink);
   box-shadow: 0 24px 60px rgba(4, 62, 53, .3);
-  font-family: var(--huiwen-font-family, "Huiwen Sans TC"), "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-family: "Huiwen Island Sans",var(--huiwen-font-family, "Huiwen Sans TC"), "PingFang TC", "Microsoft JhengHei", sans-serif;
   overflow: hidden;
 }
 .hwb-dialog[open] { display: flex; }
