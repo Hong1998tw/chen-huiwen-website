@@ -1124,10 +1124,12 @@ function buildWhistle() {
   // 側面字樣：只有「陳慧文」
   const cv = document.createElement("canvas"); cv.width = 512; cv.height = 200;
   const cx = cv.getContext("2d");
-  cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200);
-  cx.fillStyle = "#1f4d43"; cx.font = '900 132px "PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
-  cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106);
+  const WHISTLE_FONT = '900 132px "Huiwen Island Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+  const drawName = () => { cx.fillStyle = "#f3c64f"; cx.fillRect(0, 0, 512, 200); cx.fillStyle = "#1f4d43"; cx.font = WHISTLE_FONT; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("陳慧文", 256, 106); };
+  drawName();
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  // 字型載入後重畫，哨身字也用思源黑體
+  document.fonts?.load(WHISTLE_FONT, "陳慧文").then(() => { drawName(); tex.needsUpdate = true; }).catch(() => {});
   const label = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 });
   for (const side of [1, -1]) {
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.59), label);
