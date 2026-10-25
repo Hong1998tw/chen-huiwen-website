@@ -1189,7 +1189,7 @@ const extraLabels = [...riverInfo.labels, ...spotLabels.map((s) => ({ text: s.te
   el.type = "button";
   el.className = "isl-label river-label";
   el.innerHTML = `<b style="background:${l.kind === "river" ? "#3f9cc0" : l.kind === "spot" ? "#c0573f" : "#8a8f93"}">${l.kind === "river" ? "溪" : l.kind === "spot" ? "景" : "橋"}</b>${esc(l.text)}`;
-  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
+  el.addEventListener("click", () => (l.kind === "river" ? openRiver() : l.kind === "spot" ? openIsland(l.island, true, null, spotFor(l.island, spotLabels.find((x) => x.text === l.text)?.spotId), new THREE.Vector3(l.pos.x, 0, l.pos.z)) : BRIDGE_ITEM[l.id] >= 0 && openCard(BRIDGE_ITEM[l.id])));
   labelsEl.append(el);
   return { el, pos: l.pos, kind: l.kind, id: l.id, island: l.island };
 });
@@ -1362,6 +1362,13 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const tooltip = $("#tooltip");
 let lastHit = null;
+// 點到的物件（地標、人物）在 world 座標裡的位置，給鏡頭對準用
+function hitSpot() {
+  if (!lastHit?.object) return null;
+  let o = lastHit.object; while (o.parent && o.parent !== world) o = o.parent;
+  if (o.parent !== world) return null;
+  return new THREE.Vector3(o.position.x, 0, o.position.z);
+}
 function pick(ev) {
   const r = canvas.getBoundingClientRect();
   pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
@@ -1404,13 +1411,13 @@ canvas.addEventListener("pointerup", (e) => {
   if (!u && mobile() && panelOpen && sheetState !== "peek") { setSheet("peek"); return; }
   if (u) feel?.ripple(lastHit?.point, u.item != null ? "#f3c64f" : "#ffffff");
   if (e.pointerType !== "mouse" && lastHit) { feel?.hover(lastHit.object); setTimeout(() => feel?.hover(null), 650); }
-  if (u?.item != null) { openIsland(u.island, true, u.item); openCard(u.item); }
+  if (u?.item != null) { openIsland(u.island, true, u.item, null, hitSpot()); openCard(u.item); }
   else if (u?.thread != null) {const th=interp.threads[u.thread];life?.showConnections(['Q1',th?.island]);if(th?.island)openIsland(th.island,true); }
   else if (u?.board) board.open();
   else if (u?.river) openRiver();
   else if (u?.bridge && BRIDGE_ITEM[u.bridge] >= 0) openCard(BRIDGE_ITEM[u.bridge]);
-  else if (u?.spot || u?.landmark) openIsland(u.island, true, null, spotFor(u.island, u.spot));
-  else if (u?.island) openIsland(u.island, true);
+  else if (u?.island && (u.spot || u.landmark || u.figure)) openIsland(u.island, true, null, spotFor(u.island, u.spot), hitSpot());
+  else if (u?.island) openIsland(u.island, true, null, null, hitSpot());
 });
 let hoverFrame = 0;
 canvas.addEventListener("pointermove", (e) => {
@@ -1764,7 +1771,7 @@ function spotFor(island, spotId) {
   const info = scenery?.LANDMARK_INFO?.[island];
   return info ? { kind: "landmarks", id: island, ...info } : null;
 }
-function openIsland(id, fly, itemIdx = null, spot = null) {
+function openIsland(id, fly, itemIdx = null, spot = null, at = null) {
   if (state.view !== "island" && fly) savedView = { t: controls.target.clone(), z: camera.zoom, off: camera.position.clone().sub(controls.target) };
   document.body.classList.remove("labels-all");
   life?.selectIsland(id);
@@ -1776,7 +1783,8 @@ function openIsland(id, fly, itemIdx = null, spot = null) {
   body.scrollTop = 0;
   // 鏡頭讓位給清單由 resize() 的 setViewOffset 負責（畫面中心已在可用區中央），這裡不再另外平移目標，否則會位移兩次
   // 多格的島（人行交通、文史觀光、公園運動）各格分散，平均位置會落在別的島或海上；鏡頭改對準第一格（地標所在）
-  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(LAYOUT[id] ? cellPos(...LAYOUT[id][0]) : islandCenter[id], z); }
+  // 點的是島上的某個地標或人物（龍成宮、陳慧文站路口…）時，鏡頭對準點到的位置 at，不跳回第一格
+  if (fly) { const z = mobile() ? 2.1 : 2.4; focusOn(at || (LAYOUT[id] ? cellPos(...LAYOUT[id][0]) : islandCenter[id]), z); }
   // 點中央議會：亮線連到慧文質詢過的各島
   if (id === "Q1" && interp?.threads) life?.showConnections(["Q1", ...interp.threads.map((t) => t.island).filter(Boolean)]);
   try { history.replaceState(null, "", `?island=${id}`); } catch {}
