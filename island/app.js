@@ -1584,11 +1584,10 @@ function listHTML(idx, highlightFirst = 0) {
 }
 
 function renderHome() {
-  const total = data.items.length, cases = data.meta.serviceCases;
   let html = `<p class="p-kicker">做得到的承諾，看得見的改變。</p>
     <h2 class="p-title">一座島，一個承諾</h2>
     <p class="p-lead">中央是高雄市議會，四周每座島是一項承諾，島上站著已經做過的事。</p>${eventBanner()}
-    <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div><div class="stat"><b>${total.toLocaleString()}</b><span>筆政績</span></div>${cases ? `<div class="stat"><b>${cases.toLocaleString()}</b><span>件服務案件</span></div>` : ""}</div>
+    <div class="stats"><div class="stat"><b>13</b><span>2026 政見</span></div></div>
     <button type="button" class="guide-start" data-act="guide">跟著慧文遊島 <small>她帶路，一島一句做過的事</small></button>
     <input class="search" type="search" placeholder="搜尋政績、地名、里名…" value="${esc(state.query)}" data-act="search" aria-label="搜尋">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-act="tab" data-tab="islands" aria-selected="${state.tab === "islands"}">島嶼</button><button type="button" role="tab" data-act="tab" data-tab="villages" aria-selected="${state.tab === "villages"}">鳳山各里</button></div>`;
