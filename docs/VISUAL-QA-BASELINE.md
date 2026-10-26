@@ -21,6 +21,16 @@ publication gate 以來源 checkout 的真實 Git HEAD 核對 `deployment.json.s
 
 每筆已核准的 per-capture × metric 預算例外必須有有效的帶時區 `expiresAt`，日期必須真實有效，且不可晚於 `approval.reviewedAt` 起 30 日。比較在 `now >= expiresAt` 時 fail closed；原 300,000 bytes／1,500 DOM、觀測值需等於 baseline、metadata SHA、resolution task、不得新增退步及已解債務需清除等條件照常適用。本次採用核准 34 筆有期限的既存預算例外；逐筆差異、資源證據、追蹤任務與到期時間見本文件末段。
 
+## 同網域傳輸量的量測定義（2026-10-23 起）
+
+`sameOriginTransferSizeBytes` 只計算擷取畫面需要的同網域流量：導覽文件加上同網域資源的 `PerformanceResourceTiming.transferSize`，但不計入量測當下完全位於視窗外、標記 `loading="lazy"` 的圖片。
+
+- 原因：Chrome 對視窗外延遲載入圖片是否預先下載並不固定。2026-10-22 在 `news.html` 實測，同一頁同一視窗連續載入 16 次，有 10 次下載 `news-20260907-mazu-port-bridge.jpg`（206,686 B），6 次沒有；該圖始終在視窗底部 1,550 px 以外。A-05 因此對沒有變更的頁面回報 NEW_REGRESSION。
+- 被排除的圖片與位元組記在每筆 metadata 的 `metrics.sameOriginOffscreenLazyImagesExcluded`，原始總量仍保留在 `sameOriginPerformanceTransferSizeBytes`。
+- 讀取數值前，工具等待同網域請求全部結束並持續 500 ms 無新請求（上限 10 秒），結果記在 `conditions.networkSettled`；逾時的擷取標為 `NETWORK_NOT_SETTLED`，不進入比較。
+- `sameOriginTransferSizeSource` 因此改為 `…; off-viewport lazy images excluded`。依比較契約，舊定義量測的基準與新擷取不可比較（`TRANSFER_MEASUREMENT_SOURCE_MISMATCH`），必須由主控依下方流程審閱並採用新定義量測的基準。
+- 已驗證：同一 artifact 連續擷取三次，30 張截圖的傳輸量與 DOM 數完全一致。與 `ed2bdb57` 基準相比，新聞頁維持 379,520 B；捷運青線、特教支持、競選總部開幕活動、相簿與首頁等 9 張數值下降，因為原本每次都會預先下載的視窗外圖片不再計入預算。
+
 ## 固定目錄格式
 
 核准後提交以下結構。`<sourceSHA>` 必須是產生該組 capture 的 40 位完整 Git SHA。
