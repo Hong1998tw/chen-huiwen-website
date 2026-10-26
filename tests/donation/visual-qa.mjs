@@ -246,7 +246,8 @@ async function captureOne({
   let screenshotSha256 = null;
   let screenshotError = null;
   let animationCount = 0;
-  let settleState = { settled: false, elapsedMs: null, quietMs: policy.capture.settle.quietMs, maxMs: policy.capture.settle.maxMs };
+  // Run-specific settle results stay out of `conditions`, which must match exactly across sources.
+  let settleObservation = { settled: false, elapsedMs: null, lazyImagesResolved: null };
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
@@ -289,7 +290,7 @@ async function captureOne({
       return count;
     }, lazyImageDistancePx);
     const secondQuiet = await waitForQuiet();
-    settleState = { ...settleState, settled: firstQuiet && secondQuiet, lazyImageDistancePx, lazyImagesResolved, elapsedMs: Date.now() - settleStarted };
+    settleObservation = { settled: firstQuiet && secondQuiet, elapsedMs: Date.now() - settleStarted, lazyImagesResolved };
     imageState = await page.evaluate(async () => {
       const visible = [...document.images].filter(image => {
         const rect = image.getBoundingClientRect();
@@ -440,7 +441,7 @@ async function captureOne({
       serviceWorkers: 'blocked',
       browserCache: 'disabled per context',
       fontsReady,
-      settle: settleState,
+      settle: { quietMs: policy.capture.settle.quietMs, maxMs: policy.capture.settle.maxMs, lazyImageDistancePx: policy.capture.settle.lazyImageDistancePx },
       animationsFinished: true,
       activeAnimationsStabilized: animationCount,
       dynamicMasks: policy.capture.dynamicMasks
@@ -460,6 +461,7 @@ async function captureOne({
       deploymentWindowStatus: environment === 'cloudflare-production' ? (deploymentAtStart?.valid ? 'PENDING_FINAL_READ' : 'NOT_VERIFIED') : null
     },
     imageState,
+    settleObservation,
     metrics: {
       domElementCount,
       sameOriginTransferSizeBytes: transferBudgetBytes,
