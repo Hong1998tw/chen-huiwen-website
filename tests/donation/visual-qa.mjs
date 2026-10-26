@@ -175,7 +175,12 @@ async function captureOne({
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   const networkById = new Map();
   let documentResponse = null;
+  // Settle bookkeeping: requests still loading and the last time the network changed.
+  const inFlight = new Set();
+  let lastNetworkActivity = Date.now();
   cdp.on('Network.requestWillBeSent', event => {
+    inFlight.add(event.requestId);
+    lastNetworkActivity = Date.now();
     const existing = networkById.get(event.requestId) ?? {};
     networkById.set(event.requestId, {
       ...existing,
@@ -204,10 +209,14 @@ async function captureOne({
     }
   });
   cdp.on('Network.loadingFinished', event => {
+    inFlight.delete(event.requestId);
+    lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, encodedDataLength: event.encodedDataLength });
   });
   cdp.on('Network.loadingFailed', event => {
+    inFlight.delete(event.requestId);
+    lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, failed: event.errorText });
   });
@@ -237,6 +246,7 @@ async function captureOne({
   let screenshotSha256 = null;
   let screenshotError = null;
   let animationCount = 0;
+  let settleState = { settled: false, elapsedMs: null, quietMs: policy.capture.settle.quietMs, maxMs: policy.capture.settle.maxMs };
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
@@ -244,6 +254,42 @@ async function captureOne({
     await page.evaluate(() => document.fonts.ready.then(() => true));
     fontsReady = true;
     const fontReadyElapsedMs = Date.now() - fontWaitStarted;
+    // Idle-deferred work (e.g. small-q styles) and near-viewport lazy images otherwise race the measurement.
+    const { quietMs, maxMs, lazyImageDistancePx } = policy.capture.settle;
+    const settleStarted = Date.now();
+    const waitForQuiet = async () => {
+      const started = Date.now();
+      let lastDomCount = -1;
+      let lastDomChange = Date.now();
+      while (Date.now() - started < maxMs) {
+        const domCount = await page.evaluate(timeout => new Promise(resolve => {
+          const done = () => requestAnimationFrame(() => resolve(document.querySelectorAll('*').length));
+          if ('requestIdleCallback' in window) requestIdleCallback(done, { timeout });
+          else setTimeout(done, 0);
+        }), maxMs);
+        if (domCount !== lastDomCount) { lastDomCount = domCount; lastDomChange = Date.now(); }
+        const now = Date.now();
+        if (inFlight.size === 0 && now - lastNetworkActivity >= quietMs && now - lastDomChange >= quietMs) return true;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+    const firstQuiet = await waitForQuiet();
+    // Whether Chrome starts a near-viewport lazy image depends on which layout it evaluated while page
+    // scripts reshaped the DOM; load every lazy image within Chrome's largest lazy distance explicitly.
+    const lazyImagesResolved = await page.evaluate(distance => {
+      let count = 0;
+      for (const image of document.querySelectorAll('img[loading="lazy"]')) {
+        const rect = image.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0 && rect.top < innerHeight + distance && rect.bottom > -distance) {
+          image.loading = 'eager';
+          count += 1;
+        }
+      }
+      return count;
+    }, lazyImageDistancePx);
+    const secondQuiet = await waitForQuiet();
+    settleState = { ...settleState, settled: firstQuiet && secondQuiet, lazyImageDistancePx, lazyImagesResolved, elapsedMs: Date.now() - settleStarted };
     imageState = await page.evaluate(async () => {
       const visible = [...document.images].filter(image => {
         const rect = image.getBoundingClientRect();
@@ -394,6 +440,7 @@ async function captureOne({
       serviceWorkers: 'blocked',
       browserCache: 'disabled per context',
       fontsReady,
+      settle: settleState,
       animationsFinished: true,
       activeAnimationsStabilized: animationCount,
       dynamicMasks: policy.capture.dynamicMasks

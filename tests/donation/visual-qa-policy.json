@@ -35,6 +35,12 @@
     "initialRequest": "Fresh browser context; direct navigation to the listed path; no clicks, scrolling, query parameters, or service-worker state.",
     "waitUntil": "load",
     "waitForFonts": true,
+    "settle": {
+      "quietMs": 750,
+      "maxMs": 8000,
+      "lazyImageDistancePx": 2500,
+      "rule": "After load and fonts, let pending idle callbacks run and wait until no request is in flight and no request or DOM change has happened for quietMs (capped at maxMs). Then load every loading=lazy image within lazyImageDistancePx of the viewport (Chrome's largest lazy-load distance) and wait again, so idle-deferred styles and near-viewport lazy images are measured the same way every run."
+    },
     "animations": "Finish active Web Animations; Playwright disables animations while taking the screenshot; no user input is issued.",
     "dynamicMasks": []
   },
