@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 18
     env:
       A06_ARTIFACT_NAME: full-site-browser-qa
@@ -181,7 +181,7 @@ jobs:
 
   visual-qa:
     name: A-05 visual evidence and approved-baseline comparison
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -382,7 +382,7 @@ jobs:
           path: tests/donation/results/visual-qa/
 
   lighthouse:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
