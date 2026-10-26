@@ -91,7 +91,7 @@ class DonationPageQaWorkflowTests(unittest.TestCase):
         self.assertEqual(workflow["permissions"], {"contents": "read"})
 
         job = workflow["jobs"]["browser"]
-        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertEqual(job["runs-on"], "ubuntu-24.04")
         self.assertEqual(job["timeout-minutes"], "18")
         steps = job["steps"]
         prerequisite_index = next(
