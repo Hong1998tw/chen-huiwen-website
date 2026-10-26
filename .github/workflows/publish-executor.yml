@@ -25,7 +25,7 @@ concurrency:
 jobs:
   executor:
     if: vars.SITE_CMS_AUTHORING != 'standalone' && github.ref == 'refs/heads/main' && (vars.NOTION_PUBLISHER_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'gate-check' || inputs.mode == 'dry-run')))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     environment: notion-publisher
     steps:
