@@ -69,7 +69,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.manifest_bytes).hexdigest(),
                          self.publication["files"][contract.FONT_MANIFEST])
         self.assertEqual(self.manifest["schemaVersion"], 2)
-        self.assertEqual(len(self.routes), 465)
+        self.assertEqual(len(self.routes), 471)
         inventory = self.manifest["routeInventory"]
         original_markers = {
             "about.html", "achievements.html", "election.html", "explore.html", "index.html",
@@ -94,7 +94,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
         self.assertEqual(set(self.fonts), {
             path for path in self.publication["files"] if contract.is_page_font_path(path)
         })
-        self.assertEqual(len(self.fonts), 466)
+        self.assertEqual(len(self.fonts), 472)
         self.assertTrue(all(Path(path).name == self.fonts[path]["sha256"] + ".woff2" for path in self.fonts))
 
     def test_artifact_contract_closes_source_state_and_all_legacy_font_routes(self):
@@ -102,7 +102,7 @@ class PageFontArtifactContractTests(unittest.TestCase):
             ROOT, self.artifact, build_public.public_paths(ROOT),
         )
         inactive, _public_ids = producer._inactive_and_public_ids(ROOT)
-        self.assertEqual(len(candidates), 465)
+        self.assertEqual(len(candidates), 471)
         self.assertEqual(len(skipped), 9)
         self.assertEqual(set(skipped), set(self.manifest["routeInventory"]["skippedExistingFontRoutes"]))
         self.assertFalse((set(candidates) | set(skipped)).intersection(inactive))
