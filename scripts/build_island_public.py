@@ -6,6 +6,9 @@ The island file remains the native owner of layout, historic short records and
 curated grouping. This script owns only the canonical display-content fields.
 An unrepresented future case fails closed until its identity mapping is reviewed.
 """
+from python_guard import require_supported_python
+require_supported_python()
+
 from pathlib import Path
 import argparse, copy, json, re
 
