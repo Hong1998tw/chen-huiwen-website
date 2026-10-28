@@ -73,6 +73,7 @@
     announce('#campaign-tracking-summary',term?`符合追蹤紀錄 ${tracking} 筆`:`收錄 ${tracking} 筆；${expanded?'顯示全部':'先顯示最近收錄事件的 '+Math.min(8,tracking)+' 筆'}`);
     const more=q('#campaign-tracking-more');if(more){more.hidden=Boolean(term)||expanded||tracking<=8;more.textContent=`顯示全部 ${tracking} 筆追蹤紀錄`;}
     const empty=q('#campaign-no-results');if(empty)empty.hidden=!term||total>0;
+    q('#campaign-tracking')?.setAttribute('data-filtered','');
   }
   function init() {
     q('#campaign-search')?.addEventListener('input',filter);
