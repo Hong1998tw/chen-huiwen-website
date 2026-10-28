@@ -38,7 +38,7 @@ const report = { base, checks: [], failures: [], viewports: [], zoomSourceViewpo
 
 const dateCases = [
   { id:'fengshan-station-overview', date:'2026-05-13' },
-  { id:'fengshan-second-market', date:'2025-05' },
+  { id:'fengshan-second-market', date:'2025-05-29' },
   { id:'weiwuying-three-buildings-renovation', date:'2026-05-13' },
   { id:'nanjing-road-median-safety', date:'2025-03-28' },
   { id:'hakka-culture-language-friendly', date:'2026-09-10' },

@@ -92,12 +92,19 @@ class ReadingDesignTests(unittest.TestCase):
             self.assertIn(record['status'], soup.select_one('#case-overview-summary').get_text())
             self.assertIsNotNone(soup.select_one('#case-sources'))
             latest = latest_history_event(record.get('history', []))
-            self.assertIsNotNone(latest, path.name)
             latest_section = soup.select_one('.case-latest')
-            self.assertEqual(latest_section.select_one('.civic-kicker time').get_text(strip=True), latest['date'])
-            self.assertIn(latest['title'], latest_section.get_text(' ', strip=True))
-            if latest.get('text'):
-                self.assertIn(latest['text'], soup.select_one('main').get_text(' ', strip=True))
+            self.assertIsNotNone(latest_section, path.name)
+            if latest is None:
+                self.assertEqual(latest_section.get('data-history-state'), 'undated', path.name)
+                self.assertEqual(latest_section.select_one('.civic-kicker').get_text(strip=True), '事件日期待確認')
+                self.assertIsNone(latest_section.select_one('time'), path.name)
+                self.assertEqual(latest_section.select_one('h2').get_text(strip=True), '目前進度：' + record['status'])
+                self.assertEqual(latest_section.select_one('a')['href'], '#case-sources')
+            else:
+                self.assertEqual(latest_section.select_one('.civic-kicker time').get_text(strip=True), latest['date'])
+                self.assertIn(latest['title'], latest_section.get_text(' ', strip=True))
+                if latest.get('text'):
+                    self.assertIn(latest['text'], soup.select_one('main').get_text(' ', strip=True))
             self.assertFalse(soup.select('.record-boundary'), path.name)
             page_text = soup.select_one('main').get_text(' ', strip=True)
             for copy in AUTOMATED_CASE_COPY:

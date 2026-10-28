@@ -247,9 +247,9 @@
   },
   "achievement-dazhi-west-road": {
     "title": "鳳山區武松里大智陸橋旁西向道路鋪面改善工程",
-    "status": "爭取規劃",
+    "status": "持續追蹤",
     "place": "武松里",
-    "sha256": "2e8f09ab81faf0a1fbc4f6f773a8f2d4c18d51c32f4d05b9480270d83e3b73ce"
+    "sha256": "7cf1fb44b384a15729a29efb62e68bf92274a26b6d8044a563ce5c57d4c15da0"
   },
   "achievement-hongcheng-road": {
     "title": "鳳山區新甲里宏成路道路重鋪改善工程",
@@ -870,10 +870,10 @@
     "sha256": "bb96a27c7d06b51be92e5cf177bb9b2f6775c8a48e14d6902293e0c9c8f11778"
   },
   "achievement-zi-qiang-1st-road-147-drainage": {
-    "title": "鳳山區自強一路147號周邊路面積水與側溝排水改善",
+    "title": "鳳山區自強一路局部積水原因與排水設施評估",
     "status": "持續追蹤",
     "place": "五福里",
-    "sha256": "aa605f840b5d0a3917b50374b106caaa6ebec2e3a17a151e680c52595e8553f3"
+    "sha256": "7692b4e1be99a64562852cc63f7c1fab52ebf726b96b2a38ba832b6e130eafd5"
   },
   "achievement-jin-tian-road-34-traffic-safety": {
     "title": "鳳山區錦田路與龍成路34巷口及鎮南街交通安全設施改善",
@@ -1626,10 +1626,10 @@
     "sha256": "ad26ee1e86df022adf3fe0b59b1b2a416c4139e52356e3cf75e8d701296ca8eb"
   },
   "achievement-feng-ren-road-86-road-improvement": {
-    "title": "鳳山區鳳仁路86號工業區周邊道路改善",
+    "title": "鳳山區鳳仁路工業區周邊道路改善",
     "status": "爭取規劃",
     "place": "北門里、武松里",
-    "sha256": "a9617f2daa0e00c1c6122fbf1d7948d0dba25c72748a8187e030be10364cded7"
+    "sha256": "1e14b831eea730bc040648c05e5fb65fd6b3f2bce8bb4d1cd88255c3f96b7ddd"
   },
   "achievement-fengshan-case-improvement-39a5": {
     "title": "推動高雄大型演唱會票券實名制與健全黃牛查緝機制",
@@ -2208,10 +2208,10 @@
     "sha256": "c80ee63f86ba258901bda6a4f7dadfc6ba03dce4f297ec9df6b31cf97c72b031"
   },
   "achievement-ding-st-183-road-improvement": {
-    "title": "鳳山區過埤里頂豐街183巷道路路面重鋪改善",
-    "status": "已完成",
+    "title": "鳳山區過埤里頂豐街183巷路面重鋪需求研議",
+    "status": "持續追蹤",
     "place": "過埤里",
-    "sha256": "e91ad28e1b69cba3cbcd95d0f0c1d179cdab6186a7ab3e5bc44700c8753bd3fc"
+    "sha256": "015b2268f5e5ef4382bc216e279d342588d2f046cdd95974a81eb9a4ad8f0891"
   },
   "achievement-guo-st-55-road-improvement": {
     "title": "鳳山區過埤里過雄街55巷分段道路路面全面改善",

@@ -33,6 +33,18 @@ def synchronize(island, cases):
     by_item = {item['id']: item for item in result['items']}
     if len(by_item) != len(result['items']):
         raise ValueError('Duplicate island stable item IDs')
+    aliases = result.get('meta', {}).get('itemAliases', {})
+    for alias in aliases:
+        if alias in by_item:
+            raise ValueError(f'Alias reuses active item ID: {alias}')
+        target, visited = alias, set()
+        while target in aliases:
+            if target in visited:
+                raise ValueError(f'Item alias cycle: {alias}')
+            visited.add(target)
+            target = aliases[target]
+        if target not in by_item:
+            raise ValueError(f'Dangling item alias: {alias}')
     seen = {}
     for item in result['items']:
         original_id = item['id']
@@ -73,6 +85,40 @@ def synchronize(island, cases):
     return result
 
 
+def synchronize_static_counts(html, island):
+    """Refresh only the initial fallback's counts, preserving its curated copy."""
+    block = re.search(r'(<div id="panel-body" data-static-list>)(.*?)(</div>)', html, re.S)
+    if not block:
+        raise ValueError('Missing static island list')
+    counts = {entry['id']: 0 for entry in island['islands']}
+    for item in island['items']:
+        if item.get('i') in counts:
+            counts[item['i']] += 1
+    seen = set()
+
+    def update_row(match):
+        row = match.group(0)
+        identity = re.search(r'data-id="([^"]+)"', row)
+        if not identity or identity[1] not in counts or identity[1] in seen:
+            raise ValueError('Unknown or duplicate static island row')
+        key = identity[1]
+        seen.add(key)
+        small = re.search(r'<small>([^<]*)</small>', row)
+        if not small:
+            raise ValueError(f'Missing static island description: {key}')
+        note = re.sub(r'・\d+\s*筆$', '', small[1])
+        suffix = f'・{counts[key]} 筆' if counts[key] else ''
+        return row[:small.start(1)] + note + suffix + row[small.end(1):]
+
+    body = re.sub(r'<button\b(?=[^>]*\bdata-fb="island")[^>]*>.*?</button>', update_row, block[2], flags=re.S)
+    if seen != set(counts):
+        raise ValueError('Static island rows differ from island definitions')
+    body, total_matches = re.subn(r'全庫\s*\d+\s*筆', f'全庫 {len(island["items"])} 筆', body)
+    if total_matches != 1:
+        raise ValueError('Missing or ambiguous static island total')
+    return html[:block.start(2)] + body + html[block.end(2):]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
@@ -82,11 +128,17 @@ def main():
     island = json.loads(path.read_text())
     cases = json.loads((args.root / 'data/achievements-public.json').read_text())
     result = synchronize(island, cases)
+    html_path = args.root / 'island/index.html'
+    html = html_path.read_text()
+    result_html = synchronize_static_counts(html, result)
     if args.check:
-        if result != island:
+        if result != island or result_html != html:
             raise SystemExit('STALE_ISLAND_CANONICAL_PROJECTION: run scripts/build_island_public.py')
-    elif result != island:
-        path.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')) + '\n')
+    else:
+        if result != island:
+            path.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')) + '\n')
+        if result_html != html:
+            html_path.write_text(result_html)
     print(f'Island canonical projection: {len(cases)} full records, {sum(item.get("o") == 0 for item in result["items"])} historic short records, {len(result["items"])} stable items')
 
 

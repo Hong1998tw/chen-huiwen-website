@@ -104,7 +104,7 @@ for c in public_items:
  evidence=ext(latest_sources[-1]['url'],'查看原始資料') if latest_sources and not is_council_index(latest_sources[-1]['url']) else '<a href="#case-sources">查看資料來源 →</a>'
  latest_datetime=(f' datetime="{E(latest["date"])}"' if latest and re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?',latest['date']) else '')
  narrative='<p>'+E(latest['text'])+'</p>' if latest and paragraph_deduper.keep(latest['text']) else ''
- current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}</section>') if latest else ''
+ current=(f'<section class="case-latest" aria-labelledby="latest-heading"><p class="civic-kicker">最新收錄紀錄 · <time{latest_datetime}>{E(latest["date"])}</time></p><h2 id="latest-heading">{E(latest["title"])}</h2>{narrative}{evidence}</section>') if latest else (f'<section class="case-latest" data-history-state="undated" aria-labelledby="latest-heading"><p class="civic-kicker">事件日期待確認</p><h2 id="latest-heading">目前進度：{E(c["status"])}</h2>{evidence}</section>')
  if single_event: current='<div id="case-history">'+current+'</div>'
  context=render_case_context(c['id'],R,paragraph_deduper)
  remaining_paragraphs=[p for p in c['paragraphs'] if paragraph_deduper.keep(p)]
