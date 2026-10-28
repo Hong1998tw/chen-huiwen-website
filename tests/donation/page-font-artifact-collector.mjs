@@ -125,7 +125,7 @@ export async function collectVisibleFontDiagnostics(page, route, row, fontManife
     ...classifyVisibleGlyphDiagnostics({
       expectedFonts,
       visibleCodepoints: diagnostics.visibleCodepoints,
-      routeFallbacks: { jp: row.jpFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS },
+      routeFallbacks: { jp: row.jpFallbackCodepoints || [], supplement: row.supplementFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS },
       rawTcUnsupportedGlyphOwners: diagnostics.rawTcUnsupportedGlyphOwners,
     }),
   };

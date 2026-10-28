@@ -37,6 +37,7 @@ for name in sorted(files):
  require(not re.search(r'gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b[A-Z][12][0-9]{8}\b',s),f'{name}: sensitive pattern')
  require('YOUR_GITHUB_USERNAME' not in s or name.startswith(('.github/','scripts/','docs/')),f'{name}: deploy placeholder')
 pages={p.name:BeautifulSoup(p.read_text(),'html.parser') for p in R.glob('*.html')};canonical=[];refs=0
+page_ids={name:frozenset(el['id'] for el in doc.select('[id]')) for name,doc in pages.items()}
 for name,doc in pages.items():
  parser=html5lib.HTMLParser();parser.parse((R/name).read_text());require(not parser.errors,f'{name}: HTML5 errors {parser.errors}')
  require(doc.html.get('lang')=='zh-Hant-TW',f'{name}: language')
@@ -69,7 +70,7 @@ for name,doc in pages.items():
   path=unquote(u.path);target=R/path.lstrip("/") if path else R/name
   if target.is_dir():target=target/'index.html'
   require(target.is_file(),f'{name}: missing {raw}')
-  if u.fragment and target.name in pages:require(bool(pages[target.name].find(id=unquote(u.fragment))),f'{name}: missing fragment {raw}')
+  if u.fragment and target.name in pages:require(unquote(u.fragment) in page_ids[target.name],f'{name}: missing fragment {raw}')
   refs+=1
  for source in doc.select('[srcset]'):
   for item in source['srcset'].split(','):require((R/item.strip().split()[0]).is_file(),f'{name}: srcset asset')

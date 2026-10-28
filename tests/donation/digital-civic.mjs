@@ -26,7 +26,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
   await context.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   const page = await context.newPage();
-  const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
+  const catalog = JSON.parse(await readFile(new URL('../../data/public-record-catalog.json', import.meta.url)));
 
   await page.goto(base + 'index.html');
   await check('global search opens with Ctrl+K and finds achievement', async () => {
@@ -80,8 +80,8 @@ try {
   });
   await check('achievement live search and ten-item pagination remain functional', async () => {
     await page.locator('#case-search').fill('文德國小');
-    const expectedWende = items.filter(item => JSON.stringify(item).includes('文德國小')).length;
-    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 個專題`), expectedWende);
+    const expectedWende = catalog.filter(item => item.searchText.normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').includes('文德國小')).length;
+    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 筆紀錄`), expectedWende);
     assert.equal(await page.locator('#case-list .case-card:not([hidden])').count(), Math.min(expectedWende, 10));
     await page.locator('#case-search').fill('');
     await page.waitForFunction(() => document.querySelectorAll('#case-list .case-card:not([hidden])').length === 10);
@@ -100,14 +100,32 @@ try {
     assert((await select.locator('option').allTextContents()).includes('寵物'));
     await page.locator('.advanced-filters > summary').click();
     await select.selectOption({ label: '寵物' });
-    const expectedPetCases = items.filter(item => item.subcategories.includes('寵物'));
-    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 個專題`), expectedPetCases.length);
+    const expectedPetCases = catalog.filter(item => item.subcategories.includes('寵物'));
+    await page.waitForFunction(expected => document.querySelector('#case-count')?.textContent.includes(`共 ${expected} 筆紀錄`), expectedPetCases.length);
     const visible = page.locator('#case-list .case-card:not([hidden])');
     assert.equal(await visible.count(), Math.min(expectedPetCases.length, 10));
     const dudu = visible.filter({ hasText: '毛動力嘟嘟車消費爭議' });
     assert.equal(await dudu.count(), 1);
     assert((await dudu.boundingBox()).height < 360);
     await page.locator('#reset-map-filters').click();
+  });
+
+  await check('short-record deep link remains in list view and map insight opens its formal record', async () => {
+    const short = catalog.find(item => item.recordFormat === 'short' && item.recordType === '政策研擬紀錄');
+    assert(short, 'the reviewed policy-preparation short record is available');
+    await page.goto(base + 'achievements.html?case=' + encodeURIComponent(short.id));
+    assert.equal(await page.locator('.map-workspace.civic-list-only').count(), 1);
+    assert.equal(await page.locator('script[src*="leaflet"]').count(), 0);
+    await page.getByRole('button', { name: '地圖與列表', exact: true }).click();
+    const detail = page.getByRole('link', { name: '閱讀工作紀錄 →', exact: true });
+    await detail.waitFor({ state: 'visible' });
+    assert.equal(await detail.getAttribute('href'), short.url);
+    assert.equal(await page.locator('.map-insight-panel .insight-location').count(), 0);
+    await detail.click();
+    const record = page.locator('#record-' + short.id);
+    await record.waitFor({ state: 'visible' });
+    assert.equal(await record.locator('h2').innerText(), short.title);
+    assert.equal(await page.locator('article.public-record:visible').count(), 1);
   });
 
   await page.goto(base + 'news.html');

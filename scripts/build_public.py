@@ -22,7 +22,7 @@ from page_copy import render_with_manifest
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTION = 'data/achievements-public.json'
 PUBLIC_DATA = (
-    PROJECTION, 'data/achievement-map.json', 'data/election-2026.json',
+    PROJECTION, 'data/achievement-map.json', 'data/public-record-catalog.json', 'data/election-2026.json',
     'data/platforms.json', 'data/events.json', 'data/search-index.json',
     'data/legal-schedule.json', 'data/service-search.json', 'data/site-profile.json',
 )
@@ -33,6 +33,7 @@ ROOT_FILES = (
     'map.css', 'news.css', 'political-donation.css', 'site.js', 'civic.js',
     'digital.js', 'home.js', 'small-q.css', 'small-q.js', 'campaign.js', 'embeds.js', 'map.js', 'news.js',
     'activities.js', 'activities.css', 'legal-calendar.js', 'legal-calendar.css', 'press.js', 'election.js', 'explore.js', 'sw.js', 'updates.xml',
+    'public-records.js', 'public-records.css',
 )
 LEGACY_PAGES = (
     'mktexp26/index.html', 'd13de1081a3a49219363e5a0ace2c83b/index.html',
@@ -41,7 +42,7 @@ LEGACY_PAGES = (
     '398bd146805480f98aecedb69d2e1070/index.html', 'renwu-anju-social-housing/index.html',
 )
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.gif', '.ico', '.pdf', '.geojson', '.woff', '.woff2', '.mp4', '.webm', '.mp3'}
-VENDOR_FILES = {'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
+VENDOR_FILES = {'assets/fonts/huiwen-site-sans/rare-han-support-OFL.txt', 'assets/fonts/huiwen-site-sans/rare-han-support-provenance.json', 'assets/vendor/leaflet.js', 'assets/vendor/leaflet.css', 'assets/vendor/LEAFLET-LICENSE.txt', 'assets/legal/OFL.txt', 'assets/home-OFL.txt', 'assets/fonts/huiwen-site-sans/LICENSE.txt'}
 ISLAND_EXTENSIONS = {'.html', '.js', '.mjs', '.css', '.json', '.glb', '.woff2', '.txt'}
 BUILD_ONLY_FILES = {'assets/fonts/huiwen-site-sans/source-han-sans-jp-vf-2.005R.woff2'}
 MAP_FIELDS = {'id', 'title', 'summary', 'categories', 'subcategories', 'villages', 'scope', 'status', 'coordinates', 'locationName', 'locationNote', 'history', 'updated', 'searchText', 'years', 'funding', 'lastRecordDate'}
@@ -383,7 +384,7 @@ def validate_artifact_links(destination, root=ROOT):
 
 def build_page_editor_artifacts(staging, root):
     """Apply approved copy in the Pages artifact and publish editor-only indexes."""
-    from page_authority import classify
+    from page_authority import classify, READ_ONLY_DERIVED_PAGES
 
     state = json.loads((root / 'data/page-content.json').read_text(encoding='utf-8'))
     entries = state.get('pages', {})
@@ -397,7 +398,7 @@ def build_page_editor_artifacts(staging, root):
         if not path.endswith('.html'):
             continue
         _, kind, _ = classify(path)
-        if kind in {'system', 'legacy-redirect', 'excluded-intake'}:
+        if kind in {'system', 'legacy-redirect', 'excluded-intake'} or path in READ_ONLY_DERIVED_PAGES:
             continue
         target = staging / path
         if not target.is_file():
@@ -470,6 +471,8 @@ def build(root=ROOT, destination=None, *, include_font_contract=False, artifact_
     if destination == root or destination in root.parents:
         raise ValueError('Refusing to replace source directory')
     records = write_projection(root, check=True)
+    from public_record_catalog import validate_catalog
+    validate_catalog(root)
     paths = public_paths(root)
     if destination.exists() and any(destination.iterdir()) and not (destination / 'publication-manifest.json').is_file():
         raise ValueError('Refusing to replace a directory without a publication manifest')

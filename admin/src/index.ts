@@ -293,6 +293,9 @@ async function handle(request: Request, env: Env) {
     return json({ pages: [...published, ...drafts] });
   }
   const isEditablePage = async (path: string) => {
+    // This collection is a projection of existing source records, never a CMS draft.
+    if (path === "public-records.html")
+      throw new HttpError(404, "這個頁面目前不開放內容編輯");
     const row = await env.DB.prepare("SELECT source_kind,commit_sha FROM published_pages WHERE path=?").bind(path).first<{source_kind:string;commit_sha:string}>();
     if (!row && editorialPath.test(path)) {
       const draft = await env.DB.prepare("SELECT base_commit FROM page_edits WHERE path=?").bind(path).first<{base_commit:string}>();

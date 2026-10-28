@@ -12,6 +12,8 @@ const output=resolve(root,'tests/donation/results/achievement-list');
 const FILTER_DIALOG_CLOSE_TIMEOUT_MS=3000;
 await mkdir(output,{recursive:true});
 const publicCases=JSON.parse(await readFile(resolve(root,'data/achievements.json'),'utf8')).filter(row=>row.status!=='待核驗');
+const publicCatalog=JSON.parse(await readFile(resolve(root,'data/public-record-catalog.json'),'utf8'));
+const fullIds=new Set(publicCases.map(row=>row.id));
 const report={scope:'P-ACH-LIST mobile filters and map/list presentation',checks:[],failures:[],screenshots:[],diagnostics:{focusSequence:[],cleanupErrors:[]}};
 let server,browser,page;
 const focusSnapshot=async phase=>{
@@ -261,7 +263,9 @@ try{
   const noJsPage=await noJs.newPage();await noJsPage.goto(new URL('achievements.html',server.url).href,{waitUntil:'domcontentloaded'});
   assert.equal(await noJsPage.locator('#case-filter-open').isVisible(),false);
   assert.equal(await noJsPage.locator('#case-filter-fields').evaluate(fields=>fields.parentElement.matches('.map-controls')),true);
-  assert.equal(await noJsPage.locator('#case-list .case-card:visible').count(),publicCases.length);
+  const visibleCards=await noJsPage.locator('#case-list .case-card:visible').evaluateAll(cards=>cards.map(card=>({id:card.dataset.case,href:card.querySelector('h3 a')?.getAttribute('href')})));
+  assert.deepEqual(visibleCards.map(card=>card.id).sort(),publicCatalog.map(row=>row.id).sort());
+  assert.deepEqual(visibleCards.filter(card=>fullIds.has(card.id)).map(card=>({id:card.id,href:card.href})).sort((a,b)=>a.id.localeCompare(b.id)),publicCases.map(row=>({id:row.id,href:`achievement-${row.id}.html`})).sort((a,b)=>a.id.localeCompare(b.id)));
   assert.match(await noJsPage.locator('noscript').innerText(),/完整紀錄與詳情頁仍可直接閱讀/);
   assert(await noJsPage.locator('#village-filter').isVisible());
   await noJs.close();

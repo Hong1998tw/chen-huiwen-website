@@ -511,7 +511,7 @@ async function runMapProof(browser, base, inputs) {
     const mapWorker = await assertNoServiceWorkerController(page, 'achievements.html');
     const mapDataResponsePromise = page.waitForResponse((candidate) => {
       const url = new URL(candidate.url());
-      return url.origin === base.origin && url.pathname === '/data/achievement-map.json';
+      return url.origin === base.origin && url.pathname === '/data/public-record-catalog.json';
     }, { timeout: 18000 }).then((response) => ({ response }), (error) => ({ error }));
     const mapButton = page.getByRole('button', { name: '地圖與列表', exact: true });
     await page.waitForFunction(() => [...document.querySelectorAll('[data-view]')]

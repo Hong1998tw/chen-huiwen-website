@@ -13,7 +13,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import publish_from_notion as engine
-from page_authority import catalog
+from page_authority import catalog, READ_ONLY_DERIVED_PAGES
 from validate_achievements import validate as validate_achievements, valid_date
 from case_media import classify as classify_media
 from achievement_metadata import is_public
@@ -281,7 +281,7 @@ def page_candidate(item, root=ROOT):
         return editorial_candidate(item, root, draft)
     pages = {row['path']: row for row in catalog(root)}
     page = pages.get(path)
-    if not page or page['kind'] in {'system', 'legacy-redirect', 'excluded-intake'}:
+    if not page or page['kind'] in {'system', 'legacy-redirect', 'excluded-intake'} or path in READ_ONLY_DERIVED_PAGES:
         raise engine.PublishError('VALIDATION', ['此頁目前不開放編輯'])
     live_sha = engine.run(['git', 'rev-parse', 'HEAD'], root).stdout.strip()
     stale_base = item.get('base_commit') != live_sha

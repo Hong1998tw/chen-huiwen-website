@@ -495,3 +495,13 @@ test('visible fallback glyphs still require the producer Delta/Common prefix and
     stage: 'missing generic fallback',
   }), /no generic system fallback after Fixture Page Delta → Fixture Page Common/);
 });
+
+
+test('separate rare-Han coverage does not expand JP or system fallbacks', () => {
+  const result=validateVisibleCodepointCoverage({route:visualRoute,routeCodepoints,expectedFonts,
+    visibleCodepoints:[...routeCodepoints,0x5754,0x6db3],routeFallbacks:{supplement:[0x5754,0x6db3]}});
+  assert.equal(result.coverage.supplementFallback,2);
+  assert.equal(result.coverage.jpFallback,0);
+  assert.throws(()=>validateVisibleCodepointCoverage({route:visualRoute,routeCodepoints,expectedFonts,
+    visibleCodepoints:[...routeCodepoints,0x5755],routeFallbacks:{supplement:[0x5755]}}),/pinned two-glyph/);
+});

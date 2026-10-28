@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 DATA_PAGES = {
     'achievements.html': ('data/achievements.json', 'generated', 'none'),
+    'public-records.html': ('island/island-data.json', 'generated', 'none'),
     'activities.html': ('data/events.json', 'generated', 'partial'),
     'election.html': ('data/election-2026.json', 'composite', 'partial'),
     'explore.html': ('data/achievements.json', 'generated', 'none'),
@@ -23,6 +24,7 @@ DATA_PAGES = {
     'vision.html': ('data/platforms.json', 'generated', 'none'),
 }
 SYSTEM_PAGES = {'404.html', 'offline.html'}
+READ_ONLY_DERIVED_PAGES = {'public-records.html'}
 EXCLUDED_AUTHORING = {'petition.html'}
 STATIC_ROOT_PAGES = {
     'activity-market.html', 'activity-mooncake.html', 'council-records.html',
@@ -94,7 +96,7 @@ def catalog(root=ROOT):
         title = ' '.join(''.join(parser.parts).split())
         if not title or len(title) > 250:
             raise ValueError('Missing or oversized page title: ' + path)
-        if kind not in {'system', 'legacy-redirect', 'excluded-intake'}:
+        if kind not in {'system', 'legacy-redirect', 'excluded-intake'} and path not in READ_ONLY_DERIVED_PAGES:
             editor_scope = 'partial'
         rows.append({'path': path, 'title': title, 'source': source,
                      'kind': kind, 'editorScope': editor_scope,

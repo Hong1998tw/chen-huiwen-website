@@ -25,6 +25,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import rare_han_support as rare_support
 from urllib.parse import unquote, urlsplit
 
 import brotli
@@ -82,7 +83,7 @@ SCRIPT_DYNAMIC_TEXT = (
     "分享這一頁 網址已複製 複製分享網址 請選取並複製下方網址。 分享網址 關閉"
 )
 FINGERPRINTED_DYNAMIC_SCRIPTS = re.compile(
-    r"(?P<alias>digital|news|civic|legal-calendar)\.(?P<digest>[a-f0-9]{64})\.js\Z"
+    r"(?P<alias>digital|news|civic|legal-calendar|public-records)\.(?P<digest>[a-f0-9]{64})\.js\Z"
 )
 FINGERPRINTED_PRESS_SCRIPT = re.compile(r"press\.(?P<digest>[a-f0-9]{64})\.js\Z")
 CASE_DYNAMIC_TEXT = (
@@ -572,6 +573,8 @@ def dynamic_ui_text(route: str, soup, root: Path = ROOT) -> str:
             pieces.extend(f"新聞發稿第 {page} 頁" for page in range(1, pages + 1))
     if "digital.js" in script_names and PurePosixPath(route).name.startswith("achievement-"):
         pieces.append(CASE_DYNAMIC_TEXT)
+    if "public-records.js" in script_names and soup.select_one('article[id^="record-"]') is not None:
+        pieces.append("顯示全部工作紀錄 目前顯示 1 筆工作紀錄，共 0123456789 筆可供查閱。 找不到這筆工作紀錄，以下顯示全部 0123456789 筆。 共 0123456789 筆工作紀錄。")
     if "news.js" in script_names:
         pieces.extend((NEWS_DYNAMIC_TEXT, "陳慧文於高雄市議會市政總質詢發言 2024年11月29日，陳慧文於高雄市議會市政總質詢發言。圖／陳慧文議員服務處提供。"))
     if "civic.js" in script_names:
@@ -688,10 +691,13 @@ def _page_spec_from_bytes(
     stylesheet_paths, css_text = linked_css(root, route, soup)
     visible_text = "\n".join(text_parts + [css_text, dynamic_ui_text(route, soup, root)])
     characters = {ord(char) for char in visible_text}
+    support_css = "\n".join((root / path).read_text(encoding="utf-8") for path in stylesheet_paths)
+    support_css += "\n" + "\n".join(str(style.string or style.decode_contents()) for style in soup.find_all("style"))
+    supplement_allowed, supplement_cmap = rare_support.parse_face(root, support_css)
     tc_glyphs = tuple(sorted(characters.intersection(tc_cmap)))
     if not tc_glyphs:
         raise ValueError(f"FONT_ROUTE_HAS_NO_TC_GLYPHS: {route}")
-    missing = sorted(cp for cp in characters if is_required_character(chr(cp)) and cp not in tc_cmap and cp not in jp_cmap)
+    missing = sorted(cp for cp in characters if is_required_character(chr(cp)) and cp not in tc_cmap and cp not in jp_cmap and cp not in supplement_cmap)
     if missing:
         sample = " ".join(f"U+{cp:04X} {chr(cp)}" for cp in missing[:20])
         raise ValueError(f"FONT_ROUTE_HAS_UNCOVERED_REQUIRED_CHARACTERS: {route}: {sample}")
@@ -700,12 +706,17 @@ def _page_spec_from_bytes(
     if outside_face:
         sample = " ".join(f"U+{cp:04X} {chr(cp)}" for cp in outside_face[:20])
         raise ValueError(f"FONT_ROUTE_NEEDS_JP_GLYPH_OUTSIDE_EXACT_FACE: {route}: {sample}")
+    supplement_missing = sorted(cp for cp in characters if is_required_character(chr(cp))
+                                and cp not in tc_cmap and cp not in jp_cmap and cp in supplement_cmap)
+    if set(supplement_missing) - supplement_allowed:
+        raise ValueError("FONT_ROUTE_NEEDS_SUPPLEMENT_OUTSIDE_EXACT_FACE: " + route)
     return {
         "route": route,
         "html": raw,
         "codepoints": tc_glyphs,
         "glyphsetSha256": glyphset_sha256(list(tc_glyphs)),
         "jpFallback": jp_missing,
+        "supplementFallback": supplement_missing,
         "stylesheetPaths": stylesheet_paths,
         "dataTextCharacters": len(visible_text),
     }
@@ -763,6 +774,36 @@ def _legacy_redirect_target(soup, public_html_routes: set[str]) -> str | None:
     return target if target_routes.intersection(public_html_routes) else None
 
 
+def validate_existing_route_preloads(root: Path, route: str, soup) -> None:
+    """Keep the existing achievements Core+JP pair separate from common/delta routes."""
+    if route != "achievements.html":
+        return
+    if soup.html is None or soup.html.get("data-huiwen-font-page") != "achievements":
+        raise ValueError("FONT_EXISTING_PRELOAD_ROUTE_MARKER_INVALID: " + route)
+    stylesheets, _ = linked_css(root, route, soup)
+    css = "\n".join((root / path).read_text(encoding="utf-8") for path in stylesheets)
+    css += "\n" + "\n".join(str(style.string or style.decode_contents()) for style in soup.find_all("style"))
+    expected = []
+    for family in ("Huiwen Sans TC achievements Core", "Huiwen Sans JP Support"):
+        faces = re.findall(r"@font-face\s*\{[^}]*font-family\s*:\s*[\"']" + re.escape(family) + r"[\"'][^}]*\}", css, re.I)
+        if len(faces) != 1:
+            raise ValueError("FONT_EXISTING_PRELOAD_FACE_AMBIGUOUS: " + route)
+        source = re.search(r"src\s*:\s*url\(\s*([\"']?)([^\"')]+)\1\s*\)", faces[0], re.I)
+        if source is None:
+            raise ValueError("FONT_EXISTING_PRELOAD_FACE_SOURCE_MISSING: " + route)
+        target = _safe_artifact_path(root, source.group(2))
+        expected.append("/" + target.relative_to(root).as_posix())
+    preloads = soup.select('link[rel~="preload"][as="font"]')
+    if (len(preloads) != 2 or [tag.get("href") for tag in preloads] != expected
+            or any(tag.get("type") != "font/woff2" or tag.get("crossorigin") != "anonymous" for tag in preloads)
+            or any(tag.find_parent("head") is None for tag in preloads)):
+        raise ValueError("FONT_EXISTING_PRELOAD_CLOSURE_INVALID: " + route)
+    head_links = soup.head.find_all("link")
+    first_stylesheet = next((index for index, tag in enumerate(head_links) if "stylesheet" in tag.get("rel", [])), None)
+    if first_stylesheet is None or any(head_links.index(tag) >= first_stylesheet for tag in preloads):
+        raise ValueError("FONT_EXISTING_PRELOAD_ORDER_INVALID: " + route)
+
+
 def public_html_route_inventory(source_root: Path, artifact_root: Path, public_paths):
     paths = sorted(set(public_paths))
     html_routes = sorted(path for path in paths if PurePosixPath(path).suffix.lower() == ".html")
@@ -805,6 +846,7 @@ def public_html_route_inventory(source_root: Path, artifact_root: Path, public_p
         if soup.html is None:
             raise ValueError(f"FONT_PUBLIC_HTML_MALFORMED: {route}")
         if soup.html and soup.html.get("data-huiwen-font-page"):
+            validate_existing_route_preloads(artifact_root, route, soup)
             skipped.append(route)
         elif _uses_full_tc_font(artifact_root, route, raw, soup):
             eligible.append(route)
@@ -1166,9 +1208,9 @@ def make_style(route: str, common_path: str, delta_path: str) -> tuple[str, list
     style = (
         f'@font-face{{font-family:"{CORE_FAMILY}";src:url("/{common_path}") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}}'
         f'@font-face{{font-family:"{DELTA_FAMILY}";src:url("/{delta_path}") format("woff2");font-style:normal;font-weight:250 900;font-display:swap}}'
-        f':root[data-huiwen-font-artifact-route="{route}"]{{--huiwen-font-family:"{DELTA_FAMILY}","{CORE_FAMILY}","Huiwen Sans TC","Huiwen Sans JP Support",sans-serif}}'
+        f':root[data-huiwen-font-artifact-route="{route}"]{{--huiwen-font-family:"{DELTA_FAMILY}","{CORE_FAMILY}","Huiwen Sans TC","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif}}'
         f'{offline_body_override}'
-        ':root[data-huiwen-font-artifact-preview="1"]{--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif}'
+        ':root[data-huiwen-font-artifact-preview="1"]{--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif}'
     )
     return links + f'<style {STYLE_MARKER}="1">{style}</style>', preloads
 
@@ -1264,6 +1306,7 @@ def validate_manifest(
         soup = BeautifulSoup(path.read_bytes(), "html5lib")
         if soup.html is None or not soup.html.get("data-huiwen-font-page"):
             raise ValueError(f"FONT_MANIFEST_SKIPPED_ROUTE_MARKER_INVALID: {route}")
+        validate_existing_route_preloads(artifact_root, route, soup)
     for row in excluded_routes:
         route = row.get("route")
         path = artifact_root / route
@@ -1290,6 +1333,10 @@ def validate_manifest(
     if not styles_path.is_file() or styles_path.is_symlink():
         raise ValueError("FONT_MANIFEST_STYLESHEET_MISSING")
     jp_allowed, jp_cmap = parse_jp_face(artifact_root, styles_path.read_text(encoding="utf-8"))
+    supplement_allowed, _supplement_cmap = rare_support.parse_face(artifact_root, styles_path.read_text(encoding="utf-8"))
+    expected_supplement = rare_support.provenance(artifact_root) if supplement_allowed else None
+    if manifest.get("supplementSourceProvenance") != expected_supplement:
+        raise ValueError("FONT_MANIFEST_SUPPLEMENT_PROVENANCE_INVALID")
     public_ids = None if public_ids is None else set(public_ids)
     for route in routes:
         if not _safe_public_html_route(route) or route in inactive_routes:
@@ -1373,6 +1420,8 @@ def validate_manifest(
             raise ValueError(f"FONT_MANIFEST_ROUTE_TEXT_GLYPHSET_MISMATCH: {route}")
         if row.get("jpFallbackCodepoints") != actual_spec["jpFallback"]:
             raise ValueError(f"FONT_MANIFEST_ROUTE_FALLBACK_MISMATCH: {route}")
+        if row.get("supplementFallbackCodepoints") != actual_spec["supplementFallback"]:
+            raise ValueError(f"FONT_MANIFEST_ROUTE_SUPPLEMENT_MISMATCH: {route}")
         actual_route_codepoints[route] = set(route_codepoints)
         styles = soup.find_all("style", attrs={STYLE_MARKER: "1"})
         if len(styles) != 1:
@@ -1532,6 +1581,7 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
             "initialFontBytes": len(written_payloads[common_path]) + len(written_payloads[delta_path]),
             "dataTextCharacters": spec["dataTextCharacters"],
             "jpFallbackCodepoints": spec["jpFallback"],
+            "supplementFallbackCodepoints": spec["supplementFallback"],
         }
         per_page_bytes.append({
             "route": spec["route"],
@@ -1554,6 +1604,7 @@ def _build_once(source_root: Path, artifact_root: Path, paths, compiler: Process
         "schemaVersion": MANIFEST_SCHEMA,
         "sourceFontSha256": source_digest,
         "sourceProvenance": source_provenance(source_bytes, (artifact_root / LICENSE_REL).read_bytes()),
+        "supplementSourceProvenance": rare_support.provenance(artifact_root) if rare_support.parse_face(artifact_root, styles_css)[0] else None,
         "routeInventory": {
             "candidateRoutes": routes,
             "skippedExistingFontRoutes": skipped,
@@ -1621,6 +1672,21 @@ def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[di
         target = warm_artifact / route
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source.read_bytes())
+        if route == "achievements.html":
+            # Warm replay revalidates this skipped route's existing Core+JP
+            # contract. Copy the exact CSS/import and preload dependencies it
+            # consumes; eligible common/delta specs do not own map.css or Core.
+            soup = BeautifulSoup(source.read_bytes(), "html5lib")
+            validate_existing_route_preloads(source_artifact, route, soup)
+            stylesheets, _ = linked_css(source_artifact, route, soup)
+            inputs = {source_artifact / relative for relative in stylesheets}
+            inputs.update(_safe_artifact_path(source_artifact, tag["href"])
+                          for tag in soup.select('link[rel~="preload"][as="font"]'))
+            for dependency in sorted(inputs):
+                relative = dependency.relative_to(source_artifact)
+                output = warm_artifact / relative
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(dependency.read_bytes())
     styles = source_artifact / "styles.css"
     target_styles = warm_artifact / "styles.css"
     if styles.is_file() and not target_styles.exists():
@@ -1644,6 +1710,13 @@ def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[di
         target = warm_artifact / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source.read_bytes())
+
+    if styles.is_file() and rare_support.FAMILY in styles.read_text(encoding="utf-8"):
+        for relative in rare_support.PUBLIC_FILES:
+            source = source_artifact / relative
+            target = warm_artifact / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
 
 
 def build(source_root: Path, artifact_root: Path, public_paths, *, compiler: ProcessFontCompiler | None = None) -> dict:

@@ -12,7 +12,7 @@ OUTPUT = 'llms.txt'
 SECTIONS = (
     ('認識陳慧文', ('about.html', 'vision.html')),
     ('服務', ('service.html', 'service-guides.html', 'petition.html')),
-    ('建設、問政與新聞', ('achievements.html', 'explore.html', 'council-records.html', 'news.html', 'press.html')),
+    ('建設、問政與新聞', ('achievements.html', 'public-records.html', 'explore.html', 'council-records.html', 'news.html', 'press.html')),
     ('2026 選舉', ('election.html', 'political-donation.html', 'activities.html')),
     ('網站更新', ('updates.html',)),
 )

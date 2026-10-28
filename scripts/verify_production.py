@@ -61,6 +61,13 @@ STATIC_FILES = (
     "data/achievements.json",
     "data/achievements-public.json",
     "data/achievement-map.json",
+    "data/public-record-catalog.json",
+    "public-records.html",
+    "public-records.js",
+    "public-records.css",
+    "assets/fonts/huiwen-site-sans/huiwen-rare-han-support-f54454c3ccd0903f631c7e7a639a10805c98addfa689b19c9c8e3e32ebbca156.woff2",
+    "assets/fonts/huiwen-site-sans/rare-han-support-OFL.txt",
+    "assets/fonts/huiwen-site-sans/rare-han-support-provenance.json",
     "data/platforms.json",
     "data/search-index.json",
     "data/events.json",
@@ -196,7 +203,8 @@ class CriticalParser(HTMLParser):
     """
     CLASSES = {'footer-grid', 'contact-card', 'hours-card', 'schedule-text',
                'donation-account', 'donation-period', 'home-account',
-               'civic-service-desk', 'campaign-keydates', 'case-latest', 'case-facts'}
+               'civic-service-desk', 'campaign-keydates', 'case-latest', 'case-facts',
+               'case-card', 'public-record', 'kicker'}
     IDS = {'campaign-number-draw', 'campaign-vote-date', 'campaign-election-source'}
     VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
 
@@ -223,6 +231,10 @@ class CriticalParser(HTMLParser):
         if href.startswith(('tel:', 'mailto:')):
             self.contact_links.append(href)
         markers = sorted(self.CLASSES.intersection(data.get('class', '').split()))
+        if 'case-card' in markers:
+            markers.append('case-id:' + data.get('data-case', ''))
+        if 'public-record' in markers:
+            markers.append('record-id:' + data.get('id', ''))
         if data.get('id') in self.IDS:
             markers.append('#' + data['id'])
         if tag == 'time':
