@@ -43,6 +43,8 @@ jobs:
       - run: node tests/donation/petition-preservation.test.mjs
       - name: Verify compact-header startup state from the shipped site.js source
         run: node tests/donation/site-header-controller.mjs
+      - name: Verify stable island links and reviewed action wording
+        run: node --test tests/donation/island-item-identity.test.mjs
       - name: Verify inline-link target-size exception predicate with pure fixtures
         run: node tests/donation/target-size-inline.test.mjs
       - name: Verify target-size cleanup and report persistence failures

@@ -12,6 +12,11 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import signal
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import shutil
 import tempfile
 import time
@@ -60,6 +65,7 @@ STATIC_FILES = (
     "data/search-index.json",
     "data/events.json",
     "data/site-profile.json",
+    "island/island-data.json",
     "sw.js",
     "page-font-manifest.json",
     "publication-manifest.json",
@@ -376,24 +382,346 @@ def verification_cache_key(local: bytes, run_cache_key: str, attempt: int, *, bi
     return f"{digest(local, binary=binary)[:16]}-{run_cache_key}-{attempt}"
 
 
+class VerificationInterrupted(BaseException):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+class VerificationProgress:
+    """Observation only: never decides whether a production check passes.
+
+    The primary report is partial until a full attempt returns. Atomic sibling
+    files retain earlier attempts and the latest phase/path even on cancellation.
+    New diagnostics contain source-owned paths, field names and exception types,
+    never response text, contact values, or arbitrary exception messages.
+    """
+    def __init__(self, report_path=None, *, enabled=True):
+        self.report_path = Path(report_path) if report_path else None
+        self.enabled = enabled
+        self.lock = threading.RLock()
+        self.started = time.monotonic()
+        self.history = []
+        self.events = []
+        self.attempt = 0
+        self.attempt_finalized = False
+        self.active = {}
+        self.phases = {}
+        self.checks = []
+        self.failures = []
+        self.font_results = {}
+        self.failed_paths = set()
+        self.errors = []
+        self.interrupted = False
+        self.interrupted_checks = []
+        self.final_result = None
+        self.checkpoint_interval = 1.0
+        self.last_checkpoint = float('-inf')
+        self.started_path_phases = set()
+        self.failure_details = {}
+        self.persisted_failure_paths = set()
+        self.annotated_paths = set()
+        self.stop_checkpoint = threading.Event()
+        self.checkpoint_thread = None
+
+    def _attempt_path(self):
+        path = self.report_path
+        return path.with_name(f"{path.stem}.attempt-{self.attempt:03d}{path.suffix}")
+
+    @staticmethod
+    def _write(path, payload):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Lock serializes this writer; replace keeps readers from seeing half JSON.
+        temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+        with temporary.open("w", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+
+    def _payload(self):
+        # Existing failures are source-generated labels. Store only the source
+        # path prefix here; no changed contact/account values or raw error text.
+        failed = set(self.failed_paths)
+        for failure in self.failures:
+            path = failure.partition(":")[0]
+            if re.fullmatch(r"[A-Za-z0-9_./-]+", path):
+                failed.add(path)
+        status = "FAILED_PARTIAL" if self.failures or failed or self.errors else "PENDING"
+        return {
+            "status": status, "complete": False, "attempt": self.attempt,
+            "elapsedSeconds": round(time.monotonic() - self.started, 3),
+            "interrupted": self.interrupted, "interruptedDuring": self.interrupted_checks,
+            "activeChecks": list(self.active.values()), "phases": self.phases,
+            "checked": len(self.checks),
+            "failedPaths": sorted(failed), "errorTypes": self.errors,
+            "failureDetails": list(self.failure_details.values()),
+            "completedFontChecks": len(self.font_results),
+            "attemptHistory": self.history,
+            "recentEvents": self.events[-200:],
+            "note": "Partial observation cannot certify production parity or PASS.",
+        }
+
+    def _failure_paths(self):
+        paths = set(self.failed_paths)
+        for failure in self.failures:
+            path = failure.partition(":")[0]
+            if self._safe_path(path):
+                paths.add(path)
+        return paths
+
+    @staticmethod
+    def _safe_path(path):
+        return (isinstance(path, str) and len(path) <= 512 and
+                re.fullmatch(r"[A-Za-z0-9_./-]+", path) and
+                not path.startswith("/") and ".." not in Path(path).parts)
+
+    def _annotate_failure(self, path, detail):
+        if (os.environ.get("GITHUB_ACTIONS") != "true" or not self._safe_path(path) or
+                path in self.annotated_paths or len(self.annotated_paths) >= 10):
+            return
+        self.annotated_paths.add(path)
+        kind = detail.get("errorType", "CheckFailed")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,99}", kind):
+            kind = "CheckFailed"
+        code = detail.get("http")
+        suffix = f" HTTP {code}" if type(code) is int and 100 <= code <= 599 else ""
+        # Both fields are allowlisted identifiers; no response/exception prose.
+        print(f"::warning file={path},title=Production verification::{path}: {kind}{suffix}", flush=True)
+
+    def _checkpoint(self, *, force=False, attempt_receipt=False):
+        if not self.report_path:
+            return
+        now = time.monotonic()
+        if not force and now - self.last_checkpoint < self.checkpoint_interval:
+            return
+        payload = self._payload()
+        progress_path = self.report_path.with_name(self.report_path.stem + ".progress.json")
+        self._write(progress_path, payload)
+        self._write(self.report_path, payload)
+        if attempt_receipt and self.attempt and not self.attempt_finalized:
+            self._write(self._attempt_path(), payload)
+        self.last_checkpoint = time.monotonic()
+        self.persisted_failure_paths = self._failure_paths()
+
+    def _start_checkpoint_clock(self):
+        if not self.enabled or not self.report_path or self.checkpoint_thread:
+            return
+        def clock():
+            while not self.stop_checkpoint.is_set():
+                # Refresh even while one HTTP/local-contract call is blocked.
+                with self.lock:
+                    remaining = self.checkpoint_interval - (time.monotonic() - self.last_checkpoint)
+                if self.stop_checkpoint.wait(max(.01, remaining)):
+                    return
+                with self.lock:
+                    if not self.stop_checkpoint.is_set():
+                        self._checkpoint()
+        self.checkpoint_thread = threading.Thread(target=clock, name="verification-checkpoint", daemon=True)
+        self.checkpoint_thread.start()
+
+    def emit(self, event, *, force=False, **fields):
+        if not self.enabled:
+            return
+        with self.lock:
+            row = {"event": event, "attempt": self.attempt,
+                   "elapsedSeconds": round(time.monotonic() - self.started, 3),
+                   "at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), **fields}
+            self.events.append(row)
+            print("production-verification-progress " + json.dumps(row, ensure_ascii=False), flush=True)
+            failures = self._failure_paths()
+            new_failures = failures - self.persisted_failure_paths
+            for path in sorted(new_failures):
+                self._annotate_failure(path, self.failure_details.get(path, {}))
+            critical = event in {"attempt-start", "attempt-end", "phase-start", "phase-end",
+                                 "phase-error", "check-failure", "interrupted", "interrupted-check"}
+            # Ordinary paths do not serialize a full report on every event.
+            self._checkpoint(force=force or critical or bool(new_failures),
+                             attempt_receipt=event in {"attempt-start", "attempt-end", "interrupted",
+                                                       "interrupted-check", "phase-error"})
+
+    def fetch_failure(self, phase, path, exc):
+        if not self.enabled:
+            return
+        with self.lock:
+            detail = {"phase": phase, "path": path, "errorType": type(exc).__name__}
+            if isinstance(exc, HTTPError) and type(exc.code) is int and 100 <= exc.code <= 599:
+                detail["http"] = exc.code
+            self.failure_details[path] = detail
+            self.failed_paths.add(path)
+            if phase not in {"font_assets", "font_routes"}:
+                self.emit("check-failure", **detail)
+
+    def start_attempt(self, attempt):
+        with self.lock:
+            self.attempt = attempt
+            self.attempt_finalized = False
+            self.started_path_phases = set()
+            self.failure_details, self.persisted_failure_paths = {}, set()
+            self.attempt_started = time.monotonic()
+            self.active, self.phases = {}, {}
+            self.checks, self.failures, self.font_results = [], [], {}
+            self.failed_paths, self.errors = set(), []
+            self.emit("attempt-start")
+            self._start_checkpoint_clock()
+
+    def bind(self, checks, failures):
+        self.checks, self.failures = checks, failures
+
+    def start_phase(self, phase, total=None):
+        with self.lock:
+            self.phases[phase] = {"state": "running", "total": total,
+                                  "completed": 0, "started": time.monotonic(),
+                                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds")}
+            self.emit("phase-start", phase=phase, total=total)
+
+    def end_phase(self, phase):
+        with self.lock:
+            row = self.phases[phase]
+            if phase == "local_contract":
+                row["completed"] = 1
+            row.update(state="interrupted" if self.interrupted else ("failed_partial" if row["state"] == "failed_partial" else "completed"),
+                       endedAt=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                       durationSeconds=round(time.monotonic() - row["started"], 3))
+            self.emit("phase-end", phase=phase, durationSeconds=row["durationSeconds"])
+
+    @contextmanager
+    def check(self, phase, path):
+        if not self.enabled:
+            yield
+            return
+        key = f"{phase}:{path}"
+        started = time.monotonic()
+        with self.lock:
+            self.active[key] = {"phase": phase, "path": path,
+                                "startedElapsedSeconds": round(started - self.started, 3)}
+            first_path = phase not in self.started_path_phases
+            self.started_path_phases.add(phase)
+            self.emit("check-start", phase=phase, path=path, force=first_path)
+        error = None
+        try:
+            yield
+        except BaseException as exc:
+            error = type(exc).__name__
+            with self.lock:
+                if isinstance(exc, (KeyboardInterrupt, VerificationInterrupted)):
+                    self.interrupted = True
+                    self.interrupted_checks.append({"phase": phase, "path": path})
+                    self.emit("interrupted-check", phase=phase, path=path, errorType=error)
+                else:
+                    self.errors.append(error)
+                    self.failed_paths.add(path)
+            raise
+        finally:
+            with self.lock:
+                self.active.pop(key, None)
+                row = self.phases.get(phase)
+                if row:
+                    row["completed"] += 1
+                self.emit("check-end", phase=phase, path=path,
+                          durationSeconds=round(time.monotonic() - started, 3), errorType=error)
+
+    def observe(self, phase, get_path):
+        def decorate(function):
+            if not self.enabled:
+                return function
+            def wrapped(item):
+                path = get_path(item)
+                with self.check(phase, path):
+                    result = function(item)
+                    with self.lock:
+                        self.font_results[(phase, path)] = result["status"]
+                        if result["status"] != "Passed":
+                            self.failed_paths.add(path)
+                            detail = self.failure_details.setdefault(path, {"phase": phase, "path": path, "errorType": "CheckFailed"})
+                            if type(result.get("http")) is int and 100 <= result["http"] <= 599:
+                                detail["http"] = result["http"]
+                            self.emit("check-failure", **detail)
+                    return result
+            return wrapped
+        return decorate
+
+    def exception(self, phase, exc):
+        with self.lock:
+            self.errors.append(type(exc).__name__)
+            for row in self.phases.values():
+                if row["state"] == "running":
+                    row.update(state="failed_partial", endedAt=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                               durationSeconds=round(time.monotonic() - row["started"], 3))
+            self.emit("phase-error", phase=phase, errorType=type(exc).__name__)
+
+    def interrupt(self, signum=None):
+        with self.lock:
+            self.interrupted = True
+            self.interrupted_checks.extend(dict(row) for row in self.active.values())
+            for row in self.phases.values():
+                if row["state"] == "running":
+                    row.update(state="interrupted", endedAt=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                               durationSeconds=round(time.monotonic() - row["started"], 3))
+            # Persist before stack unwinding / ThreadPoolExecutor shutdown waits.
+            self.emit("interrupted", signal=signum)
+
+    def finish_attempt(self, result):
+        with self.lock:
+            self.history.append({"attempt": self.attempt, "status": result["status"],
+                                 "durationSeconds": round(time.monotonic() - self.attempt_started, 3),
+                                 "failedPaths": self._payload()["failedPaths"]})
+            self.emit("attempt-end", status=result["status"],
+                      durationSeconds=self.history[-1]["durationSeconds"],
+                      failedPaths=self.history[-1]["failedPaths"])
+            if self.report_path:
+                self._write(self._attempt_path(), diagnostic_payload(result))
+            self.attempt_finalized = True
+
+    def finish(self, result):
+        self.stop_checkpoint.set()
+        if self.report_path:
+            with self.lock:
+                self._write(self.report_path, diagnostic_payload(result))
+                payload = self._payload()
+                payload.update(status=result["status"], complete=result["status"] in {"Passed", "Failed"})
+                self._write(self.report_path.with_name(self.report_path.stem + ".progress.json"), payload)
+        return result
+
+
+def diagnostic_payload(result):
+    """Redact contact-like values only in diagnostic prose, not assertions/hash data."""
+    def redact(text):
+        text = re.sub(r"[A-Za-z0-9_.+%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email redacted]", text)
+        return re.sub(r"(?<![A-Za-z0-9])(?:\+886[- ]?|0)(?:9\d{2}[- ]?\d{3}[- ]?\d{3}|[2-8][- ]?\d{3,4}[- ]?\d{4})(?![A-Za-z0-9])", "[phone redacted]", text)
+    def visit(value, key=None):
+        if isinstance(value, dict):
+            return {k: visit(v, k) for k, v in value.items()}
+        if isinstance(value, list):
+            return [visit(v, key) for v in value]
+        return redact(value) if key == "failures" and isinstance(value, str) else value
+    return visit(result)
+
+
 def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
-                snapshot_dir: Path | None = None, artifact_root: Path = Path("_site")) -> dict:
+                snapshot_dir: Path | None = None, artifact_root: Path = Path("_site"),
+                *, progress: VerificationProgress | None = None) -> dict:
+    progress = progress or VerificationProgress(enabled=False)
     checks: list[dict] = []
     failures: list[str] = []
+    progress.bind(checks, failures)
     assets: set[str] = set()
     base_host = urlsplit(base_url).hostname
     scripts_path = str(ROOT / "scripts")
     if scripts_path not in __import__("sys").path:
         __import__("sys").path.insert(0, scripts_path)
     import page_font_contract
+    progress.start_phase("local_contract", 1)
     try:
         contract = page_font_contract.validate_artifact_contract(artifact_root, ROOT)
     except (OSError, ValueError, TypeError, KeyError) as exc:
+        progress.exception("local_contract", exc)
+        progress.end_phase("local_contract")
         return {
             "status": "Failed", "baseUrl": base_url, "checked": 0,
             "failures": ["local publication/page-font contract failed: " + str(exc)],
             "checks": [], "fontRoutes": [], "fontAssets": [],
         }
+    progress.end_phase("local_contract")
     publication_files = contract["publication"]["files"]
     if snapshot_dir:
         if snapshot_dir.exists():
@@ -407,146 +735,157 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(body)
 
+    progress.start_phase("core_static", len(CORE_PAGES) + len(STATIC_FILES))
     for local_path in list(CORE_PAGES) + list(STATIC_FILES):
-        source_path = Path(artifact_root) / local_path
-        if local_path not in publication_files and local_path not in {"publication-manifest.json"}:
-            failures.append(f"{local_path}: not present in emitted publication manifest")
-            continue
-        if not source_path.is_file():
-            failures.append(f"{local_path}: missing from emitted public artifact")
-            continue
+        with progress.check("core_static", local_path):
+            source_path = Path(artifact_root) / local_path
+            if local_path not in publication_files and local_path not in {"publication-manifest.json"}:
+                failures.append(f"{local_path}: not present in emitted publication manifest")
+                continue
+            if not source_path.is_file():
+                failures.append(f"{local_path}: missing from emitted public artifact")
+                continue
 
-        local = source_path.read_bytes()
-        if local_path != "publication-manifest.json" and hashlib.sha256(local).hexdigest() != publication_files[local_path]:
-            failures.append(f"{local_path}: local bytes differ from emitted publication manifest")
-            continue
-        binary = is_binary_path(local_path)
-        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
-        try:
-            status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            failures.append(f"{local_path}: fetch failed ({type(exc).__name__})")
-            checks.append({"path": local_path, "status": "Failed", "stage": "fetch"})
-            continue
+            local = source_path.read_bytes()
+            if local_path != "publication-manifest.json" and hashlib.sha256(local).hexdigest() != publication_files[local_path]:
+                failures.append(f"{local_path}: local bytes differ from emitted publication manifest")
+                continue
+            binary = is_binary_path(local_path)
+            cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
+            try:
+                status, final_url, remote = fetch(base_url, remote_path(local_path), cache_key, timeout)
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                progress.fetch_failure("core_static", local_path, exc)
+                failures.append(f"{local_path}: fetch failed ({type(exc).__name__})")
+                checks.append({"path": local_path, "status": "Failed", "stage": "fetch"})
+                continue
 
-        same_host = urlsplit(final_url).hostname == base_host
-        raw_parity = source_parity(local_path, local, remote, binary=binary)
-        if status == 200 and same_host:
-            save_snapshot(local_path, remote)
+            same_host = urlsplit(final_url).hostname == base_host
+            raw_parity = source_parity(local_path, local, remote, binary=binary)
+            if status == 200 and same_host:
+                save_snapshot(local_path, remote)
 
-        if local_path.endswith(".html"):
-            local_parser = PageParser()
-            local_parser.feed(local.decode("utf-8-sig", errors="replace"))
-            remote_parser = PageParser()
-            remote_parser.feed(remote.decode("utf-8-sig", errors="replace"))
-            assets.update(local_parser.local_assets)
+            if local_path.endswith(".html"):
+                local_parser = PageParser()
+                local_parser.feed(local.decode("utf-8-sig", errors="replace"))
+                remote_parser = PageParser()
+                remote_parser.feed(remote.decode("utf-8-sig", errors="replace"))
+                assets.update(local_parser.local_assets)
 
-            page_failures: list[str] = []
-            if status != 200:
-                page_failures.append(f"HTTP {status}")
-            if not same_host:
-                page_failures.append("redirected away from production host")
-            if remote_parser.lang != "zh-Hant-TW":
-                page_failures.append("live lang is not zh-Hant-TW")
-            if not remote_parser.title or remote_parser.title != local_parser.title:
-                page_failures.append("live title mismatch")
-            if remote_parser.description != local_parser.description:
-                page_failures.append("live description mismatch")
-            if remote_parser.canonical != local_parser.canonical:
-                page_failures.append("live canonical mismatch")
+                page_failures: list[str] = []
+                if status != 200:
+                    page_failures.append(f"HTTP {status}")
+                if not same_host:
+                    page_failures.append("redirected away from production host")
+                if remote_parser.lang != "zh-Hant-TW":
+                    page_failures.append("live lang is not zh-Hant-TW")
+                if not remote_parser.title or remote_parser.title != local_parser.title:
+                    page_failures.append("live title mismatch")
+                if remote_parser.description != local_parser.description:
+                    page_failures.append("live description mismatch")
+                if remote_parser.canonical != local_parser.canonical:
+                    page_failures.append("live canonical mismatch")
 
-            missing_assets = sorted(local_parser.local_assets - remote_parser.local_assets)
-            if missing_assets:
-                page_failures.append("canonical asset references missing: " + ", ".join(missing_assets))
+                missing_assets = sorted(local_parser.local_assets - remote_parser.local_assets)
+                if missing_assets:
+                    page_failures.append("canonical asset references missing: " + ", ".join(missing_assets))
 
-            critical = critical_differences(local.decode('utf-8-sig'), remote.decode('utf-8-sig'))
-            if critical:
-                page_failures.append('critical public facts differ: ' + ', '.join(critical))
+                critical = critical_differences(local.decode('utf-8-sig'), remote.decode('utf-8-sig'))
+                if critical:
+                    page_failures.append('critical public facts differ: ' + ', '.join(critical))
 
-            coverage = visible_text_coverage(local_parser, remote_parser)
-            if coverage < MIN_TEXT_COVERAGE:
-                page_failures.append(
-                    f"visible text coverage {coverage:.3f} below {MIN_TEXT_COVERAGE:.2f}"
+                coverage = visible_text_coverage(local_parser, remote_parser)
+                if coverage < MIN_TEXT_COVERAGE:
+                    page_failures.append(
+                        f"visible text coverage {coverage:.3f} below {MIN_TEXT_COVERAGE:.2f}"
+                    )
+
+                checks.append(
+                    {
+                        "path": local_path,
+                        "status": "Passed" if not page_failures else "Failed",
+                        "http": status,
+                        "sameHost": same_host,
+                        "rawSourceParity": raw_parity,
+                        "edgeTransformed": not raw_parity,
+                        "visibleTextCoverage": round(coverage, 4),
+                        "expectedAssetsPresent": not missing_assets,
+                        "criticalFactsMatch": not critical,
+                        "localSha256": source_sha256(local_path, local, binary=binary),
+                        "remoteSha256": source_sha256(local_path, remote, binary=binary),
+                    }
                 )
+                failures.extend(f"{local_path}: {failure}" for failure in page_failures)
+                continue
 
+            parity = raw_parity
             checks.append(
                 {
                     "path": local_path,
-                    "status": "Passed" if not page_failures else "Failed",
+                    "status": "Passed" if status == 200 and same_host and parity else "Failed",
                     "http": status,
                     "sameHost": same_host,
-                    "rawSourceParity": raw_parity,
-                    "edgeTransformed": not raw_parity,
-                    "visibleTextCoverage": round(coverage, 4),
-                    "expectedAssetsPresent": not missing_assets,
-                    "criticalFactsMatch": not critical,
+                    "sourceParity": parity,
                     "localSha256": source_sha256(local_path, local, binary=binary),
                     "remoteSha256": source_sha256(local_path, remote, binary=binary),
                 }
             )
-            failures.extend(f"{local_path}: {failure}" for failure in page_failures)
-            continue
+            if status != 200:
+                failures.append(f"{local_path}: HTTP {status}")
+            if not same_host:
+                failures.append(f"{local_path}: redirected away from production host")
+            if not parity:
+                failures.append(f"{local_path}: production body differs from canonical source")
 
-        parity = raw_parity
-        checks.append(
-            {
-                "path": local_path,
-                "status": "Passed" if status == 200 and same_host and parity else "Failed",
-                "http": status,
-                "sameHost": same_host,
-                "sourceParity": parity,
-                "localSha256": source_sha256(local_path, local, binary=binary),
-                "remoteSha256": source_sha256(local_path, remote, binary=binary),
-            }
-        )
-        if status != 200:
-            failures.append(f"{local_path}: HTTP {status}")
-        if not same_host:
-            failures.append(f"{local_path}: redirected away from production host")
-        if not parity:
-            failures.append(f"{local_path}: production body differs from canonical source")
+    progress.end_phase("core_static")
 
+    progress.start_phase("referenced_assets", len(assets))
     for asset in sorted(assets):
-        source_path = Path(artifact_root) / asset
-        if not source_path.is_file():
-            failures.append(f"{asset}: referenced asset missing from emitted public artifact")
-            continue
-        local = source_path.read_bytes()
-        if asset not in publication_files or hashlib.sha256(local).hexdigest() != publication_files[asset]:
-            failures.append(f"{asset}: local bytes differ from emitted publication manifest")
-            continue
-        binary = is_binary_path(asset)
-        cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
-        try:
-            status, final_url, remote = fetch(base_url, "/" + asset, cache_key, timeout)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            failures.append(f"{asset}: fetch failed ({type(exc).__name__})")
-            checks.append({"path": asset, "status": "Failed", "stage": "fetch"})
-            continue
+        with progress.check("referenced_assets", asset):
+            source_path = Path(artifact_root) / asset
+            if not source_path.is_file():
+                failures.append(f"{asset}: referenced asset missing from emitted public artifact")
+                continue
+            local = source_path.read_bytes()
+            if asset not in publication_files or hashlib.sha256(local).hexdigest() != publication_files[asset]:
+                failures.append(f"{asset}: local bytes differ from emitted publication manifest")
+                continue
+            binary = is_binary_path(asset)
+            cache_key = verification_cache_key(local, run_cache_key, attempt, binary=binary)
+            try:
+                status, final_url, remote = fetch(base_url, "/" + asset, cache_key, timeout)
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                progress.fetch_failure("referenced_assets", asset, exc)
+                failures.append(f"{asset}: fetch failed ({type(exc).__name__})")
+                checks.append({"path": asset, "status": "Failed", "stage": "fetch"})
+                continue
 
-        same_host = urlsplit(final_url).hostname == base_host
-        parity = digest(local, binary=binary) == digest(remote, binary=binary)
-        if status == 200 and same_host:
-            save_snapshot(asset, remote)
-        checks.append(
-            {
-                "path": asset,
-                "status": "Passed" if status == 200 and same_host and parity else "Failed",
-                "http": status,
-                "sameHost": same_host,
-                "sourceParity": parity,
-                "localSha256": digest(local, binary=binary),
-                "remoteSha256": digest(remote, binary=binary),
-            }
-        )
-        if status != 200:
-            failures.append(f"{asset}: HTTP {status}")
-        if not same_host:
-            failures.append(f"{asset}: redirected away from production host")
-        if not parity:
-            failures.append(f"{asset}: production body differs from canonical source")
+            same_host = urlsplit(final_url).hostname == base_host
+            parity = digest(local, binary=binary) == digest(remote, binary=binary)
+            if status == 200 and same_host:
+                save_snapshot(asset, remote)
+            checks.append(
+                {
+                    "path": asset,
+                    "status": "Passed" if status == 200 and same_host and parity else "Failed",
+                    "http": status,
+                    "sameHost": same_host,
+                    "sourceParity": parity,
+                    "localSha256": digest(local, binary=binary),
+                    "remoteSha256": digest(remote, binary=binary),
+                }
+            )
+            if status != 200:
+                failures.append(f"{asset}: HTTP {status}")
+            if not same_host:
+                failures.append(f"{asset}: redirected away from production host")
+            if not parity:
+                failures.append(f"{asset}: production body differs from canonical source")
+
+    progress.end_phase("referenced_assets")
 
     font_assets = []
+    @progress.observe("font_assets", lambda item: item[0])
     def check_font_asset(item):
         path, row = item
         local_path = Path(artifact_root) / path
@@ -562,12 +901,16 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
                     "remoteSha256": hashlib.sha256(remote).hexdigest(), "bytes": len(remote),
                     "failures": [] if ok else ["HTTP status or production host mismatch"]}
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+            progress.fetch_failure("font_assets", path, exc)
             return {"path": path, "status": "Failed", "failures": [type(exc).__name__ + ": " + str(exc)]}
 
+    progress.start_phase("font_assets", len(contract["fonts"]))
     with ThreadPoolExecutor(max_workers=12) as pool:
         font_assets = list(pool.map(check_font_asset, sorted(contract["fonts"].items())))
+    progress.end_phase("font_assets")
     failures.extend(f"{item['path']}: {error}" for item in font_assets for error in item["failures"])
 
+    @progress.observe("font_routes", lambda route: route)
     def check_font_route(route):
         local = (Path(artifact_root) / route).read_bytes()
         cache_key = verification_cache_key(local, run_cache_key, attempt)
@@ -579,10 +922,13 @@ def verify_once(base_url: str, timeout: int, run_cache_key: str, attempt: int,
             return {"path": route, "status": "Passed" if ok else "Failed", "http": status,
                     "sameHost": same_host, "failures": [] if ok else ["HTTP status or production host mismatch"]}
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+            progress.fetch_failure("font_routes", route, exc)
             return {"path": route, "status": "Failed", "failures": [type(exc).__name__ + ": " + str(exc)]}
 
+    progress.start_phase("font_routes", len(contract["fontRoutes"]))
     with ThreadPoolExecutor(max_workers=12) as pool:
         font_routes = list(pool.map(check_font_route, contract["fontRoutes"]))
+    progress.end_phase("font_routes")
     failures.extend(f"{item['path']}: {error}" for item in font_routes for error in item["failures"])
 
     result = {
@@ -628,22 +974,45 @@ def main() -> int:
     base_url = args.base_url.rstrip("/") + "/"
     run_cache_key = os.environ.get("GITHUB_RUN_ID") or str(time.time_ns())
     snapshot_dir = Path(args.snapshot_dir).resolve() if args.snapshot_dir else None
+    progress = VerificationProgress(args.report)
+    # Keep the same network settings/checks/retries; observation is independent.
+    handlers = {}
+    def interrupted(signum, _frame):
+        progress.interrupt(signum)
+        raise VerificationInterrupted(signum)
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            handlers[signum] = signal.signal(signum, interrupted)
     result = {}
-    for attempt in range(1, max(args.attempts, 1) + 1):
-        result = verify_once(base_url, args.timeout, run_cache_key, attempt, snapshot_dir, args.artifact_root)
-        result["attempt"] = attempt
-        if result["status"] == "Passed":
-            break
-        if attempt < args.attempts:
-            time.sleep(max(args.delay, 0))
-
-    payload = json.dumps(result, ensure_ascii=False, indent=2)
-    print(payload)
-    if args.report:
-        report_path = Path(args.report)
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(payload + "\n", encoding="utf-8")
-    return 0 if result.get("status") == "Passed" else 1
+    exit_code = 1
+    try:
+        for attempt in range(1, max(args.attempts, 1) + 1):
+            progress.start_attempt(attempt)
+            result = verify_once(base_url, args.timeout, run_cache_key, attempt,
+                                 snapshot_dir, args.artifact_root, progress=progress)
+            result["attempt"] = attempt
+            progress.finish_attempt(result)
+            if result["status"] == "Passed":
+                break
+            if attempt < args.attempts:
+                progress.emit("retry-delay-start", delaySeconds=max(args.delay, 0))
+                time.sleep(max(args.delay, 0))
+                progress.emit("retry-delay-end")
+        exit_code = 0 if result.get("status") == "Passed" else 1
+    except (KeyboardInterrupt, VerificationInterrupted) as exc:
+        progress.interrupt(getattr(exc, "signum", None))
+        result = progress._payload()
+        exit_code = 128 + getattr(exc, "signum", signal.SIGINT)
+    except Exception as exc:
+        progress.exception("verification", exc)
+        result = progress._payload()
+        exit_code = 1
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+    progress.finish(result)
+    print(json.dumps(diagnostic_payload(result), ensure_ascii=False, indent=2), flush=True)
+    return exit_code
 
 
 if __name__ == "__main__":
