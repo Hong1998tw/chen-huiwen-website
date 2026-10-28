@@ -858,6 +858,8 @@ try {
       await page.goto(base+'achievements.html');
       const card=page.locator('#case-list .case-card[data-case="wende-school-center"]');
       await card.waitFor({state:'visible'});
+      // Cards use content-visibility:auto; render this card before measuring its text and height.
+      await card.scrollIntoViewIfNeeded();
       await page.waitForFunction(()=>document.querySelector('#case-list .case-card[data-case="wende-school-center"] .case-funding-total')?.innerText.trim()==='核定總經費 6,035.7萬元');
       const details=card.locator('.case-funding details');
       assert.equal(await details.count(),1);

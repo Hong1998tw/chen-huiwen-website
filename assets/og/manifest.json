@@ -2578,5 +2578,41 @@
     "status": "持續追蹤",
     "place": "忠孝里",
     "sha256": "837f227bb6ce684e0d43eabe8d307a1c92771bafb6a0c2b064e9a08fa2b22754"
+  },
+  "achievement-bicycle-sidewalk-space-planning": {
+    "title": "高雄市自行車通行空間盤點與人行道使用規劃",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "ba080245d00f115a1e0b7a091ad9648a84ab0042fc181129367d8219f0c43740"
+  },
+  "achievement-park-post-typhoon-playground-safety": {
+    "title": "公園災後巡查與兒童遊戲場安全修復追蹤",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "71943620d1ac60ae40d33f49fe3dbce7496e4a4ea90d3c74f24ed276465f92b4"
+  },
+  "achievement-smart-poles-park-preventive-maintenance": {
+    "title": "智慧共桿示範與公園設施預防維護倡議",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "3609c13984c1378bdd6b998032f89b01928933ef51c3782cdd2cde1b36674c60"
+  },
+  "achievement-senior-home-repair-subsidy-review": {
+    "title": "爭取檢討老人住屋修繕補助與簡化申請",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "00c5a1f9fbb360b58e6e8b5947fe96a52917f6d9e0574f36fe25ea7b7dfa0174"
+  },
+  "achievement-kaohsiung-campus-app-service-integration": {
+    "title": "推動高雄校園通App整合親師生校務服務",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "ac1cac1a4d8595c6a8fc288c0ea7041a56bebfb4244711d84d68bac4a4b32180"
+  },
+  "achievement-home-care-financial-reporting-accounting-support": {
+    "title": "要求完善長照機構財報申報與會計輔導",
+    "status": "持續追蹤",
+    "place": "全市政策",
+    "sha256": "2ee431db22e3487dcfb4cb86cf0cbb19077374b96c98a6214382bd7911b6091f"
   }
 }

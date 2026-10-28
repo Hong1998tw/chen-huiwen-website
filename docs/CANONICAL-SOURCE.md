@@ -27,6 +27,7 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 ## 3. 現行 Source Architecture
 
 - `data/achievements.json`：政績結構化資料主來源。
+- `island/island-data.json`：政績島的策展、配置與歷史短紀錄；完整政績內容由 `data/achievements-public.json` 投影。維護者在政績變更完成 build 後執行 `python scripts/build_island_public.py`，再以 `--check` 驗證。既有島上短紀錄升級時保留原 ID，使用明確的公開身分對應，避免重複計數。本命令由內容維護流程執行，未接入 CMS Bot 的寫入範圍。
 - `data/platforms.json`：歷屆政見結構化資料主來源。
 - `data/events.json`：活動資料來源（依現行 build 實作使用）。
 - `scripts/build_cases.py`：從已審閱公開資料產生政績地圖與獨立詳情頁。

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   publication-path-guard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout trusted base revision (PR code is never executed here)

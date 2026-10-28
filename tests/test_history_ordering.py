@@ -15,7 +15,7 @@ from build_election_page import latest, tracking_items
 class HistoryOrderingTests(unittest.TestCase):
     def test_cms_preview_ordering_matches_python_for_all_public_records(self):
         records = json.loads((ROOT / 'data/achievements.json').read_text())
-        self.assertEqual(len(records), 429)
+        self.assertEqual(len(records), 435)
         payload = [{'id': row['id'], 'history': row.get('history', [])} for row in records]
         expected = []
         for row in payload:
