@@ -20,3 +20,5 @@
 .campaign-countdown strong{font-size:3.2rem;line-height:1.15}
 .campaign-countdown .campaign-kicker{margin:0}
 @media(max-width:560px){.campaign-section-head h2{margin-bottom:12px}.campaign-hero-compact{padding-top:24px}.campaign-page-links{gap:0 20px;margin-top:16px}.campaign-data-card{padding:20px}.campaign-countdown strong{font-size:2.5rem}}
+/* 359 tracking cards ship in the HTML for readers without JavaScript; skip layout of off-screen ones so the first render (and the fonts it fetches) does not depend on when election.js collapses the list. */
+.campaign-tracking-card{content-visibility:auto;contain-intrinsic-size:auto 320px}
