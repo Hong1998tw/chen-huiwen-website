@@ -272,8 +272,36 @@ try{
    active={phase:'font preload and layout checks',route,slug,viewport};report.current={...active};
    if(route==='index.html')await page.screenshot({path:resolve(out,'home-'+viewport.width+'.png')});
    const beforeFonts=await fontResources(page);
-   const preloadPath=new URL(await page.locator('link[rel~="preload"][as="font"]').getAttribute('href'),base).pathname;
+   // Resolve the selected face from its CSS declaration rather than assuming
+   // a page has exactly one preload. Achievements intentionally warms JP too.
+   const expectedFamilies=route==='achievements.html'?[coreFamily,'Huiwen Sans JP Support']:[coreFamily];
+   const faceSources=await page.evaluate(families=>{
+    const result=Object.fromEntries(families.map(family=>[family,[]]));
+    const seen=new Set();
+    const visitSheet=sheet=>{
+     if(seen.has(sheet))return;seen.add(sheet);
+     for(const rule of sheet.cssRules){
+      if(rule.type===CSSRule.FONT_FACE_RULE){
+       const family=rule.style.getPropertyValue('font-family').trim().replace(/^["']|["']$/g,'');
+       if(Object.hasOwn(result,family)){
+        const src=rule.style.getPropertyValue('src');
+        const match=src.match(/url\(\s*(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)/);
+        if(match)result[family].push(new URL(match[1]||match[2]||match[3],sheet.href||location.href).href);
+       }
+      }else if(rule.styleSheet)visitSheet(rule.styleSheet);
+     }
+    };
+    for(const sheet of document.styleSheets)visitSheet(sheet);
+    return result;
+   },expectedFamilies);
+   for(const faceFamily of expectedFamilies)assert.equal(faceSources[faceFamily].length,1,route+' has an ambiguous or missing CSS face: '+faceFamily);
+   const allowedPreloads=expectedFamilies.map(faceFamily=>faceSources[faceFamily][0]);
+   const actualPreloads=await page.locator('link[rel~="preload"][as="font"]').evaluateAll(links=>links.map(link=>link.href));
+   assert.equal(actualPreloads.length,route==='achievements.html'?2:1,route+' font preload count differs from its explicit contract');
+   assert.deepEqual([...actualPreloads].sort(),[...allowedPreloads].sort(),route+' font preloads must match the exact CSS Core/allowed JP sources');
+   const preloadPath=new URL(faceSources[coreFamily][0]).pathname;
    assert(beforeFonts.some(entry=>new URL(entry.url).pathname===preloadPath),route+' core preload did not load');
+   if(route==='achievements.html')assert(beforeFonts.some(entry=>new URL(entry.url).pathname===new URL(faceSources['Huiwen Sans JP Support'][0]).pathname),route+' allowed JP preload did not load');
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-'+slug+'-full-')),route+' full face loaded before interaction');
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-site-sans-tc-20261007.woff2')),route+' loaded the 568 KB global face before interaction');
    const coreCls=await page.evaluate(()=>window.__layoutShift);

@@ -9,7 +9,10 @@ import {openCaseFilterDialog,closeCaseFilterDialog} from './achievement-filter-d
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const platforms=JSON.parse(await readFile(root+'data/platforms.json','utf8'));
 const platformEvidenceCount=Object.values(platforms.itemsById).filter(item=>item.year===2026&&item.relatedRecordIds?.length).length;
-const publicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
+const fullPublicRecordCount=JSON.parse(await readFile(root+'data/achievements-public.json','utf8')).length;
+const publicCatalog=JSON.parse(await readFile(root+'data/public-record-catalog.json','utf8'));
+const publicRecordCount=publicCatalog.length;
+assert.equal(publicCatalog.filter(c=>c.recordFormat==='full').length,fullPublicRecordCount);
 // Schedule expectations are derived from the published data so a monthly update never breaks CI (WP0.4).
 const legal=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
 const sessions=legal.sessions,sessionTotal=sessions.length;
@@ -125,11 +128,17 @@ try{
   await check('schedule '+label,async()=>{await page.getByRole('button',{name:'列表',exact:true}).click();if(label==='current month' && currentVisible<sessionTotal)await page.locator('.schedule-history-toggle').waitFor();else if(label==='expired month') await page.waitForFunction(()=>document.querySelector('.schedule-period-note')?.textContent.includes('歷史時間表'));assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),expected);if(label==='current month' && currentVisible<sessionTotal){await page.locator('.schedule-history-toggle').click();assert.equal(await page.locator('.schedule-text tbody tr:visible').count(),sessionTotal);}else if(label==='expired month')assert.match(await page.locator('.schedule-period-note').innerText(),/歷史時間表/);});await ctx.close();
  }
  await check('map data failure preserves static public records',async()=>{
-  const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.route('**/data/achievement-map.json*',r=>r.abort());const page=await ctx.newPage();await page.goto(base+'achievements.html');
+  const ctx=await browser.newContext({viewport:{width:390,height:844}});let catalogFailures=0;await ctx.route('**/data/public-record-catalog.json*',r=>{catalogFailures++;return r.abort();});const page=await ctx.newPage();await page.goto(base+'achievements.html');
   await page.getByRole('button',{name:'地圖與列表',exact:true}).click();await page.getByText('地圖資料暫時無法載入；列表篩選仍可使用。').waitFor();
   assert.equal(await page.locator('#case-list [data-case]').count(),publicRecordCount);assert.equal(await page.locator('#case-list [data-case]:visible').count(),10);
   assert(await page.locator('#case-search').isEnabled());assert(await page.locator('#status-filter').isEnabled());assert(await page.locator('#case-list a').first().isVisible());
-  await page.locator('#case-search').fill('文德');await page.waitForFunction(()=>window.HuiwenCases?.getState().visible.length>0);await ctx.close();
+  assert(catalogFailures>0,'the actual formal catalog request was blocked');
+  assert.equal(await page.locator('#case-list [data-record-format="short"]').count(),publicCatalog.filter(c=>c.recordFormat==='short').length);
+  const expected=await page.locator('#case-list [data-case]').evaluateAll(cards=>cards.filter(card=>card.textContent.normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').includes('文德')).map(card=>card.dataset.case));
+  assert(expected.length>0);
+  await page.locator('#case-search').fill('文德');await page.waitForFunction(expected=>{const ids=window.HuiwenCases?.getState().visible.map(c=>c.id);return JSON.stringify(ids)===JSON.stringify(expected);},expected);
+  assert.equal(await page.locator('#case-list [data-case]:visible').count(),Math.min(10,expected.length));
+  await openCaseFilterDialog(page);await page.locator('#reset-map-filters').click();await page.waitForFunction(total=>window.HuiwenCases?.getState().visible.length===total,publicRecordCount);assert.equal(await page.locator('#case-list [data-case]:visible').count(),10);await ctx.close();
  });
  await check('petition clearly labels the external form and keeps its telephone route',async()=>{
   const page=await browser.newPage();await page.goto(base+'petition.html');

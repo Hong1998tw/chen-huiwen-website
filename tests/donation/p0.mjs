@@ -15,9 +15,16 @@ const browser=await chromium.launch({headless:true});
 const ctx=await browser.newContext({viewport:{width:1440,height:1000}});
 await ctx.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
 const page=await ctx.newPage();page.setDefaultTimeout(6000);
-const data=JSON.parse(await readFile(root+'data/achievements.json')).filter(c=>c.status!=='待核驗');
+const fullData=JSON.parse(await readFile(root+'data/achievements.json')).filter(c=>c.status!=='待核驗');
+const catalog=JSON.parse(await readFile(root+'data/public-record-catalog.json'));
+const shortRecords=catalog.filter(c=>c.recordFormat==='short');
+assert.equal(new Set(catalog.map(c=>c.id)).size,catalog.length);
+assert.deepEqual(catalog.filter(c=>c.recordFormat==='full').map(c=>c.id).sort(),fullData.map(c=>c.id).sort());
+assert.equal(catalog.length,fullData.length+shortRecords.length);
+const normalize=value=>String(value||'').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
+const matchingRecords=query=>{const tokens=normalize(query).split(/\s+/).filter(Boolean);return catalog.filter(c=>tokens.every(t=>normalize(c.searchText).includes(t)));};
 const go=async(path='achievements.html')=>{await page.goto(base+path);await page.locator('.global-search-trigger').waitFor({state:'attached'});if(path.startsWith('achievements.html')){await page.waitForFunction(()=>!!window.HuiwenCases);await page.getByRole('button',{name:'地圖與列表',exact:true}).click();}};
-const count=async(n)=>page.waitForFunction(n=>document.querySelector('#case-count').textContent.startsWith(`共 ${n} 個`),n);
+const count=async(n)=>page.waitForFunction(n=>document.querySelector('#case-count').textContent.startsWith(`共 ${n} 筆紀錄`),n);
 try{
  await go('index.html');
  await check('Public-page search, lazy index and Cmd+K keyboard navigation',async()=>{
@@ -42,18 +49,27 @@ try{
   assert(await page.locator('.menu-toggle').evaluate(el=>el===document.activeElement));
  });
  await page.setViewportSize({width:1440,height:1000});await go();
+ await check('Formal catalog renders each full topic and anchored short record once',async()=>{
+  const cards=await page.locator('#case-list [data-case]').evaluateAll(nodes=>nodes.map(card=>({id:card.dataset.case,short:card.dataset.recordFormat==='short',href:card.querySelector('h3 a').getAttribute('href')})));
+  assert.equal(cards.length,catalog.length);
+  assert.deepEqual(cards.map(c=>c.id).sort(),catalog.map(c=>c.id).sort());
+  assert.equal(cards.filter(c=>c.short).length,shortRecords.length);
+  for(const card of cards){const expected=catalog.find(c=>c.id===card.id);assert.equal(card.href,expected.url);}
+  assert.deepEqual(cards.filter(c=>!c.short).map(c=>c.id).sort(),fullData.map(c=>c.id).sort());
+ });
  await check('Statistics overview is absent and status filter stays distinct',async()=>{
   await page.locator('.map-insight-panel').waitFor();assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
   assert.doesNotMatch(await page.locator('main').innerText(),/政績統計總覽/);
   if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-  await page.locator('#status-filter').selectOption('已完成');await count(data.filter(c=>c.status==='已完成').length);
-  assert.equal(await page.locator('#status-filter').inputValue(),'已完成');await page.locator('#reset-map-filters').click();
+  await page.locator('#status-filter').selectOption('已完成');await count(fullData.filter(c=>c.status==='已完成').length);
+  assert.equal(await page.locator('#status-filter').inputValue(),'已完成');
+  assert(shortRecords.every(c=>c.status==='未列進度'));
+  await page.locator('#status-filter').selectOption('未列進度');await count(shortRecords.length);
+  assert.deepEqual(await page.evaluate(()=>window.HuiwenCases.getState().visible.map(c=>c.id).sort()),shortRecords.map(c=>c.id).sort());
+  await page.locator('#reset-map-filters').click();
  });
  await check('History-only search, multiple tokens and IME composition',async()=>{
-  const matchCount = query => {
-   const tokens = query.trim().split(/\s+/).filter(Boolean);
-   return data.filter(c => tokens.every(t => JSON.stringify(c).includes(t))).length;
-  };
+  const matchCount = query => matchingRecords(query).length;
   await page.locator('#case-search').fill('票卡 車牌');await count(matchCount('票卡 車牌'));assert.equal(await page.locator('#case-list .case-card[data-case=station-parking]').isVisible(),true);
   await page.locator('#case-search').fill('　特教　護理　');await count(matchCount('特教 護理'));
   await page.locator('#case-search').evaluate(el=>{el.value='文德國小';el.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'文德國小'}));});await count(matchCount('文德國小'));
@@ -74,7 +90,7 @@ try{
   await page.locator('.insight-group button').filter({hasText:'智慧停車'}).click();assert.match(await page.locator('.map-insight-panel h2').textContent(),/智慧停車/);
   assert(new URL(page.url()).searchParams.get('case')==='station-parking');
   if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-  await page.locator('#category-filter').selectOption('社福與衛環');await count(data.filter(c=>c.categories.includes('社福與衛環')).length);
+  await page.locator('#category-filter').selectOption('社福與衛環');await count(catalog.filter(c=>c.categories.includes('社福與衛環')).length);
   assert.equal(await page.locator('.insight-group').count(),0);assert(!new URL(page.url()).searchParams.has('case'));
   await page.locator('#reset-map-filters').click();
  });
@@ -88,15 +104,15 @@ try{
   await page.goBack();await page.waitForFunction(()=>window.HuiwenCases?.getState().selectedId==='haibang-bridge'&&window.HuiwenCases.getState().filters.status==='已完成');
   await page.locator('#reset-map-filters').click();assert.equal(await page.evaluate(()=>window.HuiwenCases.getState().selectedId),null);assert.equal(new URL(page.url()).searchParams.has('case'),false);
   await page.goForward();await page.waitForFunction(()=>window.HuiwenCases?.getState().filters.village==='v:曹公里');assert.equal(await page.evaluate(()=>window.HuiwenCases.getState().selectedId),null);
-  await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(data.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
+  await go('achievements.html?year=garbage&category=invalid&page=NaN');await count(catalog.length);assert.equal(await page.locator('#year-filter').inputValue(),'all');
  });
  await check('Map failure preserves interactive search and all public records',async()=>{
-  const wendeCount = data.filter(c => JSON.stringify(c).includes('文德')).length;
+  const wendeCount = matchingRecords('文德').length;
   await page.route('**/assets/vendor/leaflet.js',r=>r.abort());await go();await page.locator('#case-search').fill('文德');await count(wendeCount);await page.locator('#map-fit').click();await page.locator('#map-message').filter({hasText:/互動地圖暫時無法載入/}).waitFor();assert.match(await page.locator('#map-message').textContent(),/互動地圖暫時無法載入/);await page.unroute('**/assets/vendor/leaflet.js');
  });
  await go();
- await check('All filters clear to the full source count and ten items per page',async()=>{
-  await page.locator('#case-search').fill('qzx-no-match');await count(0);assert(await page.locator('#case-empty').isVisible());await page.locator('[data-clear-filters]').click();await count(data.length);assert.equal(await page.locator('#case-list .case-card:visible').count(),10);
+ await check('All filters clear to the full catalog count and ten items per page',async()=>{
+  await page.locator('#case-search').fill('qzx-no-match');await count(0);assert(await page.locator('#case-empty').isVisible());await page.locator('[data-clear-filters]').click();await count(catalog.length);assert.equal(await page.locator('#case-list .case-card:visible').count(),10);
   await page.getByRole('button',{name:'下一頁',exact:true}).click();assert.equal(await page.locator('#case-list .case-card:visible').count(),10);assert(new URL(page.url()).searchParams.get('page')==='2');
  });
  await check('WCAG AA: filters, map panel and search dialog',async()=>{
@@ -113,7 +129,7 @@ try{
  });
  await check('Reduced motion and no-JS progressive reading',async()=>{
   await page.emulateMedia({reducedMotion:'reduce'});await go('achievement-fengshan-station-overview.html');await page.locator('.case-timeline .is-visible').first().waitFor();assert.equal(await page.locator('.case-timeline>li:not(.is-visible)').count(),0);assert.equal(await page.locator('.case-timeline>li').first().evaluate(el=>getComputedStyle(el).transform),'none');
-  const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),data.length);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
+  const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base+'achievements.html');assert.equal(await np.locator('#case-list .case-card:visible').count(),catalog.length);assert.deepEqual((await np.locator('#case-list [data-case]').evaluateAll(cards=>cards.map(c=>c.dataset.case))).sort(),catalog.map(c=>c.id).sort());assert.equal(await np.locator('#case-list [data-record-format="short"]:visible').count(),shortRecords.length);await np.goto(base+'public-records.html');assert.equal(await np.locator('article.public-record:visible').count(),shortRecords.length);await nojs.close();await page.emulateMedia({reducedMotion:'no-preference'});
  });
  await go();await page.locator('.map-insight-panel').waitFor();await page.screenshot({path:root+'tests/donation/results/desktop-achievements.png'});
  await page.locator('#achievement-map').scrollIntoViewIfNeeded();await page.locator('.leaflet-container').waitFor({state:'visible'});await page.screenshot({path:root+'tests/donation/results/desktop-map.png'});
@@ -124,7 +140,7 @@ try{
   await page.keyboard.press('Control+k');await page.locator('#global-search-dialog input').fill('鳳山車站');await page.locator('.global-search-result').first().waitFor();await page.screenshot({path:root+`tests/donation/results/search-${width}.png`});await page.keyboard.press('Escape');
  }
  await go();await page.locator('.map-insight-panel').waitFor();
- const wendeSchoolCount = data.filter(c => JSON.stringify(c).includes('文德國小')).length;
+ const wendeSchoolCount = matchingRecords('文德國小').length;
  await check('Warm interactive search updates within 500ms in local Chromium',async()=>{const start=performance.now();await page.locator('#case-search').fill('文德國小');await count(wendeSchoolCount);report.metrics.liveSearchMs=Math.round(performance.now()-start);assert(report.metrics.liveSearchMs<500);});
 }finally{await browser.close();server.kill();await writeFile(new URL('p0-report.json',out),JSON.stringify(report,null,2));}
 console.log(JSON.stringify(report,null,2));if(report.failures.length)process.exitCode=1;
