@@ -1,7 +1,18 @@
 /** Public snapshot adapter. Never mutates source or infers a budget/date. */
 export const COLORS={A1:'#4f9fc4',A2:'#e4994a',A3:'#e48f9e',A4:'#8f84cf',AX:'#6fae6a',AQ:'#075548'};
-export const clean=(s='')=>String(s).replaceAll('鳳山區','鳳山').replaceAll('已完成','成果進度').replaceAll('待確認','資料未提供').replaceAll('優化','改善');
+// Reviewed wording carries the action, scope and evidence stage; display it verbatim.
+export const clean=(s='')=>String(s);
 export const safeURL=s=>{try{const u=new URL(s);return ['https:','http:'].includes(u.protocol)?u.href:null}catch{return null}};
+export function resolveItemIndex(data,id){
+ if(typeof id!=='string'||!id||!Array.isArray(data?.items))return -1;
+ const aliases=data?.meta?.itemAliases,seen=new Set();
+ while(aliases&&Object.prototype.hasOwnProperty.call(aliases,id)){
+  if(seen.has(id))return -1;
+  seen.add(id);id=aliases[id];
+  if(typeof id!=='string'||!id)return -1;
+ }
+ return data.items.findIndex(item=>item?.id===id);
+}
 export function dateYear(value){const m=String(value||'').match(/^(20\d{2})(?:-|$)/);return m?+m[1]:null}
 export function createIndex(data){
  const islands=new Map([...(data.islands||[]),...(data.base?[data.base]:[])].map(x=>[x.id,x])),projects=new Map((data.projects||[]).map(x=>[x.id,x]));

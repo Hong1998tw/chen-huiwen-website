@@ -6,6 +6,7 @@ import { createInteraction } from "./interaction.js";
 import { addBackdrop } from "./backdrop.js";
 import { addWeather } from "./weather.js";
 import { createIslandCards } from "./dot-code-2/dot-code-2.js";
+import { resolveItemIndex } from "./dot-code-2/island-data-adapter.js";
 import { createRailparkLife } from "./railpark-life.mjs";
 import { createBoard, drawBoardCanvas } from "./board.js";
 const railparkControllers = new Map();
@@ -1951,8 +1952,10 @@ if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { _
 if (new URLSearchParams(location.search).has("debug")) window.__flyIsland = (id, zoom) => { const c = landmarkByIsland[id]?.position; if (c) life?.flyTo(new THREE.Vector3(c.x, 0, c.z), zoom, 0.01); };
 let seen = false;
 try { seen = localStorage.getItem("huiwen-island-intro") === "1"; } catch {}
-const startIsland = new URLSearchParams(location.search).get("island");
-if (!seen && !startIsland) $("#intro").hidden = false;
+const startParams = new URLSearchParams(location.search);
+const startIsland = startParams.get("island");
+const startItem = resolveItemIndex(data, startParams.get("item"));
+if (!seen && !startIsland && !startParams.has("item")) $("#intro").hidden = false;
 
 // Task 7 additive integration; cards module may pass these same callbacks.
 life=createIslandLife({scene,world,camera,controls,renderer,islandCenter,islandCells:Object.fromEntries(Object.entries(LAYOUT).map(([id,cells])=>[id,cells.map(c=>cellPos(...c))])),data,onIsland:openIsland,onItem:openCard});
@@ -1983,7 +1986,12 @@ resize();
 controls.target.set(0, 0, 0);
 render();
 // 深層連結：等相機與控制器跑過第一幀再飛過去，否則會飛到錯的位置
-if (startIsland && islandById[startIsland]) setTimeout(() => openIsland(startIsland, true), 80);  // 背景分頁不跑 rAF，用 timeout 比較穩
+if (startItem >= 0) setTimeout(() => {
+  const id = data.items[startItem].i;
+  if (islandById[id]) openIsland(id, true, startItem);
+  openCard(startItem);
+}, 80);
+else if (startIsland && islandById[startIsland]) setTimeout(() => openIsland(startIsland, true), 80);  // 背景分頁不跑 rAF，用 timeout 比較穩
 
 // 林 dot Task 8：圖卡、政績探索、比較、年份、分享圖卡、活動
 try {
