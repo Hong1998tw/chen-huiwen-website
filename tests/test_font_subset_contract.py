@@ -162,6 +162,27 @@ class FontSubsetContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "FONT_EXISTING_PRELOAD_(CLOSURE|ORDER)_INVALID"):
                     artifact_fonts.validate_existing_route_preloads(ROOT, "achievements.html", soup)
 
+    def test_warm_replay_copies_the_existing_achievement_preload_and_css_closure(self):
+        with tempfile.TemporaryDirectory(prefix="existing-preload-warm-") as name:
+            warm = Path(name)
+            artifact_fonts._copy_warm_inputs(ROOT, warm, [], ["achievements.html"])
+            page = BeautifulSoup((warm / "achievements.html").read_bytes(), "html.parser")
+            artifact_fonts.validate_existing_route_preloads(warm, "achievements.html", page)
+            self.assertEqual((warm / "map.css").read_bytes(), (ROOT / "map.css").read_bytes())
+            for tag in page.select('link[rel~="preload"][as="font"]'):
+                relative = tag["href"].lstrip("/")
+                self.assertEqual((warm / relative).read_bytes(), (ROOT / relative).read_bytes())
+            # Missing dependency failures remain strict in the warm root.
+            map_bytes = (warm / "map.css").read_bytes()
+            (warm / "map.css").unlink()
+            with self.assertRaisesRegex(ValueError, "FONT_CSS_PATH_MISSING_OR_UNSAFE"):
+                artifact_fonts.validate_existing_route_preloads(warm, "achievements.html", page)
+            (warm / "map.css").write_bytes(map_bytes)
+            core = page.select('link[rel~="preload"][as="font"]')[0]["href"].lstrip("/")
+            (warm / core).unlink()
+            with self.assertRaisesRegex(ValueError, "FONT_ASSET_PATH_MISSING_OR_UNSAFE"):
+                artifact_fonts.validate_existing_route_preloads(warm, "achievements.html", page)
+
     def test_full_faces_cover_route_specific_cjk_glyph_deltas(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")
         tc_codepoints = set(fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT)))

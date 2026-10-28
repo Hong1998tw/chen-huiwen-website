@@ -1672,6 +1672,21 @@ def _copy_warm_inputs(source_artifact: Path, warm_artifact: Path, specs: list[di
         target = warm_artifact / route
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source.read_bytes())
+        if route == "achievements.html":
+            # Warm replay revalidates this skipped route's existing Core+JP
+            # contract. Copy the exact CSS/import and preload dependencies it
+            # consumes; eligible common/delta specs do not own map.css or Core.
+            soup = BeautifulSoup(source.read_bytes(), "html5lib")
+            validate_existing_route_preloads(source_artifact, route, soup)
+            stylesheets, _ = linked_css(source_artifact, route, soup)
+            inputs = {source_artifact / relative for relative in stylesheets}
+            inputs.update(_safe_artifact_path(source_artifact, tag["href"])
+                          for tag in soup.select('link[rel~="preload"][as="font"]'))
+            for dependency in sorted(inputs):
+                relative = dependency.relative_to(source_artifact)
+                output = warm_artifact / relative
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(dependency.read_bytes())
     styles = source_artifact / "styles.css"
     target_styles = warm_artifact / "styles.css"
     if styles.is_file() and not target_styles.exists():
