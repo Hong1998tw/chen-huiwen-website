@@ -11,12 +11,34 @@
   // metadata is enough to start filtering without downloading map/search data.
   cards.forEach((card, index) => { card.hidden = index >= PAGE_SIZE; });
   const controls = Object.fromEntries(['q','village','category','subcategory','status','year'].map((key, i) => [key, document.getElementById(['case-search','village-filter','category-filter','subcategory-filter','status-filter','year-filter'][i])]));
+  const controlValuesOnStart = Object.fromEntries(Object.entries(controls).map(([key,control]) => [key,control.value]));
+  const startupEdits = new Set();
+  const rememberStartupEdit = event => {
+    const entry = Object.entries(controls).find(([,control]) => control === event.target);
+    if (entry) startupEdits.add(entry[0]);
+  };
+  for (const control of Object.values(controls)) {
+    control.addEventListener('input',rememberStartupEdit);
+    control.addEventListener('change',rememberStartupEdit);
+  }
   const count = document.getElementById('case-count');
   const empty = document.getElementById('case-empty');
   const message = document.getElementById('map-message');
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
-  const data = cards.map(card => JSON.parse(card.dataset.meta));
-  const textById = new Map(cards.map(card => [card.dataset.case, normalize(card.innerText)]));
+  const data = [], textById = new Map(), cardHrefById = new Map();
+  for (let index = 0; index < cards.length; index++) {
+    const card = cards[index], link = card.querySelector('h3 a');
+    data.push({...JSON.parse(card.dataset.meta),id:card.dataset.case,title:link.textContent});
+    textById.set(card.dataset.case,normalize(card.textContent));
+    cardHrefById.set(card.dataset.case,safeRecordHref(link.getAttribute('href')));
+    if ((index + 1) % 100 === 0) {
+      let yielded = false;
+      if (globalThis.scheduler?.yield) {
+        try { await scheduler.yield(); yielded = true; } catch {}
+      }
+      if (!yielded) await new Promise(resolve => setTimeout(resolve,0));
+    }
+  }
   // The formal catalog mixes existing full-topic routes and anchored short records.
   // Accept reviewed local record URLs only; source citations are never detail URLs.
   function safeRecordHref(value) {
@@ -28,8 +50,7 @@
       return url.pathname.slice(1) + url.search + url.hash;
     } catch { return null; }
   }
-  const cardHrefById = new Map(cards.map(card => [card.dataset.case,
-    safeRecordHref(card.querySelector('h3 a')?.getAttribute('href'))]));
+
   function recordHref(record) {
     const explicit = safeRecordHref(record.url) || safeRecordHref(record.detailUrl) || cardHrefById.get(record.id);
     if (explicit) return explicit;
@@ -73,9 +94,7 @@
     })().finally(() => { dataPromise = null; });
     return dataPromise;
   }
-  function fits(c) {
-    const f = params();
-    const tokens = normalize(f.q).split(/\s+/).filter(Boolean);
+  function fits(c, f, tokens) {
     const villageOK = f.village === 'all' || (f.village === 'unassigned' ? !c.villages.length && !['全市政策','跨區服務'].includes(c.scope) : f.village.startsWith('v:') ? c.villages.includes(f.village.slice(2)) : c.scope === f.village.slice(2));
     return tokens.every(token => (textById.get(c.id) || '').includes(token)) && villageOK &&
       (f.category === 'all' || c.categories.includes(f.category)) &&
@@ -248,7 +267,8 @@
   }
   function filter(update = true, resetPage = true) {
     if (resetPage) currentPage = 1;
-    visible = data.filter(fits); selectedId = null; groupIds = [];
+    const f = params(), tokens = normalize(f.q).split(/\s+/).filter(Boolean);
+    visible = data.filter(c => fits(c,f,tokens)); selectedId = null; groupIds = [];
     renderCards(); draw();
     if (update) { syncURL(); fit(); }
     announce();
@@ -258,9 +278,10 @@
     for (const [key, el] of Object.entries(controls)) el.value = key === 'q' ? '' : 'all';
     filter();
   }
-  function readURL() {
+  function readURL(options = {}) {
     const p = new URLSearchParams(location.search);
     for (const [key, el] of Object.entries(controls)) {
+      if (options.preserveStartupEdits === true && (startupEdits.has(key) || el.value !== controlValuesOnStart[key])) continue;
       const val = p.get(key) || (key === 'q' ? '' : 'all');
       el.value = key === 'q' || [...el.options].some(o => o.value === val) ? val : 'all';
     }
@@ -309,10 +330,20 @@
       script.addEventListener('load',resolve,{once:true});script.addEventListener('error',reject,{once:true});document.head.append(script);
     });
   }
-  readURL();
+  const changedDuringStartup = startupEdits.size > 0 || Object.entries(controls).some(([key,control]) => control.value !== controlValuesOnStart[key]);
+  readURL({preserveStartupEdits:true});
+  if (changedDuringStartup) syncURL();
+  for (const control of Object.values(controls)) {
+    control.removeEventListener('input',rememberStartupEdit);
+    control.removeEventListener('change',rememberStartupEdit);
+  }
   const initialRecord = data.find(record => record.id === new URLSearchParams(location.search).get('case'));
   if (initialRecord?.coordinates) ensureMap();
-  else if (controls.q.value.trim()) ensureData().then(() => filter(false,false));
+  else if (controls.q.value.trim() && !fullDataLoaded) ensureData().then(() => {
+    filter(false,false);
+    const requestedCase = new URLSearchParams(location.search).get('case');
+    if (requestedCase) selectCase(requestedCase);
+  });
   function ensureMap() {
     if (map) return Promise.resolve(map);
     if (mapPromise) return mapPromise;
@@ -365,6 +396,8 @@
     return mapPromise;
   }
   document.querySelector('[data-view="both"]')?.addEventListener('click', () => { ensureMap(); });
+  const mapPanel = root.closest('.map-panel');
+  if (mapPanel && !mapPanel.hidden) ensureMap();
   if('IntersectionObserver' in window){
     const mapObserver=new IntersectionObserver(entries=>{
       if(entries.some(entry=>entry.isIntersecting)){mapObserver.disconnect();ensureMap();}

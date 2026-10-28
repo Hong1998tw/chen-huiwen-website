@@ -40,7 +40,7 @@ def render_candidate_number(platforms):
     number = rows[0].get("candidateNumber")
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         raise ValueError("A confirmed 2026 candidate number is required")
-    return f'2026 鳳山區市議員候選人・陳慧文{e(number)}號'
+    return f'2026 鳳山區・陳慧文{e(number)}號'
 
 
 def public_records(root=ROOT):

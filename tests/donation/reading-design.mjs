@@ -8,7 +8,9 @@ import {assertNoHorizontalOverflow} from './layout-diagnostics.mjs';
 import {openCaseFilterDialog,closeCaseFilterDialog} from './achievement-filter-dialog.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const publicStatuses=new Set(['持續追蹤','爭取規劃','已完成','政策實施']);
-const publicIds=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).filter(row=>publicStatuses.has(row.status)).map(row=>row.id).sort();
+const fullIds=JSON.parse(await readFile(new URL('../../data/achievements.json',import.meta.url),'utf8')).filter(row=>publicStatuses.has(row.status)).map(row=>row.id).sort();
+const catalog=JSON.parse(await readFile(new URL('../../data/public-record-catalog.json',import.meta.url),'utf8'));
+const publicIds=catalog.map(row=>row.id).sort();
 const out=fileURLToPath(new URL('./results/reading-design/',import.meta.url));
 await mkdir(out,{recursive:true});
 const base=process.env.BASE_URL || 'http://127.0.0.1:8769/';
@@ -147,7 +149,7 @@ try{
  }
  const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:960}});
  const page=await nojs.newPage();
- await check('No-JS keeps the full record list and existing links',async()=>{await page.goto(base+'achievements.html');const ids=await page.locator('[data-case]').evaluateAll(nodes=>nodes.map(node=>node.dataset.case).sort());assert.deepEqual(ids,publicIds);assert(await page.locator('[data-case="boai-card-rehab-bus-points"] a').first().isVisible());});
+ await check('No-JS keeps the full record list and existing links',async()=>{await page.goto(base+'achievements.html');const ids=await page.locator('[data-case]').evaluateAll(nodes=>nodes.map(node=>node.dataset.case).sort());assert.deepEqual(ids,publicIds);const fullLinks=await page.locator('#case-list [data-case]:not([data-record-format="short"])').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.case,href:node.querySelector('h3 a').getAttribute('href')})));assert.deepEqual(fullLinks.map(row=>row.id).sort(),fullIds);for(const row of fullLinks)assert.equal(row.href,`achievement-${row.id}.html`);assert(await page.locator('[data-case="boai-card-rehab-bus-points"] a').first().isVisible());});
  await nojs.close();
  assert.deepEqual(report.pageErrors,[]);
 }finally{

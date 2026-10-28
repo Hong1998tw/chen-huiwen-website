@@ -174,3 +174,5 @@ html.case-filter-dialog-open,body.case-filter-dialog-open{overflow:hidden;oversc
 
 /* Append to existing map.css; no existing card/map layout is replaced. */
 .case-pagination-gap{display:inline-flex;align-items:center;justify-content:center;min-width:20px;padding:6px;color:#65776f}
+
+.case-filter-dialog select{font-family:var(--huiwen-font-family)}

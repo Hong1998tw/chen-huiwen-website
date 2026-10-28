@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_font_subsets as fonts
+import build_artifact_page_fonts as artifact_fonts
 
 
 class FontSubsetContractTests(unittest.TestCase):
@@ -97,7 +98,19 @@ class FontSubsetContractTests(unittest.TestCase):
                 family = html.get("data-huiwen-font-full-family")
                 self.assertEqual(family, f"Huiwen Sans TC {slug} Full")
                 preloads = soup.select('link[rel~="preload"][as="font"]')
-                self.assertEqual(len(preloads), 1)
+                self.assertEqual(len(preloads), 2 if route == "achievements.html" else 1)
+                core_source = re.search(
+                    rf'@font-face\{{font-family:"Huiwen Sans TC {re.escape(slug)} Core";src:url\("([^"\)]+)"\)', css,
+                )
+                self.assertIsNotNone(core_source)
+                expected_preloads = [core_source.group(1)]
+                if route == "achievements.html":
+                    support_source = re.search(r'@font-face\{font-family:"Huiwen Sans JP Support";src:url\("([^"\)]+)"\)', css)
+                    self.assertIsNotNone(support_source)
+                    expected_preloads.append(support_source.group(1))
+                    artifact_fonts.validate_existing_route_preloads(ROOT, route, soup)
+                self.assertEqual([tag["href"] for tag in preloads], expected_preloads)
+                self.assertTrue(all(tag.get("type") == "font/woff2" and tag.get("crossorigin") == "anonymous" for tag in preloads))
                 self.assertLess(source.index("HUIWEN_FONT_PRELOAD:start"), source.index('rel="stylesheet"'))
                 core_path = ROOT / preloads[0]["href"].lstrip("/")
                 self.assertTrue(core_path.is_file())
@@ -126,6 +139,28 @@ class FontSubsetContractTests(unittest.TestCase):
                 self.assertIsNotNone(soup.select_one("script[data-huiwen-font-upgrade]"))
                 self.assertIn("document.fonts.load", source)
                 self.assertIn("data-huiwen-font-full", css)
+
+    def test_achievements_preload_pair_rejects_missing_extra_wrong_or_reordered_faces(self):
+        source = (ROOT / "achievements.html").read_text(encoding="utf-8")
+        artifact_fonts.validate_existing_route_preloads(ROOT, "achievements.html", BeautifulSoup(source, "html.parser"))
+        for mutation in ("missing-jp", "duplicate-core", "wrong-jp", "reordered", "missing-cors", "after-stylesheet"):
+            with self.subTest(mutation=mutation):
+                soup = BeautifulSoup(source, "html.parser")
+                core, support = soup.select('link[rel~="preload"][as="font"]')
+                if mutation == "missing-jp":
+                    support.decompose()
+                elif mutation == "duplicate-core":
+                    core.insert_after(BeautifulSoup(str(core), "html.parser").link)
+                elif mutation == "wrong-jp":
+                    support["href"] = core["href"]
+                elif mutation == "reordered":
+                    core.insert_before(support.extract())
+                elif mutation == "missing-cors":
+                    del support["crossorigin"]
+                else:
+                    soup.select_one('link[rel~="stylesheet"]').insert_after(support.extract())
+                with self.assertRaisesRegex(ValueError, "FONT_EXISTING_PRELOAD_(CLOSURE|ORDER)_INVALID"):
+                    artifact_fonts.validate_existing_route_preloads(ROOT, "achievements.html", soup)
 
     def test_full_faces_cover_route_specific_cjk_glyph_deltas(self):
         css = (ROOT / "styles.css").read_text(encoding="utf-8")

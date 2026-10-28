@@ -461,7 +461,7 @@ const results = {
     chromiumVersion: null },
   preflight: { status: 'not-run' },
   samples: [], schemaRoutes: [], initialFontNetwork: { status: 'not-run', verification: 'not-evaluated',
-    expectedRoutes: 471, routesChecked: 0,
+    expectedRoutes: 472, routesChecked: 0,
     routes: [], fullTcInitialViolations: [], preloadViolations: [], navigationErrors: [],
     criticalRequestFailures: [], fontNetworkViolations: [], runtimeErrors: [], observationErrors: [] },
   serviceInitial: { status: 'not-run', errors: [] }, legacyRoutes: [], cmsPreview: { status: 'not-run' }, negativeGuards: {},
@@ -474,7 +474,7 @@ const results = {
       preflight: { status: 'not-run' },
       representativeSamples: { status: 'not-run', expected: samples.length, completed: 0 },
       schemaRoutes: { status: 'not-run', expected: schemaRoutes.length, completed: 0 },
-      initialFontNetwork: { status: 'not-run', verification: 'not-evaluated', expected: 471, completed: 0 },
+      initialFontNetwork: { status: 'not-run', verification: 'not-evaluated', expected: 472, completed: 0 },
       crossMonth: { status: 'not-run' },
       dynamicSearch: { status: 'not-run' },
       legacyRoutes: { status: 'not-run', expected: legacyRoutes.length, completed: 0, currentRoute: null },
@@ -1151,7 +1151,7 @@ try {
   });
   results.artifactIdentity = artifactIdentity;
   const legalRoutes = Object.keys(fontManifest.routes);
-  assert.equal(legalRoutes.length, 471, 'visual selection requires the complete schema-2 route inventory');
+  assert.equal(legalRoutes.length, 472, 'visual selection requires the complete schema-2 route inventory');
   const visualRoutes = selectVisualRoutes(legalRoutes, {
     seed: VISUAL_CAPTURE_SEED,
     count: VISUAL_CAPTURE_COUNT,
@@ -1306,7 +1306,7 @@ try {
     await finalizeFontOnlyRoute(deferredServiceState);
   } else {
     results.serviceInitial = { status: 'failed', errors: [{ kind: 'missing-service-route',
-      message: 'service route was absent from the primary 471-route sweep' }] };
+      message: 'service route was absent from the primary 472-route sweep' }] };
   }
   results.initialFontNetwork.routes.sort((left, right) => left.route.localeCompare(right.route));
   results.initialFontNetwork.durationSeconds = Number(((performance.now() - fontOnlyStarted) / 1000).toFixed(2));
@@ -1316,7 +1316,7 @@ try {
     && results.visualCaptures.errors.length === 0 ? 'captured' : 'failed';
   results.visualCaptures.visualReview = 'not-performed';
   try {
-    assert.equal(results.initialFontNetwork.routesChecked, 471, 'initial font-only sweep missed schema-2 routes');
+    assert.equal(results.initialFontNetwork.routesChecked, 472, 'initial font-only sweep missed schema-2 routes');
     assert.deepEqual(fullTcInitialViolations, [], 'a route requested full TC before explicit user on-demand activation');
     assert.deepEqual(results.initialFontNetwork.fontNetworkViolations, [],
       'the final closed-session font network snapshot contains a gate violation');
@@ -2108,7 +2108,7 @@ try {
     assert.equal(new Set(results.visualCaptures.records.map((record) => record.route)).size, VISUAL_CAPTURE_COUNT,
       'the visual capture set contains duplicate routes');
     assert.deepEqual(results.visualCaptures.errors, [], 'at least one selected visual page could not be captured');
-    assert.equal(results.initialFontNetwork.routesChecked, 471, 'initial font-only sweep missed schema-2 routes');
+    assert.equal(results.initialFontNetwork.routesChecked, 472, 'initial font-only sweep missed schema-2 routes');
     assert.deepEqual(fullTcInitialViolations, [], 'a route requested full TC before explicit user on-demand activation');
     assert.deepEqual(results.initialFontNetwork.fontNetworkViolations, [],
       'the final closed-session font network snapshot contains a gate violation');

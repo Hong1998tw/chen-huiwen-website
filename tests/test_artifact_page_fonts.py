@@ -471,7 +471,7 @@ class Q9FontProducerTests(unittest.TestCase):
             jp_src = re.search(r'src\s*:\s*url\(\s*(["\']?)([^"\')]+)\1\s*\)', jp_face.group(0), re.I)
             self.assertIsNotNone(jp_src)
             jp_path = fonts._safe_artifact_path(ROOT, jp_src.group(2)).relative_to(ROOT).as_posix()
-            inputs = {route, *stylesheet_paths, "press.js", fonts.TC_REL, jp_path, fonts.LICENSE_REL}
+            inputs = {route, *stylesheet_paths, "press.js", fonts.TC_REL, jp_path, fonts.LICENSE_REL, *fonts.rare_support.PUBLIC_FILES}
             for relative in inputs:
                 source = ROOT / relative
                 target = published / relative

@@ -1,5 +1,6 @@
 """Formal-site reachability and preservation of the existing short public copy."""
 import copy
+from collections import Counter
 import json
 from pathlib import Path
 import sys
@@ -24,6 +25,7 @@ class FormalRecordTests(unittest.TestCase):
     def test_every_public_record_has_one_formal_card_and_working_detail_target(self):
         cards = self.index.select('#case-list article[data-case]')
         by_id = {card['data-case']: card for card in cards}
+        target_counts = Counter(el['id'] for el in self.collection.select('[id]'))
         expected = {row['id'] for row in self.full} | {row['id'] for row in self.short}
         self.assertEqual(len(cards), len(expected))
         self.assertEqual(set(by_id), expected)
@@ -32,7 +34,7 @@ class FormalRecordTests(unittest.TestCase):
                 card = by_id[row['id']]
                 self.assertEqual(card.select_one('h3 a')['href'], short_url(row['id']))
                 self.assertEqual(card['data-record-format'], 'short')
-                self.assertIsNotNone(self.collection.find(id='record-' + row['id']))
+                self.assertEqual(target_counts['record-' + row['id']], 1)
         for row in self.full:
             self.assertEqual(by_id[row['id']].select_one('h3 a')['href'], 'achievement-' + row['id'] + '.html')
 
@@ -97,8 +99,9 @@ class FormalRecordTests(unittest.TestCase):
     def test_search_keeps_every_formal_record_fragment(self):
         search = json.loads((ROOT / 'data/search-index.json').read_text())['items']
         urls = [row['url'] for row in search]
+        url_counts = Counter(urls)
         for row in self.short:
-            self.assertEqual(urls.count(short_url(row['id'])), 1)
+            self.assertEqual(url_counts[short_url(row['id'])], 1)
         self.assertIn('public-records.html', urls)
 
     def test_formal_routes_and_original_candidate_number_are_published(self):
@@ -122,7 +125,7 @@ class FormalRecordTests(unittest.TestCase):
     def test_homepage_candidate_number_comes_from_the_same_election_source(self):
         from build_home import render_candidate_number
         platforms = json.loads((ROOT / 'data/platforms.json').read_text())
-        self.assertEqual(render_candidate_number(platforms), '2026 鳳山區市議員候選人・陳慧文5號')
+        self.assertEqual(render_candidate_number(platforms), '2026 鳳山區・陳慧文5號')
         changed = copy.deepcopy(platforms)
         next(row for row in changed['elections'] if row['year'] == 2026)['candidateNumber'] = 7
         self.assertTrue(render_candidate_number(changed).endswith('陳慧文7號'))

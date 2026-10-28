@@ -203,7 +203,8 @@ class CriticalParser(HTMLParser):
     """
     CLASSES = {'footer-grid', 'contact-card', 'hours-card', 'schedule-text',
                'donation-account', 'donation-period', 'home-account',
-               'civic-service-desk', 'campaign-keydates', 'case-latest', 'case-facts'}
+               'civic-service-desk', 'campaign-keydates', 'case-latest', 'case-facts',
+               'case-card', 'public-record', 'kicker'}
     IDS = {'campaign-number-draw', 'campaign-vote-date', 'campaign-election-source'}
     VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
 
@@ -230,6 +231,10 @@ class CriticalParser(HTMLParser):
         if href.startswith(('tel:', 'mailto:')):
             self.contact_links.append(href)
         markers = sorted(self.CLASSES.intersection(data.get('class', '').split()))
+        if 'case-card' in markers:
+            markers.append('case-id:' + data.get('data-case', ''))
+        if 'public-record' in markers:
+            markers.append('record-id:' + data.get('id', ''))
         if data.get('id') in self.IDS:
             markers.append('#' + data['id'])
         if tag == 'time':

@@ -774,6 +774,36 @@ def _legacy_redirect_target(soup, public_html_routes: set[str]) -> str | None:
     return target if target_routes.intersection(public_html_routes) else None
 
 
+def validate_existing_route_preloads(root: Path, route: str, soup) -> None:
+    """Keep the existing achievements Core+JP pair separate from common/delta routes."""
+    if route != "achievements.html":
+        return
+    if soup.html is None or soup.html.get("data-huiwen-font-page") != "achievements":
+        raise ValueError("FONT_EXISTING_PRELOAD_ROUTE_MARKER_INVALID: " + route)
+    stylesheets, _ = linked_css(root, route, soup)
+    css = "\n".join((root / path).read_text(encoding="utf-8") for path in stylesheets)
+    css += "\n" + "\n".join(str(style.string or style.decode_contents()) for style in soup.find_all("style"))
+    expected = []
+    for family in ("Huiwen Sans TC achievements Core", "Huiwen Sans JP Support"):
+        faces = re.findall(r"@font-face\s*\{[^}]*font-family\s*:\s*[\"']" + re.escape(family) + r"[\"'][^}]*\}", css, re.I)
+        if len(faces) != 1:
+            raise ValueError("FONT_EXISTING_PRELOAD_FACE_AMBIGUOUS: " + route)
+        source = re.search(r"src\s*:\s*url\(\s*([\"']?)([^\"')]+)\1\s*\)", faces[0], re.I)
+        if source is None:
+            raise ValueError("FONT_EXISTING_PRELOAD_FACE_SOURCE_MISSING: " + route)
+        target = _safe_artifact_path(root, source.group(2))
+        expected.append("/" + target.relative_to(root).as_posix())
+    preloads = soup.select('link[rel~="preload"][as="font"]')
+    if (len(preloads) != 2 or [tag.get("href") for tag in preloads] != expected
+            or any(tag.get("type") != "font/woff2" or tag.get("crossorigin") != "anonymous" for tag in preloads)
+            or any(tag.find_parent("head") is None for tag in preloads)):
+        raise ValueError("FONT_EXISTING_PRELOAD_CLOSURE_INVALID: " + route)
+    head_links = soup.head.find_all("link")
+    first_stylesheet = next((index for index, tag in enumerate(head_links) if "stylesheet" in tag.get("rel", [])), None)
+    if first_stylesheet is None or any(head_links.index(tag) >= first_stylesheet for tag in preloads):
+        raise ValueError("FONT_EXISTING_PRELOAD_ORDER_INVALID: " + route)
+
+
 def public_html_route_inventory(source_root: Path, artifact_root: Path, public_paths):
     paths = sorted(set(public_paths))
     html_routes = sorted(path for path in paths if PurePosixPath(path).suffix.lower() == ".html")
@@ -816,6 +846,7 @@ def public_html_route_inventory(source_root: Path, artifact_root: Path, public_p
         if soup.html is None:
             raise ValueError(f"FONT_PUBLIC_HTML_MALFORMED: {route}")
         if soup.html and soup.html.get("data-huiwen-font-page"):
+            validate_existing_route_preloads(artifact_root, route, soup)
             skipped.append(route)
         elif _uses_full_tc_font(artifact_root, route, raw, soup):
             eligible.append(route)
@@ -1275,6 +1306,7 @@ def validate_manifest(
         soup = BeautifulSoup(path.read_bytes(), "html5lib")
         if soup.html is None or not soup.html.get("data-huiwen-font-page"):
             raise ValueError(f"FONT_MANIFEST_SKIPPED_ROUTE_MARKER_INVALID: {route}")
+        validate_existing_route_preloads(artifact_root, route, soup)
     for row in excluded_routes:
         route = row.get("route")
         path = artifact_root / route

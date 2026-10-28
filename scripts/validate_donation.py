@@ -39,6 +39,13 @@ require(not re.search(r'YOUR_GITHUB_USERNAME|YOUR_REPOSITORY_NAME|example\.com|T
 require(not re.search(r'drive\.google\.com|notion\.(so|com)|[A-Z][12][0-9]{8}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN .*PRIVATE KEY',s),'no private URL, Taiwan ID or known secret patterns')
 files=sorted(R.glob('*.html'))
 refs=0
+# Each validator run reads an immutable build; keep only target IDs, not full trees.
+anchor_id_cache={}
+def target_ids(target):
+ if target not in anchor_id_cache:
+  targetdoc=BeautifulSoup(target.read_text(),'html.parser')
+  anchor_id_cache[target]=frozenset(el['id'] for el in targetdoc.select('[id]'))
+ return anchor_id_cache[target]
 for f in files:
  doc=BeautifulSoup(f.read_text(),'html.parser')
  if f.name=='offline.html':continue  # Standalone, no-network recovery document validated by validate_site.
@@ -48,6 +55,7 @@ for f in files:
  require(len(doc.select('#navigation a[href="service.html#monthly-heading"],#navigation a[href="/service.html#monthly-heading"]'))==1,f'{f.name}: lawyer schedule entry')
  require(len(doc.select('footer a[href="political-donation.html"],footer a[href="/political-donation.html"]'))==1,f'{f.name}: footer entry')
  ids=[el['id'] for el in doc.select('[id]')]
+ anchor_id_cache[f]=frozenset(ids)
  require(len(ids)==len(set(ids)),f'{f.name}: duplicate IDs')
  for el in doc.select('[href],[src]'):
   raw=el.get('href',el.get('src'));u=urlsplit(raw)
@@ -55,8 +63,7 @@ for f in files:
   target=R/unquote(u.path).lstrip("/") if u.path else f
   require(target.exists(),f'{f.name}: missing local target {raw}')
   if u.fragment and target.suffix=='.html' and target.exists():
-   targetdoc=BeautifulSoup(target.read_text(),'html.parser')
-   require(targetdoc.find(id=unquote(u.fragment)) is not None,f'{f.name}: missing anchor {raw}')
+   require(unquote(u.fragment) in target_ids(target),f'{f.name}: missing anchor {raw}')
   refs+=1
 for a in soup.select('a[target="_blank"]'):
  require({'noopener','noreferrer'}<=set(a.get('rel',[])),'external rel')

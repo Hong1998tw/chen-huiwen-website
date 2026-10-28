@@ -49,7 +49,7 @@ ROUTES = {
     ),
     "achievements.html": (
         "achievements",
-        ("main > .page-head", "main > .map-controls", "main > .civic-view-controls", "main .results-heading"),
+        ("main > .page-head", "main > .map-controls", "main > .civic-view-controls", "main .results-heading", "main #case-list > .case-card:first-child"),
     ),
     "vision.html": (
         "vision",
@@ -252,6 +252,7 @@ def font_upgrade_markup() -> str:
         "window.addEventListener('scroll',upgrade,{passive:true});"
         "window.addEventListener('pointerdown',upgrade,{passive:true});"
         "window.addEventListener('focusin',upgrade);"
+        "if(root.dataset.huiwenFontPage==='achievements'&&location.search)upgrade();"
         "})();</script>"
         f"{UPGRADE_END}"
     )
@@ -270,6 +271,12 @@ def page_text(root: Path, route: str, selectors: tuple[str, ...] | None = None) 
             pieces.append(explore_dynamic_text(root, core=False))
         return "\n".join(pieces)
     soup = BeautifulSoup(source, "html.parser")
+    if route == "achievements.html":
+        # Closed select options are interaction text, retained in Full. The
+        # initial native labels and visible first card belong in Core.
+        for option in soup.select("main > .map-controls select option"):
+            if option.get("value") not in {"all", "undated"}:
+                option.decompose()
     pieces = []
     header = soup.select_one(".topline")
     if header:
@@ -502,7 +509,7 @@ def build_css(
     path.write_text(css, encoding="utf-8")
 
 
-def write_page_metadata(root: Path, route: str, slug: str, full_family: str, core_filename: str) -> None:
+def write_page_metadata(root: Path, route: str, slug: str, full_family: str, core_filename: str, jp_filename: str | None = None) -> None:
     path = root / route
     html = path.read_text(encoding="utf-8")
     match = re.search(r"<html\b[^>]*>", html, flags=re.I)
@@ -518,11 +525,15 @@ def write_page_metadata(root: Path, route: str, slug: str, full_family: str, cor
         opening = opening[:-1] + f' {key}="{value}">'
     html = html[:match.start()] + opening + html[match.end():]
 
+    support_preload = (
+        f'<link rel="preload" href="/assets/fonts/huiwen-site-sans/generated/{jp_filename}" '
+        'as="font" type="font/woff2" crossorigin="anonymous">'
+    ) if route == "achievements.html" and jp_filename else ''
     preload = (
         f'{PRELOAD_START}<link rel="preload" '
         f'href="/assets/fonts/huiwen-site-sans/generated/{core_filename}" '
         'as="font" type="font/woff2" crossorigin="anonymous">'
-        f'{PRELOAD_END}'
+        f'{support_preload}{PRELOAD_END}'
     )
     if PRELOAD_START in html:
         html = re.sub(
@@ -613,6 +624,7 @@ def build(root: Path = ROOT) -> None:
             slug,
             f"Huiwen Sans TC {slug} Full",
             core_file,
+            jp_filename,
         )
 
     build_css(root, page_routes, jp_filename, jp_fallback, tc_cmap)
