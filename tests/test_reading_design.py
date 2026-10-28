@@ -83,7 +83,7 @@ class ReadingDesignTests(unittest.TestCase):
                 self.assertNotIn(copy, soup.get_text(' ', strip=True))
     def test_every_overview_keeps_status_and_sources(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
-        self.assertEqual(len(records), 429)
+        self.assertEqual(len(records), 435)
         self.assertEqual(len(list(ROOT.glob('achievement-*.html'))), len(records))
         for record in records:
             path = ROOT / ('achievement-' + record['id'] + '.html')
