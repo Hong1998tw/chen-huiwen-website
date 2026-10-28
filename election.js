@@ -11,10 +11,19 @@
   const dateLabel=value=>new Intl.DateTimeFormat('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'}).format(new Date(value));
   let expanded=false;
   function announce(id,text) { const n=q(id); if(n) n.textContent=text; }
-  async function loadJSON(path) {
+  const unchanged=Symbol('unchanged published tracking source');
+  async function loadJSON(path,expectedDigest) {
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),5000);
-    try {const r=await fetch(path,{cache:'no-store',signal:controller.signal});if(!r.ok)throw new Error(String(r.status));return await r.json();}
+    try {
+      const r=await fetch(path,{cache:'no-store',signal:controller.signal});if(!r.ok)throw new Error(String(r.status));
+      if(!expectedDigest||!globalThis.crypto?.subtle)return await r.json();
+      const text=await r.text();
+      const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text.trim()))),byte=>byte.toString(16).padStart(2,'0')).join('');
+      // The full published search index is already in the DOM. Retain those nodes
+      // when the atomic artifact supplies the same source; changed data still refreshes.
+      return digest===expectedDigest?unchanged:JSON.parse(text);
+    }
     finally {clearTimeout(timer);}
   }
   function card(root,html,search,extra='') {
@@ -73,6 +82,7 @@
     announce('#campaign-tracking-summary',term?`符合追蹤紀錄 ${tracking} 筆`:`收錄 ${tracking} 筆；${expanded?'顯示全部':'先顯示最近收錄事件的 '+Math.min(8,tracking)+' 筆'}`);
     const more=q('#campaign-tracking-more');if(more){more.hidden=Boolean(term)||expanded||tracking<=8;more.textContent=`顯示全部 ${tracking} 筆追蹤紀錄`;}
     const empty=q('#campaign-no-results');if(empty)empty.hidden=!term||total>0;
+    q('#campaign-tracking')?.setAttribute('data-filter-ready','');
   }
   function init() {
     q('#campaign-search')?.addEventListener('input',filter);
@@ -81,7 +91,7 @@
     q('#campaign-tracking-more')?.removeAttribute('hidden');filter();
     // Each request updates its own section immediately; a stalled source never gates the others.
     const sources=[['data/election-2026.json',d=>window.HuiwenCampaign?.apply(d),'#campaign-date-error'],['data/platforms.json',renderPlatforms,'#campaign-platform-error'],['data/achievements-public.json',renderTracking,'#campaign-tracking-error'],['data/events.json',renderEvents,'#campaign-events-error']];
-    const refresh=()=>{for(const [url,render,status] of sources) loadJSON(url).then(data=>{render(data);filter();q(status)?.setAttribute('hidden','');}).catch(()=>{const n=q(status);if(n){n.hidden=false;n.textContent='更新資料暫時無法載入；以下保留發布時的公開紀錄，請核對來源日期。';}});};
+    const refresh=()=>{for(const [url,render,status] of sources) loadJSON(url,url==='data/achievements-public.json'?q('#campaign-tracking')?.dataset.sourceSha256:null).then(data=>{if(data!==unchanged){render(data);filter();}q(status)?.setAttribute('hidden','');}).catch(()=>{const n=q(status);if(n){n.hidden=false;n.textContent='更新資料暫時無法載入；以下保留發布時的公開紀錄，請核對來源日期。';}});};
     // The generated index is already complete and interactive. Refresh after critical
     // rendering; cap both idle waiting and a stalled load event so refresh always starts.
     let refreshQueued=false;

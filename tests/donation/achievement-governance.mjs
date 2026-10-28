@@ -16,6 +16,8 @@ for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Prom
 const allSource=JSON.parse(await readFile(root+'data/achievements.json','utf8'));
 const source=allSource.filter(c=>c.status!=='待核驗');
 const sourceById=new Map(source.map(c=>[c.id,c]));
+// Full-source/detail assertions below stay on source/sourceById; overview assertions use catalog.
+const catalog=JSON.parse(await readFile(root+'data/public-record-catalog.json','utf8'));
 const villages=JSON.parse(await readFile(root+'data/villages.json','utf8'));
 const villageKeys=new Set(villages.map(v=>v.district+'|'+v.name));
 const sitemap=await readFile(root+'sitemap.xml','utf8');
@@ -36,7 +38,7 @@ const check=async(name,fn,cleanup)=>{
  if(error){report.checks.push({name,status:'Failed',error:String(error)});report.failures.push(name);}
  else report.checks.push({name,status:'Passed'});
 };
-const searchable=c=>[
+const searchable=c=>c.searchText||[
  c.title,c.summary,c.scope,c.status,c.locationName,c.locationNote,...(c.categories||[]),...(c.subcategories||[]),
  ...(c.villages||[]),...(c.paragraphs||[]),...(c.villageHeadPartners||[]).flatMap(p=>[p.village,p.name,p.role,p.from,p.to]),
  ...(c.history||[]).flatMap(h=>[h.date,h.title,h.text])
@@ -79,9 +81,9 @@ try{
   page.on('console',msg=>{if(msg.type()==='error')browserErrors.push(`console: ${msg.text()}`);});
   page.on('response',res=>{const u=new URL(res.url());if(u.hostname==='127.0.0.1'&&res.status()>=400)browserErrors.push(`HTTP ${res.status()}: ${u.pathname}`);});
   const go=async path=>{await page.goto(base+path,{waitUntil:'domcontentloaded'});if(path.startsWith('achievements.html'))await page.getByRole('button',{name:'地圖與列表',exact:true}).click();};
-  const allCaseIds=source.map(c=>c.id);
+  const allCaseIds=catalog.map(c=>c.id);
   const sortedIds=ids=>[...ids].sort();
-  const waitCases=async()=>page.waitForFunction(n=>window.HuiwenCases?.getState().data.length===n,source.length);
+  const waitCases=async()=>page.waitForFunction(n=>window.HuiwenCases?.getState().data.length===n,catalog.length);
   const showMapAndWaitForLayers=async()=>{
    const showMap=page.getByRole('button',{name:'地圖與列表',exact:true});
    if(await showMap.getAttribute('aria-pressed')!=='true')await showMap.click();
@@ -103,7 +105,7 @@ try{
 
   await check(`${width}: reviewed Wende funding is readable in list and map without totals across cases`,async()=>{
    await go('achievements.html?q='+encodeURIComponent('文德國小'));await waitCases();
-   const expected=source.filter(c=>searchable(c).includes('文德國小')).map(c=>c.id);
+   const expected=catalog.filter(c=>searchable(c).includes('文德國小')).map(c=>c.id);
    await waitCaseIds(expected);
    const card=page.locator('[data-case="wende-school-center"]');
    assert.match(await card.locator('.case-funding-total').textContent(),/核定總經費.*6,035\.7萬元/);
@@ -133,7 +135,7 @@ try{
    const ids=await page.evaluate(()=>window.HuiwenCases.getState().groupIds.length);
    const popup=page.locator('#achievement-map .map-popup-group');
    await popup.waitFor({state:'visible'});
-   assert.match(await popup.locator('.map-popup-head').textContent(),new RegExp(`附近 ${ids} 項專題`));
+   assert.match(await popup.locator('.map-popup-head').textContent(),new RegExp(`附近 ${ids} 筆有點位紀錄`));
    assert.equal(await popup.locator('.map-popup-row.is-selected').count(),0);
    const shown=await popup.locator('.map-popup-row:visible').count();
    assert.equal(shown,Math.min(ids,width===390?3:4));
@@ -165,7 +167,7 @@ try{
    assert.equal(destination.searchParams.get('category'),topic);assert.equal(destination.hash,'#case-results');
    await more.focus();assert(await more.evaluate(el=>el===document.activeElement));
    await page.keyboard.press('Enter');await waitCases();
-   const expected=source.filter(c=>(c.categories||[]).includes(topic)).map(c=>c.id);
+   const expected=catalog.filter(c=>(c.categories||[]).includes(topic)).map(c=>c.id);
    await waitCaseIds(expected);
    assert.equal(await page.locator('#category-filter').inputValue(),topic);
    assert.equal(new URL(page.url()).searchParams.get('category'),topic);
@@ -176,8 +178,8 @@ try{
    await resetOverview();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.equal(await page.locator('.digital-dashboard, #achievement-dashboard, .map-stats').count(),0);
-   assert((await page.locator('#case-count').textContent()).startsWith(`共 ${source.length} 個專題`));
-   assert.equal(await page.locator('#case-list .case-card:visible').count(),Math.min(10,source.length));
+   assert((await page.locator('#case-count').textContent()).startsWith(`共 ${catalog.length} 筆紀錄`));
+   assert.equal(await page.locator('#case-list .case-card:visible').count(),Math.min(10,catalog.length));
    assert(await page.locator('#achievement-map').isVisible());
    await page.locator('#achievement-map').scrollIntoViewIfNeeded();
    await page.locator('.leaflet-overlay-pane path').first().waitFor({state:'attached'});
@@ -188,24 +190,24 @@ try{
   await check(`${width}: keyword, status, category and village filters match source`,async()=>{
    await resetOverview();
    const search='個人行動器具';
-   const expectedSearch=source.filter(c=>searchable(c).includes(search)).map(c=>c.id);
+   const expectedSearch=catalog.filter(c=>searchable(c).includes(search)).map(c=>c.id);
    await page.locator('#case-search').fill(search);await waitCaseIds(expectedSearch);
    await assertCaseIds(expectedSearch);
    await resetFilters();
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-   const completed=source.filter(c=>c.status==='已完成');await page.locator('#status-filter').selectOption('已完成');await waitCaseIds(completed.map(c=>c.id));
+   const completed=catalog.filter(c=>c.status==='已完成');await page.locator('#status-filter').selectOption('已完成');await waitCaseIds(completed.map(c=>c.id));
    await resetFilters();
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
-   const traffic=source.filter(c=>(c.categories||[]).includes('交通與基建'));await page.locator('#category-filter').selectOption('交通與基建');await waitCaseIds(traffic.map(c=>c.id));
+   const traffic=catalog.filter(c=>(c.categories||[]).includes('交通與基建'));await page.locator('#category-filter').selectOption('交通與基建');await waitCaseIds(traffic.map(c=>c.id));
    await resetFilters();
-   const village='大德里';const byVillage=source.filter(c=>(c.villages||[]).includes(village));
+   const village='大德里';const byVillage=catalog.filter(c=>(c.villages||[]).includes(village));
    if(byVillage.length){await page.locator('#village-filter').selectOption('v:'+village);await waitCaseIds(byVillage.map(c=>c.id));}
    await resetFilters();
   },resetOverview);
 
   await check(`${width}: historical partner search and facts do not regress to current-head labels`,async()=>{
    await resetOverview();
-   const q='侯俊傑';const expected=source.filter(c=>searchable(c).includes(q)).map(c=>c.id);
+   const q='侯俊傑';const expected=catalog.filter(c=>searchable(c).includes(q)).map(c=>c.id);
    assert(expected.includes('mingfeng-12-gongyuan-road'));
    await page.locator('#case-search').fill(q);await waitCaseIds(expected);
    await assertCaseIds(expected);
@@ -223,7 +225,7 @@ try{
    await openCaseFilterDialog(page);
    if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
    await page.locator('#category-filter').selectOption('社福與衛環');
-   const expected=source.filter(c=>(c.categories||[]).includes('社福與衛環'));await waitCaseIds(expected.map(c=>c.id));
+   const expected=catalog.filter(c=>(c.categories||[]).includes('社福與衛環'));await waitCaseIds(expected.map(c=>c.id));
    assert.equal(await page.locator('.case-card.is-selected').count(),0);assert.equal(await page.locator('.insight-clear').count(),0);assert(await page.locator('.map-insight-panel').isVisible());assert(!new URL(page.url()).searchParams.has('case'));
   },resetOverview);
 
@@ -263,7 +265,7 @@ try{
 
  await check('No JavaScript keeps all public achievement cards, related topics and historical partner facts readable',async()=>{
   const ctx=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});const page=await ctx.newPage();await page.goto(base+'achievements.html');
-  assert.equal(await page.locator('#case-list .case-card:visible').count(),source.length);
+  assert.equal(await page.locator('#case-list .case-card:visible').count(),catalog.length);
   assert.match(await page.locator('[data-case="wende-school-center"] .case-funding-total').textContent(),/6,035\.7萬元/);
   assert.match(await page.locator('noscript').textContent(),/完整紀錄與詳情頁仍可直接閱讀/);
   await page.goto(base+'achievement-wende-school-center.html');
@@ -274,7 +276,7 @@ try{
   await more.focus();assert(await more.evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');
   await page.waitForURL(url=>url.pathname.endsWith('/achievements.html')&&url.searchParams.has('category'));
   assert.equal(new URL(page.url()).searchParams.get('category'),sourceById.get('wende-school-center').categories[0]);
-  assert.equal(await page.locator('#case-list .case-card:visible').count(),source.length);
+  assert.equal(await page.locator('#case-list .case-card:visible').count(),catalog.length);
   await page.goto(base+'achievement-mingfeng-12-gongyuan-road.html');const facts=await page.locator('.case-facts').textContent();assert.match(facts,/合作里長（案件當時）/);assert.match(facts,/侯俊傑/);assert(!facts.includes('現任里長'));await ctx.close();
  });
 }finally{

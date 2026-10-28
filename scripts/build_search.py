@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from achievement_metadata import is_public, latest_history_event
 from page_copy import render as render_page_copy
+from public_record_catalog import short_cards, COLLECTION_PATH
 
 ROOT = Path(__file__).resolve().parents[1]
 INACTIVE = {'unpublished', 'deleted'}
@@ -69,8 +70,8 @@ def build(root=ROOT):
             element.decompose()
         # Collections with separate detail pages index their intro.
         # Media reports only live on news.html; retain their text so search can find them.
-        if path.name in ('achievements.html', 'press.html', 'activities.html'):
-            for element in main.select('article, #case-list'):
+        if path.name in ('achievements.html', 'press.html', 'activities.html', COLLECTION_PATH):
+            for element in main.select('article, #case-list, #public-record-list'):
                 element.decompose()
         kind = '政績' if path.name.startswith('achievement-') else '新聞' if path.name.startswith('news-') else '活動' if path.name.startswith(('activity-', 'event-')) else '政見' if path.name == 'vision.html' else '頁面'
         keywords = ' '.join(main.stripped_strings)
@@ -89,13 +90,23 @@ def build(root=ROOT):
                     categories=record.get('categories', []),
                 )
         items.append(item)
+    # Every short record has a distinct, server-rendered fragment on the formal
+    # collection. Do not collapse these results to the one HTML route.
+    if COLLECTION_PATH in searchable_routes:
+        for record in short_cards(root):
+            items.append(dict(title=record['title'], url=record['url'],
+                              description=record['summary'], summary=record['summary'],
+                              type='政績', keywords=record['searchText'], priority=70,
+                              primaryRegion='、'.join(record['villages']), recordStage='',
+                              lastRecordDate='', categories=record['categories'],
+                              recordFormat='short', recordType=record['recordType']))
     for service in json.loads((root / 'data/service-search.json').read_text(encoding='utf-8')):
         if route_key(service.get('url')) not in searchable_routes:
             continue
         items.append({**service, 'summary':service.get('description',''), 'primaryRegion':'鳳山區', 'lastRecordDate':'', 'recordStage':''})
     result = {'version': 1, 'count': len(items), 'items': items}
     (root / 'data/search-index.json').write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':'))+'\n')
-    print(f'Built search index: {len(items)} public pages')
+    print(f'Built search index: {len(items)} public search entries')
     return result
 
 

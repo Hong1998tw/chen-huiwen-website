@@ -208,12 +208,13 @@ function validateExpectedFonts(expectedFonts) {
 
 function validateFallbackCodepoints(routeFallbacks) {
   const jp = routeFallbacks?.jp ?? [];
+  const supplement = routeFallbacks?.supplement ?? [];
   const system = SYSTEM_FALLBACK_CODEPOINTS;
   if (routeFallbacks?.system !== undefined) {
     assert.deepEqual(routeFallbacks.system, SYSTEM_FALLBACK_CODEPOINTS,
       'system fallback must match the explicit artifact codepoint allowlist');
   }
-  for (const [name, codepoints] of [['JP', jp], ['system', system]]) {
+  for (const [name, codepoints] of [['JP', jp], ['supplement', supplement], ['system', system]]) {
     assert.ok(Array.isArray(codepoints), `${name} fallback codepoints must be an array`);
     assert.ok(codepoints.every((codepoint) => Number.isInteger(codepoint)
       && codepoint >= 0 && codepoint <= 0x10ffff
@@ -223,7 +224,9 @@ function validateFallbackCodepoints(routeFallbacks) {
   }
   assert.deepEqual([...jp].filter((codepoint) => system.includes(codepoint)), [],
     'JP and system fallback contracts overlap');
-  return { jp: [...jp], system: [...system] };
+  assert.ok(supplement.every(cp => [0x5754, 0x6db3].includes(cp)), 'supplement fallback exceeds pinned two-glyph source');
+  assert.deepEqual(supplement.filter(cp => jp.includes(cp) || system.includes(cp)), [], 'supplement fallback overlaps another contract');
+  return { jp: [...jp], system: [...system], ...(supplement.length ? { supplement: [...supplement] } : {}) };
 }
 
 export function classifyVisibleGlyphDiagnostics({
@@ -249,6 +252,7 @@ export function classifyVisibleGlyphDiagnostics({
   ]);
   const fallback = validateFallbackCodepoints(routeFallbacks);
   const jpFallback = new Set(fallback.jp);
+  const supplementFallback = new Set(fallback.supplement || []);
   const systemFallback = new Set(fallback.system);
   const rawTcUnsupportedCodepoints = visibleCodepoints
     .filter((codepoint) => !fontCovered.has(codepoint))
@@ -264,7 +268,7 @@ export function classifyVisibleGlyphDiagnostics({
     };
   }).filter((owner) => owner.codepoints.length > 0);
   const unexpectedCodepoints = rawTcUnsupportedCodepoints
-    .filter((codepoint) => !jpFallback.has(codepoint) && !systemFallback.has(codepoint));
+    .filter((codepoint) => !jpFallback.has(codepoint) && !supplementFallback.has(codepoint) && !systemFallback.has(codepoint));
   const unexpectedGlyphs = unexpectedCodepoints.map((codepoint) => ({
     codepoint,
     owners: owners.filter((owner) => owner.codepoints.includes(codepoint)).map((owner) => ({
@@ -322,17 +326,19 @@ export function validateVisibleCodepointCoverage({
 
   const fallback = validateFallbackCodepoints(routeFallbacks);
   const jpFallback = new Set(fallback.jp);
+  const supplementFallback = new Set(fallback.supplement || []);
   const systemFallback = new Set(fallback.system);
-  for (const codepoint of [...jpFallback, ...systemFallback]) {
+  for (const codepoint of [...jpFallback, ...supplementFallback, ...systemFallback]) {
     assert.ok(!fontCovered.has(codepoint),
       `${route}: fallback character U+${codepoint.toString(16).toUpperCase()} is already in the page-font cmap`);
   }
 
-  const coverage = { common: 0, delta: 0, jpFallback: 0, systemFallback: 0 };
+  const coverage = { common: 0, delta: 0, jpFallback: 0, systemFallback: 0, ...(supplementFallback.size ? { supplementFallback: 0 } : {}) };
   for (const codepoint of visibleCodepoints) {
     if (common.has(codepoint)) coverage.common += 1;
     else if (delta.has(codepoint)) coverage.delta += 1;
     else if (jpFallback.has(codepoint)) coverage.jpFallback += 1;
+    else if (supplementFallback.has(codepoint)) coverage.supplementFallback += 1;
     else if (systemFallback.has(codepoint)) coverage.systemFallback += 1;
     else assert.fail(
       `${route}: visible character U+${codepoint.toString(16).toUpperCase()} is outside the page manifest and explicit JP/system fallback contracts`);
@@ -442,7 +448,7 @@ export function validateVisualTypography({
     expectedFonts.map((font) => ({ ...font, probeCodepoint: null })),
     { body: typography.bodyFontWeight, heading: typography.headingFontWeight },
   ).map((probe) => [probe.role, probe]));
-  const fallbackVisible = coverage.coverage.jpFallback + coverage.coverage.systemFallback > 0;
+  const fallbackVisible = coverage.coverage.jpFallback + (coverage.coverage.supplementFallback || 0) + coverage.coverage.systemFallback > 0;
   assertFontStackPrefix({ route, label: `${label} body stack`, stack: typography.bodyFontFamily,
     expectedPrefix: [expectedByRole.delta.family, expectedByRole.common.family],
     needsSystemFallback: fallbackVisible });

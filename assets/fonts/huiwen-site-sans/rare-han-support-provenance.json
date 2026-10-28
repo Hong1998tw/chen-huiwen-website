@@ -1,0 +1,26 @@
+{
+  "family": "Huiwen Sans Rare Han Support",
+  "licensePath": "assets/fonts/huiwen-site-sans/rare-han-support-OFL.txt",
+  "licenseSha256": "4695fa6dfb6bf178c7509de9214bb61310fa19ac3920639b860a7cb2c1ddb390",
+  "recipe": "fontTools 4.66.1 subset unicode U+5754,U+6DB3; WOFF2; preserve outlines and timestamps; rename name/CFF families; retain OFL name entries. Original TC/JP source files are unchanged.",
+  "schemaVersion": 1,
+  "source": {
+    "copyright": "© 2014–2021 Adobe",
+    "family": "Noto Sans CJK TC",
+    "license": "SIL OFL 1.1",
+    "sha256": "52565cb369de5f51320250820ae71e259ec58974663b1a5d4de28e0728e4cf52",
+    "url": "https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf",
+    "version": "2.004"
+  },
+  "subset": {
+    "bytes": 1912,
+    "codepoints": [
+      "U+5754",
+      "U+6DB3"
+    ],
+    "path": "assets/fonts/huiwen-site-sans/huiwen-rare-han-support-f54454c3ccd0903f631c7e7a639a10805c98addfa689b19c9c8e3e32ebbca156.woff2",
+    "sha256": "f54454c3ccd0903f631c7e7a639a10805c98addfa689b19c9c8e3e32ebbca156",
+    "variable": false,
+    "weight": 400
+  }
+}

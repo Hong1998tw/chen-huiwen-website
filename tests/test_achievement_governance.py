@@ -132,11 +132,13 @@ class MetadataTests(unittest.TestCase):
             root=Path(d)
             for name in ['scripts','templates','data','assets']:
                 (root/name).mkdir()
-            for name in ['build_cases.py','python_guard.py','achievement_metadata.py','validate_achievements.py','case_context.py','case_overview.py','case_paragraph_dedupe.py','case_media.py','build_shared.py']:
+            for name in ['build_cases.py','python_guard.py','achievement_metadata.py','validate_achievements.py','case_context.py','case_overview.py','case_paragraph_dedupe.py','case_media.py','build_shared.py','public_record_catalog.py']:
                 shutil.copy(ROOT/'scripts'/name,root/'scripts'/name)
             shutil.copy(ROOT/'templates/case-page.html',root/'templates/case-page.html')
-            for name in ['styles.css','map.css','map.js','digital.css','digital.js']:
+            for name in ['styles.css','map.css','map.js','digital.css','digital.js','public-records.css','public-records.js']:
                 shutil.copy(ROOT/name,root/name)
+            (root/'island').mkdir()
+            (root/'island/island-data.json').write_text(json.dumps({'items': []}))
             (root/'sitemap.xml').write_text('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.huiwen.tw/about.html</loc></url><url><loc>https://www.huiwen.tw/achievement-test-pending.html</loc></url></urlset>')
             c=case(); c['villageHeadPartners']=[partner()]; pending=copy.deepcopy(c);pending.update(id='test-pending',status='待核驗')
             (root/'data/achievements.json').write_text(json.dumps([c,pending],ensure_ascii=False))

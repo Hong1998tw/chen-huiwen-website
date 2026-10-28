@@ -16,6 +16,7 @@ import unicodedata
 from bs4 import BeautifulSoup
 from fontTools.ttLib import TTFont
 from fontTools import subset
+import rare_han_support as rare_support
 
 ROOT = Path(__file__).resolve().parents[1]
 FONT_DIR = ROOT / "assets/fonts/huiwen-site-sans"
@@ -48,7 +49,7 @@ ROUTES = {
     ),
     "achievements.html": (
         "achievements",
-        ("main > .page-head", "main > .map-controls", "main > .civic-view-controls", "main .results-heading"),
+        ("main > .page-head", "main > .map-controls", "main > .civic-view-controls", "main .results-heading", "main #case-list > .case-card:first-child"),
     ),
     "vision.html": (
         "vision",
@@ -161,10 +162,11 @@ def unicode_range_for_codepoints(codepoints) -> str:
     )
 
 
-def validate_corpus(codepoints: set[int], tc_cmap: dict, jp_cmap: dict) -> list[int]:
+def validate_corpus(codepoints: set[int], tc_cmap: dict, jp_cmap: dict, supplemental_cmap: dict | None = None) -> list[int]:
+    supplemental_cmap = supplemental_cmap or {}
     unresolved = sorted(
         cp for cp in codepoints
-        if required_font_character(cp) and cp not in tc_cmap and cp not in jp_cmap
+        if required_font_character(cp) and cp not in tc_cmap and cp not in jp_cmap and cp not in supplemental_cmap
     )
     if unresolved:
         sample = " ".join(f"U+{cp:04X} {chr(cp)}" for cp in unresolved[:20])
@@ -250,6 +252,7 @@ def font_upgrade_markup() -> str:
         "window.addEventListener('scroll',upgrade,{passive:true});"
         "window.addEventListener('pointerdown',upgrade,{passive:true});"
         "window.addEventListener('focusin',upgrade);"
+        "if(root.dataset.huiwenFontPage==='achievements'&&location.search)upgrade();"
         "})();</script>"
         f"{UPGRADE_END}"
     )
@@ -268,6 +271,12 @@ def page_text(root: Path, route: str, selectors: tuple[str, ...] | None = None) 
             pieces.append(explore_dynamic_text(root, core=False))
         return "\n".join(pieces)
     soup = BeautifulSoup(source, "html.parser")
+    if route == "achievements.html":
+        # Closed select options are interaction text, retained in Full. The
+        # initial native labels and visible first card belong in Core.
+        for option in soup.select("main > .map-controls select option"):
+            if option.get("value") not in {"all", "undated"}:
+                option.decompose()
     pieces = []
     header = soup.select_one(".topline")
     if header:
@@ -404,13 +413,14 @@ def face(
     generated: bool = True,
     display: str = "optional",
     unicode_range: str | None = None,
+    weight: str = "250 900",
 ) -> str:
     path = f"generated/{filename}" if generated else filename
     uri = f"/assets/fonts/huiwen-site-sans/{path}"
     coverage = f";unicode-range:{unicode_range}" if unicode_range else ""
     return (
         f'@font-face{{font-family:"{family}";src:url("{uri}") format("woff2");'
-        f"font-style:normal;font-weight:250 900;font-display:{display}{coverage}" + "}"
+        f"font-style:normal;font-weight:{weight};font-display:{display}{coverage}" + "}"
     )
 
 
@@ -433,6 +443,8 @@ def build_css(
             unicode_range=unicode_range_for_codepoints(tc_cmap),
         ),
     ]
+    lines.append(face(rare_support.FAMILY, Path(rare_support.FONT_REL).name, generated=False,
+                      display="swap", unicode_range="U+5754,U+6DB3", weight="400"))
     if jp_filename:
         support_coverage = ",".join(f"U+{codepoint:04X}" for codepoint in jp_fallback)
         lines.append(
@@ -452,12 +464,12 @@ def build_css(
         lines.append(face(f"Huiwen Sans TC {slug} Full", values["full_file"]))
         lines.append(
             f':root[data-huiwen-font-page="{slug}"]'
-            f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core","Huiwen Sans JP Support",sans-serif}}'
+            f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif}}'
         )
         lines.append(
             f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
             f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'
-            f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support",sans-serif}}'
+            f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif}}'
         )
     lines.append(
         ".global-search-dialog,.map-insight-panel,.map-popup,.map-popup-case,"
@@ -484,8 +496,8 @@ def build_css(
     if "--huiwen-global-font-family:" not in css:
         old = '--huiwen-font-family:"Huiwen Sans TC",sans-serif;'
         new = (
-            '--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif;'
-            '--huiwen-global-font-family:"Huiwen Sans TC","Huiwen Sans JP Support",sans-serif;'
+            '--huiwen-font-family:"Huiwen Sans TC","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif;'
+            '--huiwen-global-font-family:"Huiwen Sans TC","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif;'
         )
         if old not in css:
             raise ValueError("FONT_CSS_ROOT_STACK_NOT_FOUND")
@@ -493,10 +505,11 @@ def build_css(
     css, count = re.subn(r":root:lang\(ja\)\{[^}]*\}", "", css, count=1)
     if count > 1:
         raise ValueError("FONT_CSS_JA_RULE_DUPLICATED")
+    css = css.replace('"Huiwen Sans JP Support",sans-serif', '"Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif')
     path.write_text(css, encoding="utf-8")
 
 
-def write_page_metadata(root: Path, route: str, slug: str, full_family: str, core_filename: str) -> None:
+def write_page_metadata(root: Path, route: str, slug: str, full_family: str, core_filename: str, jp_filename: str | None = None) -> None:
     path = root / route
     html = path.read_text(encoding="utf-8")
     match = re.search(r"<html\b[^>]*>", html, flags=re.I)
@@ -512,11 +525,15 @@ def write_page_metadata(root: Path, route: str, slug: str, full_family: str, cor
         opening = opening[:-1] + f' {key}="{value}">'
     html = html[:match.start()] + opening + html[match.end():]
 
+    support_preload = (
+        f'<link rel="preload" href="/assets/fonts/huiwen-site-sans/generated/{jp_filename}" '
+        'as="font" type="font/woff2" crossorigin="anonymous">'
+    ) if route == "achievements.html" and jp_filename else ''
     preload = (
         f'{PRELOAD_START}<link rel="preload" '
         f'href="/assets/fonts/huiwen-site-sans/generated/{core_filename}" '
         'as="font" type="font/woff2" crossorigin="anonymous">'
-        f'{PRELOAD_END}'
+        f'{support_preload}{PRELOAD_END}'
     )
     if PRELOAD_START in html:
         html = re.sub(
@@ -553,7 +570,8 @@ def build(root: Path = ROOT) -> None:
     tc_cmap = cmap(root / TC_SOURCE.relative_to(ROOT))
     jp_cmap = cmap(root / JP_SOURCE.relative_to(ROOT))
     corpus, corpus_codepoints = collect_corpus(root)
-    jp_fallback = validate_corpus(corpus_codepoints, tc_cmap, jp_cmap)
+    supplemental_cmap = rare_support.verified_cmap(root)
+    jp_fallback = validate_corpus(corpus_codepoints, tc_cmap, jp_cmap, supplemental_cmap)
 
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     for old in GENERATED_DIR.glob("*.woff2"):
@@ -606,6 +624,7 @@ def build(root: Path = ROOT) -> None:
             slug,
             f"Huiwen Sans TC {slug} Full",
             core_file,
+            jp_filename,
         )
 
     build_css(root, page_routes, jp_filename, jp_fallback, tc_cmap)

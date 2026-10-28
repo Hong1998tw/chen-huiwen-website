@@ -125,7 +125,12 @@
       window.dispatchEvent(new Event('resize'));
     });
   }
-  toolbar.querySelectorAll('button')[new URLSearchParams(location.search).has('case') ? 0 : 1].click();
+  const directCase = new URLSearchParams(location.search).get('case');
+  const directCard = [...document.querySelectorAll('#case-list [data-case]')].find(card => card.dataset.case === directCase);
+  let directCoordinates = null;
+  try { directCoordinates = directCard ? JSON.parse(directCard.dataset.meta).coordinates : null; } catch {}
+  const hasPoint = Array.isArray(directCoordinates) && directCoordinates.length === 2 && directCoordinates.every(Number.isFinite);
+  toolbar.querySelector(`[data-view="${hasPoint ? 'both' : 'list'}"]`).click();
   // A locate action always restores the map before the existing map handler runs.
   document.addEventListener('click',event=>{
     if (!event.target.closest('[data-locate],a[href="#achievement-map"]') || !panel.hidden) return;

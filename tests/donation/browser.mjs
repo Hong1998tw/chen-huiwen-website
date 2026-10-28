@@ -338,6 +338,9 @@ try {
   const pages = (await readdir(root)).filter(name => name.endsWith('.html')).sort();
   const items = JSON.parse(await readFile(new URL('../../data/achievements.json', import.meta.url))).filter(item => item.status !== '待核驗');
   const mapRecords = JSON.parse(await readFile(new URL('../../data/achievement-map.json', import.meta.url)));
+  const catalogRecords = JSON.parse(await readFile(new URL('../../data/public-record-catalog.json', import.meta.url)));
+  // Preserve the standalone/full-map contract; only overview consumers use the combined catalog.
+  assert.deepEqual(mapRecords.map(record => record.id).sort(), items.map(record => record.id).sort());
 
   for (const width of [1440, 1100, 1024, 780, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 960 });
@@ -791,14 +794,14 @@ try {
   await page.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await page.waitForFunction(()=>!!window.HuiwenCases);
       const visible = () => page.locator('[data-case]:visible').count();
-      assert.equal(await visible(), Math.min(10, items.length));
+      assert.equal(await visible(), Math.min(10, catalogRecords.length));
       await page.locator('#case-search').fill('文龍');
       assert((await visible()) > 0);
       await openCaseFilterDialog(page);
       await page.locator('#reset-map-filters').click();
       const village = items.find(item => item.villages.length).villages[0];
       await page.locator('#village-filter').selectOption('v:' + village);
-      assert.equal(await visible(), Math.min(10, items.filter(item => item.villages.includes(village)).length));
+      assert.equal(await visible(), Math.min(10, catalogRecords.filter(item => item.villages.includes(village)).length));
       await page.locator('#reset-map-filters').click();
       if (await page.locator('.advanced-filters').getAttribute('open') === null) await page.locator('.advanced-filters > summary').click();
       await page.locator('#subcategory-filter').selectOption({ label: '寵物' });
@@ -806,7 +809,7 @@ try {
       await page.locator('#reset-map-filters').click();
       if (await page.locator('.advanced-filters').getAttribute('open') !== null) await page.locator('.advanced-filters > summary').click();
       await closeCaseFilterDialog(page);
-      if (items.length > 10) {
+      if (catalogRecords.length > 10) {
         await page.getByRole('button', { name: '第 2 頁' }).click();
         assert.equal(await page.locator('.case-page-button[aria-current="page"]').innerText(), '2');
       }
@@ -913,20 +916,20 @@ try {
     const held = new Promise(resolve => { release = resolve; });
     let startRequest;
     const requestStarted = new Promise(resolve => { startRequest = resolve; });
-    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
+    await p.route('**/data/public-record-catalog.json*', async route => { startRequest(); await held; await route.continue(); });
     try {
       await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
-      assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
+      assert.equal(await p.locator('#case-list [data-case]').count(), catalogRecords.length);
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
       assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), true);
-      assert.equal(await p.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('achievement-map.json'))), false);
+      assert.equal(await p.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('public-record-catalog.json'))), false);
       await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await requestStarted;
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10, 'list remains interactive while map data is pending');
       release();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
-      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().visible.length), items.length);
+      assert.equal(await p.evaluate(() => window.HuiwenCases.getState().visible.length), catalogRecords.length);
     } finally { release(); await pending.close(); }
   });
 
@@ -934,18 +937,18 @@ try {
     const fallback = await browser.newContext({viewport:{width:390,height:844}});
     await fallback.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
     const p = await fallback.newPage();
-    await p.route('**/data/achievement-map.json*', route => route.abort());
+    await p.route('**/data/public-record-catalog.json*', route => route.abort());
     try {
       await p.goto(base + 'achievements.html');
       await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await p.getByText('地圖資料暫時無法載入；列表篩選仍可使用。', {exact:true}).waitFor();
-      assert.equal(await p.locator('#case-list [data-case]').count(), items.length);
+      assert.equal(await p.locator('#case-list [data-case]').count(), catalogRecords.length);
       assert.equal(await p.locator('#case-list [data-case]:visible').count(), 10);
       assert.equal(await p.evaluate(() => Boolean(window.HuiwenCases)), true);
       assert.equal(await p.locator('#case-search').isEnabled(), true);
       await p.locator('#case-search').fill('文德');
       await p.waitForFunction(() => window.HuiwenCases.getState().visible.length > 0);
-      await p.unroute('**/data/achievement-map.json*');
+      await p.unroute('**/data/public-record-catalog.json*');
       await p.getByRole('button',{name:'地圖與列表',exact:true}).click();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
       await p.locator('.leaflet-control-attribution').waitFor();
@@ -961,7 +964,7 @@ try {
     const held = new Promise(resolve => { release = resolve; });
     let startRequest;
     const requestStarted = new Promise(resolve => { startRequest = resolve; });
-    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
+    await p.route('**/data/public-record-catalog.json*', async route => { startRequest(); await held; await route.continue(); });
     try {
       await p.goto(base + 'achievements.html?q=' + encodeURIComponent('票卡 車牌'), {waitUntil:'domcontentloaded'});
       await requestStarted;
@@ -970,7 +973,7 @@ try {
       release();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')));
       const tokens = ['票卡','車牌'];
-      const expected = mapRecords.filter(record => tokens.every(token => record.searchText.normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').includes(token))).map(record => record.id);
+      const expected = catalogRecords.filter(record => tokens.every(token => record.searchText.normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').includes(token))).map(record => record.id);
       assert.deepEqual(await p.evaluate(() => window.HuiwenCases.getState().visible.map(record => record.id)), expected);
     } finally { release(); await pending.close(); }
   });
@@ -983,7 +986,7 @@ try {
     const held = new Promise(resolve => { release = resolve; });
     let startRequest;
     const requestStarted = new Promise(resolve => { startRequest = resolve; });
-    await p.route('**/data/achievement-map.json*', async route => { startRequest(); await held; await route.continue(); });
+    await p.route('**/data/public-record-catalog.json*', async route => { startRequest(); await held; await route.continue(); });
     try {
       await p.goto(base + 'achievements.html', {waitUntil:'domcontentloaded'});
       await p.locator('#case-search').fill('票卡 車牌');
@@ -994,7 +997,7 @@ try {
       await p.locator('#village-filter').selectOption('v:曹公里');
       release();
       await p.waitForFunction(() => window.HuiwenCases.getState().data.some(record => Object.hasOwn(record,'searchText')) && window.HuiwenCases.getState().filters.village === 'v:曹公里');
-      const expected = mapRecords.filter(record => record.villages.includes('曹公里')).map(record => record.id);
+      const expected = catalogRecords.filter(record => record.villages.includes('曹公里')).map(record => record.id);
       assert.equal(await p.evaluate(() => window.HuiwenCases.getState().filters.q), '');
       assert.deepEqual(await p.evaluate(() => window.HuiwenCases.getState().visible.map(record => record.id)), expected);
       assert.deepEqual(expected.slice(0,3), ['xiehe-lane3-community-road-repair','metro-green-line','station-parking']);
@@ -1114,7 +1117,7 @@ try {
       if (file === 'vision.html') assert(await nojsPage.locator('#platform-2005').first().isVisible());
       if (file === 'achievements.html') {
         assert(await nojsPage.locator('[data-case]').first().isVisible());
-        assert.equal(await nojsPage.locator('#case-list [data-case]:visible').count(), items.length);
+        assert.equal(await nojsPage.locator('#case-list [data-case]:visible').count(), catalogRecords.length);
       }
       if (file === 'election.html') assert.match(await nojsPage.locator('main').innerText(), /2026\/10\/23|候選人姓名號次抽籤/);
       if (file === 'news.html') assert((await nojsPage.locator('.news-report-card').count()) >= 20);

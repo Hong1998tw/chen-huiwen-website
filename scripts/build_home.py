@@ -32,6 +32,17 @@ def e(value):
     return escape(str(value), quote=True)
 
 
+def render_candidate_number(platforms):
+    """Project the 2026 ballot number without changing recorded office identity."""
+    rows = [row for row in platforms["elections"] if row.get("year") == 2026]
+    if len(rows) != 1:
+        raise ValueError("Exactly one 2026 platform record required")
+    number = rows[0].get("candidateNumber")
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ValueError("A confirmed 2026 candidate number is required")
+    return f'2026 鳳山區・陳慧文{e(number)}號'
+
+
 def public_records(root=ROOT):
     rows = json.loads((root / "data/achievements-public.json").read_text())
     if not isinstance(rows, list):
@@ -407,7 +418,9 @@ def build(root=ROOT):
     map_path = root / MAP_ASSET
     map_path.write_text(render_home_map_svg(records, geojson), encoding="utf-8")
     body = (root / "templates/home-main.html").read_text().strip()
+    platforms = json.loads((root / "data/platforms.json").read_text())
     replacements = [
+        ("HOME_CANDIDATE_NUMBER", render_candidate_number(platforms)),
         ("HOME_PHONE_URL", e(office["phoneUrl"])),
         ("HOME_SERVICES", render_services(office, schedule)),
         ("HOME_EVENT", render_event(events, root)),

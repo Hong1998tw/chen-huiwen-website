@@ -7,6 +7,7 @@ import {chromium} from 'playwright';
 import {withTimeout} from './page-font-artifact-lifecycle.mjs';
 import {visibleHanObservationInPage} from './font-rendering-observation.mjs';
 import {startStaticServer} from './static-server.mjs';
+import {allowsRareHanFont} from './rare-han-font-contract.mjs';
 
 const repo=fileURLToPath(new URL('../../',import.meta.url));
 const root=resolve(process.env.ROOT_DIR||repo);
@@ -84,9 +85,9 @@ async function platformFonts(session,selector){
   throw new FontObservationError('CDP platform-font observation failed',{selector,cause:safeDiagnostic(error)});
  }
 }
-function assertCustomHan(fonts,label){
+function assertCustomHan(fonts,label,text=""){
  if(!Array.isArray(fonts))throw new FontObservationError(label+' returned no platform-font observation',{label});
- if(!fonts.some(font=>font.isCustomFont&&(/Huiwen Sans TC|Huiwen Sans JP Support/.test(font.familyName)))){
+ if(!fonts.some(font=>font.isCustomFont&&(/Huiwen Sans TC|Huiwen Sans JP Support/.test(font.familyName)))&&!allowsRareHanFont(fonts,text)){
   throw new FontAssertionFailure(label+' did not render with an embedded Source Han subset: '+JSON.stringify(fonts),{label,fonts});
  }
 }
@@ -127,7 +128,7 @@ async function assertEveryHanGlyphCustom(page,session,selector,label){
    const selector='[data-pr159-font-han="'+index+'"]';
    await page.locator(selector).scrollIntoViewIfNeeded();
    const fonts=await platformFonts(session,selector);
-   assertCustomHan(fonts,label+' Han glyph #'+index);
+   assertCustomHan(fonts,label+' Han glyph #'+index,glyphs[index]);
   }
  }finally{
   await page.evaluate(()=>{
@@ -221,7 +222,7 @@ async function visibleHanNodes(page,session,{route,viewport}){
   if(outcome?.stable){
    for(let index=0;index<captured.rows.length;index++){
     const row=captured.rows[index];
-    assertCustomHan(outcome.fonts[index],`${route} ${viewport.width}x${viewport.height} visible Han node #${row.index} (${row.tagName})`);
+    assertCustomHan(outcome.fonts[index],`${route} ${viewport.width}x${viewport.height} visible Han node #${row.index} (${row.tagName})`,row.directText);
    }
    return captured.visibleHanCount;
   }
@@ -271,8 +272,36 @@ try{
    active={phase:'font preload and layout checks',route,slug,viewport};report.current={...active};
    if(route==='index.html')await page.screenshot({path:resolve(out,'home-'+viewport.width+'.png')});
    const beforeFonts=await fontResources(page);
-   const preloadPath=new URL(await page.locator('link[rel~="preload"][as="font"]').getAttribute('href'),base).pathname;
+   // Resolve the selected face from its CSS declaration rather than assuming
+   // a page has exactly one preload. Achievements intentionally warms JP too.
+   const expectedFamilies=route==='achievements.html'?[coreFamily,'Huiwen Sans JP Support']:[coreFamily];
+   const faceSources=await page.evaluate(families=>{
+    const result=Object.fromEntries(families.map(family=>[family,[]]));
+    const seen=new Set();
+    const visitSheet=sheet=>{
+     if(seen.has(sheet))return;seen.add(sheet);
+     for(const rule of sheet.cssRules){
+      if(rule.type===CSSRule.FONT_FACE_RULE){
+       const family=rule.style.getPropertyValue('font-family').trim().replace(/^["']|["']$/g,'');
+       if(Object.hasOwn(result,family)){
+        const src=rule.style.getPropertyValue('src');
+        const match=src.match(/url\(\s*(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)/);
+        if(match)result[family].push(new URL(match[1]||match[2]||match[3],sheet.href||location.href).href);
+       }
+      }else if(rule.styleSheet)visitSheet(rule.styleSheet);
+     }
+    };
+    for(const sheet of document.styleSheets)visitSheet(sheet);
+    return result;
+   },expectedFamilies);
+   for(const faceFamily of expectedFamilies)assert.equal(faceSources[faceFamily].length,1,route+' has an ambiguous or missing CSS face: '+faceFamily);
+   const allowedPreloads=expectedFamilies.map(faceFamily=>faceSources[faceFamily][0]);
+   const actualPreloads=await page.locator('link[rel~="preload"][as="font"]').evaluateAll(links=>links.map(link=>link.href));
+   assert.equal(actualPreloads.length,route==='achievements.html'?2:1,route+' font preload count differs from its explicit contract');
+   assert.deepEqual([...actualPreloads].sort(),[...allowedPreloads].sort(),route+' font preloads must match the exact CSS Core/allowed JP sources');
+   const preloadPath=new URL(faceSources[coreFamily][0]).pathname;
    assert(beforeFonts.some(entry=>new URL(entry.url).pathname===preloadPath),route+' core preload did not load');
+   if(route==='achievements.html')assert(beforeFonts.some(entry=>new URL(entry.url).pathname===new URL(faceSources['Huiwen Sans JP Support'][0]).pathname),route+' allowed JP preload did not load');
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-'+slug+'-full-')),route+' full face loaded before interaction');
    assert(!beforeFonts.some(entry=>entry.url.includes('huiwen-site-sans-tc-20261007.woff2')),route+' loaded the 568 KB global face before interaction');
    const coreCls=await page.evaluate(()=>window.__layoutShift);
