@@ -15,6 +15,7 @@ import {
   buildFinalFontNetworkSnapshot,
   buildTrustedClickCaptureScript,
   expectedSharedFallbackFontsForRoute,
+  expectedSupplementFallbackFontsForRoute,
   filterCriticalRequestFailures,
   hashResponseBody,
   INITIAL_RENDER_TIMEOUT_MS,
@@ -61,6 +62,7 @@ let fontManifest;
 let fullTcSha;
 let artifactIdentity;
 let sharedJpFallbackFont;
+let sharedSupplementFallbackFont;
 let cmsDiagnosticSecrets = [];
 
 function urlPath(value) {
@@ -138,6 +140,17 @@ async function resolveSharedJpFallbackFont() {
 }
 
 // 政績島自帶的思源黑體子集（island/fonts）：只在島頁允許，摘要以發布清單為準。
+async function resolveSupplementFallbackFont() {
+  const source = fontManifest.supplementSourceProvenance;
+  if (!source) return null;
+  assert.deepEqual(source.codepoints, [0x5754, 0x6db3]);
+  assert.equal(source.family, 'Huiwen Sans Rare Han Support');
+  const font = {path: '/' + source.font, sha256: publication.files[source.font]};
+  assert.equal(expectedSupplementFallbackFontsForRoute({codepoints: [0x4e2d], supplementFallbackCodepoints: [0x5754]}, font).length, 1,
+    'supplement font must match pinned source and publication digest');
+  return font;
+}
+
 function resolveIslandRouteFonts() {
   const fonts = Object.entries(publication.files)
     .filter(([path]) => /^island\/fonts\/[a-z0-9-]+\.woff2$/.test(path))
@@ -737,7 +750,7 @@ async function captureFontOnlyRoute(state, visualRouteSet) {
       routeRecord.preloads.declared = routeRecord.visibleFontDiagnostics.declaredPreloads;
       routeRecord.preloads.observed = routeRecord.visibleFontDiagnostics.observedPreloads;
       const expectedFonts = buildExpectedPageFonts(routeRow, fontManifest);
-      const routeFallbacks = { jp: routeRow.jpFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS };
+      const routeFallbacks = { jp: routeRow.jpFallbackCodepoints || [], supplement: routeRow.supplementFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS };
       routeRecord.visibleFontDiagnostics.glyphCoverage = validateVisibleCodepointCoverage({
         route,
         routeCodepoints: routeRow.codepoints,
@@ -773,7 +786,7 @@ async function captureFontOnlyRoute(state, visualRouteSet) {
           ...font,
           probeCodepoint: font.codepoints.find((codepoint) => visibleCodepointSet.has(codepoint)) ?? null,
         }));
-        const routeFallbacks = { jp: routeRow.jpFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS };
+        const routeFallbacks = { jp: routeRow.jpFallbackCodepoints || [], supplement: routeRow.supplementFallbackCodepoints || [], system: SYSTEM_FALLBACK_CODEPOINTS };
         const fontStateBefore = await collectVisualTypography(state.routePage, route, expectedFonts,
           routeRecord.visibleFontDiagnostics);
         validateVisualTypography({ route, routeCodepoints: routeRow.codepoints,
@@ -973,6 +986,7 @@ async function finalizeFontOnlyRoute(state) {
       }),
       expectedSharedFallbackFonts: [
         ...expectedSharedFallbackFontsForRoute(routeRow, sharedJpFallbackFont),
+        ...expectedSupplementFallbackFontsForRoute(routeRow, sharedSupplementFallbackFont),
         ...(route === 'island/index.html' ? resolveIslandRouteFonts() : []),
       ],
       fullTcPath: `/${fullTcPath}`,
@@ -1125,6 +1139,7 @@ try {
   fontManifest = preflight.fontManifest;
   fullTcSha = preflight.fullTcSha;
   sharedJpFallbackFont = await resolveSharedJpFallbackFont();
+  sharedSupplementFallbackFont = await resolveSupplementFallbackFont();
   const [publicationBytes, deploymentBytes] = await Promise.all([
     readFile(resolve(artifact, 'publication-manifest.json')),
     readFile(resolve(artifact, 'deployment.json')),

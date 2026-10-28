@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from build_public import public_paths
-from page_authority import classify
+from page_authority import classify, READ_ONLY_DERIVED_PAGES
 from page_copy import render
 from page_seo import apply as apply_seo
 from editorial_pages import validate_blocks, render_block
@@ -29,7 +29,9 @@ def build(root=ROOT):
         if not route.endswith('.html') or route == 'petition.html':
             continue  # The user's fifth audit item remains excluded from this CMS.
         _, kind, _ = classify(route)
-        if kind in {'system', 'legacy-redirect', 'excluded-intake'}:
+        if route in READ_ONLY_DERIVED_PAGES and route in state['pages']:
+            raise ValueError('PAGE_CONTENT_READ_ONLY_DERIVED: ' + route)
+        if kind in {'system', 'legacy-redirect', 'excluded-intake'} or route in READ_ONLY_DERIVED_PAGES:
             page = root / route
             if page.is_file():
                 source = page.read_text(encoding='utf-8')

@@ -114,6 +114,12 @@ Repository 內報告目的地必須在 gitignore 中；檔案建立為 0600。`.
 
 ## Build、搜尋與驗證
 
+正式 `achievements.html` 的列表同時呈現完整專題與既有公開短紀錄。完整專題仍由 `data/achievements.json` 生成；歷史短紀錄仍由 `island/island-data.json` 的原生公開 `items` 持有，透過 `scripts/public_record_catalog.py` 做精確衍生，不另維護可修改副本。正式列表改讀 `data/public-record-catalog.json`，原 `data/achievement-map.json` 與完整專題的 schema／ID gate 保持不變。
+
+短紀錄連至 `public-records.html#record-ID`，在正式站預渲染原標題、摘要、原列日期及記事；空值保留。島上的完成／配置旗標不轉成行政狀態、scope、座標、更新日或完工日。短紀錄顯示「未列進度」與自己的紀錄類型，不自動升格為完整公開敘事。全站搜尋逐筆保留錨點網址；公開路徑、字型語料及無 JavaScript 讀取一併驗證。
+
+發布及回報須分別查核正式政績列表、完整專題、短紀錄集合與政績島的實際 consumer；政績島筆數不代表正式列表已收錄。既有 deployment receipt 的 `publicRecordCount` 仍計完整專題，正式列表總數以經驗證的 catalog／SSR 卡片 ID 集合計算，不能互相代稱。
+
 `scripts/achievement_metadata.py` 提供共用里界 lookup、可公開判定、歷史合作里長顯示與搜尋文字。`build_cases.py` 先驗證再生成，只顯示每案明確寫入的 `villageHeadPartners`；**不會從目前里長名冊自動回填舊政績**。合作里長姓名與角色若通過公開證據範圍，才進入卡片、詳情頁與關鍵字搜尋。
 
 `build_search.py` 繼續從公開 HTML 產生唯一全站搜尋索引。地址、里別與已確認合作里長可搜尋；未公開候選與低證據合作關係搜不到是正確行為。

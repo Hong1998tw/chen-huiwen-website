@@ -171,3 +171,6 @@ html.case-filter-dialog-open,body.case-filter-dialog-open{overflow:hidden;oversc
  .map-workspace:not(.civic-list-only){flex-direction:column-reverse}
  #achievement-map{height:45vh;min-height:0;max-height:none}
 }
+
+/* Append to existing map.css; no existing card/map layout is replaced. */
+.case-pagination-gap{display:inline-flex;align-items:center;justify-content:center;min-width:20px;padding:6px;color:#65776f}

@@ -17,6 +17,27 @@
   const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('zh-Hant-TW').replace(/臺/g,'台').trim();
   const data = cards.map(card => JSON.parse(card.dataset.meta));
   const textById = new Map(cards.map(card => [card.dataset.case, normalize(card.innerText)]));
+  // The formal catalog mixes existing full-topic routes and anchored short records.
+  // Accept reviewed local record URLs only; source citations are never detail URLs.
+  function safeRecordHref(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const url = new URL(value, location.href);
+      if (![location.origin, 'https://www.huiwen.tw'].includes(url.origin) || url.username || url.password) return null;
+      if (!/^\/(?:achievement-[a-z0-9-]+\.html|public-records\.html)$/.test(url.pathname)) return null;
+      return url.pathname.slice(1) + url.search + url.hash;
+    } catch { return null; }
+  }
+  const cardHrefById = new Map(cards.map(card => [card.dataset.case,
+    safeRecordHref(card.querySelector('h3 a')?.getAttribute('href'))]));
+  function recordHref(record) {
+    const explicit = safeRecordHref(record.url) || safeRecordHref(record.detailUrl) || cardHrefById.get(record.id);
+    if (explicit) return explicit;
+    if (/^in-[a-f0-9]{10,12}$/.test(record.id)) return 'public-records.html#record-' + record.id;
+    return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(record.id)
+      ? 'achievement-' + record.id + '.html' : 'achievements.html#case-results';
+  }
+
   const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   let map, markers, boundaries, mapPromise, dataPromise, fullDataLoaded = false, visible = data, currentPage = 1, selectedId = null, groupIds = [], selectedByMarker = false, searchTimer;
   const boundaryLayers = new Map();
@@ -43,7 +64,7 @@
         data.splice(0, data.length, ...rows);
         for (const row of rows) textById.set(row.id, normalize(row.searchText));
         fullDataLoaded = true;
-        message.textContent = '點選里界可篩選；數字標記代表附近專題數，放大可分開查看。';
+        message.textContent = '點選里界可篩選；數字標記代表附近有點位紀錄數，放大可分開查看。';
         return true;
       } catch {
         message.textContent = '地圖資料暫時無法載入；列表篩選仍可使用。';
@@ -118,13 +139,22 @@
     const ids = new Set(visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(c => c.id));
     cards.forEach(card => { card.hidden = !ids.has(card.dataset.case); card.classList.toggle('is-selected', card.dataset.case === selectedId); });
     const mapped = visible.filter(c => c.coordinates).length;
-    count.textContent = visible.length ? `共 ${visible.length} 個專題 · 第 ${currentPage}/${pages} 頁 · ${mapped} 個有點位紀錄` : '共 0 個專題';
-    live.replaceChildren(document.createTextNode(`目前找到 ${visible.length} 個專題 · `));const resultLink=document.createElement('a');resultLink.href='#case-results';resultLink.textContent='查看結果 ↓';live.append(resultLink);
+    count.textContent = visible.length ? `共 ${visible.length} 筆紀錄 · 第 ${currentPage}/${pages} 頁 · ${mapped} 個有點位紀錄` : '共 0 筆紀錄';
+    live.replaceChildren(document.createTextNode(`目前找到 ${visible.length} 筆紀錄 · `));const resultLink=document.createElement('a');resultLink.href='#case-results';resultLink.textContent='查看結果 ↓';live.append(resultLink);
     empty.hidden = visible.length > 0;
     pagination.replaceChildren(); pagination.hidden = pages <= 1;
     if (pages > 1) {
       pagination.append(pageButton('上一頁', currentPage - 1, currentPage === 1));
-      for (let p = 1; p <= pages; p++) pagination.append(pageButton(String(p), p));
+      const pageNumbers = [...new Set([1, pages, currentPage - 2, currentPage - 1,
+        currentPage, currentPage + 1, currentPage + 2])].filter(page => page >= 1 && page <= pages).sort((a, b) => a - b);
+      let previous = 0;
+      for (const page of pageNumbers) {
+        if (previous && page - previous > 1) {
+          const gap = document.createElement('span'); gap.className = 'case-pagination-gap';
+          gap.textContent = '…'; gap.setAttribute('aria-hidden', 'true'); pagination.append(gap);
+        }
+        pagination.append(pageButton(String(page), page)); previous = page;
+      }
       pagination.append(pageButton('下一頁', currentPage + 1, currentPage === pages));
     }
   }
@@ -165,13 +195,13 @@
   // One record: a link chip. Only the funding total shows here; sources and caveats stay on the record page.
   function singlePopup(c) {
     const f = c.funding, detail = f ? `${f.basis} ${(f.total / 1e4).toLocaleString('zh-TW', {maximumFractionDigits: 2})}萬元` : c.lastRecordDate ? '最新紀錄 ' + c.lastRecordDate : '';
-    return popupNode('single', `<a class="map-popup-link" href="achievement-${c.id}.html"><i class="${st(c.status)}" aria-hidden="true"></i><span><strong>${esc(c.title)}</strong><span class="map-popup-meta">${esc([c.status, detail].filter(Boolean).join(' · '))}</span></span><b aria-hidden="true">→</b></a>`);
+    return popupNode('single', `<a class="map-popup-link" href="${esc(recordHref(c))}"><i class="${st(c.status)}" aria-hidden="true"></i><span><strong>${esc(c.title)}</strong><span class="map-popup-meta">${esc([c.status, detail].filter(Boolean).join(' · '))}</span></span><b aria-hidden="true">→</b></a>`);
   }
   // Nearby records: a short list with status pills; phones (45vh map) preview fewer rows and the rest open in place.
   function groupPopup(cases, highlightId, onExpand) {
     const preview = matchMedia('(max-width: 600px)').matches ? 3 : 4, rest = cases.length - preview;
-    const rows = cases.map((c, i) => `<li${i < preview ? '' : ' hidden'}><a class="map-popup-row${c.id === highlightId ? ' is-selected" aria-current="true' : ''}" href="achievement-${c.id}.html"><span>${esc(c.title)}</span><span class="map-popup-status ${st(c.status)}">${esc(c.status)}</span></a></li>`);
-    const pop = popupNode('group', `<p class="map-popup-head"><span>放大地圖可分開查看</span><strong>附近 ${cases.length} 項專題</strong></p><ul>${rows.join('')}</ul>${rest > 0 ? `<button class="map-popup-more" type="button">再顯示 ${rest} 項</button>` : ''}`);
+    const rows = cases.map((c, i) => `<li${i < preview ? '' : ' hidden'}><a class="map-popup-row${c.id === highlightId ? ' is-selected" aria-current="true' : ''}" href="${esc(recordHref(c))}"><span>${esc(c.title)}</span><span class="map-popup-status ${st(c.status)}">${esc(c.status)}</span></a></li>`);
+    const pop = popupNode('group', `<p class="map-popup-head"><span>放大地圖可分開查看</span><strong>附近 ${cases.length} 筆有點位紀錄</strong></p><ul>${rows.join('')}</ul>${rest > 0 ? `<button class="map-popup-more" type="button">再顯示 ${rest} 項</button>` : ''}`);
     pop.querySelector('.map-popup-more')?.addEventListener('click', event => {
       // Hide instead of removing: a detached click target would reach Leaflet as a map click and close the popup.
       for (const item of pop.querySelectorAll('li')) item.hidden = false;
@@ -261,7 +291,7 @@
     if (!c) return;
     selectCase(c.id);
     await ensureMap();
-    if (!map || !c.coordinates) {message.textContent='地圖目前無法使用，請直接閱讀專題詳情。';return;}
+    if (!map || !c.coordinates) {message.textContent='地圖目前無法使用，請直接閱讀紀錄詳情。';return;}
     map.setView(c.coordinates,16,{animate:false});
     markers.eachLayer(marker => { if (marker.options.caseIds?.includes(c.id)) marker.openPopup(); });
     root.scrollIntoView({behavior:motion(),block:'center'});
@@ -280,7 +310,8 @@
     });
   }
   readURL();
-  if (new URLSearchParams(location.search).has('case')) ensureMap();
+  const initialRecord = data.find(record => record.id === new URLSearchParams(location.search).get('case'));
+  if (initialRecord?.coordinates) ensureMap();
   else if (controls.q.value.trim()) ensureData().then(() => filter(false,false));
   function ensureMap() {
     if (map) return Promise.resolve(map);
@@ -310,7 +341,7 @@
           map.setView(selected.coordinates,16,{animate:false});
           requestAnimationFrame(()=>requestAnimationFrame(()=>markers.eachLayer(marker=>{if(marker.options.caseIds?.includes(selected.id))marker.openPopup();})));
         }else fit();
-      }).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與專題點位查詢。';}).finally(()=>clearTimeout(timeout));
+      }).catch(()=>{message.textContent='里界圖暫時無法載入，可用里別選單與既有點位查詢。';}).finally(()=>clearTimeout(timeout));
       draw();fit();announce();
       const directCase = new URLSearchParams(location.search).get('case');
       const directRecord = directCase && visible.find(record => record.id === directCase);
@@ -327,7 +358,7 @@
           root.scrollIntoView({behavior:motion(),block:'center'});
         }));
       } else if (directCase && directRecord) {
-        message.textContent='這筆紀錄沒有可定位座標；完整專題與列表篩選仍可使用。';
+        message.textContent='這筆紀錄沒有可定位座標；完整紀錄與列表篩選仍可使用。';
       }
       return map;
     })().finally(()=>{if(!map)mapPromise=null;});

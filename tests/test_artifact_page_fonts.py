@@ -60,7 +60,7 @@ def q11_reference(source_bytes, codepoints):
 
 
 def copy_public_font_inputs(source_root: Path, artifact_root: Path) -> None:
-    for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css"):
+    for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css", *fonts.rare_support.PUBLIC_FILES):
         source = source_root / relative
         target = artifact_root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +182,7 @@ class Q9FontProducerTests(unittest.TestCase):
     def test_public_html_inventory_covers_every_full_tc_route_and_explains_redirects(self):
         paths = build_public.public_paths(ROOT)
         eligible, skipped, excluded = fonts.public_html_route_inventory(ROOT, ROOT, paths)
-        self.assertEqual((len(eligible), len(skipped), len(excluded)), (471, 9, 5))
+        self.assertEqual((len(eligible), len(skipped), len(excluded)), (472, 9, 5))
         self.assertEqual(len([route for route in eligible if route == Path(route).name and fonts.ROUTE_RE.fullmatch(route)]), 451)
         self.assertTrue({
             "404.html", "offline.html", "renwu-anju-social-housing/index.html",
@@ -326,7 +326,7 @@ class Q9FontProducerTests(unittest.TestCase):
         glyph_to_codepoints = {}
         for codepoint, glyph in self.tc_cmap.items():
             glyph_to_codepoints.setdefault(glyph, set()).add(codepoint)
-        self.assertEqual(len(self.public_specs), 471)
+        self.assertEqual(len(self.public_specs), 472)
         for spec in self.public_specs.values():
             route_set = set(spec["codepoints"])
             delta = route_set - common
@@ -571,7 +571,7 @@ class Q9FontProducerTests(unittest.TestCase):
             (source_root / "data/achievements-public.json").write_text(
                 json.dumps([{"id": "alpha"}, {"id": "beta"}]), encoding="utf-8",
             )
-            for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css"):
+            for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css", *fonts.rare_support.PUBLIC_FILES):
                 target = source_root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, target)
@@ -584,7 +584,7 @@ class Q9FontProducerTests(unittest.TestCase):
             jp_match = re.search(r"src\s*:\s*url\(\s*([\"']?)([^\"')]+)\1\s*\)", jp_faces[0], re.I)
             jp_source = fonts._safe_artifact_path(ROOT, jp_match.group(2))
             jp_relative = jp_source.relative_to(ROOT).as_posix()
-            for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css", jp_relative):
+            for relative in (fonts.TC_REL, fonts.LICENSE_REL, "styles.css", jp_relative, *fonts.rare_support.PUBLIC_FILES):
                 target = source_root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if not target.exists():
@@ -592,7 +592,7 @@ class Q9FontProducerTests(unittest.TestCase):
 
             routes = ["achievement-alpha.html", "achievement-beta.html", "renwu-anju-social-housing/index.html"]
             skipped_route = "news-20260915-special-education-nurse.html"
-            paths = routes + [skipped_route, "styles.css", fonts.TC_REL, fonts.LICENSE_REL, jp_relative]
+            paths = routes + [skipped_route, "styles.css", fonts.TC_REL, fonts.LICENSE_REL, jp_relative, *fonts.rare_support.PUBLIC_FILES]
             base_pages = {
                 routes[0]: fixture_html("特有江"),
                 routes[1]: fixture_html("特有黑"),

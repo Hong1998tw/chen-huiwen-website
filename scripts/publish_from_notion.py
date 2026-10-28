@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_events  # noqa: E402  (the current builder is the schema authority for events)
 from build_public import public_paths  # noqa: E402
-from page_authority import catalog as page_catalog  # noqa: E402
+from page_authority import catalog as page_catalog, READ_ONLY_DERIVED_PAGES  # noqa: E402
 import deployment_target  # noqa: E402
 
 TAIPEI = ZoneInfo('Asia/Taipei')
@@ -57,9 +57,9 @@ ALLOWED_PATHS = {
     'legal-schedule': {'data/legal-schedule.json', 'index.html', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
         row['path'] for row in page_catalog(ROOT)
-        if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'}
+        if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'} and row['path'] not in READ_ONLY_DERIVED_PAGES
     },
-    'achievement-content': {'data/achievements.json', 'index.html', 'data/achievements-public.json', 'data/achievement-map.json',
+    'achievement-content': {'data/achievements.json', 'index.html', 'data/achievements-public.json', 'data/achievement-map.json', 'data/public-record-catalog.json',
                             'data/search-index.json', 'sitemap.xml', 'achievements.html', 'assets/og/manifest.json'} | {
         row['path'] for row in page_catalog(ROOT) if row['path'].startswith('achievement-')
     } | {

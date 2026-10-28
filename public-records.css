@@ -1,0 +1,14 @@
+/* Uses existing site typography, wrap and button components. */
+.public-record-controls{margin-block:20px;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.public-record-status{margin:0;flex:1 1 18rem;line-height:1.7}
+.public-records article[id^="record-"],article.public-record[id^="record-"]{scroll-margin-top:110px;content-visibility:auto;contain-intrinsic-size:auto 300px;margin-block:22px;padding-block:22px;border-bottom:1px solid #dce5dc;overflow-wrap:anywhere}
+.public-records article[id^="record-"].is-selected,article.public-record[id^="record-"].is-selected{content-visibility:visible}
+.public-records article[id^="record-"] p,.public-record p{line-height:1.85}
+.public-records article[id^="record-"] ol,.public-record ol{padding-inline-start:1.5em;line-height:1.85}
+.public-records article[id^="record-"] li+li,.public-record li+li{margin-block-start:10px}
+.public-records article[id^="record-"] time,.public-record time{font-weight:700;margin-inline-end:.65em}
+.public-records article[id^="record-"] :focus-visible,.public-record-controls :focus-visible{outline:3px solid #8fac44;outline-offset:4px}
+.public-records [hidden],.public-record-controls [hidden],article.public-record[hidden]{display:none!important}
+@media(max-width:600px){.public-record-controls{align-items:stretch}.public-record-controls .button{width:100%}.public-records article[id^="record-"],article.public-record[id^="record-"]{scroll-margin-top:90px}}
+
+.public-records .case-summary,.public-record .case-summary{display:block;-webkit-line-clamp:unset;overflow:visible}

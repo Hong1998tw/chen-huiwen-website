@@ -6,7 +6,7 @@
     "contentUpdated": "2026-09-22"
   },
   "achievements.html": {
-    "contentUpdated": "2026-10-01"
+    "contentUpdated": "2026-10-28"
   },
   "activities.html": {
     "contentUpdated": "2026-10-02"
@@ -118,5 +118,8 @@
   },
   "updates.html": {
     "contentUpdated": "2026-09-22"
+  },
+  "public-records.html": {
+    "contentUpdated": "2026-10-28"
   }
 }

@@ -13,7 +13,7 @@ R = Path(__file__).resolve().parents[1]
 INACTIVE = {'unpublished', 'deleted'}
 
 
-def page_is_searchable(root, route, page_states):
+def page_is_searchable(root, route, page_states, doc=None):
     state = page_states.get(route, {})
     if isinstance(state, dict) and state.get('status', 'published') in INACTIVE:
         return False
@@ -21,7 +21,8 @@ def page_is_searchable(root, route, page_states):
     if not path.is_file():
         # Keep a missing active route in the expected set so the index check fails.
         return True
-    doc = BeautifulSoup(path.read_text(encoding='utf-8'), 'html.parser')
+    if doc is None:
+        doc = BeautifulSoup(path.read_text(encoding='utf-8'), 'html.parser')
     robots = doc.find('meta', attrs={'name': 'robots'})
     return bool(doc.find('main')) and not (robots and 'noindex' in robots.get('content', ''))
 
@@ -53,6 +54,14 @@ def validate(root=R):
     index = json.loads((root / 'data/search-index.json').read_text(encoding='utf-8'))
     assert index['count'] == len(index['items'])
     assert len({record['url'] for record in index['items']}) == len(index['items'])
+    # Thousands of distinct fragment results may share one HTML document. Check
+    # every URL and anchor, while parsing each unchanged document only once.
+    documents = {}
+    anchor_ids = {}
+    def document(path):
+        if path not in documents:
+            documents[path] = BeautifulSoup(path.read_text(encoding='utf-8'), 'html.parser')
+        return documents[path]
     for record in index['items']:
         url = urlsplit(record['url'])
         assert not url.scheme and not url.netloc, record['url']
@@ -60,13 +69,20 @@ def validate(root=R):
         path = path / 'index.html' if path.is_dir() else path
         assert path.exists() and root in path.resolve().parents, record['url']
         route = path.relative_to(root).as_posix()
-        assert page_is_searchable(root, route, page_states), record['url']
-        doc = BeautifulSoup(path.read_text(encoding='utf-8'), 'html.parser')
+        doc = document(path)
+        assert page_is_searchable(root, route, page_states, doc), record['url']
         if url.fragment:
-            assert doc.find(id=unquote(url.fragment)), record['url']
+            if path not in anchor_ids:
+                anchor_ids[path] = {node['id'] for node in doc.find_all(id=True)}
+            assert unquote(url.fragment) in anchor_ids[path], record['url']
 
     indexed_achievements = {record['url'] for record in index['items'] if record['type'] == '政績'}
-    assert indexed_achievements == expected_public_achievement_urls(public, root, page_states)
+    expected_achievements = expected_public_achievement_urls(public, root, page_states)
+    has_short_collection = (root / 'public-records.html').is_file()
+    if has_short_collection and page_is_searchable(root, 'public-records.html', page_states, document(root / 'public-records.html')):
+        from public_record_catalog import short_cards
+        expected_achievements |= {record['url'] for record in short_cards(root)}
+    assert indexed_achievements == expected_achievements
 
     manifest = json.loads((root / 'assets/og/manifest.json').read_text(encoding='utf-8'))
     for record in public:
@@ -95,8 +111,18 @@ def validate(root=R):
 
     map_config = json.loads(BeautifulSoup((root / 'achievements.html').read_text(encoding='utf-8'), 'html.parser').select_one('#map-data').string)
     map_data = json.loads((root / urlsplit(map_config['url']).path).read_text(encoding='utf-8'))
-    assert {record['id'] for record in map_data} == {record['id'] for record in public}
-    print(f'P0 validated: {len(index["items"])} indexed public pages; {len(public)} public records; {len(manifest)} PNG share cards')
+    if has_short_collection:
+        from public_record_catalog import validate_catalog, CATALOG_PATH
+        from build_public import validate_map, public_records
+        validate_map(root, public_records(root))  # Preserve the original full-record contract.
+        assert urlsplit(map_config['url']).path == CATALOG_PATH
+        assert map_data == validate_catalog(root)
+        cards = document(root / 'achievements.html').select('#case-list [data-case]')
+        assert len(cards) == len(map_data)
+        assert {card['data-case'] for card in cards} == {record['id'] for record in map_data}
+    else:
+        assert {record['id'] for record in map_data} == {record['id'] for record in public}
+    print(f'P0 validated: {len(index["items"])} indexed public entries; {len(public)} full records; {len(manifest)} PNG share cards')
 
 
 if __name__ == '__main__':

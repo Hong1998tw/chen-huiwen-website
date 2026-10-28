@@ -69,7 +69,7 @@ def build(root=ROOT):
     for offset, (_, entry) in enumerate(editorial_entries):
         tree.getroot().insert(case_index + offset, entry)
     existing = {entry.find('{'+NS+'}loc').text for entry in tree.getroot()}
-    for name in ('service-guides.html', 'service-print.html', 'updates.html'):
+    for name in ('service-guides.html', 'service-print.html', 'updates.html', 'public-records.html'):
         if BASE + name not in existing and managed.get(name, {}).get('status', 'published') == 'published':
             entry = ET.SubElement(tree.getroot(), '{'+NS+'}url')
             ET.SubElement(entry, '{'+NS+'}loc').text = BASE + name

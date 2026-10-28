@@ -70,6 +70,18 @@ export function expectedSharedFallbackFontsForRoute(routeManifestRow, sharedJpFa
   return [sharedJpFallbackFont];
 }
 
+export function expectedSupplementFallbackFontsForRoute(row, font) {
+  const cps = row?.supplementFallbackCodepoints;
+  if (!Array.isArray(cps) || !cps.length || new Set(cps).size !== cps.length
+      || !cps.every(cp => [0x5754, 0x6db3].includes(cp))
+      || !Array.isArray(row.codepoints) || !row.codepoints.length
+      || !row.codepoints.every(cp => Number.isInteger(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff))
+      || cps.some(cp => row.codepoints.includes(cp) || (row.jpFallbackCodepoints || []).includes(cp))) return [];
+  const hash = 'f54454c3ccd0903f631c7e7a639a10805c98addfa689b19c9c8e3e32ebbca156';
+  if (font?.sha256 !== hash || font.path !== '/assets/fonts/huiwen-site-sans/huiwen-rare-han-support-' + hash + '.woff2') return [];
+  return [font];
+}
+
 export function buildTrustedClickCaptureScript() {
   const selector = JSON.stringify(SERVICE_CARD_SELECTOR);
   return `(() => {

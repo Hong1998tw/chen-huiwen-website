@@ -62,7 +62,7 @@ class FontSubsetContractTests(unittest.TestCase):
         _, codepoints = fonts.collect_corpus(ROOT)
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
         jp_cmap = fonts.cmap(ROOT / fonts.JP_SOURCE.relative_to(ROOT))
-        fallback = fonts.validate_corpus(codepoints, tc_cmap, jp_cmap)
+        fallback = fonts.validate_corpus(codepoints, tc_cmap, jp_cmap, fonts.rare_support.verified_cmap(ROOT))
         self.assertTrue(fallback)
         self.assertTrue(all(codepoint in jp_cmap for codepoint in fallback))
 
@@ -120,7 +120,7 @@ class FontSubsetContractTests(unittest.TestCase):
                 full_stack = (
                     f':root[data-huiwen-font-page="{slug}"][data-huiwen-font-full="1"]'
                     f'{{--huiwen-font-family:"Huiwen Sans TC {slug} Core",'
-                    f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support",sans-serif}}'
+                    f'"Huiwen Sans TC {slug} Full","Huiwen Sans JP Support","Huiwen Sans Rare Han Support",sans-serif}}'
                 )
                 self.assertIn(full_stack, css)
                 self.assertIsNotNone(soup.select_one("script[data-huiwen-font-upgrade]"))
