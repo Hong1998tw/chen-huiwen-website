@@ -825,7 +825,7 @@ class DeploymentTargetTests(unittest.TestCase):
             with unittest.mock.patch.object(P, 'run') as run, \
                     unittest.mock.patch.object(P, 'changed_files', return_value=['data/deployment-request.json']):
                 self.assertEqual(P.materialize(candidate, root), ['data/deployment-request.json'])
-            run.assert_called_once_with([sys.executable, 'scripts/quality.py'], root)
+            run.assert_called_once_with([sys.executable, 'scripts/candidate_preflight.py', '--baseline-ref', 'HEAD'], root)
             self.assertEqual((root / 'index.html').read_text(), 'unchanged public source')
             with unittest.mock.patch.object(P, 'run'), \
                     unittest.mock.patch.object(P, 'changed_files', return_value=['data/deployment-request.json', 'index.html']):

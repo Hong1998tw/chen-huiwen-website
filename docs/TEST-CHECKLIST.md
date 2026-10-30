@@ -10,6 +10,8 @@
 - [ ] 需要版本化的產生檔已納入 commit。
 - [ ] 未出現 `YOUR_GITHUB_USERNAME`、`YOUR_REPOSITORY_NAME` 等 placeholder。
 - [ ] 未出現 token、API key、密碼、私人案件個資、內部附件或內部網址。
+- [ ] 後台發布的候選預檢（`scripts/candidate_preflight.py`）只涵蓋 validators、generated 與公開邊界；完整 unit／negative／E2E 仍以 required `validate` check 在 PR head 執行 `scripts/quality.py`，預檢通過不等於 CI 通過。
+- [ ] required `validate` check 的 job 上限為 75 分鐘（只放寬 CI 執行時間；40 分鐘曾在完整 unit 途中被取消，保留較慢 runner 的執行餘量）。被取消不算通過，validators、unit、negative、E2E 與 CMS 25 分鐘／lease 30 分鐘都不變。
 
 ## B. Desktop
 

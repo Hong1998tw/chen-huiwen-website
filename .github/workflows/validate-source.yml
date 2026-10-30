@@ -11,7 +11,9 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    # Full quality (all validators, unit, negative and E2E suites) was cut off by the old 40-minute
+    # timer on a slower shared runner; this is CI run time only, not a budget or test change.
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

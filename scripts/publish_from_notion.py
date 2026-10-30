@@ -624,7 +624,7 @@ def verify_publish_snapshot(candidate, fresh_row, current_text):
 
 
 # ---------------------------------------------------------------------------------------------
-# Workspace: apply the candidate to a throwaway worktree, build, run the full quality gate.
+# Workspace: apply the candidate to a throwaway worktree, build, run the candidate preflight.
 def run(cmd, cwd, env=None, check=True):
     proc = subprocess.run(cmd, cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if check and proc.returncode:
@@ -681,7 +681,9 @@ def materialize(candidate, repo, *, quality=True):
             if cards[slug]['title'] != case['title']:
                 run([sys.executable, 'scripts/build_share_cards.py', '--only', slug], repo)
         if quality:
-            run([sys.executable, 'scripts/quality.py'], repo)
+            # The candidate is uncommitted, so the clean-tree unit/E2E suites cannot run here; they run
+            # in the required `validate` check on the exact PR head before auto-merge.
+            run([sys.executable, 'scripts/candidate_preflight.py', '--baseline-ref', 'HEAD'], repo)
     except subprocess.CalledProcessError as exc:
         tail = [line for line in (exc.output or '').splitlines() if re.search(r'Error|FAIL|STALE|assert', line)][-3:]
         raise PublishError('BUILD_FAILED', [re.sub(r'\s+', ' ', t)[:200] for t in tail]) from None
@@ -1322,7 +1324,8 @@ def pr_body(cand, base_sha):
         f'- Domain：`{cand.domain}`', f'- Record：`{cand.record_key}`',
         f'- Candidate digest：`{cand.digest}`', f'- Git base：`{base_sha}`（record base `{cand.base_hash}`）',
         f'- 建立時間：{now_iso()}', '',
-        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
+        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、候選預檢（validators、generated、公開邊界）與版本綁定。',
+        '候選預檢不是完整 quality；完整 unit／negative／E2E 由 required `validate` check 在本 PR head 執行。',
         '**不得繞過 required checks。** GitHub auto-merge 只會在既有 ruleset 條件全數滿足後合併。',
         '合併後由受審 deployment target 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 

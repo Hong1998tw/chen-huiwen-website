@@ -34,6 +34,14 @@ import {
   validatePublicationArtifact,
   validatePublicationIdentityRecord,
 } from './visual-qa-publication.mjs';
+import {
+  INITIAL_UI_COMPONENTS,
+  InitialUiReadinessError,
+  initialUiReady,
+  initialUiReadinessFailures,
+  probeInitialUi,
+  waitForInitialUi
+} from './visual-qa-readiness.mjs';
 
 function png(width, height, color) {
   const image = new PNG({ width, height });
@@ -1286,6 +1294,7 @@ test('403, first-party JavaScript errors and missing visible first-party images 
     pageErrors: [],
     imageState: { firstPartyFailedImageCount: 0 },
     network: [{ originClass: 'same-origin', status: 200, failed: null }],
+    initialUiReadiness: { status: 'READY', components: [], stylesheets: [] },
     screenshotSha256: 'a'.repeat(64)
   };
   assert.equal(evaluateCaptureQuality(good).status, 'COMPLETE');
@@ -1486,4 +1495,131 @@ test('a correctly hashed, fully approved baseline is accepted', async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+// A simulated document timeline drives the real in-page probe: small Q mounts from one idle callback,
+// appends its stylesheet from a second one and unhides itself in that stylesheet's onload.
+const ORIGIN = 'http://127.0.0.1:8000';
+const SITE_CSS = `${ORIGIN}/assets/site-0123.css`;
+const LATE_CSS = `${ORIGIN}/assets/late-4567.css?v=1`;
+function simulatedPage({ component = true, events = [] } = {}) {
+  let clock = 0;
+  const pending = [...events].sort((a, b) => a[0] - b[0]);
+  const dom = {
+    root: component ? { dataset: {}, hidden: true } : null,
+    links: [{ href: SITE_CSS, sheet: {} }],
+    entries: new Set([SITE_CSS])
+  };
+  const fakeDocument = {
+    readyState: 'complete',
+    querySelector: selector => (selector === '#small-q' ? dom.root : null),
+    querySelectorAll: selector => (selector === 'link[rel~="stylesheet"]' ? dom.links : [])
+  };
+  const fakePerformance = { getEntriesByName: name => (dom.entries.has(name) ? [{ responseEnd: 1 }] : []) };
+  const page = {
+    evaluate: async (fn, arg) => {
+      while (pending.length && pending[0][0] <= clock) pending.shift()[1](dom);
+      const saved = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+      Object.assign(globalThis, { document: fakeDocument, location: { href: `${ORIGIN}/`, origin: ORIGIN } });
+      Object.defineProperty(globalThis, 'performance', { value: fakePerformance, configurable: true, writable: true });
+      try { return fn(arg); } finally {
+        delete globalThis.document;
+        delete globalThis.location;
+        Object.defineProperty(globalThis, 'performance', saved);
+      }
+    }
+  };
+  return { page, dom, now: () => clock, sleep: async ms => { clock += ms; } };
+}
+const smallQ = [
+  [1200, dom => { dom.root.dataset.mounted = 'true'; }],
+  [2400, dom => { dom.links.push({ href: LATE_CSS, sheet: null }); }],
+  [2450, dom => { dom.links[1].sheet = {}; dom.root.hidden = false; }],
+  // The resource timing entry is what the metric sums; readiness waits for it too.
+  [2460, dom => { dom.entries.add(LATE_CSS); }]
+];
+
+test('initial owned UI readiness waits for a late-inserted stylesheet before any metric sample', async () => {
+  const { page, now, sleep } = simulatedPage({ events: smallQ });
+  const early = await page.evaluate(probeInitialUi, INITIAL_UI_COMPONENTS);
+  assert.equal(initialUiReady(early), false, 'the old load-time sample would miss the late stylesheet');
+  assert.equal(early.stylesheets.length, 1);
+  const evidence = await waitForInitialUi(page, { now, sleep });
+  assert.equal(evidence.status, 'READY');
+  assert(evidence.waitedMs >= 2460 && evidence.waitedMs < 2460 + 50, `${evidence.waitedMs}`);
+  assert.deepEqual(evidence.components, [{ id: 'small-q', present: true, mounted: true, visible: true }]);
+  assert.deepEqual(evidence.stylesheets.map(sheet => [sheet.url, sheet.loaded, sheet.performanceEntry]),
+    [[SITE_CSS, true, true], [`${ORIGIN}/assets/late-4567.css`, true, true]]);
+  // Appended but not yet loaded is still pending: neither the link nor the unhidden root is enough alone.
+  const partial = simulatedPage({ events: [[0, dom => { dom.root.dataset.mounted = 'true'; dom.links.push({ href: LATE_CSS, sheet: null }); dom.root.hidden = false; }]] });
+  assert.equal(initialUiReady(await partial.page.evaluate(probeInitialUi, INITIAL_UI_COMPONENTS)), false);
+  const capture = {
+    initialUiReadiness: evidence,
+    network: [{ url: SITE_CSS, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null },
+      { url: `${ORIGIN}/assets/late-4567.css`, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null }]
+  };
+  assert.deepEqual(initialUiReadinessFailures(capture), []);
+});
+
+test('initial UI readiness fails closed on timeout and stylesheet errors and passes pages without the component', async () => {
+  const stuck = simulatedPage({ events: smallQ.slice(0, 2) });
+  await assert.rejects(waitForInitialUi(stuck.page, { now: stuck.now, sleep: stuck.sleep, timeoutMs: 3000 }), error =>
+    error instanceof InitialUiReadinessError && error.reason === 'INITIAL_UI_READINESS_TIMEOUT' &&
+    error.evidence.status === 'TIMEOUT' && error.evidence.waitedMs >= 3000 && error.evidence.components[0].visible === false);
+  const timeout = await waitForInitialUi(stuck.page, { now: stuck.now, sleep: stuck.sleep, timeoutMs: 0 }).catch(error => error.evidence);
+  const quality = evaluateCaptureQuality({
+    httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, network: [],
+    navigationError: 'InitialUiReadinessError', initialUiReadiness: timeout, screenshotSha256: 'a'.repeat(64)
+  });
+  assert.equal(quality.status, 'INCOMPLETE');
+  assert(quality.failureReasons.includes('INITIAL_UI_NOT_READY') && quality.failureReasons.includes('NAVIGATION_ERROR'));
+
+  const broken = simulatedPage({ events: smallQ.slice(0, 2) });
+  await assert.rejects(waitForInitialUi(broken.page, { now: broken.now, sleep: broken.sleep, requestFailed: href => href === LATE_CSS }),
+    error => error.reason === 'INITIAL_UI_STYLESHEET_FAILED' && error.evidence.status === 'FAILED' && error.evidence.waitedMs < 3000);
+
+  const plain = simulatedPage({ component: false });
+  const absent = await waitForInitialUi(plain.page, { now: plain.now, sleep: plain.sleep });
+  assert.equal(absent.status, 'READY');
+  assert.equal(absent.polls, 1);
+  assert.deepEqual(absent.components, [{ id: 'small-q', present: false, mounted: false, visible: false }]);
+});
+
+test('forged or incomplete readiness evidence never yields a complete capture', () => {
+  const lateRow = { url: `${ORIGIN}/assets/late-4567.css`, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null };
+  const base = {
+    httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, screenshotSha256: 'a'.repeat(64),
+    network: [{ url: SITE_CSS, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null }, lateRow],
+    initialUiReadiness: {
+      status: 'READY',
+      components: [{ id: 'small-q', present: true, mounted: true, visible: true }],
+      stylesheets: [{ url: SITE_CSS, sameOrigin: true, loaded: true, performanceEntry: true }]
+    }
+  };
+  const reasons = capture => evaluateCaptureQuality(capture).failureReasons;
+  // The network saw a stylesheet the sampled evidence lacks: the metric was taken too early.
+  assert.deepEqual(reasons(base), ['MEASUREMENT_SAMPLED_BEFORE_STYLESHEET']);
+  const withLate = { ...base.initialUiReadiness, stylesheets: [...base.initialUiReadiness.stylesheets, { url: lateRow.url, sameOrigin: true, loaded: true, performanceEntry: true }] };
+  assert.equal(evaluateCaptureQuality({ ...base, initialUiReadiness: withLate }).status, 'COMPLETE');
+  assert(reasons({ ...base, initialUiReadiness: { ...withLate, stylesheets: withLate.stylesheets.map(sheet => ({ ...sheet, performanceEntry: false })) } })
+    .includes('INITIAL_UI_STYLESHEET_NOT_MEASURED'));
+  assert(reasons({ ...base, initialUiReadiness: { ...withLate, components: [{ id: 'small-q', present: true, mounted: true, visible: false }] } })
+    .includes('INITIAL_UI_NOT_READY'));
+  assert(reasons({ ...base, initialUiReadiness: { ...withLate, status: 'TIMEOUT' } }).includes('INITIAL_UI_NOT_READY'));
+  const { initialUiReadiness, ...missing } = base;
+  assert.deepEqual(reasons(missing), ['INITIAL_UI_READINESS_MISSING']);
+  // Failed or third-party stylesheet rows are classified elsewhere and do not count as measured resources.
+  assert.equal(evaluateCaptureQuality({ ...base, network: [base.network[0], { ...lateRow, status: 404 }] }).failureReasons.includes('MEASUREMENT_SAMPLED_BEFORE_STYLESHEET'), false);
+});
+
+test('captures wait for initial UI before DOM, performance and the screenshot in both capture modes', async () => {
+  const source = await readFile(new URL('./visual-qa.mjs', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('async function captureOne('), source.indexOf('async function removeInvalidCaptureSummaries('));
+  const at = needle => { const index = body.indexOf(needle); assert(index > 0, needle); return index; };
+  const goto = at('await page.goto(targetUrl');
+  const ready = at('\n    initialUiReadiness = await waitForInitialUi(page, {');
+  assert(goto < ready && ready < at("document.fonts.ready") && ready < at("document.querySelectorAll('*').length") &&
+    ready < at("performance.getEntriesByType('navigation')") && ready < at('await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: \'disabled\' })'));
+  assert.equal(body.indexOf('if (screenshotEnabled)') > ready, true, 'measurement-only captures take the same readiness path');
+  assert.match(body, /initialUiReadiness,\n\s+metrics:/);
 });

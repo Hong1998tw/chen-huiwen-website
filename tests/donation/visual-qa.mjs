@@ -34,6 +34,7 @@ import {
   validateSiteSourceKindRecord,
 } from './visual-qa-publication.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
+import { waitForInitialUi } from './visual-qa-readiness.mjs';
 import {
   combineCaptureAndIntegrityErrors,
   createMetadataPathRegistry,
@@ -237,9 +238,15 @@ async function captureOne({
   let screenshotSha256 = null;
   let screenshotError = null;
   let animationCount = 0;
+  let initialUiReadiness = null;
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
+    // Owned UI finishing after load (small Q's idle-loaded stylesheet) is part of the initial state.
+    initialUiReadiness = await waitForInitialUi(page, {
+      requestFailed: href => [...networkById.values()].some(item => item.url === href &&
+        (item.failed || (Number.isFinite(item.status) && item.status >= 400)))
+    });
     const fontWaitStarted = Date.now();
     await page.evaluate(() => document.fonts.ready.then(() => true));
     fontsReady = true;
@@ -317,6 +324,7 @@ async function captureOne({
     performanceData.fontReadyElapsedMs = fontReadyElapsedMs;
   } catch (error) {
     navigationError = String(error);
+    if (error?.evidence) initialUiReadiness = error.evidence;
     try {
       if (screenshotEnabled && page.url() !== 'about:blank') {
         await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: 'disabled', timeout: 10000 });
@@ -413,6 +421,7 @@ async function captureOne({
       deploymentWindowStatus: environment === 'cloudflare-production' ? (deploymentAtStart?.valid ? 'PENDING_FINAL_READ' : 'NOT_VERIFIED') : null
     },
     imageState,
+    initialUiReadiness,
     metrics: {
       domElementCount,
       sameOriginTransferSizeBytes: transferBudgetBytes,
