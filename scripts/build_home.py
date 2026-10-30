@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the approved homepage from reviewed public service, event and case data."""
+"""Build the homepage from reviewed public service, latest-information and record data."""
 from collections import Counter
 from datetime import datetime
 from html import escape
@@ -11,25 +11,43 @@ import re
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from achievement_metadata import latest_history_event
-from build_events import validate as validate_event
 from build_guides import load_office
 from build_service import validate_schedule
 from build_shared import link_arrow
+import latest_info
 
 ROOT = Path(__file__).resolve().parents[1]
-FEATURED_EVENT = "campaign-headquarters-opening-2026-10-31"
 MAP_ASSET = "assets/fengshan-home-map.svg"
 MAP_LINK = "achievements.html?case=wende-school-center#achievement-map"
 NON_LOCAL_SCOPES = {"全市政策", "跨區服務"}
 STATUS_ORDER = ("已完成", "持續追蹤", "爭取規劃", "政策實施")
 LINE_URL = "https://line.me/R/ti/p/@yve2766q"
+FACEBOOK_URL = "https://www.facebook.com/hwcfs/"
 EVENT_VARIANT_MANIFEST = Path("scripts/home-image-variants.json")
 SHA256_PATTERN = re.compile(r"[a-f0-9]{64}")
+TAIPEI = ZoneInfo("Asia/Taipei")
+# Each filter renders at most this many items; the full lists stay on their pages.
+LATEST_PER_FILTER = 12
+LATEST_INITIAL = 3
+LATEST_FILTERS = (("all", "全部"), ("news", "新聞"), ("daily", "日常"), ("activity", "活動"))
+LATEST_LIST_LINKS = (
+    ("news.html", "媒體報導"), ("press.html", "服務處新聞稿"),
+    ("activities.html", "公開行程與活動"), (FACEBOOK_URL, "官方 Facebook"),
+)
+WEEKDAYS = "一二三四五六日"
+EXTERNAL = ' target="_blank" rel="noopener noreferrer"'
 
 
 def e(value):
     return escape(str(value), quote=True)
+
+
+def is_external(href):
+    return str(href).startswith(("https://", "http://"))
+
+
+def link_attrs(href):
+    return EXTERNAL if is_external(href) else ""
 
 
 def render_candidate_number(platforms):
@@ -50,146 +68,313 @@ def public_records(root=ROOT):
     return rows
 
 
+CASE_OPTIONS = "data/home-case-options.json"
+# Only the fields the CMS homepage editor and its live preview read (app.js, applyHomePreview).
+CASE_OPTION_FIELDS = ("id", "title", "summary", "status", "villages", "scope", "categories", "funding", "updated")
+
+
+def case_options(records):
+    return [{key: record[key] for key in CASE_OPTION_FIELDS if key in record} for record in records]
+
+
+def build_case_options(records, root=ROOT):
+    text = json.dumps(case_options(records), ensure_ascii=False, separators=(",", ":")) + "\n"
+    target = Path(root) / CASE_OPTIONS
+    if not target.exists() or target.read_text(encoding="utf-8") != text:
+        target.write_text(text, encoding="utf-8")
+
+
+def catalog_records(root=ROOT):
+    rows = json.loads((root / "data/public-record-catalog.json").read_text())
+    if not isinstance(rows, list):
+        raise ValueError("Public record catalog must be an array")
+    return rows
+
+
+_SVG = '<svg viewBox="0 0 24 24" width="28" height="28" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{}</svg>'
+SERVICE_ICONS = {
+    "chat": _SVG.format('<path d="M4 5h16v11H9l-5 4z"/>'),
+    # Same handset outline as the shared header phone link.
+    "phone": _SVG.format('<path fill="currentColor" stroke="none" d="M6.6 2.8 9.2 2.2a1.5 1.5 0 0 1 1.7.9l1.2 3.1a1.5 1.5 0 0 1-.4 1.7l-1.6 1.3a14 14 0 0 0 5 5l1.3-1.6a1.5 1.5 0 0 1 1.7-.4l3.1 1.2a1.5 1.5 0 0 1 .9 1.7l-.6 2.6a2 2 0 0 1-2 1.6C10 19.1 4.9 14 4.9 7a2 2 0 0 1 1.7-2.2Z"/>'),
+    "line": _SVG.format('<rect x="3" y="4" width="18" height="14" rx="5"/><path d="M8 18v3l4-3"/><path d="M8 9v4h2M13 9v4M16 9v4"/>'),
+    "legal": _SVG.format('<path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/>'),
+}
+
+
 def render_services(office, schedule):
-    """Render only the two task cards and a short, source-based lawyer link."""
+    """Four direct service entries; the lawyer month comes from the canonical schedule."""
     month = int(schedule["month"].split("-")[1])
-    return (
-        '<nav class="home-task-paths" aria-label="首頁常用任務">'
-        '<a href="service.html#contact" data-home-task="service">'
-        '<span>民眾服務</span><strong>服務處聯絡資訊</strong>'
-        '<small>地址、服務時間與諮詢</small></a>'
-        '<a href="achievements.html#case-results" data-home-task="local">'
-        '<span>地方進度</span><strong>查找公開紀錄</strong>'
-        '<small>依里別與辦理階段查看</small></a>'
-        '</nav>'
-        f'<p class="home-lawyer-link">本月公益律師： '
-        f'<a href="service.html#monthly-heading" data-home-legal-month="{e(schedule["month"])}">'
-        f'{month}月時間表 {link_arrow("service.html#monthly-heading")}</a></p>'
+    entries = (
+        ("service.html#contact", "chat", "有事找慧文", "服務處地址與時間", ""),
+        (office["phoneUrl"], "phone", "撥打服務處", office["phone"], ""),
+        (LINE_URL, "line", "LINE 官方帳號", "線上詢問", EXTERNAL),
+        ("service.html#monthly-heading", "legal", "公益法律諮詢", f"{month}月律師時間表",
+         f' data-home-legal-month="{e(schedule["month"])}"'),
     )
+    links = "".join(
+        f'<a class="home-service-entry" href="{e(href)}" data-home-task="{icon}"{attrs}>'
+        f'<span class="home-service-icon" aria-hidden="true">{SERVICE_ICONS[icon]}</span>'
+        f'<span class="home-service-copy"><strong>{e(label)}</strong><small>{e(note)}</small></span>'
+        f'<span class="home-service-arrow" aria-hidden="true">{link_arrow(href)}</span></a>'
+        for href, icon, label, note, attrs in entries
+    )
+    return f'<nav class="wrap home-service-band" id="service" aria-label="找服務">{links}</nav>'
 
 
-def _responsive_event_picture(image, root=ROOT):
-    source = Path(image["src"])
-    if source.is_absolute() or ".." in source.parts or not source.as_posix().startswith("assets/events/"):
-        raise ValueError("Homepage event image must be a reviewed local event asset")
+def _variant_sources(source, root):
+    """Return verified responsive variants for a reviewed local event image, else None."""
+    if not source.as_posix().startswith("assets/events/"):
+        return None
     source_file = Path(root) / source
-    if not source_file.is_file():
-        raise ValueError(f"Homepage event source image is missing: {source.as_posix()}")
-
-    widths = tuple(dict.fromkeys((480, 800, image["width"])))
-    responsive = None
     try:
         manifest = json.loads((Path(root) / EVENT_VARIANT_MANIFEST).read_text(encoding="utf-8"))
         entry = manifest.get("assets", {}).get(source.as_posix())
-        if (manifest.get("schemaVersion") == 1 and isinstance(entry, dict) and
+        if not (manifest.get("schemaVersion") == 1 and isinstance(entry, dict) and
                 entry.get("sourceSha256") == sha256(source_file.read_bytes()).hexdigest()):
-            hashes = entry.get("variants")
-            if isinstance(hashes, dict) and set(hashes) == {str(width) for width in widths}:
-                verified = {"avif": [], "webp": []}
-                complete = True
-                for width in widths:
-                    variants = hashes.get(str(width))
-                    if not isinstance(variants, dict):
-                        complete = False
-                        break
-                    for fmt in ("avif", "webp"):
-                        expected_hash = variants.get(fmt)
-                        path = source.with_name(f"{source.stem}-{width}.{fmt}")
-                        asset = Path(root) / path
-                        if (not isinstance(expected_hash, str) or not SHA256_PATTERN.fullmatch(expected_hash) or
-                                not asset.is_file() or sha256(asset.read_bytes()).hexdigest() != expected_hash):
-                            complete = False
-                            break
-                        verified[fmt].append((path.as_posix(), width))
-                    if not complete:
-                        break
-                if complete:
-                    responsive = verified
+            return None
+        hashes = entry.get("variants")
+        if not isinstance(hashes, dict):
+            return None
+        verified = {"avif": [], "webp": []}
+        for width in sorted(hashes, key=int):
+            variants = hashes[width]
+            if not isinstance(variants, dict):
+                return None
+            for fmt in ("avif", "webp"):
+                expected_hash = variants.get(fmt)
+                path = source.with_name(f"{source.stem}-{width}.{fmt}")
+                asset = Path(root) / path
+                if (not isinstance(expected_hash, str) or not SHA256_PATTERN.fullmatch(expected_hash) or
+                        not asset.is_file() or sha256(asset.read_bytes()).hexdigest() != expected_hash):
+                    return None
+                verified[fmt].append((path.as_posix(), int(width)))
+        return verified
     except (AttributeError, OSError, ValueError, TypeError):
         # A missing or stale manifest makes variants ineligible; the reviewed
-        # original remains the safe homepage fallback.
-        responsive = None
+        # original remains the safe fallback.
+        return None
 
-    # The event leads the recent list as a wide feature: full width on phones,
-    # 40% of the content width beside its copy above 780px.
-    sizes = (
-        "(max-width: 620px) calc(100vw - 40px), "
-        "(max-width: 780px) calc(100vw - 64px), "
-        "(max-width: 1244px) calc((100vw - 64px) * .4), 472px"
-    )
-    sources = ""
-    fallback = ""
+
+LEAD_SIZES = "(max-width: 760px) calc(100vw - 32px), (max-width: 1272px) 56vw, 700px"
+
+
+def _responsive_event_picture(image, root=ROOT, eager=False):
+    """Reviewed local event image with verified AVIF/WebP variants, else the original only."""
+    source = Path(image["src"])
+    if source.is_absolute() or ".." in source.parts or not source.as_posix().startswith("assets/events/"):
+        raise ValueError("Homepage event image must be a reviewed local event asset")
+    if not (Path(root) / source).is_file():
+        raise ValueError(f"Homepage event source image is missing: {source.as_posix()}")
+    responsive = _variant_sources(source, root)
+    sources = fallback = ""
     if responsive:
-        srcsets = {
-            fmt: ", ".join(f"{e(path)} {width}w" for path, width in entries)
-            for fmt, entries in responsive.items()
-        }
-        sources = (
-            f'<source type="image/avif" srcset="{srcsets["avif"]}" sizes="{sizes}">'
-            f'<source type="image/webp" srcset="{srcsets["webp"]}" sizes="{sizes}">'
-        )
-        fallback = f' srcset="{srcsets["webp"]}" sizes="{sizes}"'
+        srcsets = {fmt: ", ".join(f"{e(path)} {width}w" for path, width in entries) for fmt, entries in responsive.items()}
+        sources = (f'<source type="image/avif" srcset="{srcsets["avif"]}" sizes="{LEAD_SIZES}">'
+                   f'<source type="image/webp" srcset="{srcsets["webp"]}" sizes="{LEAD_SIZES}">')
+        fallback = f' srcset="{srcsets["webp"]}" sizes="{LEAD_SIZES}"'
+    loading = ' loading="eager" fetchpriority="high"' if eager else ' loading="lazy"'
+    return (f'<picture>{sources}<img src="{e(image["src"])}"{fallback} width="{image["width"]}" '
+            f'height="{image["height"]}" alt="{e(image["alt"])}"{loading} decoding="async"></picture>')
+
+
+def render_thumbnail(item, root, eager):
+    thumb = item.get("thumbnail")
+    if not thumb:
+        return ""
+    target = item.get("sourceUrl") or item["url"]
+    loading = ' loading="eager" fetchpriority="high"' if eager else ' loading="lazy"'
+    fallback = thumb.get("fallback")
+    fallback_attrs = ""
+    if fallback:
+        fallback_attrs = (f' data-latest-fallback="{e(fallback["src"])}"'
+                          f' data-latest-fallback-alt="{e(fallback["alt"])}"'
+                          f' data-latest-fallback-credit="{e(fallback["credit"])}"')
+    if thumb["local"] and thumb["src"].startswith("assets/events/"):
+        image = _responsive_event_picture(thumb, root, eager)
+    else:
+        image = (f'<img src="{e(thumb["src"])}" width="{thumb["width"]}" height="{thumb["height"]}" '
+                 f'alt="{e(thumb["alt"])}"{loading} decoding="async"'
+                 f'{"" if thumb["local"] else " referrerpolicy=\"no-referrer\""}{fallback_attrs}>')
+    media_class = "latest-media latest-media--contain" if item["type"] == "activity" else "latest-media"
     return (
-        f'<picture>{sources}'
-        f'<img src="{e(image["src"])}"{fallback} '
-        f'width="{image["width"]}" height="{image["height"]}" '
-        f'alt="{e(image["alt"])}" loading="lazy" decoding="async"></picture>'
+        f'<figure class="{media_class}" data-latest-media>'
+        f'<a class="latest-media-link" href="{e(target)}"{link_attrs(target)} tabindex="-1">{image}</a>'
+        '<p class="latest-media-fallback" data-latest-media-fallback hidden>圖片暫時無法載入。'
+        f'<a href="{e(target)}"{link_attrs(target)}>{"閱讀原文" if is_external(target) else "閱讀內容"} '
+        f'{link_arrow(target)}</a></p>'
+        f'<figcaption class="latest-credit" data-latest-credit>{e(thumb["credit"])}</figcaption></figure>'
     )
 
 
-def render_event(events, root=ROOT):
-    event = next((item for item in events if item["id"] == FEATURED_EVENT), None)
-    if event is None:
-        return (
-            '<article class="home-recent-event" id="opening">'
-            '<p class="meta">公開行程</p><h3>近期公開行程與活動</h3>'
-            f'<a class="source" href="activities.html">查看公開行程與活動 {link_arrow("activities.html")}</a></article>'
-        )
-    validate_event(event)
-    start = datetime.fromisoformat(event["start"]).astimezone(ZoneInfo("Asia/Taipei"))
-    url = "event-" + event["id"] + ".html"
-    status = {
-        "scheduled": "公開行程",
-        "rescheduled": "行程時間已更改",
-        "cancelled": "活動已取消",
-    }[event.get("status", "scheduled")]
-    change = f'<p class="home-recent-copy">{e(event["changeNote"])}</p>' if event.get("changeNote") else ""
-    photo = _responsive_event_picture(event["images"][0], root) if event.get("images") else ""
-    registration = event.get("registration") or "參與方式請以主辦單位公告為準。"
+TITLE_TAIL = 5
+# Semantic phrases that must not be split across lines (names, titles, offices, campaign and
+# council terms, session numbers, numbers with units). Kept generic: no per-headline cuts.
+TITLE_PHRASES = (
+    "陳慧文", "賴瑞隆", "黃敬雅", "陳其邁", "吳立森", "張博洋",
+    "高雄市議員", "高雄市議會", "市議員", "議員", "市長",
+    "聯合", "競選總部", "總部", "成立大會", "問政", "優質議員", "市政總質詢", "總質詢", "質詢",
+    "鳳山區", "鳳山", "高雄",
+)
+TITLE_PATTERN = re.compile(
+    r"第\s?\d+\s?屆第\s?\d+\s?(?:會期|次定期大會)|第\s?\d+\s?(?:屆|會期)"
+    r"|\d+(?:[.,]\d+)*\s?(?:萬元|萬|元|個月|年|月|日|天|週|%|校)"
+    + "|" + "|".join(sorted(map(re.escape, TITLE_PHRASES), key=len, reverse=True))
+)
+
+
+def title_ranges(text):
+    """Character ranges kept on one line: protected phrases plus the last few characters."""
+    ranges = [match.span() for match in TITLE_PATTERN.finditer(text)]
+    if len(text) > TITLE_TAIL * 2:
+        ranges.append((len(text) - TITLE_TAIL, len(text)))
+    merged = []
+    for start, end in sorted(ranges):
+        if merged and start < merged[-1][1]:  # overlap only; adjacent ranges may still break
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def title_html(text):
+    """Headline markup that never splits a protected phrase and never ends with a 1–2 character line."""
+    parts, cursor = [], 0
+    for start, end in title_ranges(text):
+        parts.append(e(text[cursor:start]))
+        parts.append(f'<span class="latest-keep">{e(text[start:end])}</span>')
+        cursor = end
+    parts.append(e(text[cursor:]))
+    return "".join(parts)
+
+
+def format_day(value):
+    return value[:10].replace("-", ".")
+
+
+def format_event_time(value):
+    start = datetime.fromisoformat(value).astimezone(TAIPEI)
+    return f'{start.year}.{start.month:02d}.{start.day:02d}（{WEEKDAYS[start.weekday()]}）{start:%H:%M}'
+
+
+def action_label(item):
+    if item.get("hasVideo"):
+        return "到原始來源觀看影片"
+    if item["type"] == "activity":
+        return "查看活動"
+    if item["kind"] == "服務處新聞稿":
+        return "閱讀新聞稿"
+    if item.get("sourceUrl") and is_external(item["url"]):
+        return "開啟原文"
+    return "閱讀全文"
+
+
+def render_latest_item(item, root, visible, lead):
+    target = item["url"]
+    if item["type"] == "activity":
+        # The website publication time only orders the list; visitors see the event time.
+        date_html = (f'<span class="latest-date"><span class="latest-date-label">活動時間</span> '
+                     f'<time datetime="{e(item["eventStart"])}">{e(format_event_time(item["eventStart"]))}</time></span>')
+    else:
+        date_html = (f'<span class="latest-date"><span class="latest-date-label">{e(item["dateLabel"])}</span> '
+                     f'<time datetime="{e(item["publishedAt"])}">{e(format_day(item["publishedAt"]))}</time></span>')
+    status = ""
+    if item.get("eventStatus") and item["eventStatus"] != "scheduled":
+        status = f'<span class="latest-status">{e(item["eventStatusLabel"])}</span>'
+    elif item["type"] == "activity":
+        status = '<span class="latest-status" data-latest-event-badge hidden></span>'
+    source = f'<span class="latest-source">{e(item["sourceName"])}</span>' if item.get("sourceName") else ""
+    summary = f'<p class="latest-summary">{e(item["summary"])}</p>' if item.get("summary") else ""
+    extra = ""
+    if item.get("sourceUrl") and item["sourceUrl"] != target:
+        extra = (f'<a class="latest-source-link" href="{e(item["sourceUrl"])}"{link_attrs(item["sourceUrl"])}>'
+                 f'原始來源：{e(item["sourceName"])} {link_arrow(item["sourceUrl"])}</a>')
+    attrs = (f' data-latest-id="{e(item["id"])}" data-latest-type="{e(item["type"])}"'
+             f' data-latest-index="{item["naturalIndex"]}"')
+    if item.get("pinned"):
+        attrs += ' data-latest-pinned=""'
+    if item.get("eventStart"):
+        attrs += f' data-event-start="{e(item["eventStart"])}"'
+    classes = "latest-item" + (" is-lead" if lead else "")
     return (
-        f'<article class="home-recent-event" id="opening" data-home-event="{e(event["id"])}">'
-        f'<div class="home-recent-art home-recent-art--event">{photo}</div>'
-        f'<div class="home-recent-card-copy"><p class="meta">{status}</p>'
-        f'<p class="event-date"><time datetime="{e(event["start"])}">'
-        f'{start.month}月{start.day}日 · 星期{"一二三四五六日"[start.weekday()]} · {start:%H:%M}</time></p>'
-        f'<h3><a href="{e(url)}">{e(event["name"])}</a></h3>'
-        f'<p class="event-location">{e(event.get("location", ""))}</p>{change}'
-        f'<p class="home-recent-copy">{e(registration)}</p>'
-        f'<a class="source" href="{e(url)}">完整行程與活動圖卡 {link_arrow(url)}</a></div></article>'
+        f'<article class="{classes}"{attrs}{"" if visible else " hidden"}>'
+        + render_thumbnail(item, root, eager=lead)
+        + '<div class="latest-copy">'
+        f'<p class="latest-meta"><span class="latest-kind">{e(item["kind"])}</span>{source}{date_html}{status}</p>'
+        f'<h3 class="latest-title"><a href="{e(target)}"{link_attrs(target)}>{title_html(item["title"])}</a></h3>'
+        f'{summary}<p class="latest-actions"><a class="latest-action" href="{e(target)}"{link_attrs(target)}>'
+        f'{action_label(item)} {link_arrow(target)}</a>{extra}</p>'
+        '</div></article>'
     )
 
 
-def render_recent_local(root=ROOT):
+def selected_latest(items):
+    """Union of each filter's first items, kept in the one published order."""
+    chosen = set()
+    for key, _ in LATEST_FILTERS:
+        matching = [item for item in items if key == "all" or item["type"] == key]
+        chosen.update(item["id"] for item in matching[:LATEST_PER_FILTER])
+    return [item for item in items if item["id"] in chosen]
+
+
+def render_latest(feed, root=ROOT):
+    items = selected_latest(feed["items"])
+    rows = "".join(render_latest_item(item, root, visible=index < LATEST_INITIAL, lead=index == 0)
+                   for index, item in enumerate(items))
+    chosen = {item["id"] for item in items}
+    # Inert copies of every other item, built from the same renderer: the CMS preview can pin an
+    # older item exactly as the next build will render it. Template content is not in the DOM.
+    reserve = "".join(render_latest_item(item, root, visible=False, lead=False)
+                      for item in feed["items"] if item["id"] not in chosen)
+    tabs = "".join(
+        f'<button type="button" role="tab" id="latest-tab-{key}" aria-controls="latest-panel" '
+        f'aria-selected="{"true" if key == "all" else "false"}" tabindex="{"0" if key == "all" else "-1"}" '
+        f'data-latest-filter="{key}">{label}</button>'
+        for key, label in LATEST_FILTERS
+    )
+    lists = "".join(f'<a href="{e(href)}"{link_attrs(href)}>{e(label)} {link_arrow(href)}</a>'
+                    for href, label in LATEST_LIST_LINKS)
+    return (
+        '<section class="wrap home-latest" id="latest" aria-labelledby="home-latest-heading" data-home-latest>'
+        # Earlier homepage anchors (#recent, #opening) keep pointing at the latest information.
+        '<span class="home-anchor" id="hero-title"></span><span class="home-anchor" id="recent"></span>'
+        '<span class="home-anchor" id="home-recent-heading"></span><span class="home-anchor" id="opening"></span>'
+        '<div class="home-latest-head"><h1 id="home-latest-heading">最新資訊</h1>'
+        f'<div class="home-latest-tabs" role="tablist" aria-label="最新資訊分類" hidden>{tabs}</div></div>'
+        '<div class="home-latest-panel" id="latest-panel" role="tabpanel" aria-labelledby="latest-tab-all">'
+        f'<div class="home-latest-items{"" if items and items[0].get("thumbnail") else " is-text-only"}" data-latest-items>{rows}</div>'
+        f'<div class="home-latest-empty" data-latest-empty hidden>'
+        '<p class="home-latest-empty-message">目前尚未收錄日常貼文，可到官方 Facebook 查看。</p>'
+        f'<a class="latest-action" href="{FACEBOOK_URL}"{EXTERNAL}>官方 Facebook {link_arrow(FACEBOOK_URL)}</a></div>'
+        + (f'<template data-latest-reserve>{reserve}</template>' if reserve else '') +
+        '<p class="visually-hidden" data-latest-status aria-live="polite"></p>'
+        '<button type="button" class="home-latest-more" data-latest-more hidden>查看更多</button>'
+        '</div>'
+        f'<p class="home-latest-lists"><span>完整列表：</span>{lists}</p>'
+        '</section>'
+    )
+
+
+def featured_project(root=ROOT):
     config = json.loads((root / "data/civic-home.json").read_text())
     records = {row["id"]: row for row in public_records(root)}
     record = records.get(config["featured"])
     if record is None:
         raise ValueError("Homepage feature must reference a public achievement")
-    summary = config.get("summaries", {}).get(record["id"]) or record.get("summary", "")
+    return record, config.get("summaries", {}).get(record["id"]) or record.get("summary", "")
+
+
+def render_featured_project(root=ROOT):
+    record, summary = featured_project(root)
+    url = f'achievement-{record["id"]}.html'
     place = "、".join(record.get("villages", [])) or record.get("scope", "地區未載")
-    latest = latest_history_event(record.get("history") or [])
-    date_text = latest.get("date", "日期未載") if latest else "日期未載"
-    category = (record.get("categories") or ["地方專題"])[0]
     return (
-        f'<article class="home-recent-local" data-home-local-record="{e(record["id"])}">'
-        f'<div class="home-recent-art home-recent-art--local"><span>{e(category)}</span>'
-        f'<span>{e(place)}</span></div><div class="home-recent-card-copy">'
-        f'<p class="meta">地方專題</p>'
-        f'<h3><a href="achievement-{e(record["id"])}.html">{e(record["title"])}</a></h3>'
-        f'<p class="home-recent-copy">{e(summary)}</p>'
-        f'<p class="home-recent-meta">{e(record.get("status") or "階段未載")} · 最新收錄 {e(date_text)}</p>'
-        f'<a class="source" href="achievement-{e(record["id"])}.html">'
-        f'閱讀這件地方事與資料來源 {link_arrow("achievement-" + record["id"] + ".html")}</a></div></article>'
+        f'<article class="home-featured-project" data-home-featured-project="{e(record["id"])}">'
+        '<span class="home-featured-pin" aria-hidden="true"></span>'
+        f'<div class="home-featured-copy"><p class="home-featured-kicker">地方專題・{e(place)}</p>'
+        f'<h3><a href="{e(url)}">{e(record["title"])}</a></h3>'
+        f'<p class="home-featured-summary">{e(summary)}</p></div>'
+        f'<p class="home-featured-status"><span aria-hidden="true"></span>{e(record.get("status") or "階段未載")}</p>'
+        f'<a class="home-featured-history" href="{e(url)}">歷程與來源 {link_arrow(url)}</a></article>'
     )
 
 
@@ -330,64 +515,79 @@ def render_home_map_svg(records, geojson):
     )
 
 
+def local_village_options(catalog, root=ROOT):
+    """Fengshan villages that have at least one record in the formal 2,657-record catalogue."""
+    fengshan = {row["name"] for row in json.loads((Path(root) / "data/villages.json").read_text())
+                if row.get("district") == "鳳山區"}
+    return sorted({village for record in catalog for village in record.get("villages", []) if village in fengshan})
+
+
 def render_home_progress(root=ROOT):
     records = public_records(root)
+    catalog = catalog_records(root)
+    full = [row for row in catalog if row.get("recordFormat") == "full"]
+    short = [row for row in catalog if row.get("recordFormat") == "short"]
+    if len(full) != len(records) or len(full) + len(short) != len(catalog):
+        raise ValueError("Public record catalog must separate full records and short records")
     geojson = json.loads((root / "assets/fengshan-villages.geojson").read_text())
     counts = Counter(record.get("status", "") for record in records if record.get("status"))
     ordered_statuses = [status for status in STATUS_ORDER if status in counts]
     ordered_statuses.extend(sorted(set(counts) - set(ordered_statuses)))
-    villages = sorted({
-        village
-        for record in records
-        if record.get("district") == "鳳山區" and record.get("scope") not in NON_LOCAL_SCOPES
-        for village in record.get("villages", [])
-    })
-    stat_links = []
-    for status in ordered_statuses:
-        url = "achievements.html?status=" + quote(status, safe="") + "#case-results"
-        stat_links.append(
-            f'<li><a href="{url}" data-home-status="{e(status)}">'
-            f'<span>{e(status)}</span><strong>{counts[status]}</strong></a></li>'
-        )
-    village_options = "".join(
-        f'<option value="v:{e(village)}">{e(village)}</option>' for village in villages
+    villages = local_village_options(catalog, root)
+    stat_links = "".join(
+        f'<li><a href="achievements.html?status={quote(status, safe="")}#case-results" data-home-status="{e(status)}">'
+        f'<span>{e(status)}</span><strong>{counts[status]}</strong></a></li>'
+        for status in ordered_statuses
     )
+    village_options = "".join(f'<option value="v:{e(village)}">{e(village)}</option>' for village in villages)
     return (
-        '<section class="section home-local-progress" id="home-local-progress" '
-        'aria-labelledby="home-local-heading"><div class="wrap">'
-        '<div class="home-local-heading"><p class="kicker">鳳山地方進度</p>'
-        '<h2 id="home-local-heading">公開紀錄，依里別查看</h2>'
-        '<p>從公開資料查看不同辦理階段，或依里別找相關紀錄。</p></div>'
-        '<div class="home-local-layout"><div class="home-local-stats">'
-        '<a class="home-total-stat" href="achievements.html#case-results" data-home-stat="total">'
-        f'<strong>{len(records)}</strong><span>筆公開紀錄</span></a>'
-        '<ul class="home-status-stats" aria-label="依辦理階段查看紀錄">'
-        + "".join(stat_links)
-        + '</ul><a class="home-village-coverage" href="achievements.html#case-results" '
-        'data-home-stat="villages"><strong>' + str(len(villages)) + '</strong>'
-        '<span>個里有公開紀錄</span><small>這是資料涵蓋里數，非鳳山行政里總數。</small></a>'
-        '</div><div class="home-local-discovery"><figure class="home-map-preview">'
-        '<a href="' + e(MAP_LINK) + '" aria-label="在互動地圖查看公開紀錄；也可使用下方里別選單或文字紀錄">'
-        f'<img src="{MAP_ASSET}" width="600" height="460" loading="lazy" decoding="async" '
-        'alt="鳳山區里界示意圖；圓點只標示公開紀錄已有的鳳山區座標。">'
-        '</a><figcaption>里界資料：<a href="' + e(geojson["sourceUrl"]) + '" target="_blank" '
-        'rel="noopener noreferrer">內政部國土測繪中心村里界圖</a>，'
-        + e(geojson["license"])
-        + ". "
-        ' 圓點為公開紀錄已有座標。</figcaption></figure>'
+        '<section class="wrap home-progress" id="progress" aria-labelledby="home-progress-heading">'
+        '<span class="home-anchor" id="home-local-progress"></span><span class="home-anchor" id="home-local-heading"></span>'
+        '<div class="home-progress-head"><div class="home-progress-title">'
+        '<h2 id="home-progress-heading">查地方進度</h2><p>依里別或議題查詢公開紀錄</p></div>'
         '<form class="home-village-form" action="achievements.html#case-results" method="get" role="search">'
-        '<label for="home-village">依里別查詢公開紀錄</label>'
+        '<label for="home-village">選擇里別</label>'
         '<div class="home-village-controls"><select id="home-village" name="village" '
         'aria-describedby="home-village-help"><option value="">選擇里別</option>'
         + village_options
-        + '</select><button class="home-village-submit" type="submit">查看紀錄</button>'
-        '<button class="home-village-reset" type="reset">清除選擇</button></div>'
-        '<small id="home-village-help">選擇後前往既有紀錄頁；可用鍵盤操作，清除選擇不需 JavaScript。</small>'
+        + '</select><button class="home-village-submit" type="submit">查看紀錄 →</button></div>'
+        '<small id="home-village-help">選擇後前往建設與進度頁，可再依主題與進度篩選。</small>'
         '<noscript><small>未啟用 JavaScript 時，完整文字紀錄仍可在建設與進度頁查看。</small></noscript>'
-        '</form><a class="home-map-text-link" href="achievements.html#case-results">'
+        '</form></div>'
+        + render_featured_project(root)
+        + '<div class="home-progress-facts">'
+        '<a class="home-total-stat" href="achievements.html#case-results" data-home-stat="total">'
+        f'<strong>{len(catalog):,}</strong><span>筆公開紀錄</span>'
+        f'<small>{len(full):,} 篇完整專題、{len(short):,} 筆短紀錄；收錄不等於完成。</small></a>'
+        '<div class="home-status-group"><p class="home-status-caption">完整專題的辦理階段</p>'
+        f'<ul class="home-status-stats" aria-label="完整專題的辦理階段">{stat_links}</ul></div>'
+        '<a class="home-village-coverage" href="achievements.html#case-results" data-home-stat="villages">'
+        f'<strong>{len(villages)}</strong><span>個里有公開紀錄</span>'
+        '<small>這是資料涵蓋里數，非鳳山行政里總數。</small></a>'
+        '<figure class="home-map-preview">'
+        f'<a href="{e(MAP_LINK)}" aria-label="在互動地圖查看公開紀錄；也可使用上方里別選單或文字紀錄">'
+        f'<img src="{MAP_ASSET}" width="600" height="460" loading="lazy" decoding="async" '
+        'alt="鳳山區里界示意圖；圓點只標示公開紀錄已有的鳳山區座標。"></a>'
+        f'<figcaption>里界資料：<a href="{e(geojson["sourceUrl"])}"{EXTERNAL}>內政部國土測繪中心村里界圖</a>，'
+        f'{e(geojson["license"])}。圓點為公開紀錄已有座標。</figcaption></figure>'
+        '<a class="home-map-text-link" href="achievements.html#case-results">'
         f'不使用地圖也可直接查閱全部公開紀錄 {link_arrow("achievements.html#case-results")}</a>'
-        '</div></div></div></section>'
+        '</div></section>'
     )
+
+
+def render_more(candidate_number):
+    links = (
+        ("council-records.html", "議會公開紀錄", "依會期與日期查詢質詢紀錄"),
+        ("about.html", "認識慧文", "經歷、理念與服務處"),
+        ("vision.html", "政見原文與追蹤", "歷屆政見與辦理情形"),
+        ("election.html", "2026 選舉資訊", candidate_number),
+    )
+    items = "".join(f'<li><a href="{href}"><strong>{e(title)}</strong><span>{note}</span></a></li>'
+                    for href, title, note in links)
+    return ('<section class="wrap home-more" id="council" aria-labelledby="home-more-heading">'
+            '<span class="home-anchor" id="home-council-heading"></span>'
+            f'<h2 id="home-more-heading">更多資訊</h2><ul>{items}</ul></section>')
 
 
 def render_contact(office):
@@ -412,20 +612,19 @@ def render_contact(office):
 def build(root=ROOT):
     office = load_office(root)
     schedule = validate_schedule(json.loads((root / "data/legal-schedule.json").read_text()))
-    events = json.loads((root / "data/events.json").read_text())["events"]
     records = public_records(root)
     geojson = json.loads((root / "assets/fengshan-villages.geojson").read_text())
     map_path = root / MAP_ASSET
     map_path.write_text(render_home_map_svg(records, geojson), encoding="utf-8")
+    feed = latest_info.build(root)
+    build_case_options(records, root)
     body = (root / "templates/home-main.html").read_text().strip()
     platforms = json.loads((root / "data/platforms.json").read_text())
     replacements = [
-        ("HOME_CANDIDATE_NUMBER", render_candidate_number(platforms)),
-        ("HOME_PHONE_URL", e(office["phoneUrl"])),
         ("HOME_SERVICES", render_services(office, schedule)),
-        ("HOME_EVENT", render_event(events, root)),
-        ("HOME_LOCAL", render_recent_local(root)),
+        ("HOME_LATEST", render_latest(feed, root)),
         ("HOME_PROGRESS", render_home_progress(root)),
+        ("HOME_MORE", render_more(render_candidate_number(platforms))),
         ("HOME_CONTACT", render_contact(office)),
     ]
     for key, value in replacements:
@@ -440,7 +639,7 @@ def build(root=ROOT):
     if count != 1:
         raise ValueError("Homepage main region is missing")
     page.write_text(content)
-    print("Built homepage from current public achievement, service and event sources")
+    print("Built homepage from latest information, service and public record sources")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 /* Public activity timeline and stable event detail pages. */
-.activities-page{--event-ink:#173f33;--event-muted:#4f6256;--event-line:#c4d0c3;--event-paper:#f5f7f1}
+.activities-page{--event-ink:#6356a3;--event-muted:#4f6256;--event-line:#c4d0c3;--event-paper:#f5f7f1}
 .activities-page .page-head{padding-bottom:36px}
 .activities-page .event-announcements{padding-bottom:72px}
 .activities-page .event-timeline{list-style:none;margin:0;padding:0}

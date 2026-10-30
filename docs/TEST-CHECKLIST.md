@@ -10,11 +10,15 @@
 - [ ] 需要版本化的產生檔已納入 commit。
 - [ ] 未出現 `YOUR_GITHUB_USERNAME`、`YOUR_REPOSITORY_NAME` 等 placeholder。
 - [ ] 未出現 token、API key、密碼、私人案件個資、內部附件或內部網址。
+- [ ] 後台發布的候選預檢（`scripts/candidate_preflight.py`）只涵蓋 validators、generated 與公開邊界；完整 unit／negative／E2E 仍以 required `validate` check 在 PR head 執行 `scripts/quality.py`，預檢通過不等於 CI 通過。
+- [ ] required `validate` check 的 job 上限為 75 分鐘（只放寬 CI 執行時間；40 分鐘曾在完整 unit 途中被取消，保留較慢 runner 的執行餘量）。被取消不算通過，validators、unit、negative、E2E 與 CMS 25 分鐘／lease 30 分鐘都不變。
 
 ## B. Desktop
 
 - [ ] 首頁可正常顯示。
-- [ ] 首頁「勝選倒數」緊接在「慧文會武／會做事」下方，只顯示倒數與 `2026.11.28`，不再出現獨立選戰卡或 10/23 抽籤資訊。
+- [ ] 首頁依序為四項服務列、最新資訊（全部／新聞／日常／活動）、查地方進度、更多資訊與聯絡區；沒有大型人像英雄區。
+- [ ] 最新資訊順序與 `data/latest-info.json` 一致；置頂（最多 3 則）排在最前，分頁只過濾同一順序；外部縮圖失敗時保留文字與原始來源連結。
+- [ ] 主導覽直接提供「最新資訊／找服務／查地方進度」，其他既有連結都在「更多」中可用鍵盤開啟。
 - [ ] 主要導覽可開啟：關於、政績、政見、新聞、新聞發稿、活動、相片集、服務資訊、案件表單。
 - [ ] 字型、圖片、CSS、JavaScript 無明顯缺漏。
 - [ ] Browser console 無阻斷功能的 error。

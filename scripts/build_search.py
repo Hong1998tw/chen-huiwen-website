@@ -66,7 +66,7 @@ def build(root=ROOT):
         seo = entry_state.get('seo') if isinstance(entry_state, dict) else None
         if isinstance(seo, dict) and isinstance(seo.get('description'), str):
             description = seo['description']
-        for element in main.select('script, style, noscript, nav, .eyebrow, .civic-kicker, .case-subtags, .map-controls, .map-source, .case-sources, .source-links, .cross-content-explore, .case-print-sheet, .print-toolbar'):
+        for element in main.select('script, style, template, noscript, nav, .eyebrow, .civic-kicker, .case-subtags, .map-controls, .map-source, .case-sources, .source-links, .cross-content-explore, .case-print-sheet, .print-toolbar'):
             element.decompose()
         # Collections with separate detail pages index their intro.
         # Media reports only live on news.html; retain their text so search can find them.

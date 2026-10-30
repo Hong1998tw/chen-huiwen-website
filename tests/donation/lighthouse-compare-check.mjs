@@ -26,20 +26,28 @@ const tree = async (name, files) => {
 const base = { 'index.html': '<h1>home</h1>', 'styles.css': 'body{margin:0}', 'data/search-index.json': '[1,2,3]' };
 
 /** Writes a result folder like readiness-performance.mjs would. */
-const makeRun = async (name, root, { compression, browser = '140.0.7339.186', unchanged = true, withManifest = true, withContent = true, tamper, servedOverride, withQuery = false, performance } = {}) => {
+const makeRun = async (name, root, { compression, browser = '140.0.7339.186', unchanged = true, withManifest = true, withContent = true, tamper, servedOverride, withQuery = false, performance,
+ site, thirdParty = () => [], requested, rowTamper } = {}) => {
  const manifest = await buildContentManifest(root);
  const dir = join(work, name, 'candidate-lighthouse');
  await mkdir(dir, { recursive: true });
  const served = (path, file) => ({ path, serverIdentitySha256: servedOverride?.[path] ?? manifest.files.find(f => f.path === file).sha256, contentEncoding: compression === 'none' ? null : 'br', mimeType: 'text/html', vary: null });
  const results = [1, 2, 3].map(run => ({ page: 'index.html', run, lighthouseVersion: '13.4.1', browserVersion: browser, scores: { performance: performance ?? (compression === 'none' ? 90 : 98) },
   metrics: { 'first-contentful-paint': 1000, 'largest-contentful-paint': 2000, 'speed-index': 1500, 'total-blocking-time': 0 }, network: { transferSize: 1000, resourceSize: 2000, serverBodyBytes: 900 },
-  pageRequests: [served('/index.html', 'index.html'), served(withQuery ? '/styles.css?v=abc123' : '/styles.css', 'styles.css')] }));
+  pageRequests: [served('/index.html', 'index.html'), served(withQuery ? '/styles.css?v=abc123' : '/styles.css', 'styles.css')]
+   // CI schema (readiness-performance.mjs): absolute url and origin on every row, third-party rows without server proof.
+   .map(row => site ? { ...row, url: site + row.path, origin: site } : row)
+   .concat(thirdParty(run).map(url => ({ url, origin: new URL(url).origin, path: new URL(url).pathname, serverIdentitySha256: null, mimeType: 'image/jpeg', contentEncoding: null, vary: null })))
+   .map(row => rowTamper ? rowTamper(row, run) : row) }));
  const summary = { label: name, node: 'v22', root, conditions: { compression, browserVersion: browser, thresholds: { performance: 90 }, runs: 3, ci: true },
   results, acceptance: [{ page: 'index.html', medians: { performance: performance ?? 90 }, passed: (performance ?? 90) >= 90 }], ...(withContent ? { content: { root, digest: manifest.digest, fileCount: manifest.fileCount, manifestFile: 'content-manifest.json', digestAfterRun: manifest.digest, unchangedDuringRun: unchanged } } : {}) };
  if (tamper) tamper(summary, manifest);
  await writeFile(join(dir, 'summary.json'), JSON.stringify(summary));
  if (withManifest) await writeFile(join(dir, 'content-manifest.json'), JSON.stringify(manifest));
- for (const run of [1, 2, 3]) await writeFile(join(dir, `index.html-${run}.json`), '{}');
+ for (const run of [1, 2, 3]) {
+  const requestedUrl = requested === undefined ? (site ? site + '/index.html' : undefined) : requested;
+  await writeFile(join(dir, `index.html-${run}.json`), requestedUrl ? JSON.stringify({ requestedUrl }) : '{}');
+ }
  return dir;
 };
 const compare = async (a, b) => compareRuns(await loadRun(a), await loadRun(b));
@@ -236,6 +244,73 @@ try {
   assert.match(fail.stdout, /不可比較／證據不足/); assert.match(fail.stdout, /styles\.css/);
   const missing = spawnSync('node', [script, runNone, join(work, 'no-such-dir'), out], { encoding: 'utf8' });
   assert.notEqual(missing.status, 0);
+ });
+ // Third-party URLs (CI schema). The site origin must be proven by the verified page row, the raw report's
+ // requestedUrl and a loopback origin before any other origin is treated as third-party.
+ const SITE = 'http://127.0.0.1:8820';
+ const LTN = 'https://img.ltn.com.tw/Upload/news/600/2026/10/07/5598112_1_1.jpg';
+ const ciNone = await makeRun('ci-none', rootA, { compression: 'none', site: SITE, thirdParty: () => [LTN] });
+ await check('third-party URL present in every run of A and B with proven first-party bytes is comparable and listed as unverified', async () => {
+  const comparison = await compare(ciNone, await makeRun('ci-auto', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN] }));
+  assert.deepEqual(comparison.problems, []);
+  assert.equal(comparison.comparable, true);
+  assert.deepEqual(comparison.thirdParty.pages, { 'index.html': [LTN] });
+  assert.equal(comparison.thirdParty.verified, false);
+  const noThirdParty = await compare(await makeRun('ci-none-plain', rootA, { compression: 'none', site: SITE }), await makeRun('ci-auto-plain', rootSame, { compression: 'auto', site: SITE }));
+  assert.equal(noThirdParty.comparable, true);
+  assert.deepEqual(noThirdParty.thirdParty.pages, {});
+ });
+ await check('third-party URL sets that differ between A and B, or between runs of one side, are not comparable', async () => {
+  const onlyA = await compare(ciNone, await makeRun('ci-auto-none-3p', rootSame, { compression: 'auto', site: SITE }));
+  assert.equal(onlyA.comparable, false); mention(onlyA, /third-party URL sets differ/);
+  const oneRun = await compare(ciNone, await makeRun('ci-auto-one-run', rootSame, { compression: 'auto', site: SITE, thirdParty: run => run === 2 ? [LTN, 'https://images.newtalk.tw/a.jpg'] : [LTN] }));
+  assert.equal(oneRun.comparable, false); mention(oneRun, /third-party URL sets differ.*B run 2/);
+ });
+ await check('first-party rows keep full proof when third-party rows exist: missing hash or wrong bytes still fail', async () => {
+  const missing = await compare(ciNone, await makeRun('ci-auto-missing', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.path === '/styles.css' ? { ...row, serverIdentitySha256: null } : row }));
+  assert.equal(missing.comparable, false); mention(missing, /\/styles\.css has no server-side SHA-256/);
+  const wrong = await compare(ciNone, await makeRun('ci-auto-wrong', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN], servedOverride: { '/styles.css': 'f'.repeat(64) } }));
+  assert.equal(wrong.comparable, false); mention(wrong, /styles\.css was served with bytes that differ/);
+ });
+ await check('a forged origin, path or relative url cannot move a first-party row out of verification', async () => {
+  // Same-site url with a declared foreign origin and no proof.
+  const forged = await compare(ciNone, await makeRun('ci-auto-forged-origin', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.path === '/styles.css' ? { ...row, origin: 'https://img.ltn.com.tw', serverIdentitySha256: null } : row }));
+  assert.equal(forged.comparable, false); mention(forged, /declared origin https:\/\/img\.ltn\.com\.tw does not match its url/); mention(forged, /\/styles\.css has no server-side SHA-256/);
+  // A row whose path claims a manifest file while its url points elsewhere on the site.
+  const pathMismatch = await compare(ciNone, await makeRun('ci-auto-path', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.path === '/styles.css' ? { ...row, url: SITE + '/other.css' } : row }));
+  assert.equal(pathMismatch.comparable, false); mention(pathMismatch, /path \/styles\.css does not match its url/);
+  // Relative or malformed urls fail closed and stay first-party.
+  const relative = await compare(ciNone, await makeRun('ci-auto-relative', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.url === LTN ? { ...row, url: '/Upload/news/600/2026/10/07/5598112_1_1.jpg' } : row }));
+  assert.equal(relative.comparable, false); mention(relative, /malformed or relative url/); mention(relative, /5598112_1_1\.jpg has no server-side SHA-256/);
+  // A third-party url claimed under the site origin is checked as first-party and needs proof.
+  const disguised = await compare(ciNone, await makeRun('ci-auto-disguised', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.url === LTN ? { ...row, url: SITE + '/Upload/news/600/2026/10/07/5598112_1_1.jpg', origin: SITE } : row }));
+  assert.equal(disguised.comparable, false); mention(disguised, /5598112_1_1\.jpg has no server-side SHA-256/);
+  // Non-http schemes are not accepted as third-party resources.
+  const scheme = await compare(ciNone, await makeRun('ci-auto-scheme', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN],
+   rowTamper: row => row.url === LTN ? { ...row, url: 'ftp://img.ltn.com.tw/x.jpg', origin: 'null' } : row }));
+  assert.equal(scheme.comparable, false);
+ });
+ await check('an unproven site origin keeps every other-origin row first-party: no raw requestedUrl, a mismatching one, non-loopback or mixed schema', async () => {
+  for (const [label, options] of [
+   ['no-raw', { requested: null }],
+   ['raw-other-origin', { requested: 'http://127.0.0.1:9999/index.html' }],
+   ['remote-site', { site: 'https://www.huiwen.tw', requested: 'https://www.huiwen.tw/index.html' }],
+   ['mixed-schema', { rowTamper: row => row.path === '/index.html' ? (({ url, origin, ...rest }) => rest)(row) : row }],
+  ]) {
+   const comparison = await compare(ciNone, await makeRun(`ci-auto-${label}`, rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN], ...options }));
+   assert.equal(comparison.comparable, false, label); mention(comparison, /5598112_1_1\.jpg has no server-side SHA-256/);
+  }
+ });
+ await check('own-page wrong bytes still fail with a proven site origin and third-party rows', async () => {
+  const comparison = await compare(ciNone, await makeRun('ci-auto-own-wrong', rootSame, { compression: 'auto', site: SITE, thirdParty: () => [LTN], servedOverride: { '/index.html': 'e'.repeat(64) } }));
+  assert.equal(comparison.comparable, false); mention(comparison, /index\.html was served with bytes that differ/);
+  // An unverified page row cannot prove the site origin, so the other-origin row is not accepted as third-party.
+  mention(comparison, /B: index\.html run 1: \/Upload\/news\/600\/2026\/10\/07\/5598112_1_1\.jpg has no server-side SHA-256/);
  });
  console.log(`lighthouse-compare-check: ${checks.length} checks passed`);
 } finally {

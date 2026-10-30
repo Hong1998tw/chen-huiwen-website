@@ -32,45 +32,31 @@ export async function assertWithHomeDiagnostics(page, outputDir, width, stage, a
       };
     };
     const main = document.querySelector('main.home-redesign');
-    const hero = main?.querySelector(':scope > .hero');
-    const frame = main?.querySelector('.portrait-frame');
     const footer = document.querySelector('body.homepage-v2 > footer, footer');
-    const sections = [...(main?.querySelectorAll(':scope > section') ?? [])].map((element, index) => ({
+    const sections = [...(main?.children ?? [])].map((element, index) => ({
       index,
       id: element.id || null,
       className: element.className,
       box: rect(element),
       style: style(element),
     }));
-    const recentCards = [...(main?.querySelectorAll('.home-recent-list > li') ?? [])].map((item, index) => {
-      const article = item.querySelector('article');
-      const art = item.querySelector('.home-recent-art');
-      const copy = item.querySelector('.home-recent-card-copy');
-      return {
-        index,
-        kind: item.dataset.homeRecentItem ?? null,
-        item: rect(item),
-        article: rect(article),
-        art: rect(art),
-        copy: rect(copy),
-        articleStyle: style(article),
-      };
-    });
+    const latestItems = [...(main?.querySelectorAll('.latest-item:not([hidden])') ?? [])].map((item, index) => ({
+      index,
+      id: item.dataset.latestId ?? null,
+      lead: item.classList.contains('is-lead'),
+      item: rect(item),
+      media: rect(item.querySelector('[data-latest-media]')),
+      copy: rect(item.querySelector('.latest-copy')),
+      itemStyle: style(item),
+    }));
     const footerGrid = footer?.querySelector('.footer-grid');
     const footerBottom = footer?.querySelector('.footer-bottom');
     return {
       viewport: { width: innerWidth, height: innerHeight, scrollY },
       document: { scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight },
       sections,
-      hero: { box: rect(hero), style: style(hero) },
-      portrait: {
-        figure: rect(main?.querySelector('.hero-portrait')),
-        frame: rect(frame),
-        frameStyle: style(frame),
-        image: rect(frame?.querySelector('img')),
-        imageStyle: style(frame?.querySelector('img')),
-      },
-      recentCards,
+      services: rect(main?.querySelector('.home-service-band')),
+      latestItems,
       footer: {
         box: rect(footer),
         grid: rect(footerGrid),

@@ -33,7 +33,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check beautifulsoup4==4.13.5
 
       - name: Install pinned dependencies for trusted homepage rebuild
-        if: startsWith(github.event.pull_request.head.ref, 'notion-publish/home-content/')
+        if: startsWith(github.event.pull_request.head.ref, 'notion-publish/home-content/') || startsWith(github.event.pull_request.head.ref, 'notion-publish/editorial-page/') || startsWith(github.event.pull_request.head.ref, 'notion-publish/events/') || startsWith(github.event.pull_request.head.ref, 'notion-publish/page-copy/')
         run: python -m pip install --disable-pip-version-check beautifulsoup4==4.13.5 'fonttools[woff]==4.66.1' brotli==1.2.0 zopfli==0.4.3
 
       - name: Enforce executor path allowlist from the base revision

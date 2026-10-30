@@ -34,12 +34,12 @@ ROUTES = {
     "index.html": (
         "index",
         (
-            "main > .hero",
-            "main .home-task-paths",
-            "main > .home-recent",
-            "main .home-recent-event",
-            "main > .home-local-progress",
-            "main > .home-council",
+            "main > .home-service-band",
+            "main .home-latest-head",
+            "main .latest-item:not([hidden])",
+            "main .home-latest-lists",
+            "main > .home-progress",
+            "main > .home-more",
             "main > .contact-section",
         ),
     ),

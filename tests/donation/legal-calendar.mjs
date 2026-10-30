@@ -11,7 +11,7 @@ const live=process.env.LEGAL_LIVE_URL;
 assert(!live||live==='https://www.huiwen.tw/','live checks use the canonical public origin only');
 const server=live?null:spawn('python3',['-m','http.server','8795','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const base=live||'http://127.0.0.1:8795/',baseHost=new URL(base).hostname;
-if(!live)for(let n=0;n<50;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+if(!live)for(let n=0;n<50;n++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
 const report={checks:[],failures:[],sessions:data.sessions.length,month:data.month,baseUrl:base};
 const check=async(name,fn)=>{try{await fn();report.checks.push({name,status:'Passed'});}catch(e){report.failures.push(name);report.checks.push({name,status:'Failed',error:String(e)});}};
 const browser=await chromium.launch({headless:true});

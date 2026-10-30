@@ -15,6 +15,8 @@
 .news-report-media img{aspect-ratio:16/9;object-fit:cover}
 .news-report-media--portrait img{object-position:50% 22%}
 .news-report-media figcaption{padding:8px 14px 9px;background:#fff;color:var(--muted);font-size:.75rem;line-height:1.45}
+/* No-JS and CMS-preview entry for the source photo; the reading layer removes it when JavaScript runs. */
+.news-report-media-gate{margin:0;padding:0 14px;border:0}.news-report-media-gate>summary{min-height:44px;font-size:.95rem}.news-report-media-gate[open]{padding-bottom:12px}
 .news-report-card .card-body{height:100%;display:flex;flex-direction:column}
 .news-report-card .card-body>p:not(.eyebrow){color:var(--muted)}
 .news-report-card .text-link{margin-top:auto}

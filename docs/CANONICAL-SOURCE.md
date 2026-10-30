@@ -42,6 +42,9 @@ Production URL 代表「目前實際對外看到的狀態」，但不應反向�
 - `news.html`：媒體報導／議會公開報導索引的正式 source。
 - `press.html`：服務處新聞發稿索引的正式 source；個別全文沿用既有 `news-*.html` URL。`news.js`／`press.js` 只負責搜尋、主題分類、排序與 10 筆分頁，不在 Runtime 動態搬移兩類內容。
 
+- `data/home-case-options.json`：後台首頁編輯器用的 435 筆精簡政績投影（只含編輯與預覽需要的欄位），由 `scripts/build_home.py` 產生；不是可編輯來源。
+- `data/latest-info.json`：首頁最新資訊的唯讀衍生投影，由 `scripts/latest_info.py` 從 `news.html`、`press.html`、`data/editorial-pages.json`、`data/events.json` 與 `data/civic-home.json` 的置頂產生；不是第二份可編輯清單。
+
 `content.json` 為既有公告快照，不是政績產生器的資料來源。
 
 ## 4. Drive 單檔 Candidate 的定位

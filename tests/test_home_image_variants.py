@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build_home import EVENT_VARIANT_MANIFEST, _responsive_event_picture, render_event
+from build_home import EVENT_VARIANT_MANIFEST, _responsive_event_picture
 
 EVENT_ID = "campaign-headquarters-opening-2026-10-31"
 SOURCE = "assets/events/campaign-opening-20261031-landscape.jpg"
@@ -53,10 +53,10 @@ class HomeImageVariantTests(unittest.TestCase):
                 target.write_bytes(data)
 
     def test_current_home_event_srcsets_have_a_complete_existing_reference_closure(self):
-        generated = BeautifulSoup(render_event([event_source()], ROOT), "html.parser")
+        generated = BeautifulSoup(_responsive_event_picture(event_source()["images"][0], ROOT), "html.parser")
         built = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        pictures = (generated.select_one(".home-recent-event picture"),
-                    built.select_one('[data-home-event="campaign-headquarters-opening-2026-10-31"] picture'))
+        pictures = (generated.select_one("picture"),
+                    built.select_one('[data-latest-id="event-campaign-headquarters-opening-2026-10-31"] picture'))
         closures = [references(BeautifulSoup(str(picture), "html.parser")) for picture in pictures]
         for picture in pictures:
             self.assertEqual([source["type"] for source in picture.select("source")], ["image/avif", "image/webp"])
@@ -102,28 +102,17 @@ class HomeImageVariantTests(unittest.TestCase):
                 self.assertEqual(references(soup), {SOURCE})
                 self.assertFalse(soup.select("source, img[srcset]"))
 
-    def test_home_portrait_uses_only_the_verified_webp_srcset_and_fallback(self):
+    def test_homepage_has_no_large_portrait_hero_and_keeps_the_portrait_assets(self):
         template = BeautifulSoup((ROOT / "templates/home-main.html").read_text(encoding="utf-8"), "html.parser")
         built = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        expected_paths = {
-            "assets/home-portrait-384.webp",
-            "assets/home-portrait-480.webp",
-            "assets/home-portrait-640.webp",
-            "assets/legal/portrait.webp",
-        }
         for document in (template, built):
-            picture = document.select_one(".hero-portrait picture")
-            image = picture.select_one("img")
-            sources = picture.select("source")
-            self.assertEqual([source["type"] for source in sources], ["image/webp"])
-            self.assertEqual(references(BeautifulSoup(str(picture), "html.parser")), expected_paths)
-            self.assertEqual(image["src"], "assets/legal/portrait.webp")
-            self.assertEqual(image["width"], "1004")
-            self.assertEqual(image["height"], "1506")
-            self.assertEqual(image["fetchpriority"], "high")
-            for path in expected_paths:
-                with self.subTest(path=path):
-                    self.assertTrue((ROOT / path).is_file())
+            self.assertFalse(document.select(".hero-portrait, .hero"))
+        self.assertNotIn("home-portrait-", str(built.select_one("main")))
+        # Existing public portrait assets stay available for other pages and rollback.
+        for path in ("assets/home-portrait-384.webp", "assets/home-portrait-480.webp",
+                     "assets/home-portrait-640.webp", "assets/legal/portrait.webp"):
+            with self.subTest(path=path):
+                self.assertTrue((ROOT / path).is_file())
 
     def test_home_portrait_webp_riff_headers_advertise_alpha_channels(self):
         paths = (

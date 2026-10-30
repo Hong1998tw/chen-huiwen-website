@@ -53,22 +53,27 @@ DATA_FILES = {'events': 'data/events.json', 'legal-schedule': 'data/legal-schedu
 # Files a publish PR for each domain may change. Anything else fails closed (and CI re-checks it).
 ALLOWED_PATHS = {
     'deployment-control': {deployment_target.REQUEST_FILE},
-    'events': {'data/events.json', 'index.html', 'activities.html', 'election.html', 'data/search-index.json', 'sitemap.xml'},
+    'events': {'data/events.json', 'index.html', 'data/latest-info.json', 'activities.html', 'election.html', 'data/search-index.json', 'sitemap.xml'},
     'legal-schedule': {'data/legal-schedule.json', 'index.html', 'service.html', 'service-print.html', 'service-guides.html', 'data/search-index.json'},
     'page-copy': {'data/page-content.json', 'data/search-index.json', 'sitemap.xml'} | {
         row['path'] for row in page_catalog(ROOT)
         if row['kind'] not in {'system', 'legacy-redirect', 'excluded-intake'} and row['path'] not in READ_ONLY_DERIVED_PAGES
     },
-    'achievement-content': {'data/achievements.json', 'index.html', 'data/achievements-public.json', 'data/achievement-map.json', 'data/public-record-catalog.json',
+    'achievement-content': {'data/achievements.json', 'index.html', 'data/achievements-public.json', 'data/home-case-options.json', 'data/achievement-map.json', 'data/public-record-catalog.json',
                             'data/search-index.json', 'sitemap.xml', 'achievements.html', 'assets/og/manifest.json'} | {
         row['path'] for row in page_catalog(ROOT) if row['path'].startswith('achievement-')
     } | {
         'assets/og/' + row['path'].removesuffix('.html') + '.png' for row in page_catalog(ROOT)
         if row['path'].startswith('achievement-')
     },
-    'home-content': {'data/civic-home.json', 'index.html', 'data/search-index.json', 'sitemap.xml'},
-    'editorial-page': {'data/editorial-pages.json', 'data/search-index.json', 'sitemap.xml'},
+    'home-content': {'data/civic-home.json', 'index.html', 'data/latest-info.json', 'data/home-case-options.json', 'data/search-index.json', 'sitemap.xml'},
+    # index.html / latest-info.json follow news, press and daily pages; the path guard
+    # rebuilds them from the trusted base before accepting an editorial PR.
+    'editorial-page': {'data/editorial-pages.json', 'index.html', 'data/latest-info.json', 'data/search-index.json', 'sitemap.xml'},
 }
+# Generated outputs (homepage, feed, route fonts) are accepted only after the path guard
+# reproduces them from the trusted base revision.
+REBUILD_DOMAINS = frozenset({'home-content', 'editorial-page', 'events', 'page-copy'})
 BRANCH_PREFIX = 'notion-publish/'
 REQUIRED_CHECKS = ('validate', 'browser', 'secrets', 'publication-path-guard')
 # Direct merge endpoints are forbidden. Auto-merge may be enabled only through the guarded helper below.
@@ -76,7 +81,7 @@ FORBIDDEN_GITHUB = re.compile(r'/pulls/\d+/merge\b|/merges\b|mergePullRequest', 
 EVENT_FIELDS = ('name', 'start', 'end', 'location', 'content', 'registration', 'sourceUrl', 'verifiedAt',
                 'status', 'changeNote', 'updatedAt', 'reviewDueAt')
 NEW_EVENT_ORDER = ('id', 'name', 'start', 'end', 'content', 'registration', 'sourceUrl', 'verifiedAt',
-                   'status', 'updatedAt', 'previousSchedule', 'changeNote', 'reviewDueAt')
+                   'status', 'updatedAt', 'publishedAt', 'previousSchedule', 'changeNote', 'reviewDueAt')
 LEGAL_FIELDS = ('month', 'observedAt', 'sourceUrl', 'sourceTitle', 'sessions', 'validThrough',
                 'nextReviewAt', 'availability')
 STATUS_IN = {'排定': 'scheduled', '改期': 'rescheduled', '取消': 'cancelled',
@@ -327,12 +332,22 @@ def normalize_event(fields):
     return managed, errors
 
 
-def build_event_record(managed, site_id, main_record):
+def published_at_minute(value=None):
+    """Website publication time (Asia/Taipei, minute precision) from a fixed request timestamp."""
+    moment = datetime.now(TAIPEI) if value is None else datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    if moment.tzinfo is None:
+        raise ValueError('publication time needs a UTC offset')
+    return moment.astimezone(TAIPEI).strftime('%Y-%m-%dT%H:%M+08:00')
+
+
+def build_event_record(managed, site_id, main_record, published_at=None):
     errors = []
     if main_record is not None:
+        # The first publication time is fixed once; edits and reschedules keep it.
         record = copy.deepcopy(main_record)
     else:
         record = {key: None for key in NEW_EVENT_ORDER}
+        record['publishedAt'] = published_at or published_at_minute()
     record['id'] = site_id
     for key in EVENT_FIELDS:
         if key == 'location' and managed[key] is None and key not in record:
@@ -425,7 +440,11 @@ def prepare_event(row, main_text):
         raise PublishError('GITHUB_NEWER', [f'活動 {site_id} 已在網站上但尚未匯入基準，請先由工程回填'])
     record, record_errors = (None, [])
     if not errors:
-        record, record_errors = build_event_record(managed, site_id, main_record)
+        try:
+            published_at = published_at_minute(system['publishedAt']) if system.get('publishedAt') else None
+        except ValueError:
+            raise PublishError('VALIDATION', ['發布時間格式不正確']) from None
+        record, record_errors = build_event_record(managed, site_id, main_record, published_at)
     errors += record_errors
     preserved = sorted(k for k in (main_record or {}) if k not in EVENT_FIELDS and k not in ('id', 'previousSchedule'))
     if errors:
@@ -605,7 +624,7 @@ def verify_publish_snapshot(candidate, fresh_row, current_text):
 
 
 # ---------------------------------------------------------------------------------------------
-# Workspace: apply the candidate to a throwaway worktree, build, run the full quality gate.
+# Workspace: apply the candidate to a throwaway worktree, build, run the candidate preflight.
 def run(cmd, cwd, env=None, check=True):
     proc = subprocess.run(cmd, cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if check and proc.returncode:
@@ -620,8 +639,8 @@ def changed_files(repo):
 
 def allowed_for(candidate):
     allowed = set(ALLOWED_PATHS[candidate.domain])
-    if candidate.domain == 'home-content':
-        allowed.update(candidate.generated_files)
+    if candidate.domain in REBUILD_DOMAINS:
+        allowed.update(getattr(candidate, 'generated_files', ()))
     if candidate.domain == 'events':
         try:
             events = build_events.public_events(json.loads(candidate.new_text))
@@ -662,12 +681,14 @@ def materialize(candidate, repo, *, quality=True):
             if cards[slug]['title'] != case['title']:
                 run([sys.executable, 'scripts/build_share_cards.py', '--only', slug], repo)
         if quality:
-            run([sys.executable, 'scripts/quality.py'], repo)
+            # The candidate is uncommitted, so the clean-tree unit/E2E suites cannot run here; they run
+            # in the required `validate` check on the exact PR head before auto-merge.
+            run([sys.executable, 'scripts/candidate_preflight.py', '--baseline-ref', 'HEAD'], repo)
     except subprocess.CalledProcessError as exc:
         tail = [line for line in (exc.output or '').splitlines() if re.search(r'Error|FAIL|STALE|assert', line)][-3:]
         raise PublishError('BUILD_FAILED', [re.sub(r'\s+', ' ', t)[:200] for t in tail]) from None
     files = changed_files(repo)
-    if candidate.domain == 'home-content':
+    if candidate.domain in REBUILD_DOMAINS:
         candidate.generated_files.update(set(files) - ALLOWED_PATHS[candidate.domain])
     check_allowed(candidate.domain, files, candidate)
     return files
@@ -1303,7 +1324,8 @@ def pr_body(cand, base_sha):
         f'- Domain：`{cand.domain}`', f'- Record：`{cand.record_key}`',
         f'- Candidate digest：`{cand.digest}`', f'- Git base：`{base_sha}`（record base `{cand.base_hash}`）',
         f'- 建立時間：{now_iso()}', '',
-        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、quality 與版本綁定。',
+        '本 PR 由 Notion「發布」動作建立；候選內容已完成 fresh-read、build、候選預檢（validators、generated、公開邊界）與版本綁定。',
+        '候選預檢不是完整 quality；完整 unit／negative／E2E 由 required `validate` check 在本 PR head 執行。',
         '**不得繞過 required checks。** GitHub auto-merge 只會在既有 ruleset 條件全數滿足後合併。',
         '合併後由受審 deployment target 部署，並依 HTTP／snapshot／native 分層驗證；BLOCKED 不等於 PASS。'])
 

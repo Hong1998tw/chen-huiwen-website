@@ -260,7 +260,8 @@ async function waitForHomepageLayout() {
         resolve(false);
       });
     });
-    const portrait = document.querySelector('.hero-portrait img');
+    // The lead thumbnail may be external; a decoded image or the visible text fallback both settle it.
+    const portrait = document.querySelector('.latest-item.is-lead [data-latest-media] img');
     let fontsReady = null;
     let portraitDecoded = null;
     const rect = element => {
@@ -269,7 +270,7 @@ async function waitForHomepageLayout() {
       return { left, top, right, bottom, width, height };
     };
     const snapshot = () => {
-      const heading = document.querySelector('.home-task-paths strong');
+      const heading = document.querySelector('.home-service-entry strong');
       const headingStyle = heading ? getComputedStyle(heading) : null;
       return {
         viewport: { width: innerWidth, height: innerHeight },
@@ -280,10 +281,11 @@ async function waitForHomepageLayout() {
           ready: fontsReady,
           taskFontLoaded: headingStyle ? document.fonts.check(`${headingStyle.fontWeight} ${headingStyle.fontSize} ${headingStyle.fontFamily}`) : false,
         },
-        portrait: portrait ? { complete: portrait.complete, naturalWidth: portrait.naturalWidth, decoded: portraitDecoded } : null,
+        portrait: portrait ? { complete: portrait.complete, naturalWidth: portrait.naturalWidth, decoded: portraitDecoded,
+          failed: Boolean(portrait.closest('[data-latest-media]')?.classList.contains('is-failed')) } : { decoded: true, failed: false },
         header: rect(document.querySelector('.site-header')),
-        hero: rect(document.querySelector('#main.home-redesign .hero')),
-        taskBoxes: [...document.querySelectorAll('.home-task-paths a')].map(rect),
+        hero: rect(document.querySelector('#latest')),
+        taskBoxes: [...document.querySelectorAll('.home-service-entry')].map(rect),
       };
     };
     let current = snapshot();
@@ -309,7 +311,8 @@ async function waitForHomepageLayout() {
         publishDiagnostics();
         return value;
       }),
-      portrait ? bounded(portrait.decode()).then(value => {
+      portrait ? bounded(portrait.decode()).then(async value => {
+        if (!value) await new Promise(resolve => setTimeout(resolve, 50));
         portraitDecoded = value;
         current = snapshot();
         publishDiagnostics();
@@ -379,14 +382,18 @@ async function captureHomepage1180Screenshot() {
 
 try {
   await page.goto(base + 'index.html');
-  await page.locator('.home-task-paths a').first().waitFor();
-  await check('homepage service and local-record task routes are directly available', async () => {
-    assert.deepEqual(await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [
-      'service.html#contact', 'achievements.html#case-results'
-    ]);
-    const order = await page.locator('#recent .home-recent-list > li').evaluateAll(rows => rows.map(row => row.dataset.homeRecentItem));
-    assert.deepEqual(order, ['headquarters', 'award', 'local']);
-    assert.match(await page.locator('#recent').innerText(), /總部成立[\s\S]*獲選[\s\S]*文德國小活動中心/);
+  await page.locator('.home-service-entry').first().waitFor();
+  await check('homepage service, latest information and local-record routes are directly available', async () => {
+    const services = await page.locator('.home-service-entry').evaluateAll(links => links.map(link => link.getAttribute('href')));
+    assert.equal(services.length, 4);
+    assert.deepEqual([services[0], services[2], services[3]], ['service.html#contact', 'https://line.me/R/ti/p/@yve2766q', 'service.html#monthly-heading']);
+    assert.match(services[1], /^tel:/);
+    const feed = JSON.parse(await readFile(join(root, 'data/latest-info.json'), 'utf8'));
+    const order = await page.locator('.latest-item:not([hidden])').evaluateAll(rows => rows.map(row => row.dataset.latestId));
+    assert.deepEqual(order, feed.items.slice(0, 3).map(item => item.id));
+    assert.match(await page.locator('#latest').innerText(), /獲選[\s\S]*總部成立/);
+    assert.match(await page.locator('#progress').innerText(), /文德國小活動中心/);
+    assert.equal(await page.locator('#progress .home-village-form').getAttribute('action'), 'achievements.html#case-results');
     await page.screenshot({ path: join(results, 'homepage-desktop-1440x960.png'), fullPage: false });
   });
 
@@ -394,11 +401,11 @@ try {
   await page.goto(base + 'index.html');
   await check('390×844 homepage keeps task routes inside the first screen without overflow', async () => {
     await assertNoOverflow(390);
-    const boxes = await page.locator('.home-task-paths a').evaluateAll(links => links.map(link => {
+    const boxes = await page.locator('.home-service-entry').evaluateAll(links => links.map(link => {
       const r = link.getBoundingClientRect();
       return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
     }));
-    assert.equal(boxes.length, 2);
+    assert.equal(boxes.length, 4);
     assert(boxes.every(box => box.left >= 0 && box.right <= 390 && box.top >= 0 && box.bottom <= 844));
     assert(boxes.every(box => box.width >= 44 && box.height >= 40));
     await page.screenshot({ path: join(results, 'homepage-390x844.png'), fullPage: false });
@@ -523,20 +530,20 @@ try {
       readiness.screenshot = await captureHomepage1180Screenshot();
       report.homepage1180 = readiness;
     }
-    await check(`homepage reflows at ${width}px with both task links visible and no horizontal overflow`, async () => {
+    await check(`homepage reflows at ${width}px with all four service links visible and no horizontal overflow`, async () => {
       assert(readiness.layoutStable, readiness.primaryFailure
         ? `homepage layout readiness failed: ${JSON.stringify(readiness)}`
         : `homepage layout did not stabilize within eight frames: ${JSON.stringify(readiness)}`);
-      await page.locator('.home-task-paths a').first().waitFor({ state: 'visible', timeout: 5000 });
+      await page.locator('.home-service-entry').first().waitFor({ state: 'visible', timeout: 5000 });
       assert(readiness.fonts.ready, `homepage fonts did not become ready: ${JSON.stringify(readiness)}`);
-      assert(readiness.portrait?.decoded, `homepage portrait did not decode: ${JSON.stringify(readiness)}`);
+      assert(readiness.portrait?.decoded || readiness.portrait?.failed, `homepage lead thumbnail neither decoded nor fell back: ${JSON.stringify(readiness)}`);
       if (width === 1180) {
         assert.equal(readiness.screenshot.status, 'captured',
           `1180×757 homepage screenshot was not captured: ${JSON.stringify(readiness.screenshot)}`);
       }
       await assertNoOverflow(width);
-      const boxes=await page.locator('.home-task-paths a').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
-      assert.equal(boxes.length,2);
+      const boxes=await page.locator('.home-service-entry').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};}));
+      assert.equal(boxes.length,4);
       assert(boxes.every(box=>box.left>=0&&box.top>=0&&box.right<=width&&box.bottom<=height&&box.width>=44&&box.height>=40),
         `homepage task links must fit inside ${width}×${height}: ${JSON.stringify({ readiness, boxes })}`);
       return { boxes, readiness };
@@ -577,24 +584,24 @@ try {
   for(const viewport of [{width:590,height:378,label:'200% source viewport'},{width:393,height:252,label:'300% short viewport'}]){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
     await page.goto(base+'index.html');
-    await page.locator('.home-task-paths a').first().waitFor();
+    await page.locator('.home-service-entry').first().waitFor();
     await check(`homepage reflows at ${viewport.width}×${viewport.height} CSS px (${viewport.label}) without fixed controls obscuring content`,async()=>{
       await assertNoOverflow(viewport.width);
       const layout=await page.evaluate(()=>({
         topline:getComputedStyle(document.querySelector('.topline')).display,
         header:getComputedStyle(document.querySelector('.site-header')).position,
         headerBottom:document.querySelector('.site-header').getBoundingClientRect().bottom,
-        titleTop:document.querySelector('#hero-title').getBoundingClientRect().top,
-        titleBottom:document.querySelector('#hero-title').getBoundingClientRect().bottom,
+        titleTop:document.querySelector('#service').getBoundingClientRect().top,
+        titleBottom:document.querySelector('.home-service-entry').getBoundingClientRect().bottom,
         actions:document.querySelector('.mobile-actions')?getComputedStyle(document.querySelector('.mobile-actions')).position:'none',
       }));
       assert.equal(layout.topline,'none');
       assert.equal(layout.header,'relative');
-      assert(layout.titleTop>=layout.headerBottom,'hero title must follow the compact header');
+      assert(layout.titleTop>=layout.headerBottom,'the first homepage content must follow the compact header');
       await page.screenshot({path:join(results,`homepage-${viewport.width}x${viewport.height}.png`),fullPage:false});
       if(viewport.height<=360){
         assert.notEqual(layout.actions,'fixed','bottom actions must return to document flow in a short viewport');
-        assert(layout.titleBottom<=viewport.height,'the homepage title must remain fully readable in the short viewport');
+        assert(layout.titleBottom<=viewport.height,'the first homepage service entry must remain fully readable in the short viewport');
         await page.locator('.menu-toggle').click();
         const search=page.locator('#navigation .global-search-trigger');
         await search.waitFor({state:'visible'});

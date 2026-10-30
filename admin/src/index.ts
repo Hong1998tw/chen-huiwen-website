@@ -3,6 +3,7 @@ import { validate, validatePageFields } from "./validation.ts";
 import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
 import { validateCaseDraft } from "./case-draft.ts";
 import { validateHomeDraft } from "./home-draft.ts";
+import { loadHomeSources, loadCaseRecord, loadPublishedPins, readCommittedJSON, FEED_PAGE, PINNED_UNPUBLISH_MESSAGE } from "./home-sources.ts";
 import { validatePageSeo } from "./page-seo.ts";
 import { validateEditorialPage, validateEditorialBlocks, editorialPath, EDITORIAL_SECTIONS } from "./editorial-page.ts";
 import { boardAdmin } from "./board.ts";
@@ -334,15 +335,7 @@ async function handle(request: Request, env: Env) {
     if (!editorialPath.test(path)) throw new HttpError(400, "這不是可新增的專頁");
     const published = await env.DB.prepare("SELECT commit_sha FROM published_pages WHERE path=?").bind(path).first<{commit_sha:string}>();
     if (!published) throw new HttpError(404, "此專頁尚未發布");
-    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${published.commit_sha}/data/editorial-pages.json`;
-    let response: Response;
-    try { response = await fetch(source,{cache:"no-store",signal:AbortSignal.timeout(10000)}); }
-    catch { throw new HttpError(502, "無法讀取專頁來源"); }
-    if (!response.ok || Number(response.headers.get("content-length") || 0) > 1_000_000) throw new HttpError(502, "專頁來源暫時無法載入");
-    const body = await response.text();
-    if (body.length > 1_000_000) throw new HttpError(502, "專頁來源超出大小限制");
-    let record: unknown;
-    try { record = JSON.parse(body).pages?.[path]; } catch { throw new HttpError(502, "專頁來源格式不正確"); }
+    const record = (await readCommittedJSON(published.commit_sha, "data/editorial-pages.json", "專頁來源") as {pages?: Record<string, unknown>})?.pages?.[path];
     if (!record) throw new HttpError(502, "專頁來源與目錄不一致");
     return json({page:validateEditorialPage(path,record)});
   }
@@ -350,64 +343,21 @@ async function handle(request: Request, env: Env) {
     const path = u.searchParams.get("path") || "";
     if (editorialPath.test(path)) throw new HttpError(400, "新增專頁請使用專頁編輯器");
     const page = await isEditablePage(path);
-    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${page.commit_sha}/data/page-content.json`;
-    let response: Response;
-    try { response = await fetch(source,{cache:"no-store",signal:AbortSignal.timeout(10000)}); }
-    catch { throw new HttpError(502, "無法讀取頁面區塊來源"); }
-    if (!response.ok || Number(response.headers.get("content-length") || 0) > 1_000_000) throw new HttpError(502, "頁面區塊來源暫時無法載入");
-    const body = await response.text();
-    if (body.length > 1_000_000) throw new HttpError(502, "頁面區塊來源超出大小限制");
-    let blocks: unknown;
-    try { blocks = JSON.parse(body).pages?.[path]?.blocks ?? []; }
-    catch { throw new HttpError(502, "頁面區塊來源格式不正確"); }
+    const state = await readCommittedJSON(page.commit_sha, "data/page-content.json", "頁面區塊來源") as {pages?: Record<string, {blocks?: unknown}>};
+    const blocks: unknown = state?.pages?.[path]?.blocks ?? [];
     return json({blocks:validateEditorialBlocks(blocks)});
   }
   if (u.pathname === "/api/case" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
     const match = /^achievement-([a-z0-9-]+)\.html$/.exec(path);
     if (!match) throw new HttpError(400, "這不是政績專頁");
-    await isEditablePage(path);
-    let upstream: Response;
-    try {
-      upstream = await fetch("https://www.huiwen.tw/data/achievements-public.json", {
-        headers: { Accept: "application/json", "Cache-Control": "no-cache" }, cache: "no-store",
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch { throw new HttpError(502, "無法讀取正式站政績資料"); }
-    if (!upstream.ok || Number(upstream.headers.get("content-length") || 0) > 1_000_000)
-      throw new HttpError(502, "正式站政績資料暫時無法載入");
-    const body = await upstream.text();
-    if (body.length > 1_000_000) throw new HttpError(502, "正式站政績資料超出大小限制");
-    let rows: unknown;
-    try { rows = JSON.parse(body); } catch { throw new HttpError(502, "正式站政績資料格式不正確"); }
-    const row = Array.isArray(rows) ? rows.find((item) => item?.id === match[1]) : null;
-    if (!row) throw new HttpError(404, "找不到這筆政績資料");
-    return json({ case: row });
+    const page = await isEditablePage(path);
+    // Same committed revision as the page draft's baseCommit.
+    return json({ case: await loadCaseRecord(page.commit_sha, match[1]), revision: page.commit_sha });
   }
   if (u.pathname === "/api/home" && request.method === "GET") {
     const page = await isEditablePage("index.html");
-    if (!/^[a-f0-9]{40}$/.test(page.commit_sha)) throw new HttpError(502, "首頁來源版本不正確");
-    const source = `https://raw.githubusercontent.com/Hong1998tw/chen-huiwen-website/${page.commit_sha}/data/civic-home.json`;
-    let homeResponse: Response, casesResponse: Response;
-    try {
-      [homeResponse, casesResponse] = await Promise.all([
-        fetch(source, { cache: "no-store", signal: AbortSignal.timeout(10000) }),
-        fetch("https://www.huiwen.tw/data/achievements-public.json", { cache: "no-store", signal: AbortSignal.timeout(10000) }),
-      ]);
-    } catch { throw new HttpError(502, "無法讀取首頁專題來源"); }
-    if (!homeResponse.ok || !casesResponse.ok ||
-        Number(homeResponse.headers.get("content-length") || 0) > 20000 ||
-        Number(casesResponse.headers.get("content-length") || 0) > 1000000)
-      throw new HttpError(502, "首頁專題來源暫時無法載入");
-    const [homeText, casesText] = await Promise.all([homeResponse.text(), casesResponse.text()]);
-    if (homeText.length > 20000 || casesText.length > 1000000) throw new HttpError(502, "首頁專題來源超出大小限制");
-    let home: ReturnType<typeof validateHomeDraft>, cases: unknown;
-    try { home = validateHomeDraft(JSON.parse(homeText)); cases = JSON.parse(casesText); }
-    catch { throw new HttpError(502, "首頁專題來源格式不正確"); }
-    const ids = [home.featured, ...home.reading];
-    if (!Array.isArray(cases) || ids.some(id => !cases.some(row => row?.id === id)))
-      throw new HttpError(502, "首頁專題與公開資料不一致");
-    return json({ home, cases });
+    return json(await loadHomeSources(page.commit_sha));
   }
   if (u.pathname === "/api/page-preview" && request.method === "GET") {
     const path = u.searchParams.get("path") || "";
@@ -423,7 +373,7 @@ async function handle(request: Request, env: Env) {
     const editable = Boolean(draft || page?.editor_scope === "partial" && !["system", "legacy-redirect", "excluded-intake"].includes(page.source_kind));
     if (editable) await isEditablePage(path);
 
-    const sectionPage: Record<string,string> = {news:"news.html",press:"press.html",service:"service.html",council:"council-records.html",achievement:"achievements.html"};
+    const sectionPage: Record<string,string> = {news:"news.html",press:"press.html",service:"service.html",council:"council-records.html",achievement:"achievements.html",daily:"news.html"};
     const templatePath = draft ? sectionPage[editorialPath.exec(path)![1]] : path;
     const upstreamURL = new URL(templatePath, "https://www.huiwen.tw/");
     let upstream: Response;
@@ -513,9 +463,14 @@ async function handle(request: Request, env: Env) {
     if (currentVersion !== Number(b.version)) throw new HttpError(409, "另一個視窗已儲存較新草稿，請重新載入");
     const old = existing ? JSON.parse(existing.payload) as Record<string,unknown> : {fields:{}};
     const merged = isCase ? fields : {...(old.fields as Record<string,unknown> || {}), ...fields};
+    // Older clients omit latestPinned: keep the pins already saved in this draft (after the
+    // version check above). Only an explicit [] clears them.
+    const oldHome = old.home as Record<string,unknown> | undefined, oldHomeBase = old.homeBase as Record<string,unknown> | undefined;
+    if (homeDraft && !("latestPinned" in homeDraft) && Array.isArray(oldHome?.latestPinned)) homeDraft.latestPinned = [...oldHome!.latestPinned as string[]];
+    if (homeBase && !("latestPinned" in homeBase) && Array.isArray(oldHomeBase?.latestPinned)) homeBase.latestPinned = [...oldHomeBase!.latestPinned as string[]];
     const payload = JSON.stringify({fields:merged,
       ...(isCase ? {case:caseDraft,caseBase:b.caseBase} : {}),
-      ...(homeDraft ? {home:homeDraft,homeBase} : {}),
+      ...(homeDraft ? {home:homeDraft,homeBase} : isHome && old.home ? {home:old.home,homeBase:old.homeBase} : {}),
       ...(editorial ? {editorial,editorialBase:b.editorialBase} : {}),
       ...(blocks ? {blocks,blocksBase} : old.blocks ? {blocks:old.blocks,blocksBase:old.blocksBase} : {}),
       ...(seo ? {seo,seoBase} : old.seo ? {seo:old.seo,seoBase:old.seoBase} : {})});
@@ -596,6 +551,13 @@ async function handle(request: Request, env: Env) {
     await isEditablePage(path);
     if (!Number.isSafeInteger(b.version) || Number(b.version)<1 || !["publish","unpublish","delete","restore"].includes(operation))
       throw new HttpError(400,"頁面發布要求格式不正確");
+    if ((operation === "unpublish" || operation === "delete") && FEED_PAGE.test(path)) {
+      // Two-step rule: a pinned latest item must be unpinned on the homepage first. The publisher
+      // enforces the same rule; this only answers early with an actionable message. Pins belong
+      // to the homepage, so they are read from the homepage's recorded revision.
+      const pins = await loadPublishedPins((await isEditablePage("index.html")).commit_sha);
+      if (pins?.includes(path.slice(0, -5))) throw new HttpError(409, PINNED_UNPUBLISH_MESSAGE);
+    }
     const id = crypto.randomUUID();
     await env.DB.prepare("INSERT OR IGNORE INTO page_publications(id,path,version,payload,base_commit,operation,status,created_at,updated_at,actor) SELECT ?,path,version,payload,base_commit,?,'queued',?,?,? FROM page_edits WHERE path=? AND version=?")
       .bind(id,operation,iso(),iso(),actor.id,path,Number(b.version)).run();

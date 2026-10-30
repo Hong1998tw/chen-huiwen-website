@@ -1,55 +1,7 @@
-<main id="main" class="home-redesign">
-<section class="wrap hero hero-grid" aria-labelledby="hero-title">
-  <div class="hero-copy">
-    <p class="kicker">{{HOME_CANDIDATE_NUMBER}}</p>
-    <h1 id="hero-title"><span>慧文會武</span><span>會做事</span></h1>
-    <p class="hero-intro">從生活大小事，到城市的下一步。<br>民眾服務、議會問政，與你一起關心鳳山。</p>
-    <div class="hero-actions">
-      <a class="primary" href="{{HOME_PHONE_URL}}">撥打服務處</a>
-      <a class="outline" href="https://line.me/R/ti/p/@yve2766q" target="_blank" rel="noopener noreferrer">LINE 官方帳號 ↗</a>
-    </div>
-  </div>
-  {{HOME_SERVICES}}
-  <figure class="portrait hero-portrait">
-    <div class="portrait-frame">
-      <picture>
-        <source type="image/webp" srcset="assets/home-portrait-384.webp 384w, assets/home-portrait-480.webp 480w, assets/home-portrait-640.webp 640w, assets/legal/portrait.webp 1004w" sizes="(max-width: 780px) and (max-height: 360px) 100px, (max-width: 300px) calc(100vw - 40px), (max-width: 620px) min(calc(50vw - 27px), 190px), (max-width: 780px) min(calc(50vw - 39px), 190px), 1140px">
-        <img src="assets/legal/portrait.webp" width="1004" height="1506" fetchpriority="high" loading="eager" decoding="async" alt="陳慧文穿淺藍襯衫，雙手舉起蜜柑玩偶的半身照片">
-      </picture>
-    </div>
-    <figcaption>陳慧文　高雄市議員・鳳山區</figcaption>
-  </figure>
-</section>
-<section class="section wrap home-recent" id="recent" aria-labelledby="home-recent-heading">
-  <div class="home-recent-heading">
-    <p class="kicker">近期內容</p>
-    <h2 id="home-recent-heading">最近的工作與地方進度</h2>
-    <p>依序查看近期公開行程、問政評鑑，以及一件地方事。</p>
-  </div>
-  <ol class="home-recent-list">
-    <li data-home-recent-item="headquarters">{{HOME_EVENT}}</li>
-    <li data-home-recent-item="award">
-      <article class="home-recent-award">
-        <div class="home-recent-art home-recent-art--council" aria-hidden="true"><span>第4屆第7會期</span><strong>問政優質議員</strong></div>
-        <div class="home-recent-card-copy">
-          <p class="meta">2026.10.07 · 問政消息</p>
-          <h3><a href="news.html#news-20261007-public-oversight-awards">陳慧文獲選<span>第4屆第7會期</span>問政優質議員</a></h3>
-          <p class="home-recent-copy">高雄市公民監督公僕聯盟公布評鑑結果，陳慧文名列本次11位問政優質議員。</p>
-          <a class="source" href="news.html#news-20261007-public-oversight-awards">查看獲獎消息 →</a>
-        </div>
-      </article>
-    </li>
-    <li data-home-recent-item="local">{{HOME_LOCAL}}</li>
-  </ol>
-</section>
+<main id="main" class="home-redesign home-purple">
+{{HOME_SERVICES}}
+{{HOME_LATEST}}
 {{HOME_PROGRESS}}
-<section class="section wrap home-council" id="council" aria-labelledby="home-council-heading">
-  <div>
-    <p class="kicker">議會問政</p>
-    <h2 id="home-council-heading">從每場質詢，查閱公開紀錄</h2>
-    <p>依會期與日期查詢已收錄的質詢紀錄，並查看議會原始資料。</p>
-  </div>
-  <a class="home-council-link" href="council-records.html">前往議會公開紀錄 →</a>
-</section>
+{{HOME_MORE}}
 {{HOME_CONTACT}}
 </main>

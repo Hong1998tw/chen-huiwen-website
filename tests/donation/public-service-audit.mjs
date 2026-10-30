@@ -30,30 +30,33 @@ const report={base,checks:[],failures:[]};
 const out=new URL('./results/public-service-audit/',import.meta.url);await mkdir(out,{recursive:true});
 async function check(name,fn){try{await fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:String(e)});}}
 try{
- for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const width of [390,1440]){
   const ctx=await browser.newContext({viewport:{width,height:844},reducedMotion:'reduce'});
   await ctx.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
   const page=await ctx.newPage();page.setDefaultTimeout(8000);
   const errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(base);
-  await page.locator('.hero-portrait img').evaluate(el=>el.decode());
+  await page.evaluate(()=>document.fonts.ready);
   await page.screenshot({path:fileURLToPath(new URL('home-'+width+'.png',out))});
   await check(width+' direct homepage actions',async()=>{
-   const actions=page.locator('.hero-actions a');
-   const actual=await actions.evaluateAll(rows=>rows.map(a=>({href:a.getAttribute('href'),label:a.innerText.trim()})));
+   const actions=page.locator('.home-service-entry');
+   const actual=await actions.evaluateAll(rows=>rows.map(a=>({href:a.getAttribute('href'),label:a.querySelector('strong').innerText.trim()})));
    assert.deepEqual(actual,[
+    {href:'service.html#contact',label:'有事找慧文'},
     {href:'tel:+88678212536',label:'撥打服務處'},
-    {href:'https://line.me/R/ti/p/@yve2766q',label:'LINE 官方帳號 ↗'}
+    {href:'https://line.me/R/ti/p/@yve2766q',label:'LINE 官方帳號'},
+    {href:'service.html#monthly-heading',label:'公益法律諮詢'}
    ]);
    for(const href of ['tel:+88678212536','https://line.me/R/ti/p/@yve2766q']){
-    const a=page.locator('.hero-actions a[href="'+href+'"]');assert(await a.isVisible());
+    const a=page.locator('.home-service-entry[href="'+href+'"]');assert(await a.isVisible());
     const b=await a.boundingBox();assert(b.y+b.height<844);
    }
   });
   await check(width+' grouped navigation keyboard',async()=>{
-   assert.equal(await page.locator('.nav-group').count(),5);
-   if(width<781){await page.locator('.menu-toggle').click();await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="service.html"]')}).locator('summary').click();assert(await page.locator('#navigation a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
+   assert.equal(await page.locator('.nav-group').count(),1);
+   assert.equal(await page.locator('.nav-more .nav-more-section').count(),5);
+   if(width<781){await page.locator('.menu-toggle').click();assert(await page.locator('#navigation a.nav-primary[href="service.html"]').isVisible());await page.locator('#navigation .nav-more > summary').click();assert(await page.locator('#navigation .nav-more a[href="service.html"]').isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');}
    else{const group=page.locator('.nav-group').first();await group.locator('summary').focus();await page.keyboard.press('Enter');assert(await group.locator('a').first().isVisible());await page.screenshot({path:fileURLToPath(new URL('menu-'+width+'.png',out))});await page.keyboard.press('Escape');assert.equal(await group.getAttribute('open'),null);}
   });
   await check(width+' service intent and accurate highlighting',async()=>{

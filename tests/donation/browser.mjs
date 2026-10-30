@@ -322,7 +322,7 @@ function largestCls(shifts) {
 
 try {
   for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(base)).ok) break; } catch {}
+    try { if ((await fetch(base,{method:"HEAD"})).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
@@ -350,10 +350,12 @@ try {
       assert.equal(await page.locator('.donation-portrait,picture').count(), 0);
       const account = await page.locator('.donation-account-number').boundingBox();
       assert(account && account.y + account.height < 844);
-      assert.equal(await page.locator('#navigation .nav-group').count(), 5);
-      assert.equal(await page.locator('#navigation a').first().getAttribute('href'), 'achievements.html');
-      assert.equal(await page.locator('#navigation a[href="service.html"]').count(), 1);
-      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'explore.html');
+      assert.deepEqual(await page.locator('#navigation > a.nav-primary').evaluateAll(xs => xs.map(x => x.getAttribute('href'))), ['./#latest', 'service.html', 'achievements.html']);
+      assert.equal(await page.locator('#navigation .nav-group').count(), 1);
+      assert.equal(await page.locator('#navigation .nav-more .nav-more-section').count(), 5);
+      assert.equal(await page.locator('#navigation .nav-more a').first().getAttribute('href'), 'achievements.html');
+      assert.equal(await page.locator('#navigation .nav-more a[href="service.html"]').count(), 1);
+      assert.equal(await page.locator('#navigation .nav-more a').nth(1).getAttribute('href'), 'explore.html');
       assert.equal(await page.locator('#navigation a[href="service.html#monthly-heading"]').count(), 1);
     });
 
@@ -659,11 +661,13 @@ try {
       assert(await page.locator('.header-phone').evaluate(el => el.inert));
       assert(await page.locator('.brand').evaluate(el => el.inert));
       assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
-      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
-      assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
-      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="election.html"]')}).locator('summary').click();
+      for (const link of await page.locator('#navigation > a.nav-primary').all()) assert(await link.isVisible(), 'primary tasks stay visible in the open menu');
+      await page.locator('#navigation .nav-more > summary').click();
       await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
+      assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
+      await page.locator('#navigation .nav-more > summary').click();
+      await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 0);
       assert.equal(await page.locator('#navigation a[href="political-donation.html"]').isVisible(), false);
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
@@ -711,10 +715,11 @@ try {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
         assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
-        assert.equal(await page.locator('#navigation .nav-group').count(),5,`${file}: grouped navigation`);
-        assert.equal((await page.locator('#navigation a').first().getAttribute('href')).replace(/^\//,''), 'achievements.html', `${file}: local issues first`);
-        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'explore.html', `${file}: related exploration second`);
-        const serviceGroup = page.locator('#navigation .nav-group').filter({has:page.locator('a[href$="service.html"]')});
+        assert.deepEqual(await page.locator('#navigation > a.nav-primary').allTextContents(), ['最新資訊','找服務','查地方進度'], `${file}: three primary tasks`);
+        assert.equal(await page.locator('#navigation .nav-more .nav-more-section').count(),5,`${file}: grouped secondary navigation`);
+        assert.equal((await page.locator('#navigation .nav-more a').first().getAttribute('href')).replace(/^\//,''), 'achievements.html', `${file}: local issues first`);
+        assert.equal((await page.locator('#navigation .nav-more a').nth(1).getAttribute('href')).replace(/^\//,''), 'explore.html', `${file}: related exploration second`);
+        const serviceGroup = page.locator('#navigation .nav-more-section').filter({has:page.locator('a[href$="service.html"]')});
         assert.equal((await serviceGroup.locator('a').first().getAttribute('href')).replace(/^\//,''), 'service.html', `${file}: service contact first in service group`);
         assert.equal((await serviceGroup.locator('a').nth(1).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order preserved in service group`);
         assert.equal(await page.locator('#navigation a[href$="gallery.html"]').count(), 0, `${file}: gallery nav`);
@@ -755,29 +760,24 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: portrait first, local query entry and CLS`, async () => {
+    await check(`homepage ${width}px: services, latest information, local query entry and CLS`, async () => {
       await page.goto(base + 'index.html');
-      const img = page.locator('.hero-portrait img');
-      await img.evaluate(el => el.decode());
       await page.evaluate(() => document.fonts.ready);
-      assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
-      assert.equal(await img.getAttribute('loading'),'eager');
-      const frame = await page.locator('.portrait-frame').boundingBox();
-      const heading = await page.locator('.hero-copy h1').boundingBox();
-      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',async()=>{
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'latest-layout',async()=>{
         assert.equal(await page.locator('h1').count(),1);
+        assert.equal((await page.locator('h1').innerText()).trim(),'最新資訊');
         assert(await page.locator('.home-village-form #home-village').isVisible());
-        assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-        assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
-        assert(frame && heading);
-        const expectedRatio = width <= 780 ? 2 / 3 : 1.04;
-        assert(Math.abs(frame.width / frame.height - expectedRatio) < 0.02);
-        assert(frame.x >= 0 && frame.x + frame.width <= width);
+        assert.equal(await page.locator('main > :first-child').getAttribute('id'),'service');
+        assert((await page.locator('#service').boundingBox()).y < (await page.locator('#latest').boundingBox()).y);
+        assert((await page.locator('#latest').boundingBox()).y < (await page.locator('#progress').boundingBox()).y);
+        assert.equal(await page.locator('.hero, .hero-portrait').count(),0);
+        const lead = await page.locator('.latest-item.is-lead').boundingBox();
+        assert(lead && lead.x >= 0 && lead.x + lead.width <= width, JSON.stringify(lead));
       });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
-      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
-      assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="phone"]').getAttribute('href'),'tel:+88678212536');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="phone"] strong').innerText(),'撥打服務處');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="line"]').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
@@ -1038,18 +1038,96 @@ try {
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const recent = page.locator('.home-recent-list');
-      assert.equal(await recent.locator('> li').count(),3);
-      assert.equal(await page.locator('.home-recent-local').count(),1);
-      assert.equal(await page.locator('[data-home-local-record="bade-detention"]').count(),0);
+      const latestSection = page.locator('#latest');
+      assert.equal(await latestSection.locator('.latest-item:not([hidden])').count(),3);
+      assert.equal(await page.locator('[data-home-featured-project]').count(),1);
+      assert.equal(await page.locator('[data-home-featured-project="bade-detention"]').count(),0);
       assert.equal(await page.locator('.civic-story-grid, .civic-reading-row, .place').count(),0);
-      await recent.screenshot({path:fileURLToPath(new URL(`home-recent-${viewport.width}.png`, output))});
-      await page.locator('.home-local-progress').screenshot({path:fileURLToPath(new URL(`home-local-progress-${viewport.width}.png`, output))});
+      await latestSection.screenshot({path:fileURLToPath(new URL(`home-latest-${viewport.width}.png`, output))});
+      await page.locator('#progress').screenshot({path:fileURLToPath(new URL(`home-progress-${viewport.width}.png`, output))});
 
     });
   }
 
   await context.close();
+
+  // The source news photo starts inside a closed native disclosure: no layout ever lazy-fetches it,
+  // and opening the existing reading disclosure (or the no-script entry) always loads the original.
+  const newsPhoto = 'assets/news-20260907-mazu-port-bridge.jpg';
+  const newsPhotoPage = async ({ width, javaScriptEnabled = true, blockNewsScript = false }) => {
+    const photoContext = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, deviceScaleFactor: 1, javaScriptEnabled });
+    await photoContext.route('**/*', route => {
+      const url = new URL(route.request().url());
+      if (url.hostname !== '127.0.0.1' || (blockNewsScript && url.pathname === '/news.js')) return route.abort();
+      return route.continue();
+    });
+    const photoPage = await photoContext.newPage();
+    const requests = [];
+    photoPage.on('request', request => { if (request.url().includes(newsPhoto)) requests.push(request.url()); });
+    await photoPage.goto(base + 'news.html');
+    await photoPage.waitForLoadState('networkidle');
+    const image = photoPage.locator(`img[src="${newsPhoto}"]`);
+    const card = photoPage.locator('article.news-report-card').filter({ has: image });
+    const facts = async () => ({
+      image: await image.evaluate(img => [img.getAttribute('src'), img.alt, img.getAttribute('width'), img.getAttribute('height'), img.loading]),
+      caption: await card.locator('figcaption').evaluate(caption => caption.textContent),
+      links: await card.locator('a[href]').evaluateAll(links => links.map(link => link.getAttribute('href')))
+    });
+    const loaded = () => photoPage.waitForFunction(src => { const img = document.querySelector(`img[src="${src}"]`); return img.complete && img.naturalWidth > 0; }, newsPhoto, { timeout: 10000 });
+    return { photoContext, photoPage, requests, image, card, facts, loaded };
+  };
+  const reference = await newsPhotoPage({ width: 390, javaScriptEnabled: false });
+  const sourceFacts = await reference.facts();
+  await reference.photoContext.close();
+  assert.deepEqual(sourceFacts.image, [newsPhoto, '陳慧文與黃敬雅於媽祖港橋路口向通勤市民拜票', '1200', '676', 'lazy']);
+  for (const width of [390, 1440]) {
+    await check(`news source photo is not prefetched and loads on expand ${width}px`, async () => {
+      const { photoContext, photoPage, requests, image, card, facts, loaded } = await newsPhotoPage({ width });
+      try {
+        assert.deepEqual(requests, [], 'collapsed news photo must not be fetched during start-up');
+        assert.equal(await photoPage.locator('.news-report-media-gate').count(), 0, 'the reading layer removes the start-up disclosure');
+        assert.equal(await card.locator('.news-card-details > .news-report-media > img').count(), 1);
+        assert.deepEqual(await facts(), sourceFacts);
+        const summary = card.locator('.news-card-details > summary');
+        await summary.focus();
+        await photoPage.keyboard.press('Enter');
+        await loaded();
+        assert.equal(requests.length, 1);
+        assert(await image.isVisible());
+      } finally {
+        await photoContext.close();
+      }
+    });
+  }
+  await check('news source photo keeps a native entry when news.js fails', async () => {
+    const { photoContext, photoPage, requests, card, loaded } = await newsPhotoPage({ width: 390, blockNewsScript: true });
+    try {
+      assert.deepEqual(requests, []);
+      const entry = card.locator('.news-report-media-gate > summary');
+      assert.equal(await entry.innerText(), '查看圖片');
+      await entry.focus();
+      await photoPage.keyboard.press('Enter');
+      await loaded();
+      assert.equal(requests.length, 1);
+    } finally {
+      await photoContext.close();
+    }
+  });
+  await check('no JavaScript: news photo entry expands by keyboard with full text and sources', async () => {
+    const { photoContext, photoPage, image, card, facts } = await newsPhotoPage({ width: 390, javaScriptEnabled: false });
+    try {
+      assert.deepEqual(await facts(), sourceFacts);
+      assert(await card.locator('.news-source-links').isVisible());
+      assert.match(await card.innerText(), /媽祖港橋連結鳳山與前鎮/);
+      const entry = card.locator('.news-report-media-gate > summary');
+      await entry.focus();
+      await photoPage.keyboard.press('Enter');
+      assert.equal(await card.locator('.news-report-media-gate').getAttribute('open'), '');
+      assert(await image.isVisible());
+    } finally {
+      await photoContext.close();
+    }
+  });
 
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
@@ -1074,6 +1152,7 @@ try {
       assert.equal((await phone.boundingBox()).height, 44);
       await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-service-320-layout'});
 
+      assert(await navigation.locator('a.nav-primary[href="achievements.html"]').isVisible());
       const group = navigation.locator('.nav-group').first();
       await group.locator('summary').click();
       assert.equal(await group.getAttribute('open'), '');

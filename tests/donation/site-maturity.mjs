@@ -15,7 +15,7 @@ const engine=process.env.QA_ENGINE||'chromium';const browser=await ({chromium,we
 const results=[];const failures=[];
 async function check(name,fn){try{const detail=await fn();results.push({name,status:'PASS',detail});}catch(e){failures.push({name,error:String(e)});}}
 try{
- for(let i=0;i<40;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ for(let i=0;i<40;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const width of [390,1440]){
   const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'reduce'});
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());

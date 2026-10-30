@@ -18,7 +18,7 @@ from python_guard import MINIMUM, require_supported_python
 
 # Entry points that call the guard themselves, as their first repository import.
 DIRECT = {
-    'build_all', 'quality', 'build_legal_shared', 'build_public', 'build_cases', 'build_platforms',
+    'build_all', 'quality', 'candidate_preflight', 'build_legal_shared', 'build_public', 'build_cases', 'build_platforms',
     'build_events', 'build_service', 'build_guides', 'build_updates', 'build_profile', 'build_shared',
     'build_sitemap', 'build_search', 'build_llms', 'build_share_cards', 'build_island_public', 'optimize_images', 'prepare_domain_candidate',
     'build_civic', 'editorial_pages', 'build_font_subsets', 'build_artifact_page_fonts',

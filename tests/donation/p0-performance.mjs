@@ -9,7 +9,7 @@ const reports=[];const browser=await chromium.launch({headless:true});
 try{
  for(const [label,dir,port] of [['baseline',root+'../chen-huiwen-baseline',8780],['candidate',root,8781]]){
   const server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1'],{cwd:dir,stdio:'ignore'});const base=`http://127.0.0.1:${port}/`;
-  for(let i=0;i<40;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  for(let i=0;i<40;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   for(const width of [1440,390])for(const path of ['index.html','achievements.html']){
    const c=await browser.newContext({viewport:{width,height:width===390?844:1000}});
    await c.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());

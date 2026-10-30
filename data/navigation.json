@@ -1,87 +1,103 @@
-[
-  [
-    "地方與議題",
+{
+  "primary": [
     [
-      [
-        "achievements.html",
-        "查地方與進度"
-      ],
-      [
-        "explore.html",
-        "依主題延伸閱讀"
-      ]
+      "./#latest",
+      "最新資訊"
+    ],
+    [
+      "service.html",
+      "找服務"
+    ],
+    [
+      "achievements.html",
+      "查地方進度"
     ]
   ],
-  [
-    "慧文的工作",
+  "groups": [
     [
+      "地方與議題",
       [
-        "council-records.html",
-        "議會公開紀錄"
-      ],
-      [
-        "news.html",
-        "最新動態與媒體報導"
-      ],
-      [
-        "press.html",
-        "服務處新聞稿"
-      ],
-      [
-        "activities.html",
-        "公開行程與活動"
-      ],
-      [
-        "updates.html",
-        "網站更新摘要"
+        [
+          "achievements.html",
+          "查地方與進度"
+        ],
+        [
+          "explore.html",
+          "依主題延伸閱讀"
+        ]
       ]
-    ]
-  ],
-  [
-    "關於慧文",
+    ],
     [
+      "慧文的工作",
       [
-        "about.html",
-        "認識慧文"
-      ],
-      [
-        "political-donation.html",
-        "政治獻金"
+        [
+          "council-records.html",
+          "議會公開紀錄"
+        ],
+        [
+          "news.html",
+          "最新動態與媒體報導"
+        ],
+        [
+          "press.html",
+          "服務處新聞稿"
+        ],
+        [
+          "activities.html",
+          "公開行程與活動"
+        ],
+        [
+          "updates.html",
+          "網站更新摘要"
+        ]
       ]
-    ]
-  ],
-  [
-    "服務處",
+    ],
     [
+      "關於慧文",
       [
-        "service.html",
-        "聯絡與服務時間"
-      ],
-      [
-        "service.html#monthly-heading",
-        "公益律師時間表"
-      ],
-      [
-        "service-guides.html",
-        "洽詢準備指南"
-      ],
-      [
-        "petition.html",
-        "案件表單"
+        [
+          "about.html",
+          "認識慧文"
+        ],
+        [
+          "political-donation.html",
+          "政治獻金"
+        ]
       ]
-    ]
-  ],
-  [
-    "2026 選舉",
+    ],
     [
+      "服務處",
       [
-        "election.html",
-        "2026 選舉資訊"
-      ],
+        [
+          "service.html",
+          "聯絡與服務時間"
+        ],
+        [
+          "service.html#monthly-heading",
+          "公益律師時間表"
+        ],
+        [
+          "service-guides.html",
+          "洽詢準備指南"
+        ],
+        [
+          "petition.html",
+          "案件表單"
+        ]
+      ]
+    ],
+    [
+      "2026 選舉",
       [
-        "vision.html",
-        "政見原文與追蹤"
+        [
+          "election.html",
+          "2026 選舉資訊"
+        ],
+        [
+          "vision.html",
+          "政見原文與追蹤"
+        ]
       ]
     ]
   ]
-]
+}

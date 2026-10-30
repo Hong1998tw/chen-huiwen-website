@@ -16,6 +16,8 @@ SITE = 'https://www.huiwen.tw/'
 BASE = SITE + 'activities.html'
 EVENT_ID = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 EVENT_PATH = re.compile(r'event-[a-z0-9]+(?:-[a-z0-9]+)*\.html')
+# First website publication (Asia/Taipei, minute precision). Distinct from the event start.
+PUBLISHED_AT = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\+08:00')
 BRAND_IMAGE = {'src': 'assets/site-share-20260909.png', 'width': 1200, 'height': 630,
                'alt': '陳慧文官網品牌分享圖，非本活動照片'}
 CALENDAR_COPY_NOTICE = '加入日曆後，儲存的行程副本不會自動更新；出發前請回本站確認。'
@@ -71,6 +73,10 @@ def validate(event):
     for field in ('verifiedAt', 'updatedAt', 'reviewDueAt'):
         if event.get(field):
             date.fromisoformat(event[field])
+    if 'publishedAt' in event:
+        if not isinstance(event['publishedAt'], str) or not PUBLISHED_AT.fullmatch(event['publishedAt']):
+            raise ValueError('Event publishedAt must be YYYY-MM-DDTHH:MM+08:00')
+        datetime.fromisoformat(event['publishedAt'])
     if status in ('rescheduled', 'cancelled'):
         if not event.get('updatedAt') or not event.get('changeNote') or not event.get('sourceUrl'):
             raise ValueError('Changed events require updatedAt, changeNote and a public source')

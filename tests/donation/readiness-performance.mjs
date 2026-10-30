@@ -72,7 +72,7 @@ const conditions={
 const summarize=(extra={})=>({label,node:process.version,sourceCommit,checkedOutCommit,root,content,conditions,electionEvidence,method:'Default mobile Lighthouse; all network requests allowed; cold Chrome per run; lab data, not field CWV. Pages are served over HTTP by static-server.mjs with production-like Content-Encoding (see conditions); production edge, TLS/HTTP2 and the registered SW are not exercised (site disables SW on localhost).',...extra,results});
 const median=values=>{const a=[...values].sort((x,y)=>x-y);return a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;};
 try{
- if(!process.env.BASE_URL){let ready=false;for(let i=0;i<50;i++){try{if((await fetch(base)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}if(!ready)throw Error('Local server failed');serverLog.length=0;server.log.length=0;}
+ if(!process.env.BASE_URL){let ready=false;for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}if(!ready)throw Error('Local server failed');serverLog.length=0;server.log.length=0;}
  for(const page of pages) for(let run=1;run<=runs;run++){
   const chrome=await chromeLauncher.launch({chromePath:chromium.executablePath(),chromeFlags:['--headless=new','--no-first-run','--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'],logLevel:'silent'});
   try{

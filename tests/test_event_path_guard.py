@@ -51,7 +51,18 @@ class EventPathGuardTests(unittest.TestCase):
         data = copy.deepcopy(self.data)
         added = {**copy.deepcopy(self.event), 'id': 'event-20261102-fixture', 'start': '2026-11-02T15:50:00+08:00'}
         added = {key: value for key, value in added.items() if key in set(P.EVENT_FIELDS) | {'id', 'previousSchedule'}}
+        # A new event must carry its fixed first website publication time and nothing else unmanaged.
+        missing = copy.deepcopy(data); missing['events'].append(added)
+        with self.assertRaises(ValueError): self.verify(missing, added['id'])
+        added['publishedAt'] = '2026-10-30T09:15+08:00'
         data['events'].append(added);self.verify(data, added['id'])
+        extra = copy.deepcopy(self.data); extra['events'].append({**added, 'publicExtra': 'x'})
+        with self.assertRaises(ValueError): self.verify(extra, added['id'])
+        bad = copy.deepcopy(self.data); bad['events'].append({**added, 'publishedAt': '2026-10-30'})
+        with self.assertRaises(ValueError): self.verify(bad, added['id'])
+        # An existing event's publication time is immutable.
+        moved = copy.deepcopy(self.data); moved['events'][-1]['publishedAt'] = '2026-10-29T08:00+08:00'
+        with self.assertRaises(ValueError): self.verify(moved)
 
     def test_location_round_trips_and_cms_updates_keep_other_fields(self):
         text = (ROOT / 'data/events.json').read_text()

@@ -17,6 +17,11 @@ let session,
   homeDraft = null,
   homeBase = null,
   homeCases = new Map(),
+  latestFeed = null,
+  latestStatus = "ready",
+  latestPublishedPins = [],
+  latestQuery = "",
+  latestVisible = 20,
   seoDraft = null,
   seoBase = null,
   editorialDraft = null,
@@ -315,7 +320,7 @@ function renderPages() {
     if (path === "index.html") return "首頁";
     if (path.startsWith("page-achievement-") || path.startsWith("achievement-") || ["achievements.html", "explore.html", "vision.html"].includes(path)) return "建設與政策";
     if (path.startsWith("page-service-")) return "民眾服務";
-    if (/^page-(?:news|press|council)-/.test(path)) return "新聞、媒體與議會";
+    if (/^page-(?:news|press|council|daily)-/.test(path)) return "新聞、媒體與議會";
     if (path.startsWith("news-") || ["news.html", "press.html", "gallery.html", "council-records.html"].includes(path)) return "新聞、媒體與議會";
     if (path.startsWith("activity-") || path.startsWith("history-") || path.includes("/index.html")) return "活動與主題專頁";
     if (["service.html", "service-guides.html", "service-print.html", "activities.html", "political-donation.html"].includes(path)) return "民眾服務";
@@ -741,11 +746,88 @@ function renderHomeEditor() {
     renderHomeEditor(); homeChanged();
   };
   addRow.append(add); target.append(addRow);
+  renderLatestPins(target);
+}
+const MAX_LATEST_PINNED = 3;
+// An older draft without latestPinned keeps the published pins until the owner changes them.
+const currentLatestPins = () => Array.isArray(homeDraft?.latestPinned) ? homeDraft.latestPinned : latestPublishedPins;
+function latestOrder(items, pins) {
+  const pinned = new Set(pins);
+  return [...items.filter(item => pinned.has(item.id)), ...items.filter(item => !pinned.has(item.id))];
+}
+function latestDate(item) {
+  const date = String(item.publishedAt || "").slice(0, 10).replaceAll("-", ".");
+  if (item.type === "activity" && item.eventStart) return `網站刊登 ${date}・活動 ${String(item.eventStart).slice(0, 16).replace("T", " ")}`;
+  return `${item.dateLabel || "日期"} ${date}`;
+}
+function renderLatestPins(target) {
+  const section = el("section", undefined, "latest-pin-editor");
+  section.id = "latest-pin-editor";
+  section.setAttribute("aria-labelledby", "latest-pin-heading");
+  const heading = el("h4", `最新資訊置頂（最多 ${MAX_LATEST_PINNED} 則）`); heading.id = "latest-pin-heading";
+  section.append(heading, el("p", "首頁「最新資訊」預設依報導、發稿、整理日期或活動的網站刊登時間由新到舊排列；置頂項目排在最前面，新聞、日常、活動分頁也照同一順序。活動時間只顯示，不影響排序。", "field-help"));
+  const pins = currentLatestPins();
+  if (!latestFeed) {
+    const reason = latestStatus === "not-synced" ? "網站來源尚未同步到含最新資訊清單的版本"
+      : latestStatus === "inconsistent" ? "已設定的置頂不在這個版本的清單中" : "目前無法取得與網站同一版本的最新資訊清單";
+    section.append(el("p", `${reason}，置頂控制暫停；已設定的置頂會保留不變。`, "field-help"));
+    if (pins.length) section.append(el("p", `目前置頂：${pins.join("、")}`));
+    target.append(section);
+    return;
+  }
+  const byId = new Map(latestFeed.map(item => [item.id, item]));
+  const status = el("p", `已置頂 ${pins.length} / ${MAX_LATEST_PINNED} 則`); status.id = "latest-pin-status"; status.setAttribute("aria-live", "polite");
+  const searchLabel = el("label", "搜尋全部最新資訊（標題）", "field");
+  const search = document.createElement("input"); search.type = "search"; search.id = "latest-pin-search"; search.value = latestQuery;
+  search.oninput = () => { latestQuery = search.value; latestVisible = 20; renderLatestRows(); };
+  searchLabel.append(search);
+  const list = el("ol", undefined, "latest-pin-list"); list.id = "latest-pin-list";
+  const more = el("button", "顯示更多", "secondary"); more.type = "button"; more.id = "latest-pin-more";
+  more.onclick = () => { latestVisible += 20; renderLatestRows(); };
+  function renderLatestRows() {
+    const query = latestQuery.trim().toLocaleLowerCase("zh-TW");
+    const matching = latestFeed.filter(item => !query || item.title.toLocaleLowerCase("zh-TW").includes(query));
+    list.replaceChildren(...matching.slice(0, latestVisible).map(item => {
+      const pinned = pins.includes(item.id);
+      const row = el("li", undefined, "latest-pin-row");
+      row.append(el("span", `${item.kind || item.type}・${latestDate(item)}`, "field-help"), el("strong", item.title));
+      const button = el("button", pinned ? "取消置頂" : "置頂", pinned ? "secondary" : undefined);
+      button.type = "button"; button.dataset.latestPin = item.id;
+      button.setAttribute("aria-pressed", String(pinned));
+      button.setAttribute("aria-label", `${pinned ? "取消置頂" : "置頂"}：${item.title}`);
+      button.disabled = !pinned && pins.length >= MAX_LATEST_PINNED;
+      button.onclick = () => toggleLatestPin(item.id);
+      row.append(button);
+      return row;
+    }));
+    more.hidden = matching.length <= latestVisible;
+    if (!matching.length) list.append(el("li", "沒有符合的最新資訊。"));
+  }
+  renderLatestRows();
+  const preview = el("ol", undefined, "latest-pin-preview"); preview.id = "latest-pin-preview";
+  for (const item of latestOrder(latestFeed, pins).slice(0, 6))
+    preview.append(el("li", `${pins.includes(item.id) ? "【置頂】" : ""}${item.title}`));
+  const missing = pins.filter(id => !byId.has(id));
+  if (missing.length) section.append(el("p", `下列置頂已不在網站資料中，請取消：${missing.join("、")}`, "field-error"));
+  section.append(status, searchLabel, list, more, el("p", "首頁前 6 則順序預覽：", "field-help"), preview);
+  target.append(section);
+}
+function toggleLatestPin(id) {
+  if (!homeDraft) return;
+  const pins = [...currentLatestPins()];
+  const index = pins.indexOf(id);
+  if (index >= 0) pins.splice(index, 1);
+  else if (pins.length < MAX_LATEST_PINNED) pins.push(id);
+  else return;
+  homeDraft.latestPinned = pins;
+  renderHomeEditor();
+  homeChanged();
+  document.querySelector(`[data-latest-pin="${CSS.escape(id)}"]`)?.focus();
 }
 function homeChanged() {
   pageDirty = true;
   pageEditRevision++;
-  setPageStatus("首頁專題選片、摘要或順序有變更 · 儲存並發布後才會更新正式首頁");
+  setPageStatus("首頁專題、摘要、順序或最新資訊置頂有變更 · 儲存並發布後才會更新正式首頁");
   pageControls();
   if (pageReady) $("#page-frame").contentWindow?.postMessage({
     type: "huiwen-cms-home-preview", nonce: pageNonce, home: homeDraft, cases: [...homeCases.values()],
@@ -1106,6 +1188,11 @@ async function selectPage(page) {
   homeDraft = null;
   homeBase = null;
   homeCases = new Map();
+  latestFeed = null;
+  latestStatus = "ready";
+  latestPublishedPins = [];
+  latestQuery = "";
+  latestVisible = 20;
   seoDraft = null;
   seoBase = null;
   editorialDraft = null;
@@ -1170,6 +1257,9 @@ async function selectPage(page) {
           const current = await api("/api/home");
           if (request !== pageSelectionRequest) return false;
           homeCases = new Map(current.cases.map(record => [record.id, record]));
+          latestFeed = Array.isArray(current.latest?.items) ? current.latest.items : null;
+          latestStatus = typeof current.latestStatus === "string" ? current.latestStatus : (latestFeed ? "ready" : "unavailable");
+          latestPublishedPins = Array.isArray(current.home?.latestPinned) ? current.home.latestPinned : [];
           if (!homeDraft) {
             homeDraft = structuredClone(current.home);
             homeBase = structuredClone(current.home);
@@ -1183,7 +1273,7 @@ async function selectPage(page) {
           homeUnavailable = true;
         }
       }
-      if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
+      if (/^page-(?:news|press|service|council|achievement|daily)-[a-z0-9-]+\.html$/.test(page.path) && page.source_kind !== "editorial-draft") {
         const current = (await api(`/api/editorial-page?path=${encodeURIComponent(page.path)}`)).page;
         if (request !== pageSelectionRequest) return false;
         if (!editorialDraft) {

@@ -8,7 +8,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=new URL('./results/',import.meta.url);await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server','8777','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const base='http://127.0.0.1:8777/';
-for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
 const report={scope:'P0 connected features',checks:[],failures:[],metrics:{}};
 const check=async(name,fn)=>{try{await fn();report.checks.push({name,status:'Passed'});}catch(e){report.checks.push({name,status:'Failed',error:String(e)});report.failures.push(name);}};
 const browser=await chromium.launch({headless:true});

@@ -9,7 +9,7 @@
     if (!root || root.dataset.mounted) return;
     root.dataset.mounted = 'true';
     const base = new URL('assets/small-q/', scriptURL);
-    const styleURL = new URL('small-q.css?v=93390f7e605a', scriptURL);
+    const styleURL = new URL('small-q.css?v=ab5f76031523', scriptURL);
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     const durations = {wave: 1800, nod: 1500, happy: 1700, guide: 2400};
     root.innerHTML = '<div class="small-q-panel" id="small-q-panel" role="region" aria-label="小 Q AI 卡通角色" hidden><img class="small-q-figure" id="small-q-figure" width="320" height="320" alt="陳慧文的小 Q AI 卡通形象" decoding="async"><button class="small-q-close" type="button" aria-label="收合小 Q">×</button></div><button class="small-q-toggle" id="small-q-toggle" type="button" aria-expanded="false" aria-controls="small-q-panel" aria-label="展開小 Q 卡通角色"><span aria-hidden="true">Q</span></button>';
@@ -126,11 +126,11 @@
         if (!opened) return;
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          if (entry.target.id === 'home-local-progress') play('guide', true);
+          if (entry.target.id === 'progress') play('guide', true);
           if (entry.target.id === 'contact') play('happy', true);
         }
       }, {threshold: 0.3});
-      for (const id of ['home-local-progress', 'contact']) {
+      for (const id of ['progress', 'contact']) {
         const target = document.getElementById(id);
         if (target) contextual.observe(target);
       }

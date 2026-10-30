@@ -19,7 +19,7 @@ class AllPageVerificationTests(unittest.TestCase):
 
         def fetch(base, path, key, timeout):
             self.assertEqual(path, '/')
-            return 200, base, source.replace('慧文會武'.encode(), '其他文字'.encode())
+            return 200, base, source.replace('>最新資訊</h1>'.encode(), '>其他文字</h1>'.encode())
 
         result = coverage.verify_page('index.html', ROOT, fetcher=fetch)
         self.assertEqual(result['status'], 'Failed')

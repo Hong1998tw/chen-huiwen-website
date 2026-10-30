@@ -19,7 +19,7 @@ async function check(name, fn) {
 
 try {
   for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(base)).ok) break; } catch {}
+    try { if ((await fetch(base,{method:"HEAD"})).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
