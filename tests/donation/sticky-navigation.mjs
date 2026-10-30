@@ -20,7 +20,7 @@ async function check(name, fn) {
 }
 try {
   for (let i=0;i<50;i++) {
-    try { if ((await fetch(base)).ok) break; } catch {}
+    try { if ((await fetch(base,{method:"HEAD"})).ok) break; } catch {}
     await new Promise(r=>setTimeout(r,100));
   }
   for (const width of [320,360,390,430,768,1024,1440]) {
@@ -30,16 +30,14 @@ try {
     page.on('pageerror', e=>report.pageErrors.push(String(e)));
     await page.goto(base);
     await page.locator('.global-search-trigger').waitFor({state:'attached'});
-    await check(width + ' approved portrait crop loads eagerly within the hero', async()=>{
-      await page.locator('.hero-portrait img').evaluate(el=>el.decode());
-      assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-      const box = await page.locator('.portrait-frame').boundingBox();
-      assert(box && box.width > 0 && box.height > 0);
-      assert(box.x >= 0 && box.x + box.width <= width);
-      const expectedRatio = width <= 780 ? 2 / 3 : 1.04;
-      assert(Math.abs(box.width / box.height - expectedRatio) < 0.02);
+    await check(width + ' homepage starts with services and the latest information lead', async()=>{
+      assert.equal(await page.locator('main > :first-child').getAttribute('id'),'service');
       assert.equal(await page.locator('h1').count(),1);
-      assert.equal(await page.locator('.hero-portrait img').getAttribute('loading'),'eager');
+      assert.equal((await page.locator('h1').innerText()).trim(),'最新資訊');
+      const lead = await page.locator('.latest-item.is-lead').boundingBox();
+      assert(lead && lead.x >= 0 && lead.x + lead.width <= width, JSON.stringify(lead));
+      const media = page.locator('.latest-item.is-lead [data-latest-media] img');
+      if (await media.count()) assert.equal(await media.getAttribute('loading'),'eager');
       await assertNoHorizontalOverflow(page,{directory:fileURLToPath(new URL('./results/sticky-navigation/'+engine+'/diagnostics/',import.meta.url)),label:`${width}-homepage-layout`});
     });
     await page.screenshot({path:fileURLToPath(new URL(width + '-home.png',out))});
@@ -87,6 +85,11 @@ try {
             const summary=group.locator('summary');
             await summary.focus();
             assert(await summary.evaluate(el=>el===document.activeElement));
+            if (await group.evaluate(el=>el.open)) {
+              // A single secondary menu toggles closed on Enter before it can be reopened.
+              await page.keyboard.press('Enter');
+              await page.waitForFunction(index=>!document.querySelectorAll('#navigation .nav-group')[index]?.open,index);
+            }
             await page.keyboard.press('Enter');
             // Waiting only for one open group can match the previous group.
             // Require the group just activated by Enter, then its rendered link.

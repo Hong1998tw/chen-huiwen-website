@@ -17,21 +17,30 @@ AUTOMATED_CASE_COPY = (
 
 class ReadingDesignTests(unittest.TestCase):
     def test_navigation_preserves_every_existing_destination(self):
-        groups = json.loads((ROOT / 'data/navigation.json').read_text())
+        navigation = json.loads((ROOT / 'data/navigation.json').read_text())
+        self.assertEqual(navigation['primary'], [['./#latest', '最新資訊'], ['service.html', '找服務'], ['achievements.html', '查地方進度']])
+        groups = navigation['groups']
         self.assertEqual([g[0] for g in groups], ['地方與議題','慧文的工作','關於慧文','服務處','2026 選舉'])
         urls = [url for _, links in groups for url, _ in links]
         self.assertEqual(len(urls), len(set(urls)))
         for url in ['achievements.html','explore.html','council-records.html','news.html','press.html','activities.html','updates.html','about.html','political-donation.html','service.html','service.html#monthly-heading','service-guides.html','petition.html','vision.html','election.html']:
             self.assertIn(url, urls)
             self.assertTrue((ROOT / url.split('#')[0]).is_file())
-    def test_home_story_precedes_local_discovery_without_repeated_case_lists(self):
+        for page in ('index.html', 'news.html', '404.html'):
+            nav = BeautifulSoup((ROOT / page).read_text(), 'html.parser').select_one('#navigation')
+            primary = [a.get_text() for a in nav.find_all('a', class_='nav-primary', recursive=False)]
+            self.assertEqual(primary, ['最新資訊', '找服務', '查地方進度'], page)
+            self.assertEqual(len(nav.select('details.nav-more')), 1)
+            self.assertEqual(len(nav.select('.nav-more a')), len(urls))
+        self.assertEqual(BeautifulSoup((ROOT / '404.html').read_text(), 'html.parser').select_one('#navigation a.nav-primary')['href'], '/#latest')
+    def test_home_latest_precedes_local_discovery_without_repeated_case_lists(self):
         soup = BeautifulSoup((ROOT / 'index.html').read_text(), 'html.parser')
         main = soup.select_one('main')
-        self.assertLess(str(main).index('id="recent"'), str(main).index('id="home-local-progress"'))
-        self.assertLess(str(main).index('id="home-local-progress"'), str(main).index('id="council"'))
+        self.assertLess(str(main).index('id="service"'), str(main).index('id="latest"'))
+        self.assertLess(str(main).index('id="latest"'), str(main).index('id="progress"'))
+        self.assertLess(str(main).index('id="progress"'), str(main).index('id="council"'))
         self.assertFalse(soup.select('.civic-tasknav'))
-        self.assertEqual(len(soup.select('.home-recent-list > li')), 3)
-        self.assertEqual(len(soup.select('.home-task-paths a')), 2)
+        self.assertEqual(len(soup.select('.home-service-entry')), 4)
         form = soup.select_one('.home-village-form')
         self.assertIsNotNone(form)
         self.assertEqual(form.get('role'), 'search')
@@ -44,14 +53,14 @@ class ReadingDesignTests(unittest.TestCase):
         self.assertIn('完整文字紀錄仍可在建設與進度頁查看', form.select_one('noscript').get_text())
         self.assertEqual(soup.select_one('.home-map-text-link')['href'], 'achievements.html#case-results')
         self.assertFalse(soup.select('#civic-query, .civic-search'))
-        self.assertEqual(len(soup.select('.hero-portrait')), 1)
+        self.assertFalse(soup.select('.hero-portrait'))
         config = json.loads((ROOT / 'data/civic-home.json').read_text())
-        feature = soup.select_one('.home-recent-local')
-        self.assertEqual(feature['data-home-local-record'], config['featured'])
-        self.assertEqual(len(soup.select('.home-recent-local')), 1)
+        feature = soup.select_one('[data-home-featured-project]')
+        self.assertEqual(feature['data-home-featured-project'], config['featured'])
+        self.assertEqual(len(soup.select('[data-home-featured-project]')), 1)
         self.assertFalse(soup.select('.civic-story-grid, .civic-reading-row, .place, .filters'))
-        self.assertEqual(soup.select_one('.hero-portrait img')['fetchpriority'], 'high')
-        self.assertEqual(soup.select_one('[data-home-event] img')['loading'], 'lazy')
+        self.assertEqual(soup.select_one('.latest-item.is-lead img')['fetchpriority'], 'high')
+        self.assertEqual(soup.select_one('.home-map-preview img')['loading'], 'lazy')
     def test_overview_does_not_invent_uncollected_attribution(self):
         records = json.loads((ROOT / 'data/achievements-public.json').read_text())
         byid = {r['id']: r for r in records}

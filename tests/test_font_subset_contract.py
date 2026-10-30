@@ -251,27 +251,24 @@ class FontSubsetContractTests(unittest.TestCase):
         self.assertIn("font-display:swap", global_face)
         self.assertIn("Huiwen Sans JP Support", css)
 
-    def test_homepage_headquarters_title_is_covered_by_the_preloaded_core_face(self):
+    def test_homepage_visible_latest_titles_are_covered_by_the_preloaded_core_face(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        heading = soup.select_one("[data-home-event] h3").get_text(" ", strip=True)
+        headings = " ".join(node.get_text("", strip=True) for node in soup.select("[data-latest-items] > .latest-item:not([hidden]) .latest-title"))
+        self.assertIn("總部成立", headings)
         core_text = fonts.page_text(ROOT, "index.html", fonts.ROUTES["index.html"][1])
         tc_cmap = fonts.cmap(ROOT / fonts.TC_SOURCE.relative_to(ROOT))
-        expected = {ord(char) for char in heading if ord(char) in tc_cmap}
+        expected = {ord(char) for char in headings if ord(char) in tc_cmap}
         present = {ord(char) for char in core_text}
-        self.assertTrue(expected.issubset(present), "homepage event title must not switch from system fallback after interaction")
+        self.assertTrue(expected.issubset(present), "visible latest titles must not switch from system fallback after interaction")
 
-    def test_homepage_leads_with_headquarters_then_award_then_local_story(self):
+    def test_homepage_leads_with_latest_then_local_story(self):
         soup = BeautifulSoup((ROOT / "index.html").read_text(encoding="utf-8"), "html.parser")
-        recent = soup.select_one("#recent .home-recent-list")
-        self.assertEqual(
-            [row.get("data-home-recent-item") for row in recent.find_all("li", recursive=False)],
-            ["headquarters", "award", "local"],
-        )
-        self.assertIn("獲選", recent.find("li", attrs={"data-home-recent-item": "award"}).get_text(" ", strip=True))
-        self.assertIn("總部成立", soup.select_one("#opening").get_text(" ", strip=True))
-        self.assertEqual(recent.select_one("[data-home-local-record]")["data-home-local-record"], "wende-school-center")
-        self.assertIn("閱讀這件地方事", recent.get_text(" ", strip=True))
-
+        visible = soup.select("[data-latest-items] > .latest-item:not([hidden])")
+        self.assertEqual(len(visible), 3)
+        self.assertIn("獲選", visible[0].get_text(" ", strip=True))
+        self.assertIn("總部成立", visible[1].get_text(" ", strip=True))
+        self.assertEqual(soup.select_one("[data-home-featured-project]")["data-home-featured-project"], "wende-school-center")
+        self.assertIn("歷程與來源", soup.select_one("#progress").get_text(" ", strip=True))
 
 if __name__ == "__main__":
     unittest.main()

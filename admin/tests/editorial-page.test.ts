@@ -48,3 +48,11 @@ test("editorial summary and SEO can be blank and empty starter blocks are ignore
   assert.deepEqual(saved.blocks, []);
   assert.throws(() => validateEditorialBlocks([{...block(), text:""}], true), /至少需要一個有內容的區塊/);
 });
+
+test("daily posts reuse the same editorial page model and section checks", () => {
+  const daily:any = {...page(), section:"daily", eventStart:"", eventEnd:""};
+  daily.blocks=[block(),{...block(),type:"source",title:"陳慧文 Facebook",text:"",url:"https://www.facebook.com/hwcfs/posts/123"}];
+  assert.equal(validateEditorialPage("page-daily-morning-market.html",daily).section,"daily");
+  assert.throws(() => validateEditorialPage("page-daily-morning-market.html",{...daily,section:"news"}));
+  assert.throws(() => validateEditorialPage("page-diary-morning-market.html",daily));
+});

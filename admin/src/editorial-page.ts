@@ -2,8 +2,8 @@ import { HttpError } from "./security.ts";
 import { validatePageSeo } from "./page-seo.ts";
 import { mediaProvider } from "./case-draft.ts";
 
-export const EDITORIAL_SECTIONS = ["news", "press", "service", "council", "achievement"] as const;
-export const editorialPath = /^page-(news|press|service|council|achievement)-([a-z0-9]+(?:-[a-z0-9]+)*)\.html$/;
+export const EDITORIAL_SECTIONS = ["news", "press", "service", "council", "achievement", "daily"] as const;
+export const editorialPath = /^page-(news|press|service|council|achievement|daily)-([a-z0-9]+(?:-[a-z0-9]+)*)\.html$/;
 const blockTypes = new Set(["heading", "paragraph", "timeline", "source", "photo", "video", "map"]);
 const keys = ["type", "title", "text", "date", "url", "alt", "credit", "address", "publicAccessConfirmed"];
 const unsafe = /[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069<>]/u;

@@ -459,8 +459,14 @@ class DryRunAndPublishTests(DisposableRepo):
         candidate = P.prepare_event(src.data['events'][0], P.main_text(self.repo, 'events'))
         result = P.dry_run(src, self.repo, 'events', src.data['events'][0], build=True, quality=False)
         self.assertEqual(result['outcome'], 'PREVIEWED')
-        self.assertTrue(set(result['files']) <= P.allowed_for(candidate))
+        # New events also enter the homepage feed; derived outputs beyond the static allowlist
+        # (route fonts, versioned asset links) are accepted only via the trusted-base rebuild.
+        extra = set(result['files']) - P.allowed_for(candidate)
+        self.assertIn('events', P.REBUILD_DOMAINS)
+        for path in extra:
+            self.assertFalse(path.startswith(('scripts/', 'templates/', '.github/', 'admin/', 'tests/', 'data/')) or path == 'CNAME', path)
         self.assertIn('data/events.json', result['files'])
+        self.assertIn('data/latest-info.json', result['files'])
         write = src.writes[-1]
         self.assertEqual((write['state'], write['candidateDigest'], write['requestPreview']), ('可核准', result['digest'], False))
         self.assertIn('【活動｜新增】里民健康講座', write['preview'])

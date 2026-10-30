@@ -6,7 +6,7 @@
   z-index: 8;
   width: 56px;
   height: 56px;
-  color: #173f33;
+  color: #6356a3;
   isolation: isolate;
 }
 .small-q[hidden],
@@ -19,27 +19,27 @@
   height: 56px;
   min-height: 56px;
   padding: 0;
-  border: 1px solid #8fa396;
+  border: 1px solid #8f82bc;
   border-radius: 50%;
   color: #fff;
-  background: #173f33;
-  box-shadow: 0 3px 12px #173f3330;
+  background: #6356a3;
+  box-shadow: 0 3px 12px rgba(99,86,163,.19);
   font: 700 17px/1 system-ui, sans-serif;
   cursor: pointer;
   touch-action: manipulation;
 }
-.small-q-toggle:hover { background: #315b49; }
+.small-q-toggle:hover { background: #292433; }
 .small-q-toggle:focus-visible,
-.small-q-close:focus-visible { outline: 3px solid #526f14; outline-offset: 3px; }
+.small-q-close:focus-visible { outline: 3px solid #6356a3; outline-offset: 3px; }
 .small-q-panel {
   position: absolute;
   right: 0;
   bottom: 68px;
   width: min(176px, calc(100vw - 32px));
   padding: 8px;
-  border: 1px solid #a8b7a9;
-  background: #fffdf7;
-  box-shadow: 0 6px 24px #173f3324;
+  border: 1px solid #d7d1e8;
+  background: #ffffff;
+  box-shadow: 0 6px 24px rgba(99,86,163,.14);
 }
 .small-q-figure { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; }
 .small-q-close {
@@ -51,10 +51,10 @@
   width: 40px;
   height: 40px;
   min-height: 40px;
-  border: 1px solid #a2b5a8;
+  border: 1px solid #d7d1e8;
   border-radius: 50%;
-  color: #173f33;
-  background: #fffdf7;
+  color: #6356a3;
+  background: #ffffff;
   font: 24px/1 system-ui, sans-serif;
   cursor: pointer;
   touch-action: manipulation;

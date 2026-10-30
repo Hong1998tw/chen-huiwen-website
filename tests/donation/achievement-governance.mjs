@@ -11,7 +11,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const out=root+'tests/donation/results/';await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server','8789','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
 const base='http://127.0.0.1:8789/';
-for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
 
 const allSource=JSON.parse(await readFile(root+'data/achievements.json','utf8'));
 const source=allSource.filter(c=>c.status!=='待核驗');

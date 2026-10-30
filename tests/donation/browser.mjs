@@ -322,7 +322,7 @@ function largestCls(shifts) {
 
 try {
   for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(base)).ok) break; } catch {}
+    try { if ((await fetch(base,{method:"HEAD"})).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
@@ -350,10 +350,12 @@ try {
       assert.equal(await page.locator('.donation-portrait,picture').count(), 0);
       const account = await page.locator('.donation-account-number').boundingBox();
       assert(account && account.y + account.height < 844);
-      assert.equal(await page.locator('#navigation .nav-group').count(), 5);
-      assert.equal(await page.locator('#navigation a').first().getAttribute('href'), 'achievements.html');
-      assert.equal(await page.locator('#navigation a[href="service.html"]').count(), 1);
-      assert.equal(await page.locator('#navigation a').nth(1).getAttribute('href'), 'explore.html');
+      assert.deepEqual(await page.locator('#navigation > a.nav-primary').evaluateAll(xs => xs.map(x => x.getAttribute('href'))), ['./#latest', 'service.html', 'achievements.html']);
+      assert.equal(await page.locator('#navigation .nav-group').count(), 1);
+      assert.equal(await page.locator('#navigation .nav-more .nav-more-section').count(), 5);
+      assert.equal(await page.locator('#navigation .nav-more a').first().getAttribute('href'), 'achievements.html');
+      assert.equal(await page.locator('#navigation .nav-more a[href="service.html"]').count(), 1);
+      assert.equal(await page.locator('#navigation .nav-more a').nth(1).getAttribute('href'), 'explore.html');
       assert.equal(await page.locator('#navigation a[href="service.html#monthly-heading"]').count(), 1);
     });
 
@@ -659,11 +661,13 @@ try {
       assert(await page.locator('.header-phone').evaluate(el => el.inert));
       assert(await page.locator('.brand').evaluate(el => el.inert));
       assert.equal(await page.locator('#navigation .nav-group[open]').count(), 0);
-      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="political-donation.html"]')}).locator('summary').click();
-      assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
-      await page.locator('#navigation .nav-group').filter({has:page.locator('a[href="election.html"]')}).locator('summary').click();
+      for (const link of await page.locator('#navigation > a.nav-primary').all()) assert(await link.isVisible(), 'primary tasks stay visible in the open menu');
+      await page.locator('#navigation .nav-more > summary').click();
       await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 1);
+      assert(await page.locator('#navigation a[href="political-donation.html"]').isVisible());
       assert(await page.locator('#navigation a[href="election.html"]').isVisible());
+      await page.locator('#navigation .nav-more > summary').click();
+      await page.waitForFunction(() => document.querySelectorAll('#navigation .nav-group[open]').length === 0);
       assert.equal(await page.locator('#navigation a[href="political-donation.html"]').isVisible(), false);
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
@@ -711,10 +715,11 @@ try {
         assert.equal(await page.locator('#navigation a[href$="political-donation.html"]').count(), 1, `${file}: donation nav`);
         assert.equal(await page.locator('#navigation a[href$="election.html"]').count(), 1, `${file}: election nav`);
         assert.equal(await page.locator('#navigation a[href$="press.html"]').count(), 1, `${file}: press nav`);
-        assert.equal(await page.locator('#navigation .nav-group').count(),5,`${file}: grouped navigation`);
-        assert.equal((await page.locator('#navigation a').first().getAttribute('href')).replace(/^\//,''), 'achievements.html', `${file}: local issues first`);
-        assert.equal((await page.locator('#navigation a').nth(1).getAttribute('href')).replace(/^\//,''), 'explore.html', `${file}: related exploration second`);
-        const serviceGroup = page.locator('#navigation .nav-group').filter({has:page.locator('a[href$="service.html"]')});
+        assert.deepEqual(await page.locator('#navigation > a.nav-primary').allTextContents(), ['最新資訊','找服務','查地方進度'], `${file}: three primary tasks`);
+        assert.equal(await page.locator('#navigation .nav-more .nav-more-section').count(),5,`${file}: grouped secondary navigation`);
+        assert.equal((await page.locator('#navigation .nav-more a').first().getAttribute('href')).replace(/^\//,''), 'achievements.html', `${file}: local issues first`);
+        assert.equal((await page.locator('#navigation .nav-more a').nth(1).getAttribute('href')).replace(/^\//,''), 'explore.html', `${file}: related exploration second`);
+        const serviceGroup = page.locator('#navigation .nav-more-section').filter({has:page.locator('a[href$="service.html"]')});
         assert.equal((await serviceGroup.locator('a').first().getAttribute('href')).replace(/^\//,''), 'service.html', `${file}: service contact first in service group`);
         assert.equal((await serviceGroup.locator('a').nth(1).getAttribute('href')).replace(/^\//,''), 'service.html#monthly-heading', `${file}: lawyer order preserved in service group`);
         assert.equal(await page.locator('#navigation a[href$="gallery.html"]').count(), 0, `${file}: gallery nav`);
@@ -755,29 +760,24 @@ try {
       }
     });
 
-    await check(`homepage ${width}px: portrait first, local query entry and CLS`, async () => {
+    await check(`homepage ${width}px: services, latest information, local query entry and CLS`, async () => {
       await page.goto(base + 'index.html');
-      const img = page.locator('.hero-portrait img');
-      await img.evaluate(el => el.decode());
       await page.evaluate(() => document.fonts.ready);
-      assert.equal(await img.getAttribute('src'),'assets/legal/portrait.webp');
-      assert.equal(await img.getAttribute('loading'),'eager');
-      const frame = await page.locator('.portrait-frame').boundingBox();
-      const heading = await page.locator('.hero-copy h1').boundingBox();
-      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'portrait-ratio',async()=>{
+      await assertWithHomeDiagnostics(page,fileURLToPath(output),width,'latest-layout',async()=>{
         assert.equal(await page.locator('h1').count(),1);
+        assert.equal((await page.locator('h1').innerText()).trim(),'最新資訊');
         assert(await page.locator('.home-village-form #home-village').isVisible());
-        assert(await page.locator('main > section').first().evaluate(el=>el.classList.contains('hero')));
-        assert((await page.locator('.hero').boundingBox()).y < (await page.locator('.home-recent').boundingBox()).y);
-        assert(frame && heading);
-        const expectedRatio = width <= 780 ? 2 / 3 : 1.04;
-        assert(Math.abs(frame.width / frame.height - expectedRatio) < 0.02);
-        assert(frame.x >= 0 && frame.x + frame.width <= width);
+        assert.equal(await page.locator('main > :first-child').getAttribute('id'),'service');
+        assert((await page.locator('#service').boundingBox()).y < (await page.locator('#latest').boundingBox()).y);
+        assert((await page.locator('#latest').boundingBox()).y < (await page.locator('#progress').boundingBox()).y);
+        assert.equal(await page.locator('.hero, .hero-portrait').count(),0);
+        const lead = await page.locator('.latest-item.is-lead').boundingBox();
+        assert(lead && lead.x >= 0 && lead.x + lead.width <= width, JSON.stringify(lead));
       });
       assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
-      assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
-      assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
-      assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="phone"]').getAttribute('href'),'tel:+88678212536');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="phone"] strong').innerText(),'撥打服務處');
+      assert.equal(await page.locator('.home-service-entry[data-home-task="line"]').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
       assert.doesNotMatch(await page.locator('main').innerText(),/首頁設計預覽|設計試作|待核驗/);
       await page.evaluate(() => document.fonts.ready);
       const cls = await page.evaluate(largest => largest(window.layoutShifts), largestCls.toString()).catch(async () => page.evaluate(() => {
@@ -1038,13 +1038,13 @@ try {
       assert.match(await sources.locator('a[href*="Frame_Councilor.aspx"]').first().innerText(), /議員查詢入口/);
       await sources.screenshot({path:fileURLToPath(new URL(`case-sources-${viewport.width}.png`, output))});
       await page.goto(base + 'index.html');
-      const recent = page.locator('.home-recent-list');
-      assert.equal(await recent.locator('> li').count(),3);
-      assert.equal(await page.locator('.home-recent-local').count(),1);
-      assert.equal(await page.locator('[data-home-local-record="bade-detention"]').count(),0);
+      const latestSection = page.locator('#latest');
+      assert.equal(await latestSection.locator('.latest-item:not([hidden])').count(),3);
+      assert.equal(await page.locator('[data-home-featured-project]').count(),1);
+      assert.equal(await page.locator('[data-home-featured-project="bade-detention"]').count(),0);
       assert.equal(await page.locator('.civic-story-grid, .civic-reading-row, .place').count(),0);
-      await recent.screenshot({path:fileURLToPath(new URL(`home-recent-${viewport.width}.png`, output))});
-      await page.locator('.home-local-progress').screenshot({path:fileURLToPath(new URL(`home-local-progress-${viewport.width}.png`, output))});
+      await latestSection.screenshot({path:fileURLToPath(new URL(`home-latest-${viewport.width}.png`, output))});
+      await page.locator('#progress').screenshot({path:fileURLToPath(new URL(`home-progress-${viewport.width}.png`, output))});
 
     });
   }
@@ -1074,6 +1074,7 @@ try {
       assert.equal((await phone.boundingBox()).height, 44);
       await assertNoHorizontalOverflow(nojsPage,{directory:new URL('./results/diagnostics/',import.meta.url),label:'nojs-service-320-layout'});
 
+      assert(await navigation.locator('a.nav-primary[href="achievements.html"]').isVisible());
       const group = navigation.locator('.nav-group').first();
       await group.locator('summary').click();
       assert.equal(await group.getAttribute('open'), '');

@@ -8,6 +8,7 @@ stolen App credential cannot change scripts, templates, workflows, tests or CNAM
 Human PRs are not restricted here; they remain under normal review.
 """
 import os
+import hashlib
 import json
 import stat
 import subprocess
@@ -36,7 +37,8 @@ def evaluate(head_ref, author, author_type, app_login, files, generated_files=()
         return False, 'executor pull request changes no files'
     # deployment-control has exactly one non-public metadata path; no runtime/config writes.
     allowed = set(ALLOWED_PATHS[domain])
-    if domain == 'home-content':
+    if domain in REBUILD_SOURCES:
+        # Only outputs reproduced by the trusted-base rebuild (never PR code) are accepted.
         allowed.update(generated_files)
     if domain == 'events':
         event_id = event_branch_id(head_ref)
@@ -45,12 +47,14 @@ def evaluate(head_ref, author, author_type, app_login, files, generated_files=()
     if domain == 'editorial-page':
         from editorial_pages import PATH, SECTIONS
         record = '/'.join(parts[2:])
-        match = re.fullmatch(r'(page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html)-[a-f0-9]{8}', record)
+        match = re.fullmatch(r'(page-(?:news|press|service|council|achievement|daily)-[a-z0-9-]+\.html)-[a-f0-9]{8}', record)
         page_path = match[1] if match else ''
         section = PATH.fullmatch(page_path) if page_path else None
         if not section:
             return False, 'invalid editorial page branch path'
-        allowed.update((page_path, SECTIONS[section[1]][0]))
+        allowed.add(page_path)
+        if '#' not in SECTIONS[section[1]][0]:
+            allowed.add(SECTIONS[section[1]][0])
     outside = [f for f in files if f not in allowed]
     if outside:
         return False, 'paths outside the executor allowlist: ' + ', '.join(outside)
@@ -78,21 +82,37 @@ def compare_generated_outputs(expected, actual, *, expected_modes=None, actual_m
     return True, 'generated paths, bytes and file modes match the trusted rebuild'
 
 
+# Domains whose generated homepage/feed outputs are re-derived from the trusted base code.
+REBUILD_SOURCES = {
+    'home-content': 'data/civic-home.json',
+    'editorial-page': 'data/editorial-pages.json',
+    'events': 'data/events.json',
+    # Page publication state (unpublish/delete/restore) changes the latest feed and homepage.
+    'page-copy': 'data/page-content.json',
+}
+
+
 def verify_home_rebuild(base_sha, head_sha, changed_paths, *, repo=Path(__file__).resolve().parents[1], python=sys.executable):
     """Rebuild a home-content PR from trusted base code and compare its full tree delta."""
-    if not re.fullmatch(r'[a-f0-9]{40}', base_sha) or not re.fullmatch(r'[a-f0-9]{40}', head_sha):
-        raise ValueError('invalid immutable revision')
-    if 'data/civic-home.json' not in changed_paths:
-        raise ValueError('home-content source file is missing')
-    head_source = subprocess.run(['git', 'show', f'{head_sha}:data/civic-home.json'], cwd=repo,
-                                 check=True, capture_output=True).stdout
-    json.loads(head_source)
-    with tempfile.TemporaryDirectory(prefix='huiwen-home-rebuild-') as temporary:
+    return verify_source_rebuild('home-content', base_sha, head_sha, changed_paths, repo=repo, python=python)
+
+
+# Trusted rebuild results keyed by (domain, base revision, source bytes digest, repo). The rebuild
+# depends only on these inputs, so repeated checks of the same source reuse one build.
+_TRUSTED_REBUILDS = {}
+
+
+def _trusted_expected(domain, base_sha, head_source, repo, python):
+    source_path = REBUILD_SOURCES[domain]
+    key = (domain, base_sha, hashlib.sha256(head_source).hexdigest(), str(Path(repo).resolve()))
+    if key in _TRUSTED_REBUILDS:
+        return _TRUSTED_REBUILDS[key]
+    with tempfile.TemporaryDirectory(prefix='huiwen-source-rebuild-') as temporary:
         build_root = Path(temporary) / 'repo'
         subprocess.run(['git', 'worktree', 'add', '--quiet', '--detach', str(build_root), base_sha],
                        cwd=repo, check=True, capture_output=True)
         try:
-            (build_root / 'data/civic-home.json').write_bytes(head_source)
+            (build_root / source_path).write_bytes(head_source)
             subprocess.run([python, 'scripts/build_all.py'], cwd=build_root, check=True,
                            capture_output=True, text=True, timeout=900)
             tracked_delta = subprocess.run(['git', 'diff', '--name-only', '--no-renames', '-z', base_sha],
@@ -101,7 +121,7 @@ def verify_home_rebuild(base_sha, head_sha, changed_paths, *, repo=Path(__file__
                                        cwd=build_root, check=True, capture_output=True).stdout
             expected_paths = {part.decode('utf-8') for part in tracked_delta.split(b'\0') if part}
             expected_paths.update(part.decode('utf-8') for part in untracked.split(b'\0') if part)
-            if not expected_paths - {'data/civic-home.json'}:
+            if domain == 'home-content' and not expected_paths - {source_path}:
                 raise ValueError('home source produced no generated outputs')
             expected = {}
             expected_modes = {}
@@ -118,37 +138,52 @@ def verify_home_rebuild(base_sha, head_sha, changed_paths, *, repo=Path(__file__
                     raise ValueError('trusted rebuild produced a non-regular file')
                 expected[path] = local.read_bytes()
                 expected_modes[path] = '100755' if local_stat.st_mode & stat.S_IXUSR else '100644'
-            actual = {}
-            actual_modes = {}
-            tree = subprocess.run(['git', 'ls-tree', '-r', '-z', head_sha], cwd=repo,
-                                  check=True, capture_output=True).stdout
-            tree_entries = {}
-            for entry in tree.split(b'\0'):
-                if not entry:
-                    continue
-                header, raw_path = entry.split(b'\t', 1)
-                mode, kind, _ = header.decode('ascii').split()
-                tree_entries[raw_path.decode('utf-8')] = (mode, kind)
-            for path in changed_paths:
-                entry = tree_entries.get(path)
-                if entry is None:
-                    actual[path] = None
-                    actual_modes[path] = None
-                    continue
-                mode, kind = entry
-                if kind != 'blob' or mode not in {'100644', '100755'}:
-                    raise ValueError('candidate generated output is not a regular file: ' + path)
-                actual_modes[path] = mode
-                actual[path] = subprocess.run(['git', 'show', f'{head_sha}:{path}'], cwd=repo,
-                                              check=True, capture_output=True).stdout
-            matches, reason = compare_generated_outputs(
-                expected, actual, expected_modes=expected_modes, actual_modes=actual_modes)
-            if not matches:
-                raise ValueError(reason)
-            return expected_paths - set(ALLOWED_PATHS['home-content'])
         finally:
             subprocess.run(['git', 'worktree', 'remove', '--force', str(build_root)], cwd=repo,
                            check=False, capture_output=True)
+    _TRUSTED_REBUILDS[key] = (expected, expected_modes)
+    return expected, expected_modes
+
+
+def verify_source_rebuild(domain, base_sha, head_sha, changed_paths, *, repo=Path(__file__).resolve().parents[1], python=sys.executable):
+    """Rebuild one executor PR's source file with trusted base code and compare the full tree delta."""
+    source_path = REBUILD_SOURCES[domain]
+    if not re.fullmatch(r'[a-f0-9]{40}', base_sha) or not re.fullmatch(r'[a-f0-9]{40}', head_sha):
+        raise ValueError('invalid immutable revision')
+    if source_path not in changed_paths:
+        raise ValueError(domain + ' source file is missing')
+    head_source = subprocess.run(['git', 'show', f'{head_sha}:{source_path}'], cwd=repo,
+                                 check=True, capture_output=True).stdout
+    json.loads(head_source)
+    expected, expected_modes = _trusted_expected(domain, base_sha, head_source, repo, python)
+    actual = {}
+    actual_modes = {}
+    tree = subprocess.run(['git', 'ls-tree', '-r', '-z', head_sha], cwd=repo,
+                          check=True, capture_output=True).stdout
+    tree_entries = {}
+    for entry in tree.split(b'\0'):
+        if not entry:
+            continue
+        header, raw_path = entry.split(b'\t', 1)
+        mode, kind, _ = header.decode('ascii').split()
+        tree_entries[raw_path.decode('utf-8')] = (mode, kind)
+    for path in changed_paths:
+        entry = tree_entries.get(path)
+        if entry is None:
+            actual[path] = None
+            actual_modes[path] = None
+            continue
+        mode, kind = entry
+        if kind != 'blob' or mode not in {'100644', '100755'}:
+            raise ValueError('candidate generated output is not a regular file: ' + path)
+        actual_modes[path] = mode
+        actual[path] = subprocess.run(['git', 'show', f'{head_sha}:{path}'], cwd=repo,
+                                      check=True, capture_output=True).stdout
+    matches, reason = compare_generated_outputs(
+        expected, actual, expected_modes=expected_modes, actual_modes=actual_modes)
+    if not matches:
+        raise ValueError(reason)
+    return set(expected) - set(ALLOWED_PATHS[domain])
 
 
 def event_branch_id(head_ref):
@@ -175,8 +210,11 @@ def verify_event_source(head_ref, base_text, head_text, read_head, template):
     if original is not None:
         if {key: value for key, value in original.items() if key not in managed} != {key: value for key, value in event.items() if key not in managed}:
             raise ValueError('unmanaged event fields must remain unchanged')
-    elif set(event) - managed - {'id'}:
-        raise ValueError('new event includes unmanaged fields')
+    else:
+        if set(event) - managed - {'id', 'publishedAt'}:
+            raise ValueError('new event includes unmanaged fields')
+        if not isinstance(event.get('publishedAt'), str) or not build_events.PUBLISHED_AT.fullmatch(event['publishedAt']):
+            raise ValueError('new event requires its first website publication time')
     for path, selected in [('activities.html', None), (build_events.event_path(event), event)]:
         expected = build_events.render_page(template, head_events, selected)
         if build_events.generated_projection(read_head(path)) != build_events.generated_projection(expected):
@@ -187,11 +225,12 @@ def main():
     head_ref = os.environ.get('HEAD_REF', '')
     files = sys.stdin.read().splitlines()
     generated_files = set()
-    if head_ref.startswith(BRANCH_PREFIX + 'home-content/'):
+    domain = next((name for name in REBUILD_SOURCES if head_ref.startswith(BRANCH_PREFIX + name + '/')), None)
+    if domain:
         try:
-            generated_files = verify_home_rebuild(os.environ['BASE_SHA'], os.environ['HEAD_SHA'], files)
+            generated_files = verify_source_rebuild(domain, os.environ['BASE_SHA'], os.environ['HEAD_SHA'], files)
         except (KeyError, ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            print('FAIL: home-content source/generated consistency check failed')
+            print(f'FAIL: {domain} source/generated consistency check failed')
             return 1
     ok, reason = evaluate(head_ref, os.environ.get('PR_AUTHOR', ''),
                           os.environ.get('PR_AUTHOR_TYPE', ''), os.environ.get('PUBLISHER_APP_LOGIN', ''),

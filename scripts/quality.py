@@ -10,7 +10,7 @@ BUILDERS=('build_all.py',)
 VALIDATORS=('validate_achievements.py','validate_site.py','validate_donation.py','validate_seo.py','validate_p0.py','validate_public_copy.py','validate_domain_migration.py')
 
 def snapshot(root):
-    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/public-record-catalog.json','data/achievements-public.json','sitemap.xml','llms.txt','updates.xml','styles.css','sw.js','digital.js','site.js')]
+    paths=list(root.glob('*.html'))+[root/name for name in ('data/search-index.json','data/achievement-map.json','data/public-record-catalog.json','data/achievements-public.json','data/latest-info.json','data/home-case-options.json','sitemap.xml','llms.txt','updates.xml','styles.css','sw.js','digital.js','site.js')]
     generated_fonts=root/'assets/fonts/huiwen-site-sans/generated'
     if generated_fonts.is_dir(): paths.extend(generated_fonts.glob('*.woff2'))
     paths=[p for p in paths if p.exists()]

@@ -99,7 +99,7 @@
               <label class="field" data-validation-path="page-create.section"><span class="field-label">所屬欄目<span class="required-marker" aria-hidden="true">＊</span></span><select name="section" required aria-describedby="field-error-page-create-section">
                 <option value="news">新聞媒體</option><option value="press">新聞發布</option>
                 <option value="service">民眾服務</option><option value="council">議會問政</option>
-                <option value="achievement">建設與政績</option>
+                <option value="achievement">建設與政績</option><option value="daily">日常（首頁最新資訊）</option>
               </select><span class="field-error" id="field-error-page-create-section" role="alert" hidden></span></label>
               <label class="field" data-validation-path="page-create.title"><span class="field-label">頁面名稱<span class="required-marker" aria-hidden="true">＊</span></span><input name="title" required maxlength="150" aria-describedby="field-error-page-create-title"><span class="field-error" id="field-error-page-create-title" role="alert" hidden></span></label>
               <label class="field" data-validation-path="page-create.slug"><span class="field-label">網址識別（小寫英文／數字／-）<span class="required-marker" aria-hidden="true">＊</span></span><input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80" placeholder="fengshan-topic" aria-describedby="field-error-page-create-slug"><span class="field-error" id="field-error-page-create-slug" role="alert" hidden></span></label>
@@ -145,8 +145,8 @@
             <div id="case-editor-fields"></div>
           </section>
           <section id="home-editor" class="case-editor" aria-labelledby="home-editor-heading" hidden>
-            <div class="section-head"><div><p class="eyebrow">首頁專題選片與排序</p><h3 id="home-editor-heading">決定哪些專題出現在首頁</h3></div></div>
-            <p class="hint">可從已公開專題新增、移除、修改摘要或調整順序。第一則是左側主打，其餘依序顯示為右側閱讀卡片；至少保留一則閱讀卡片，最多十二則。儲存草稿並發布後才會更新正式首頁。</p>
+            <div class="section-head"><div><p class="eyebrow">首頁專題與最新資訊置頂</p><h3 id="home-editor-heading">決定首頁的代表專題與置頂資訊</h3></div></div>
+            <p class="hint">第一則專題顯示在首頁「查地方進度」；其餘閱讀專題保留原有選片，至少一則、最多十二則。下方可把最多三則最新資訊置頂。儲存草稿並發布後才會更新正式首頁。</p>
             <div id="home-editor-fields"></div>
           </section>
           <section id="editorial-editor" class="case-editor" aria-labelledby="editorial-editor-heading" hidden>

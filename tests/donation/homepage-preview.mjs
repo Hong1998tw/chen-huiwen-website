@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 const root=fileURLToPath(new URL('../../',import.meta.url)),fixture=root+'tests/fixtures/homepage-preview/',out=root+'tests/donation/results/homepage-preview/';
 await mkdir(out,{recursive:true});
 const server=spawn('python3',['-m','http.server','8797','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'}),base='http://127.0.0.1:8797/';
-for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
 const browser=await chromium.launch({headless:true}),report={scope:'Review-only homepage prototype revision 2',checks:[],failures:[]};
 try{
  for(const width of [320,390,768,1440]){

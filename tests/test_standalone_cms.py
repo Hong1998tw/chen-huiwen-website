@@ -279,6 +279,74 @@ class StandaloneCMS(unittest.TestCase):
             cms.page_candidate(item)
         self.assertEqual(error.exception.code,'VALIDATION')
 
+    def _home_root(self, published):
+        import tempfile
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        root = Path(temp.name); (root/'data').mkdir()
+        for name in ('news.html','press.html','assets'):
+            (root/name).symlink_to(ROOT/name)
+        for page in ROOT.glob('news-*.html'):
+            (root/page.name).symlink_to(page)
+        for name in ('achievements.json','events.json','editorial-pages.json','page-content.json'):
+            (root/'data'/name).symlink_to(ROOT/'data'/name)
+        (root/'data/civic-home.json').write_text(json.dumps(published,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        return root
+
+    def test_latest_pins_publish_through_the_home_draft_with_compatible_defaults(self):
+        import latest_info
+        baseline=json.loads((ROOT/'data/civic-home.json').read_text(encoding='utf-8'))
+        self.assertNotIn('latestPinned',baseline)
+        ids=[item['id'] for item in latest_info.collect(ROOT)]
+        oldest=ids[-1]
+        item={'id':'00000000-0000-4000-8000-000000000019','path':'index.html','operation':'publish','base_commit':'a'*40,'version':2}
+        root=self._home_root(baseline)
+        # Explicit pin: an old item (outside the first 20) can be pinned.
+        pinned=cms.home_candidate(item,root,{'fields':{},'home':{**baseline,'latestPinned':[oldest]},'homeBase':{**baseline,'latestPinned':[]}})
+        self.assertEqual(json.loads(pinned.new_text)['latestPinned'],[oldest])
+        self.assertTrue(pinned.changed)
+        # Explicit clear writes the compatible three-field file.
+        root=self._home_root({**baseline,'latestPinned':[oldest]})
+        cleared=cms.home_candidate(item,root,{'fields':{},'home':{**baseline,'latestPinned':[]},'homeBase':{**baseline,'latestPinned':[oldest]}})
+        self.assertEqual(set(json.loads(cleared.new_text)),{'featured','reading','summaries'})
+        # An older payload without latestPinned keeps the published pins.
+        edited=json.loads(json.dumps(baseline)); order=[edited['featured'],*edited['reading']]
+        edited['featured'],edited['reading']=order[1],[order[0],*order[2:]]
+        kept=cms.home_candidate(item,root,{'fields':{},'home':edited,'homeBase':baseline})
+        self.assertEqual(json.loads(kept.new_text)['latestPinned'],[oldest])
+        self.assertEqual(json.loads(kept.new_text)['featured'],order[1])
+        # Pin drift, unknown ids, duplicates and more than three pins are rejected.
+        cases=[
+            ({**baseline,'latestPinned':[ids[0]]},{**baseline,'latestPinned':[]},'BASE_DRIFT'),
+            ({**baseline,'latestPinned':['missing-item']},{**baseline,'latestPinned':[oldest]},'VALIDATION'),
+            ({**baseline,'latestPinned':[ids[0],ids[0]]},{**baseline,'latestPinned':[oldest]},'VALIDATION'),
+            ({**baseline,'latestPinned':ids[:4]},{**baseline,'latestPinned':[oldest]},'VALIDATION'),
+        ]
+        for home,base,code in cases:
+            with self.subTest(code=code,pins=home['latestPinned']), self.assertRaises(engine.PublishError) as error:
+                cms.home_candidate(item,root,{'fields':{},'home':home,'homeBase':base})
+            self.assertEqual(error.exception.code,code)
+
+    def test_new_event_publication_time_is_fixed_from_the_request(self):
+        data=json.loads((ROOT/'data/events.json').read_text(encoding='utf-8'))
+        fields={'name':'測試公開行程','start':'2026-12-01T10:00:00+08:00','end':'','location':'高雄市鳳山區光復路二段132號',
+                'content':'測試說明','registration':'','sourceUrl':'https://www.kcc.gov.tw/','verifiedAt':'2026-11-01',
+                'status':'排定','changeNote':'','updatedAt':'','reviewDueAt':''}
+        row={'pageId':'fixture-page','fields':fields,'system':{'siteId':None,'syncedHash':None,'requestPublish':True,'publishedAt':'2026-11-02T03:04:59.000Z'}}
+        first=engine.prepare_event(row,engine.dump_events(data))
+        self.assertEqual(first.errors,[])
+        record=next(event for event in json.loads(first.new_text)['events'] if event['name']=='測試公開行程')
+        self.assertEqual(record['publishedAt'],'2026-11-02T11:04+08:00')
+        self.assertNotEqual(record['publishedAt'][:10],record['start'][:10])
+        retry=engine.prepare_event(row,engine.dump_events(data))
+        self.assertEqual(retry.new_text,first.new_text)
+        # Editing an existing event keeps its first publication time.
+        existing=next(event for event in data['events'] if event['id']=='campaign-headquarters-opening-2026-10-31')
+        managed={key:existing.get(key) for key in engine.EVENT_FIELDS}
+        managed['status']='scheduled'
+        record,errors=engine.build_event_record(managed,existing['id'],existing,'2030-01-01T00:00+08:00')
+        self.assertEqual(errors,[])
+        self.assertEqual(record['publishedAt'],'2026-10-02T04:00+08:00')
+
     def test_case_order_changes_preserve_existing_photos_and_check_source_drift(self):
         commit=engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
         source=next(c for c in json.loads((ROOT/'data/achievements.json').read_text()) if c['id']=='metro-green-line')

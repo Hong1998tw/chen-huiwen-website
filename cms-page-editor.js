@@ -79,8 +79,7 @@
     return latest;
   }
   function applyHomePreview(home, records) {
-    const card = document.querySelector('[data-home-recent-item="local"] .home-recent-local');
-    if (!card || !home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
+    if (!home || !Array.isArray(home.reading) || !Array.isArray(records)) return;
     const cases = new Map(records.map(record => [record.id, record]));
     const ids = [home.featured, ...home.reading];
     if (ids.length < 2 || ids.length > 13 || new Set(ids).size !== ids.length || ids.some(id => !cases.has(id))) return;
@@ -142,26 +141,48 @@
       return aside;
     };
     const featured = cases.get(home.featured), url = `achievement-${featured.id}.html`;
-    const art = card.querySelector(".home-recent-art--local");
-    const category = art?.querySelector("span:first-child");
-    const place = art?.querySelector("span:nth-child(2)");
-    const title = card.querySelector(".home-recent-card-copy h3 a");
-    const summary = card.querySelector(".home-recent-card-copy .home-recent-copy");
-    const meta = card.querySelector(".home-recent-card-copy .home-recent-meta");
-    const source = card.querySelector(".home-recent-card-copy > a.source");
-    if (!category || !place || !title || !summary || !meta || !source) return;
-    const villages = Array.isArray(featured.villages) ? featured.villages.filter(value => typeof value === "string") : [];
-    const history = Array.isArray(featured.history) ? featured.history.filter(item => item && typeof item.date === "string") : [];
-    const latestDate = typeof featured.lastRecordDate === "string"
-      ? featured.lastRecordDate
-      : latestHistoryEvent(history)?.date;
-    card.dataset.homeLocalRecord = featured.id;
-    category.textContent = featured.categories?.[0] || "地方專題";
-    place.textContent = villages.join("、") || featured.scope || "地區未載";
-    title.textContent = titleFor(featured); title.href = url;
-    summary.textContent = summaryFor(featured);
-    meta.textContent = `${featured.status || "階段未載"} · 最新收錄 ${latestDate || "日期未載"}`;
-    source.href = url;
+    const card = document.querySelector("[data-home-featured-project]");
+    const kicker = card?.querySelector(".home-featured-kicker");
+    const title = card?.querySelector("h3 a");
+    const summary = card?.querySelector(".home-featured-summary");
+    const status = card?.querySelector(".home-featured-status");
+    const history = card?.querySelector(".home-featured-history");
+    if (card && kicker && title && summary && status && history) {
+      const villages = Array.isArray(featured.villages) ? featured.villages.filter(value => typeof value === "string") : [];
+      card.dataset.homeFeaturedProject = featured.id;
+      kicker.textContent = `地方專題・${villages.join("、") || featured.scope || "地區未載"}`;
+      title.textContent = titleFor(featured); title.href = url;
+      summary.textContent = summaryFor(featured);
+      status.replaceChildren(node("span"), document.createTextNode(featured.status || "階段未載"));
+      status.firstChild.setAttribute("aria-hidden", "true");
+      history.href = url;
+    }
+    // Latest pins: reorder the already rendered items with the same rule as the build
+    // (pinned first, then the published natural order). The admin panel lists every item.
+    const list = document.querySelector("[data-latest-items]");
+    const pins = Array.isArray(home.latestPinned) ? home.latestPinned.filter(id => typeof id === "string").slice(0, 3) : null;
+    if (list && pins) {
+      // Pinned items outside the first rendered set come from the build's inert reserve copies;
+      // borrowed copies are removed again when unpinned, matching the next published build.
+      const reserve = document.querySelector("template[data-latest-reserve]")?.content;
+      list.querySelectorAll(".latest-item[data-latest-borrowed]").forEach(item => { if (!pins.includes(item.dataset.latestId)) item.remove(); });
+      for (const id of pins) {
+        if (list.querySelector(`.latest-item[data-latest-id="${CSS.escape(id)}"]`)) continue;
+        const copy = reserve?.querySelector(`.latest-item[data-latest-id="${CSS.escape(id)}"]`)?.cloneNode(true);
+        if (copy) { copy.dataset.latestBorrowed = ""; list.append(copy); }
+      }
+      const items = [...list.querySelectorAll(".latest-item[data-latest-id]")];
+      const rank = item => (pins.includes(item.dataset.latestId) ? -100000 : 0) + Number(item.dataset.latestIndex || 0);
+      items.sort((a, b) => rank(a) - rank(b)).forEach((item, index) => {
+        if (pins.includes(item.dataset.latestId)) item.dataset.latestPinned = ""; else delete item.dataset.latestPinned;
+        // Same initial "all" view as the build; home.js re-applies its active filter when present.
+        item.hidden = index >= 3;
+        item.classList.toggle("is-lead", index === 0);
+        list.append(item);
+      });
+      list.classList.toggle("is-text-only", !items[0]?.querySelector("[data-latest-media]"));
+      document.dispatchEvent(new CustomEvent("huiwen:latest-order"));
+    }
 
     // Optional companion to the civic-home-map generated region. Filters remain
     // outside this container so their listeners and selected state survive.
@@ -375,7 +396,7 @@
   async function enable() {
     try {
       const route = pageRoute();
-      if (/^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(route)) {
+      if (/^page-(?:news|press|service|council|achievement|daily)-[a-z0-9-]+\.html$/.test(route)) {
         document.addEventListener("click", (event) => { if (event.target.closest("main a")) event.preventDefault(); }, true);
         send("huiwen-cms-ready", { blocks: [], seo: seoInfo() });
         return;
@@ -456,7 +477,7 @@
     if (data.type === "huiwen-cms-case-preview" && /^achievement-[a-z0-9-]+\.html$/.test(pageRoute())) applyCasePreview(data.case);
     if (data.type === "huiwen-cms-home-preview" && pageRoute() === "index.html") applyHomePreview(data.home, data.cases);
     if (data.type === "huiwen-cms-seo-preview") applySeoPreview(data.seo);
-    if (data.type === "huiwen-cms-editorial-preview" && /^page-(?:news|press|service|council|achievement)-[a-z0-9-]+\.html$/.test(pageRoute())) applyEditorialPreview(data.page);
+    if (data.type === "huiwen-cms-editorial-preview" && /^page-(?:news|press|service|council|achievement|daily)-[a-z0-9-]+\.html$/.test(pageRoute())) applyEditorialPreview(data.page);
     if (data.type === "huiwen-cms-extra-preview" && Array.isArray(data.blocks)) applyEditorialPreview({blocks:data.blocks},true);
   });
   window.parent.postMessage({ type: "huiwen-cms-hello", path: `/${pageRoute()}` }, ADMIN_ORIGIN);

@@ -353,9 +353,11 @@ def validate(root=ROOT):
     election = BeautifulSoup((root / "election.html").read_text(encoding="utf-8"), "html5lib")
     activities = BeautifulSoup((root / "activities.html").read_text(encoding="utf-8"), "html5lib")
 
-    hero_actions = index.select_one(".hero-actions")
-    if not hero_actions or not hero_actions.select_one('a[href="https://line.me/R/ti/p/@yve2766q"]'):
-        failures.append("index.html: approved LINE hero action is missing")
+    service_band = index.select_one("main .home-service-band")
+    if not service_band or not service_band.select_one('a[href="https://line.me/R/ti/p/@yve2766q"]'):
+        failures.append("index.html: approved LINE service action is missing")
+    if not service_band or not service_band.select_one('a[href^="tel:"]'):
+        failures.append("index.html: approved telephone service action is missing")
     if len(index.select('main a[href="service.html#monthly-heading"]')) != 1:
         failures.append("index.html: homepage must offer one main lawyer schedule entry")
     if index.select_one('.hero-election-status, .campaign-entry-compact'):

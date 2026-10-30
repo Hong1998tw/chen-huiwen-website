@@ -263,6 +263,45 @@ try {
     const receipt = await mutate("/api/page-draft/publish", "POST", { path: "index.html", version: 2, operation });
     assert.equal(receipt.status, 202);
   }
+  {
+    // Homepage draft with latest pins keeps optimistic versions, explicit [] and older-shape payloads.
+    const homeBase = { featured: "a", reading: ["b"], summaries: { a: "首頁主題", b: "延伸閱讀" } };
+    const current = await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json());
+    const version = current.draft.version;
+    const pinned = await mutate("/api/page-draft", "PUT", { path: "index.html", version, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, latestPinned: ["event-campaign-headquarters-opening-2026-10-31"] }, homeBase: { ...homeBase, latestPinned: [] } });
+    assert.equal(pinned.status, 200);
+    assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, latestPinned: [] }, homeBase: { ...homeBase, latestPinned: [] } })).status, 409, "stale pin save keeps the version conflict");
+    let stored = JSON.parse((await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json())).draft.payload);
+    assert.deepEqual(stored.home.latestPinned, ["event-campaign-headquarters-opening-2026-10-31"]);
+    assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 1, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, latestPinned: ["a", "b", "c", "d"] }, homeBase })).status, 400, "more than three pins is rejected");
+    const cleared = await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 1, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, latestPinned: [] }, homeBase: { ...homeBase, latestPinned: ["event-campaign-headquarters-opening-2026-10-31"] } });
+    assert.equal(cleared.status, 200);
+    stored = JSON.parse((await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json())).draft.payload);
+    assert.deepEqual(stored.home.latestPinned, [], "an explicit clear is stored as []");
+    // Re-pin, then an older client (no latestPinned) saves the same version: saved pins survive.
+    const repinned = await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 2, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, latestPinned: ["media-20260909-1f376635"] }, homeBase: { ...homeBase, latestPinned: [] } });
+    assert.equal(repinned.status, 200);
+    const older = await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 3, baseCommit: "a".repeat(40), fields: [],
+      home: { ...homeBase, summaries: { a: "舊客戶端修改", b: "延伸閱讀" } }, homeBase });
+    assert.equal(older.status, 200);
+    stored = JSON.parse((await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json())).draft.payload);
+    assert.deepEqual(stored.home.latestPinned, ["media-20260909-1f376635"], "unpublished draft pins survive an older payload");
+    assert.deepEqual(stored.homeBase.latestPinned, [], "the saved pin baseline is kept too");
+    assert.equal(stored.home.summaries.a, "舊客戶端修改");
+    // A racing older payload on a stale version is still rejected and changes nothing.
+    assert.equal((await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 3, baseCommit: "a".repeat(40), fields: [],
+      home: homeBase, homeBase })).status, 409);
+    // Saving only page text keeps the stored homepage draft.
+    const textOnly = await mutate("/api/page-draft", "PUT", { path: "index.html", version: version + 4, baseCommit: "a".repeat(40), fields: [] });
+    assert.equal(textOnly.status, 200);
+    stored = JSON.parse((await fetch(origin + "/api/page-draft?path=index.html", { headers }).then((r) => r.json())).draft.payload);
+    assert.deepEqual(stored.home.latestPinned, ["media-20260909-1f376635"]);
+  }
   const event = {
     name: "本機測試草稿",
     start: "2026-10-01T10:00:00+08:00",
