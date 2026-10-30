@@ -85,6 +85,10 @@ function publicUrl(raw) {
 function safeRequestRecord(record) {
   return {
     url: publicUrl(record.url),
+    // ResourceTiming names a redirected resource by its initial URL; the network row keeps both.
+    initialUrl: publicUrl(record.initialUrl ?? record.url),
+    redirected: Boolean(record.redirected),
+    frameId: record.frameId ?? null, // diagnostic only; coverage never depends on the frame
     originClass: record.originClass ?? 'unknown',
     resourceType: record.resourceType ?? 'Other',
     status: record.status ?? null,
@@ -187,6 +191,9 @@ async function captureOne({
     networkById.set(event.requestId, {
       ...existing,
       url: event.request.url,
+      initialUrl: existing.initialUrl ?? event.request.url,
+      redirected: Boolean(existing.redirected || event.redirectResponse),
+      frameId: event.frameId ?? existing.frameId ?? null,
       resourceType: event.type,
       requestTimestamp: event.timestamp
     });

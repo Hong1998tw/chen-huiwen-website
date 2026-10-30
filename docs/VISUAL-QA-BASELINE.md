@@ -51,7 +51,7 @@ tests/baselines/visual-qa/
 
 ## 完成審閱後採用並提交
 
-先從成功的 A-05 run 下載 `a05-visual-qa-<run_id>`，解壓後將 `SOURCE_DIR` 指向 `local-http-uncompressed` 資料夾。主控須在產品最終 UI 逐張檢視全部 30 張 PNG，並確認相鄰 JSON、manifest 來源 SHA 及量測證據；沒有完成該審核前，不得執行核准步驟。候選 artifact 本身不會自動成為 approved baseline。
+先從 A-05 run 下載 `a05-visual-qa-<run_id>`，解壓後將 `SOURCE_DIR` 指向 `local-http-uncompressed` 資料夾。該組必須完整產生 30 張 `COMPLETE` 擷取，主控須在產品最終 UI 逐張檢視全部 30 張 PNG，並確認相鄰 JSON、manifest 來源 SHA 及量測證據；沒有完成該審核前，不得執行核准步驟。若同一 run 的其他環境失敗，必須保留其失敗紀錄與原因，並另外取得修正後的完整重測及相容性證據；只能採用已完成審閱的本機組，不能把整個 run 改稱成功。候選 artifact 本身不會自動成為 approved baseline；正式發布仍須最後 head 的全部適用 CI 通過。
 
 ```sh
 set -euo pipefail
@@ -146,7 +146,7 @@ git diff --cached --stat
 git commit -m "test: approve A-05 visual QA baseline"
 ```
 
-提交後的 PR workflow 會在相同固定路徑讀取該基準。本流程依完整審閱證據採用 capture；本次審核者記錄為 Codex 主控（非作者 AI 工程審查），不是人類或使用者簽核。目前 selection 指向 sourceSHA e3f63ff40a8d1d52a361a52e8f8c635754a3cfe3 的 30 組新基準，manifest SHA-256 為 17bac19fb54df3420f94812e8a4174a9e6300501336930b86a7b23730d9814d0。這是新 snapshot 的正式採用，不表示 native metric comparison 通過，也沒有修改 83d 歷史基準或比較規則。
+提交後的 PR workflow 會在相同固定路徑讀取該基準。本流程依完整審閱證據採用 capture；本次審核者記錄為 Codex 主控（非作者 AI 工程審查），不是人類或使用者簽核。目前 selection 指向 sourceSHA 0788af882e200e7893be252211ce3ea3e8ce86ce 的 30 組新基準，manifest SHA-256 為 936037f8db5b467659e11b5b0bca44123eb9969dcbcb00eed5e82d746f21bf04。本次採用 run `41016697541` 的原始本機組；30 張 PNG 與 30 份 JSON bytes 原封不動，只有 manifest 的 `status`／`approval`／`exceptions` 變更。該 run 的正式站量測因主 frame redirect 網址對照誤判失敗，失敗紀錄保留；修正工具後正式站 30 張 COMPLETE，本機兩輪 30 張 DOM／第一方 transfer 與原組相同。獨立補審已確認嚴格 coverage 對所有 frame 一視同仁、未增加豁免，0788 組仍相容。34 個既有超限指標鍵、300000／1500 限值與 2026-11-17 到期日保持；6 筆真實成本小增逐項揭露於例外 reason，不宣稱零成本成長或債務已結清。這是新 snapshot 的正式採用，不表示最終 CI 比較已通過；保留 755／ce70／e3f／ed2b／83d 全部歷史基準與既有比較規則。
 
 ## CI 狀態判讀
 
@@ -173,7 +173,11 @@ git commit -m "test: approve A-05 visual QA baseline"
 
 每筆 metadata 新增 `firstPartySettlement`，內容包括 status、waitedMs、polls、quiet window、仍在進行的第一方請求、第三方未完成數、`domInteractiveMs`、performance 取樣涵蓋的同源 URL、每張 lazy 圖是否有 layout box、在 settled layout 下距 viewport 底部的距離、是否被請求，以及 `earlyLazyRequests`（沒有 layout box 或位在 settled viewport 外、卻已被請求的 lazy 圖）。capture quality 另外拒絕以下情況：缺少此證據（`FIRST_PARTY_SETTLEMENT_MISSING`）、未 settled（`FIRST_PARTY_NOT_SETTLED`）、第一方請求未完成（`FIRST_PARTY_REQUEST_UNFINISHED`），以及 network 已完成、卻不在 performance 取樣內的第一方請求（`MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED`）。以 1.5 秒延遲 JPEG 回應做實驗時，舊取樣點在請求已發出的情況下仍少計整張圖，新取樣點則完整計入。
 
-`measurementScope`、環境標籤與 transfer 量測來源都不變。這段 settlement 只保證「瀏覽器實際發出的第一方請求已完成並計入」，不改變量測對象。在與 755 相同的公開 bytes 上，以新工具做 5 次完整 capture，其中 28 張的 DOM 與 transfer 都和 755 相同。
+涵蓋檢查：transfer metric 仍取自頂層 frame 的 PerformanceResourceTiming，範圍不變。每筆 network row 記錄最終 URL、原始請求 URL（`initialUrl`）與是否 redirect，並附 CDP `frameId` 作為診斷，判定不使用它。ResourceTiming 以 redirect 之前的原始 URL 命名資源，所以最終 URL 或原始 URL 任一出現在頂層取樣中即算涵蓋。任何已完成的同源請求若不在頂層取樣中，capture 一律判為不完整，不分 frame、沒有豁免：子 frame 的請求不會出現在頂層 ResourceTiming，所以同源 iframe 內的資源同樣使 capture 失敗，不能藉此避開預算。失敗或未完成的第一方請求照舊判為不完整。
+
+2026-10-30 正式站 measurement（run `41016697541`）30 張都被判為 `MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED`。真正的原因是主 frame 的同源 redirect，不是取樣過早，也不是 iframe：Cloudflare 注入、位在 `/cdn-cgi/challenge-platform/` 下的 script 由主 frame parser 發出並經同源 redirect，頂層 ResourceTiming 以原始 URL 記錄它，舊的檢查卻只用最終 URL 比對。修正後在同一個正式站（deployment receipt 仍為 d711）重新 measurement，30 張皆 COMPLETE，該 script 由原始 URL 涵蓋，正式站沒有子 frame。這次修正沒有阻擋、刪除或豁免任何注入資源，也沒有改動 Cloudflare 保護設定。本機 capture 沒有 redirect 或子 frame，指標與 run `41016697541` 的 local-http-uncompressed 原始資料逐張相同。
+
+`measurementScope`、環境標籤與 transfer 量測來源都不變。settlement 與涵蓋檢查只確認：瀏覽器發出的第一方請求都已完成，而且都出現在頂層 ResourceTiming 取樣中（也就是計入 metric）；做不到就判為不完整，不改變量測對象。在與 755 相同的公開 bytes 上，以新工具做 5 次完整 capture，其中 28 張的 DOM 與 transfer 都和 755 相同。
 
 原因：`news.html` 第一則報導的 lazy 圖（約 206 KB）是否被請求並非取樣時機問題，而是瀏覽器在 `load` 之前就做出的決定。Chromium 的 HTML parser 若在解析中途讓出、並在 `news.js` 重排之前跑了一次渲染更新，就會依當時的靜態 layout 判定這張圖在 lazy 門檻內而請求它；若沒有讓出，最終 layout 的距離（390：2003px、1440：1559px）超過門檻，之後也不會再請求。因此舊版 news-390／news-1440 會落在 388,678 或 595,460 bytes 兩個完整值之一，CI run `41008749618` 的 news FAIL 就是這個情況。
 

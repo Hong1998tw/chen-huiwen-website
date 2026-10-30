@@ -114,7 +114,7 @@ export function initialUiReadinessFailures(capture) {
   }
   const measured = new Set(readiness.stylesheets.filter(sheet => sheet.loaded).map(sheet => sheet.url));
   const late = (capture.network ?? []).filter(item => item.originClass === 'same-origin' && item.resourceType === 'Stylesheet' &&
-    !item.failed && Number.isFinite(item.status) && item.status < 400 && !measured.has(item.url));
+    !item.failed && Number.isFinite(item.status) && item.status < 400 && !measured.has(item.url) && !measured.has(item.initialUrl));
   if (late.length) failures.push('MEASUREMENT_SAMPLED_BEFORE_STYLESHEET');
   return failures;
 }
@@ -205,7 +205,7 @@ export function probeLazyImages() {
   });
 }
 
-/** Settlement evidence must be complete and cover every finished first-party request the network saw. */
+/** Settlement evidence must be complete and cover every finished first-party request in any frame. */
 export function firstPartySettlementFailures(capture) {
   const settlement = capture.firstPartySettlement;
   if (!settlement || typeof settlement !== 'object' || !Array.isArray(settlement.sampledSameOriginUrls)) {
@@ -216,8 +216,10 @@ export function firstPartySettlementFailures(capture) {
   const sampled = new Set(settlement.sampledSameOriginUrls);
   const firstParty = (capture.network ?? []).filter(item => item.originClass === 'same-origin' && item.resourceType !== 'Document');
   if (firstParty.some(item => !item.failed && !Number.isFinite(item.encodedDataLength))) failures.push('FIRST_PARTY_REQUEST_UNFINISHED');
+  // ResourceTiming names a redirected resource by its initial URL, so either URL counts as measured.
+  // There is no frame exemption: a child-frame request missing from the sample fails the same way.
   if (firstParty.some(item => !item.failed && Number.isFinite(item.encodedDataLength) && Number.isFinite(item.status) &&
-      item.status < 400 && !sampled.has(item.url))) {
+      item.status < 400 && !sampled.has(item.url) && !sampled.has(item.initialUrl))) {
     failures.push('MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED');
   }
   return failures;

@@ -1796,3 +1796,54 @@ test('lazy image evidence marks unrendered images instead of a false in-viewport
   assert.match(source, /earlyLazyRequests: \(firstPartySettlement\.lazyImages \?\? \[\]\)\.filter\(image => \(image\.rendered === false \|\| image\.settledDistancePx > 0\)/,
     'requested unrendered lazy images count as early requests');
 });
+
+test('top-frame coverage accepts a redirect\'s initial URL and exempts no frame', () => {
+  const scriptInitial = `${ORIGIN}/cdn/loader.js`;
+  const scriptFinal = `${ORIGIN}/cdn/v2/loader.js`;
+  const row = (url, extra = {}) => ({ url, initialUrl: url, redirected: false, frameId: 'MAIN-FRAME', originClass: 'same-origin', resourceType: 'Script', status: 200, failed: null, encodedDataLength: 18000, ...extra });
+  const base = {
+    httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, screenshotSha256: 'a'.repeat(64),
+    initialUiReadiness: { status: 'READY', components: [], stylesheets: [] },
+    network: [row(`${ORIGIN}/news.html`, { resourceType: 'Document' }), row(scriptFinal, { initialUrl: scriptInitial, redirected: true })],
+    firstPartySettlement: { status: 'SETTLED', firstPartyInFlight: [], sampledSameOriginUrls: [scriptInitial] }
+  };
+  // ResourceTiming names the redirected main-frame script by its initial URL: covered.
+  assert.equal(evaluateCaptureQuality(base).status, 'COMPLETE');
+  const withSample = urls => ({ ...base, firstPartySettlement: { ...base.firstPartySettlement, sampledSameOriginUrls: urls } });
+  assert.deepEqual(firstPartySettlementFailures(withSample([scriptFinal])), []);
+  assert.deepEqual(firstPartySettlementFailures(withSample([])), ['MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED']);
+
+  // Every frame label, including malformed ones and forged frame metadata, needs the same coverage.
+  const childImage = row(`${ORIGIN}/frame/large.jpg`, { resourceType: 'Image', frameId: 'CHILD-FRAME', encodedDataLength: 900000 });
+  const forgedFrames = [undefined, { mainFrameId: 'MAIN-FRAME', childFrameIds: ['CHILD-FRAME', null, ''] }, { childFrameIds: 'CHILD-FRAME' }, null, 'CHILD-FRAME'];
+  for (const frameId of ['CHILD-FRAME', 'MAIN-FRAME', 'UNRECORDED-FRAME', null, undefined, '', 0, { id: 'CHILD-FRAME' }]) {
+    for (const frames of forgedFrames) {
+      const capture = { ...base, network: [...base.network, { ...childImage, frameId }], firstPartySettlement: { ...base.firstPartySettlement, frames } };
+      assert.deepEqual(firstPartySettlementFailures(capture), ['MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED'], `${JSON.stringify(frameId)} ${JSON.stringify(frames)}`);
+      assert.equal(evaluateCaptureQuality(capture).status, 'INCOMPLETE');
+    }
+  }
+  // Measured by either URL, the same 900KB child-frame image is accepted; its bytes are then in the metric.
+  assert.deepEqual(firstPartySettlementFailures({ ...base, network: [...base.network, childImage], firstPartySettlement: { ...base.firstPartySettlement, sampledSameOriginUrls: [scriptInitial, childImage.url] } }), []);
+  // Failed and unfinished first-party requests still invalidate the capture in any frame.
+  assert(evaluateCaptureQuality({ ...base, network: [...base.network, { ...childImage, status: 404 }] }).failureReasons.includes('FIRST_PARTY_REQUEST_FAILED'));
+  assert.deepEqual(firstPartySettlementFailures({ ...base, network: [...base.network, { ...childImage, encodedDataLength: null }] }), ['FIRST_PARTY_REQUEST_UNFINISHED']);
+  // A slow top-frame image missing from the sample is still rejected.
+  assert(evaluateCaptureQuality({ ...base, network: [...base.network, row(JPEG, { resourceType: 'Image', encodedDataLength: 206686 })] }).failureReasons
+    .includes('MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED'));
+
+  // A redirected stylesheet measured by its initial URL is not reported as late.
+  const sheet = row(`${ORIGIN}/assets/final.css`, { resourceType: 'Stylesheet', initialUrl: SITE_CSS, redirected: true });
+  const readiness = { status: 'READY', components: [], stylesheets: [{ url: SITE_CSS, sameOrigin: true, loaded: true, performanceEntry: true }] };
+  assert.deepEqual(initialUiReadinessFailures({ initialUiReadiness: readiness, network: [sheet] }), []);
+  assert.deepEqual(initialUiReadinessFailures({ initialUiReadiness: readiness, network: [{ ...sheet, initialUrl: sheet.url }] }), ['MEASUREMENT_SAMPLED_BEFORE_STYLESHEET']);
+});
+
+test('the collector keeps each request\'s initial URL and has no frame-based coverage exemption', async () => {
+  const source = await readFile(new URL('./visual-qa.mjs', import.meta.url), 'utf8');
+  const helper = await readFile(new URL('./visual-qa-readiness.mjs', import.meta.url), 'utf8');
+  assert.match(source, /initialUrl: existing\.initialUrl \?\? event\.request\.url,/);
+  assert.match(source, /initialUrl: publicUrl\(record\.initialUrl \?\? record\.url\),/);
+  const coverage = helper.slice(helper.indexOf('export function firstPartySettlementFailures')).replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(coverage, /frameId|\.frames\b|childFrame/, 'coverage code must not depend on any frame data');
+});
