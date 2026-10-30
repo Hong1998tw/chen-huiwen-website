@@ -1380,9 +1380,16 @@ test('a resolved exception makes its old approved baseline stale and requires re
   const baseline = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1800 } };
   const candidate = { id: 'gallery-390', metrics: { sameOriginTransferSizeBytes: 1200, domElementCount: 1400 } };
   const exceptions = [{ captureId: 'gallery-390', metric: 'domElementCount', limit: 1500, observedValue: 1800, expiresAt: '2026-10-30T00:00:00+08:00' }];
-  const result = compareMetrics(candidate, baseline, exceptions);
+  // A fixed test clock keeps this fixture independent of the real date.
+  const result = compareMetrics(candidate, baseline, exceptions, { now: new Date('2026-10-29T23:59:59+08:00') });
   assert.equal(result.status, 'STALE_BASELINE');
   assert.equal(result.staleExceptions[0].currentValue, 1400);
+  // Expiry still wins once the clock reaches or passes expiresAt.
+  for (const now of [new Date('2026-10-30T00:00:00+08:00'), new Date('2026-10-31T00:00:00+08:00')]) {
+    const expired = compareMetrics(candidate, baseline, exceptions, { now });
+    assert.equal(expired.status, 'FAIL');
+    assert(expired.metrics.some(item => item.metric === 'domElementCount' && item.reason === 'BASELINE_EXCEPTION_EXPIRED'));
+  }
 });
 
 test('an over-budget baseline exception must match captured measurement and include evidence/task', () => {
