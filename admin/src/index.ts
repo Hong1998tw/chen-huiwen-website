@@ -1,4 +1,4 @@
-import { owner, runner, csrf, boundedJSON, HttpError } from "./security.ts";
+import { owner, runner, csrf, boundedJSON, HttpError, SYNC_MAX_BYTES, SYNC_MAX_PAGES } from "./security.ts";
 import { validate, validatePageFields } from "./validation.ts";
 import { pagePreviewContentSecurityPolicy, preparePagePreviewDocument } from "./page-preview.ts";
 import { validateCaseDraft } from "./case-draft.ts";
@@ -57,12 +57,12 @@ function protect(response: Response) {
 async function internal(request: Request, env: Env, path: string) {
   const run = await runner(request, env);
   if (request.method !== "POST") throw new HttpError(405, "不支援的方法");
-  const b = await boundedJSON(request);
+  const b = await boundedJSON(request, path === "/internal/sync" ? SYNC_MAX_BYTES : undefined);
   if (path === "/internal/sync") {
     if (
       !Array.isArray(b.sources) ||
       b.sources.length > 300 ||
-      (b.pages !== undefined && (!Array.isArray(b.pages) || b.pages.length < 1 || b.pages.length > 200)) ||
+      (b.pages !== undefined && (!Array.isArray(b.pages) || b.pages.length < 1 || b.pages.length > SYNC_MAX_PAGES)) ||
       !/^[a-f0-9]{40}$/.test(String(b.commit))
     )
       throw new HttpError(400, "來源快照格式錯誤");
@@ -100,7 +100,8 @@ async function internal(request: Request, env: Env, path: string) {
     if (b.pages !== undefined) {
       const seen = new Set<string>();
       const publicPath = /^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html$/;
-      const sourcePath = /^(?:data\/[a-z0-9-]+\.json|(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html)$/;
+      // Same committed-source rule as bounded-fetch: data/ or island/ JSON, or a public HTML page.
+      const sourcePath = /^(?:(?:data|island)\/[a-z0-9-]+\.json|(?:[a-z0-9-]+\/)*[a-z0-9-]+\.html)$/;
       for (const p of b.pages) {
         if (
           !p || typeof p !== "object" ||
