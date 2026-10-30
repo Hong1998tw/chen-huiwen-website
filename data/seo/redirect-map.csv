@@ -22,3 +22,5 @@ legacy_path,legacy_title,new_path,action,seo_value,prerequisite,verification_sta
 /398bd146805480f98aecedb69d2e1070,鳳山八德滯洪池,/achievement-bade-detention.html,301,A,GSC query-page identity and verified successor,confirmed,修復仍有 clicks/impressions 的 404 legacy URL
 /16-396bd146805480b1ad78e832b20b6565,文龍路16巷,/achievement-wenlong-lane16.html,301,A,GSC query-page identity and verified successor,confirmed,修復仍有 clicks/impressions 的 404 legacy URL
 /mktexp26,五福市場職人展,/activity-market.html,301,B,historical site source and current successor,confirmed,舊版活動頁明確連結至該 slug；current activity page 承接同一 intent
+/381bd1468054806d9f28e7f2aefaf017,陳慧文推校事會議改革,/achievement-school-case-review.html,301,A,Google 收錄標題與 successor 主題一致,confirmed,修復仍被 Google 收錄的 404 legacy URL
+/2cbbd146805480678940d67d8c11314b,自然人憑證剩餘數量,/news-20251217-certificate-map.html,301,A,Google 收錄標題與 successor 主題一致,confirmed,修復仍被 Google 收錄的 404 legacy URL
