@@ -553,8 +553,9 @@ async function handle(request: Request, env: Env) {
       throw new HttpError(400,"頁面發布要求格式不正確");
     if ((operation === "unpublish" || operation === "delete") && FEED_PAGE.test(path)) {
       // Two-step rule: a pinned latest item must be unpinned on the homepage first. The publisher
-      // enforces the same rule; this only answers early with an actionable message.
-      const pins = await loadPublishedPins((await isEditablePage(path)).commit_sha);
+      // enforces the same rule; this only answers early with an actionable message. Pins belong
+      // to the homepage, so they are read from the homepage's recorded revision.
+      const pins = await loadPublishedPins((await isEditablePage("index.html")).commit_sha);
       if (pins?.includes(path.slice(0, -5))) throw new HttpError(409, PINNED_UNPUBLISH_MESSAGE);
     }
     const id = crypto.randomUUID();

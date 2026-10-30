@@ -564,6 +564,63 @@ try {
   console.log(
     "PASS: real local Worker + D1 auth, CSRF, CRUD, optimistic concurrency, restore, immutable publish snapshot, duplicate clicks and protected assets",
   );
+
+  // Pinned latest items: the early unpublish/delete check reads pins from the homepage revision,
+  // even when the page itself is recorded at an older revision. Same Worker, same local D1;
+  // only outbound reads of committed sources are answered by a fixture.
+  server.kill("SIGTERM");
+  await Promise.race([new Promise((r) => server.once("exit", r)), new Promise((r) => setTimeout(r, 5000))]);
+  const homeCommit = "c".repeat(40), pageCommit = "b".repeat(40);
+  const civic = JSON.parse(readFileSync(root + "../data/civic-home.json", "utf8"));
+  const civicAt = { [homeCommit]: { ...civic, latestPinned: ["page-daily-pinned"] }, [pageCommit]: civic };
+  execFileSync(process.execPath, [...wrangler, "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir, "--command",
+    `UPDATE published_pages SET commit_sha='${homeCommit}' WHERE path='index.html';
+     INSERT INTO published_pages VALUES('page-daily-pinned.html','置頂日常','data/editorial-pages.json','generated','partial','${pageCommit}','2026-10-30T00:00:00Z'),
+       ('page-daily-free.html','一般日常','data/editorial-pages.json','generated','partial','${pageCommit}','2026-10-30T00:00:00Z');
+     INSERT INTO page_edits(path,payload,base_commit,version,publication_status,updated_at,actor) VALUES
+       ('page-daily-pinned.html','{"fields":{}}','${pageCommit}',1,'published','2026-10-30T00:00:00Z','github:126787497'),
+       ('page-daily-free.html','{"fields":{}}','${pageCommit}',1,'published','2026-10-30T00:00:00Z','github:126787497');`],
+    { cwd: root, stdio: "pipe" });
+  const sourceReads = [];
+  const { unstable_startWorker } = await import("wrangler");
+  const pinWorker = await unstable_startWorker({
+    config: dir + "/wrangler.json",
+    dev: {
+      server: { hostname: "127.0.0.1", port }, persist: dir, inspector: false, watch: false,
+      outboundService: async (request) => {
+        const match = /^https:\/\/raw\.githubusercontent\.com\/Hong1998tw\/chen-huiwen-website\/([a-f0-9]{40})\/(.+)$/.exec(request.url);
+        if (!match) return realFetch(request.url, { method: request.method, headers: request.headers });
+        sourceReads.push({ commit: match[1], path: match[2] });
+        const body = match[2] === "data/civic-home.json" ? civicAt[match[1]] : undefined;
+        return body ? new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } }) : new Response("missing", { status: 404 });
+      },
+    },
+  });
+  try {
+    await pinWorker.ready;
+    const publications = async (path) => (await fetch(origin + "/api/publications", { headers }).then((r) => r.json()))
+      .publications.filter((row) => row.path === path);
+    for (const operation of ["unpublish", "delete"]) {
+      const response = await mutate("/api/page-draft/publish", "POST", { path: "page-daily-pinned.html", version: 1, operation });
+      assert.equal(response.status, 409, `${operation} of a homepage-pinned page is stopped before queueing`);
+      assert.match((await response.json()).error, /先到首頁取消置頂/);
+    }
+    assert.deepEqual(await publications("page-daily-pinned.html"), [], "no publication request is written for the pinned page");
+    assert(sourceReads.some((read) => read.commit === homeCommit && read.path === "data/civic-home.json"), "pins come from the homepage revision");
+    assert(!sourceReads.some((read) => read.commit === pageCommit), "the older page revision is not used for homepage pins");
+    // Unpinned pages still go straight to the queue; version conflicts keep their meaning.
+    const allowed = await mutate("/api/page-draft/publish", "POST", { path: "page-daily-free.html", version: 1, operation: "unpublish" });
+    assert.equal(allowed.status, 202);
+    assert.equal((await publications("page-daily-free.html")).length, 1);
+    const stale = await mutate("/api/page-draft/publish", "POST", { path: "page-daily-free.html", version: 2, operation: "delete" });
+    assert.equal(stale.status, 409);
+    assert.match((await stale.json()).error, /草稿版本已更新/);
+    // Restoring the pinned page is not blocked by the pin rule.
+    assert.equal((await mutate("/api/page-draft/publish", "POST", { path: "page-daily-pinned.html", version: 1, operation: "restore" })).status, 202);
+  } finally {
+    await pinWorker.dispose();
+  }
+  console.log("PASS: pinned latest pages are held before queueing using the homepage revision; unpinned pages and version conflicts unchanged");
 } finally {
   if (server && server.exitCode === null) {
     server.kill("SIGTERM");
