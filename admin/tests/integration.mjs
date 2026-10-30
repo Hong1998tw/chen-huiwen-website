@@ -621,6 +621,76 @@ try {
     await pinWorker.dispose();
   }
   console.log("PASS: pinned latest pages are held before queueing using the homepage revision; unpinned pages and version conflicts unchanged");
+
+  // Source sync: the publisher's real snapshot (full public catalogue) through the real GitHub OIDC
+  // runner check into the same local D1. Only the GitHub JWKS fetch is answered by a fixture key.
+  const syncCommit = "d".repeat(40);
+  writeFileSync(dir + "/wrangler-sync.json", JSON.stringify({ ...config, vars: { ...config.vars, PUBLISHER_ORIGIN: origin, ADMIN_ORIGIN: "https://admin.invalid" } }));
+  const d1 = (sql) => JSON.parse(execFileSync(process.execPath, ["node_modules/wrangler/bin/wrangler.js", "--config", dir + "/wrangler-sync.json",
+    "d1", "execute", "huiwen-cms", "--local", "--persist-to", dir, "--json", "--command", sql], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString())[0].results;
+  const syncBody = execFileSync("python3", ["-c", "import sys; sys.path.insert(0, 'scripts'); import publish_from_cms as c; " +
+    `sys.stdout.buffer.write(c.encode_body(c.sync_body('${syncCommit}')))`], { cwd: root + "..", maxBuffer: 4 << 20 });
+  const snapshot = JSON.parse(syncBody.toString("utf8"));
+  const github = await generateKeyPair("RS256");
+  const githubJwk = { ...(await exportJWK(github.publicKey)), kid: "github-fixture", alg: "RS256", use: "sig" };
+  const runnerToken = await new SignJWT({
+    repository: config.vars.GITHUB_REPOSITORY, repository_id: config.vars.GITHUB_REPOSITORY_ID, repository_owner_id: config.vars.GITHUB_OWNER_ID,
+    ref: "refs/heads/main", workflow_ref: `${config.vars.GITHUB_REPOSITORY}/.github/workflows/cms-publisher.yml@refs/heads/main`,
+    environment: "notion-publisher", event_name: "workflow_dispatch", run_id: "1",
+  }).setProtectedHeader({ alg: "RS256", kid: githubJwk.kid }).setIssuer("https://token.actions.githubusercontent.com").setAudience(origin)
+    .setSubject(`repo:Hong1998tw@${config.vars.GITHUB_OWNER_ID}/chen-huiwen-website@${config.vars.GITHUB_REPOSITORY_ID}:environment:notion-publisher`)
+    .setIssuedAt().setExpirationTime("10m").sign(github.privateKey);
+  const owned = () => JSON.stringify([
+    d1("SELECT * FROM page_edits ORDER BY path"), d1("SELECT * FROM page_publications ORDER BY id"), d1("SELECT * FROM documents ORDER BY id"),
+  ]);
+  const catalogState = () => d1("SELECT COUNT(*) AS count, MIN(commit_sha) AS first_sha, MAX(commit_sha) AS last_sha, MAX(observed_at) AS observed FROM published_pages")[0];
+  const draftsBefore = owned();
+  const catalogBefore = catalogState();
+  assert(snapshot.commit === syncCommit && Array.isArray(snapshot.sources) && snapshot.sources.length <= 300 &&
+    Array.isArray(snapshot.pages) && snapshot.pages.length >= 1 && snapshot.pages.length <= 1000 && syncBody.byteLength <= 512 * 1024,
+    "the real snapshot is a valid sync body within the API limits");
+  const syncWorker = await unstable_startWorker({
+    config: dir + "/wrangler-sync.json",
+    dev: {
+      server: { hostname: "127.0.0.1", port }, persist: dir, inspector: false, watch: false,
+      outboundService: async (request) => request.url.startsWith("https://token.actions.githubusercontent.com/.well-known/jwks")
+        ? Response.json({ keys: [githubJwk] })
+        : new Response("unexpected outbound request", { status: 599 }),
+    },
+  });
+  try {
+    await syncWorker.ready;
+    // A fresh connection per request: D1 readbacks between requests can outlast the dev server's keep-alive.
+    const sync = (body) => fetch(origin + "/internal/sync", { method: "POST", body,
+      headers: { Authorization: `Bearer ${runnerToken}`, "Content-Type": "application/json", Connection: "close" } });
+    const tooMany = { ...snapshot, pages: Array.from({ length: 1001 }, (_, index) => ({ ...snapshot.pages[0], path: `page-${index}.html` })) };
+    assert.equal((await sync(JSON.stringify(tooMany))).status, 400, "more than 1000 pages is rejected");
+    assert.equal((await sync(new Uint8Array(512 * 1024 + 1).fill(0x20))).status, 413, "the sync body stays bounded");
+    const badLast = { ...snapshot, pages: [...snapshot.pages.slice(0, -1), { ...snapshot.pages.at(-1), source: "island/../secrets.json" }] };
+    assert.equal((await sync(JSON.stringify(badLast))).status, 400, "one invalid row rejects the whole snapshot");
+    assert.deepEqual(catalogState(), catalogBefore, "rejected snapshots write nothing");
+    assert.equal(owned(), draftsBefore);
+
+    const accepted = await sync(syncBody);
+    assert.equal(accepted.status, 200, await accepted.clone().text());
+    assert.deepEqual(await accepted.json(), { synced: snapshot.sources.length, pages: snapshot.pages.length });
+    const synced = catalogState();
+    assert.deepEqual([synced.count, synced.first_sha, synced.last_sha], [snapshot.pages.length, syncCommit, syncCommit], "the whole catalogue is replaced at one revision");
+    assert.deepEqual(d1("SELECT path FROM published_pages ORDER BY path").map((row) => row.path), snapshot.pages.map((page) => page.path).sort());
+    assert.deepEqual(d1("SELECT path,title,source_path,source_kind,editor_scope FROM published_pages ORDER BY path"),
+      snapshot.pages.map((page) => ({ path: page.path, title: page.title, source_path: page.source, source_kind: page.kind, editor_scope: page.editorScope }))
+        .sort((a, b) => (a.path < b.path ? -1 : 1)), "every catalogue row is stored as sent");
+    assert.equal(JSON.stringify(JSON.parse(owned()).slice(0, 2)), JSON.stringify(JSON.parse(draftsBefore).slice(0, 2)), "page drafts and publication requests are unchanged");
+    const documentsBefore = JSON.parse(draftsBefore)[2];
+    const documentsAfter = JSON.parse(owned())[2];
+    assert(documentsBefore.every((row) => JSON.stringify(documentsAfter.find((after) => after.id === row.id)) === JSON.stringify(row)), "existing documents keep payload, version and dates");
+
+    assert.equal((await sync(syncBody)).status, 200);
+    assert.equal(catalogState().observed, synced.observed, "a retry at the same revision does not rewrite the catalogue");
+  } finally {
+    await syncWorker.dispose();
+  }
+  console.log(`PASS: real ${snapshot.pages.length}-page source sync (${syncBody.byteLength} bytes) is bounded, authenticated, atomic and leaves drafts unchanged`);
 } finally {
   if (server && server.exitCode === null) {
     server.kill("SIGTERM");

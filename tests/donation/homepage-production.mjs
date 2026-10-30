@@ -13,7 +13,6 @@ const live=process.env.HOME_LIVE_URL;
 assert(!live||live==='https://www.huiwen.tw/');
 const base=live||'http://127.0.0.1:8778/';
 const server=live?null:spawn('python3',['-m','http.server','8778','--bind','127.0.0.1'],{cwd:root,stdio:'ignore'});
-const records=JSON.parse(await readFile(root+'data/achievements-public.json','utf8'));
 const catalog=JSON.parse(await readFile(root+'data/public-record-catalog.json','utf8'));
 const villages=JSON.parse(await readFile(root+'data/villages.json','utf8'));
 const schedule=JSON.parse(await readFile(root+'data/legal-schedule.json','utf8'));
@@ -27,8 +26,6 @@ const viewportCases=[320,360,390,430,780,781,1180,1440].map(width=>({width,heigh
 viewportCases.push({width:640,height:900},{width:1180,height:757},{width:1440,height:900},{width:390,height:844});
 const fengshan=new Set(villages.filter(row=>row.district==='鳳山區').map(row=>row.name));
 const coveredVillages=[...new Set(catalog.flatMap(row=>row.villages||[]).filter(name=>fengshan.has(name)))].sort();
-const expectedStatus={};
-for(const record of records)expectedStatus[record.status]=(expectedStatus[record.status]||0)+1;
 const firstOf=type=>feed.items.find(item=>type==='all'||item.type===type);
 try{
  if(!live)for(let n=0;n<60;n++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -111,18 +108,9 @@ try{
    assert(await image.getAttribute('alt'));assert(await image.getAttribute('width'));assert(await image.getAttribute('height'));
   }
 
-  // Local progress: catalogue totals keep full and short records separate.
-  const total=page.locator('[data-home-stat=total]');
-  assert.equal(Number((await total.locator('strong').innerText()).replace(/,/g,'')),catalog.length);
-  assert((await total.innerText()).includes('435 篇完整專題、2,222 筆短紀錄'));
-  const visibleStats=await page.locator('[data-home-status]').evaluateAll(nodes=>Object.fromEntries(nodes.map(node=>[node.dataset.homeStatus,Number(node.querySelector('strong').textContent)])));
-  assert.deepEqual(visibleStats,expectedStatus,'status counts project from current full records');
-  for(const status of Object.keys(expectedStatus)){
-   const url=new URL(await page.locator(`[data-home-status="${status}"]`).getAttribute('href'),base);
-   assert.equal(url.searchParams.get('status'),status);
-  }
-  assert.equal(Number(await page.locator('[data-home-stat=villages] strong').innerText()),coveredVillages.length);
-  assert((await page.locator('[data-home-stat=villages]').innerText()).includes('非鳳山行政里總數'));
+  // Local progress: village search, featured project and map only; no public statistics.
+  assert.equal(await page.locator('#progress [data-home-stat], #progress [data-home-status]').count(),0,'homepage shows no record statistics');
+  assert(!(await page.locator('#progress').innerText()).includes('收錄不等於完成'));
   assert.deepEqual(await page.locator('#home-village option').evaluateAll(nodes=>nodes.slice(1).map(o=>o.value)),coveredVillages.map(v=>'v:'+v));
   assert.equal(await page.locator('[data-home-featured-project]').getAttribute('data-home-featured-project'),config.featured);
   assert.equal(await page.locator('.home-map-preview img').getAttribute('alt'),'鳳山區里界示意圖；圓點只標示公開紀錄已有的鳳山區座標。');

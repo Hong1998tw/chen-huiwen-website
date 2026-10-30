@@ -166,8 +166,16 @@ export function csrf(request: Request, origin: string, expected: string) {
   )
     throw new HttpError(403, "操作來源驗證失敗，請重新載入頁面");
 }
+export const BODY_MAX_BYTES = 65536;
+// Only the authenticated /internal/sync carries the whole public page catalogue in one request.
+// Measured on 2026-10-30: 486 pages, 133,239 bytes as compact UTF-8 JSON. Fixed caps leave about 2x
+// headroom; every other API keeps BODY_MAX_BYTES. (Kept here: the Worker entry may only export handlers.)
+export const SYNC_MAX_BYTES = 512 * 1024;
+export const SYNC_MAX_PAGES = 1000;
+/** maxBytes is a fixed server-side cap chosen per route, never taken from the request. */
 export async function boundedJSON(
   request: Request,
+  maxBytes = BODY_MAX_BYTES,
 ): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, "缺少內容");
@@ -177,9 +185,9 @@ export async function boundedJSON(
     const { done, value } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 65536) {
+    if (size > maxBytes) {
       await reader.cancel();
-      throw new HttpError(413, "內容超過 64 KB");
+      throw new HttpError(413, `內容超過 ${maxBytes / 1024} KB`);
     }
     chunks.push(value);
   }
