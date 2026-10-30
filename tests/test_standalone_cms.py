@@ -168,6 +168,23 @@ class StandaloneCMS(unittest.TestCase):
                 cms.fetch_json(object(),'CMS /internal/sync',30)
         self.assertEqual(str(caught.exception),'CMS /internal/sync: HTTP 403 (edge challenge)')
 
+    def test_source_sync_body_is_compact_utf8_within_the_worker_caps(self):
+        import re
+        security=(ROOT/'admin/src/security.ts').read_text(encoding='utf-8')
+        caps={name:int(eval(value)) for name,value in re.findall(r'export const (BODY_MAX_BYTES|SYNC_MAX_BYTES|SYNC_MAX_PAGES) = ([\d *]+);',security)}
+        body=cms.sync_body('a'*40)
+        data=cms.encode_body(body)
+        # Same JSON value, UTF-8 without \uXXXX escapes or spaces; the full catalogue stays one request.
+        self.assertTrue(json.loads(data.decode('utf-8'))==body,'decoded body differs')
+        self.assertTrue(b'\\u' not in data and b'": ' not in data,'body is not compact UTF-8')
+        title=next(p['title'] for p in body['pages'] if p['path']=='index.html')
+        self.assertTrue(json.dumps(title,ensure_ascii=False).encode('utf-8') in data,'titles are sent as UTF-8')
+        # Only the real API caps bound the snapshot; its measured size is not a contract.
+        self.assertTrue(1<=len(body['pages'])<=caps['SYNC_MAX_PAGES'],len(body['pages']))
+        self.assertLessEqual(len(data),caps['SYNC_MAX_BYTES'],len(data))
+        source=re.compile(r'^(?:(?:data|island)/[a-z0-9-]+\.json|(?:[a-z0-9-]+/)*[a-z0-9-]+\.html)$')
+        self.assertEqual([p['path'] for p in body['pages'] if not source.match(p['source'])],[],'page sources follow the Worker rule')
+
     def test_sync_and_noop_preserve_canonical_bytes(self):
         for source in cms.sources(ROOT):
             text=(ROOT/engine.DATA_FILES[source['domain']]).read_text()

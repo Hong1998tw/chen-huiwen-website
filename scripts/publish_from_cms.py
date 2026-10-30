@@ -49,12 +49,17 @@ def fetch_json(request, stage, timeout):
         raise RunnerError(f'{stage}: invalid response format') from None
 
 
+def encode_body(value):
+    # Compact UTF-8 JSON: same value as before, without \uXXXX escapes for Chinese page titles.
+    return json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+
+
 def api(path, value):
     # Short-lived OIDC JWT is requested per call, never persisted or logged.
     url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=' + urllib.parse.quote(ORIGIN, safe='')
     req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
     token = fetch_json(req, 'GitHub OIDC', 20)['value']
-    req = urllib.request.Request(ORIGIN + path, data=json.dumps(value).encode(),
+    req = urllib.request.Request(ORIGIN + path, data=encode_body(value),
                                  headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
                                           'User-Agent': 'huiwen-cms-publisher/1.0'})
     return fetch_json(req, 'CMS ' + path, 30)
@@ -470,9 +475,14 @@ def reconcile(item, gh):
     return reconciliation_receipt(item, layers, revision)
 
 
+def sync_body(commit, repo=ROOT):
+    """The committed public source snapshot sent to /internal/sync."""
+    return {'commit': commit, 'sources': sources(repo), 'pages': catalog(repo)}
+
+
 def main():
     commit = engine.run(['git','rev-parse','HEAD'],ROOT).stdout.strip()
-    api('/internal/sync',{'commit':commit,'sources':sources(ROOT),'pages':catalog(ROOT)})
+    api('/internal/sync', sync_body(commit))
     gh=engine.GitHub(os.environ['GH_TOKEN'],os.environ['GITHUB_REPOSITORY'])
     for item in api('/internal/pending',{})['publications']:
         api('/internal/receipt',reconcile(item,gh))
