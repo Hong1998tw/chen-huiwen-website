@@ -15,7 +15,7 @@ async function check(name,fn){try{await fn();report.checks.push({name,status:'PA
 const state=(page,key)=>page.waitForFunction(k=>document.querySelector('#small-q')?.dataset.action===k,key,{timeout:8000});
 const waitReady=async page=>page.locator('#small-q-toggle').waitFor({state:'visible'});
 try{
- for(let i=0;i<50;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ for(let i=0;i<50;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const width of [320,390,768,1440]){
   const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'no-preference'});
   const page=await context.newPage();page.on('pageerror',e=>report.pageErrors.push(String(e)));
@@ -96,7 +96,7 @@ try{
   await p.goto(base);await p.locator('#small-q').waitFor({state:'visible'});await waitReady(p);
   assert(await p.locator('#small-q-panel').isHidden());
   await p.locator('#small-q-toggle').click();await p.locator('#small-q-panel').waitFor({state:'visible'});await state(p,'wave');await state(p,'idle');
-  await p.waitForTimeout(12200);await p.locator('#home-local-progress').scrollIntoViewIfNeeded();await state(p,'guide');await state(p,'idle');
+  await p.waitForTimeout(12200);await p.locator('#progress').scrollIntoViewIfNeeded();await state(p,'guide');await state(p,'idle');
   await p.waitForTimeout(12200);await p.locator('#home-village').selectOption('v:文德里');await state(p,'nod');await state(p,'idle');
   await p.waitForTimeout(12200);await p.locator('#contact').scrollIntoViewIfNeeded();await state(p,'happy');await state(p,'idle');
   await c.close();
@@ -110,7 +110,7 @@ try{
   await p.locator('#small-q-figure').evaluate(el=>el.decode());
   assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');
   assert.equal(await p.locator('#small-q-figure').evaluate(el=>getComputedStyle(el).animationName),'none');
-  await p.locator('#home-local-progress').scrollIntoViewIfNeeded();await p.locator('#home-village').selectOption('v:文德里');
+  await p.locator('#progress').scrollIntoViewIfNeeded();await p.locator('#home-village').selectOption('v:文德里');
   assert.equal(await p.locator('#small-q').getAttribute('data-action'),'idle');await c.close();
  });
 

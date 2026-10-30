@@ -68,12 +68,22 @@ async function check(name, operation) {
 }
 
 try {
-  const accessible = await check('Native mobile home, portrait and navigation', async () => {
+  const accessible = await check('Native mobile home, latest information and navigation', async () => {
     await navigate('');
-    const portrait = page.locator('.hero-portrait img').first();
-    await portrait.scrollIntoViewIfNeeded();
-    await portrait.evaluate(image => image.decode());
-    assert(await portrait.evaluate(image => image.complete && image.naturalWidth > 0), 'portrait failed to load');
+    const lead = page.locator('#latest .latest-item.is-lead').first();
+    await lead.scrollIntoViewIfNeeded();
+    assert(await lead.isVisible(), 'latest information lead is missing');
+    const media = lead.locator('[data-latest-media]');
+    if (await media.count()) {
+      // A first-party image must load; an external thumbnail may fall back to its visible source link.
+      const image = media.locator('img');
+      await page.waitForFunction(element => element.complete, await image.elementHandle());
+      const state = await media.evaluate(figure => ({ failed: figure.classList.contains('is-failed'),
+        loaded: figure.querySelector('img').naturalWidth > 0, external: /^https:/.test(figure.querySelector('img').getAttribute('src')),
+        fallback: !figure.querySelector('[data-latest-media-fallback]').hidden }));
+      assert(state.loaded || (state.external && state.failed && state.fallback), `lead thumbnail neither loaded nor fell back: ${JSON.stringify(state)}`);
+    }
+    for (const label of ['最新資訊', '找服務', '查地方進度']) assert.equal(await page.locator('#navigation > a.nav-primary').filter({ hasText: label }).count(), 1);
     const menu = page.locator('.menu-toggle');
     await menu.click();
     assert.equal(await menu.getAttribute('aria-expanded'), 'true');

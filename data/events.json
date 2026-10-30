@@ -11,6 +11,7 @@
       "verifiedAt": "2026-09-11",
       "status": "scheduled",
       "updatedAt": "2026-09-11",
+      "publishedAt": "2026-09-11T16:21+08:00",
       "previousSchedule": null,
       "changeNote": null,
       "reviewDueAt": "2026-10-01"
@@ -26,6 +27,7 @@
       "status": "scheduled",
       "verifiedAt": "2026-10-28",
       "updatedAt": "2026-10-28",
+      "publishedAt": "2026-10-02T04:00+08:00",
       "sourceUrl": "https://www.huiwen.tw/assets/events/campaign-opening-20261031-portrait.png",
       "previousSchedule": null,
       "changeNote": null,

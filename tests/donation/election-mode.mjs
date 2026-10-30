@@ -13,7 +13,7 @@ try {
   if (server) {
     let ready = false;
     for (let i = 0; i < 50; i++) {
-      try { if ((await fetch(base)).ok) { ready = true; break; } } catch {}
+      try { if ((await fetch(base,{method:"HEAD"})).ok) { ready = true; break; } } catch {}
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert(ready, 'election QA local server did not become ready');
@@ -23,9 +23,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
   await page.goto(base + 'index.html');
-  assert.equal(await page.locator('.hero-actions a.primary').getAttribute('href'),'tel:+88678212536');
-  assert.equal(await page.locator('.hero-actions a.primary').innerText(),'撥打服務處');
-  assert.equal(await page.locator('.hero-actions a.outline').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+  assert.equal(await page.locator('.home-service-entry[data-home-task="phone"]').getAttribute('href'),'tel:+88678212536');
+  assert.equal(await page.locator('.home-service-entry[data-home-task="phone"] strong').innerText(),'撥打服務處');
+  assert.equal(await page.locator('.home-service-entry[data-home-task="line"]').getAttribute('href'),'https://line.me/R/ti/p/@yve2766q');
+  assert((await page.locator('#council').innerText()).includes('2026 鳳山區・陳慧文5號'));
   assert.equal(await page.locator('main a[href="service.html#monthly-heading"]').count(),1);
   assert.equal(await page.locator('.hero-election-status,.campaign-entry-compact').count(),0);
   assert.equal(await page.locator('#navigation a[href="election.html"]').count(),1);
@@ -66,11 +67,11 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto(base + 'index.html');
   await page.waitForFunction(() => document.querySelector('.global-search-trigger'));
-  const navYs = await page.locator('#navigation .nav-group > summary').evaluateAll(links => links
+  const navYs = await page.locator('#navigation > a.nav-primary, #navigation .nav-group > summary').evaluateAll(links => links
     .map(link => link.getBoundingClientRect())
     .filter(rect => rect.width > 0 && rect.height > 0)
     .map(rect => Math.round(rect.y)));
-  assert(navYs.length === 5);
+  assert(navYs.length === 4);
   assert(Math.max(...navYs) - Math.min(...navYs) <= 4, `desktop navigation wrapped: ${navYs.join(',')}`);
   assert(await page.locator('.civic-service-desk').isVisible());
   assert.equal(await page.locator('.home-contact').count(),0);

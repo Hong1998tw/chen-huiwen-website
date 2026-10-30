@@ -13,6 +13,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import publish_from_notion as engine
+import latest_info
 from page_authority import catalog, READ_ONLY_DERIVED_PAGES
 from validate_achievements import validate as validate_achievements, valid_date
 from case_media import classify as classify_media
@@ -21,6 +22,8 @@ from page_seo import validate as validate_seo_overlay
 from editorial_pages import read as read_editorial, validate_page as validate_editorial_page, validate_blocks
 
 ORIGIN = 'https://huiwen-cms.lihong.workers.dev'
+FEED_PAGE = re.compile(r'page-(?:news|press|daily)-[a-z0-9]+(?:-[a-z0-9]+)*\.html')
+PINNED_UNPUBLISH_MESSAGE = '這則專頁目前在首頁「最新資訊」置頂。請先到首頁取消置頂並發布，再下架或刪除這則專頁。'
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -80,7 +83,9 @@ def prepare(item, text):
     row = {'pageId': item['document_id'], 'fields': payload,
            'sessions': payload.get('sessions', []),
            'system': {'siteId': item['record_key'] if domain == 'events' else None,
-                      'syncedHash': None if expected == 'absent' else expected, 'requestPublish': True}}
+                      'syncedHash': None if expected == 'absent' else expected, 'requestPublish': True,
+                      # The immutable request time keeps a retried new-event PR byte-identical.
+                      'publishedAt': item.get('created_at')}}
     candidate = engine.PREPARE[domain](row, text)
     if candidate.errors:
         raise engine.PublishError('VALIDATION', candidate.errors)
@@ -222,29 +227,44 @@ def home_candidate(item, root, draft):
     if fields and fields != published_fields:
         raise engine.PublishError('VALIDATION', ['首頁專題選片請與尚未發布的首頁文字分開發布；先發布文字後重新載入'])
     edits, baseline = draft.get('home'), draft.get('homeBase')
+    core_keys = {'featured', 'reading', 'summaries'}
     def valid(value):
-        if not isinstance(value, dict) or set(value) != {'featured', 'reading', 'summaries'}:
+        if not isinstance(value, dict) or set(value) not in (core_keys, core_keys | {'latestPinned'}):
             return False
         ids = [value['featured'], *(value['reading'] if isinstance(value['reading'], list) else [])]
+        pins = value.get('latestPinned', [])
         return (2 <= len(ids) <= 13 and all(isinstance(i, str) and re.fullmatch(r'[a-z0-9-]{1,100}', i) for i in ids)
                 and len(set(ids)) == len(ids) and isinstance(value['summaries'], dict)
                 and set(value['summaries']) == set(ids)
                 and all(isinstance(s, str) and len(s) <= 500 and
-                        not re.search(r'[\x00-\x1f\x7f]|<\s*/?[a-z!?]', s, re.I) for s in value['summaries'].values()))
+                        not re.search(r'[\x00-\x1f\x7f]|<\s*/?[a-z!?]', s, re.I) for s in value['summaries'].values())
+                and isinstance(pins, list) and len(pins) <= latest_info.MAX_PINNED and len(set(pins)) == len(pins)
+                and all(isinstance(pin, str) and latest_info.ITEM_ID.fullmatch(pin) for pin in pins))
     if not valid(edits) or not valid(baseline):
-        raise engine.PublishError('VALIDATION', ['首頁專題排序格式不正確'])
+        raise engine.PublishError('VALIDATION', ['首頁專題或最新資訊置頂格式不正確（置頂最多 3 則且不可重複）'])
     source = root / 'data/civic-home.json'
     original_text = source.read_text(encoding='utf-8')
     current = json.loads(original_text)
-    if current != baseline:
-        raise engine.PublishError('BASE_DRIFT', ['首頁專題已有更新；請重新載入正式頁面後再排序'])
+    current_pins = list(current.get('latestPinned', []))
+    core = lambda value: {key: value[key] for key in core_keys}
+    if core(current) != core(baseline) or ('latestPinned' in baseline and baseline['latestPinned'] != current_pins):
+        raise engine.PublishError('BASE_DRIFT', ['首頁專題或置頂已有更新；請重新載入正式頁面後再排序'])
     public = {row['id'] for row in json.loads((root / 'data/achievements.json').read_text(encoding='utf-8')) if is_public(row)}
     if not set([edits['featured'], *edits['reading']]) <= public:
         raise engine.PublishError('VALIDATION', ['首頁專題必須是可公開的資料'])
-    updated = json.dumps(edits, ensure_ascii=False, indent=2) + '\n'
-    digest = engine.sha({'path': 'index.html', 'version': item['version'], 'home': edits})
-    return engine.Candidate('home-content', item['id'], 'index.html', edits, item['base_commit'], updated,
-                            updated != original_text, '首頁專題順序：index.html\n操作：publish', digest)
+    # An older draft without latestPinned keeps the published pins; [] is an explicit clear.
+    pins = list(edits['latestPinned']) if 'latestPinned' in edits else current_pins
+    try:
+        latest_info.validate_pins(pins, {item['id'] for item in latest_info.collect(root)})
+    except latest_info.LatestInfoError:
+        raise engine.PublishError('VALIDATION', ['置頂的最新資訊已不存在或不在網站資料中；請重新載入後再選擇']) from None
+    revised = core(edits)
+    if pins:
+        revised['latestPinned'] = pins
+    updated = json.dumps(revised, ensure_ascii=False, indent=2) + '\n'
+    digest = engine.sha({'path': 'index.html', 'version': item['version'], 'home': revised})
+    return engine.Candidate('home-content', item['id'], 'index.html', revised, item['base_commit'], updated,
+                            updated != original_text, '首頁專題與最新資訊置頂：index.html\n操作：publish', digest)
 
 
 def editorial_candidate(item, root, draft):
@@ -317,6 +337,9 @@ def page_candidate(item, root=ROOT):
         candidate_item = {**item, 'base_commit': live_sha} if stale_base else item
         return home_candidate(candidate_item, root, draft)
     fields = validate_page_payload({'fields': draft.get('fields', {})})
+    if operation in {'unpublish', 'delete'} and FEED_PAGE.fullmatch(path) and path[:-5] in latest_info.home_pins(root):
+        # Two steps keep page-copy from ever writing the homepage configuration.
+        raise engine.PublishError('VALIDATION', [PINNED_UNPUBLISH_MESSAGE])
     if operation == 'publish':
         blocks = draft.get('blocks')
         if blocks is not None:

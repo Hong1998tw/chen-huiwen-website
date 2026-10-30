@@ -16,6 +16,7 @@ Canonical source：`data/events.json`；模板：`templates/events-page.html`。
 | location | 否 | 已確認地點；若未提供，不顯示 |
 | sourceUrl | 否 | 第一手／官方公開來源 URL；議會議程優先使用高雄市議會官方來源 |
 | verifiedAt | 否 | 最後查核日期，格式 `YYYY-MM-DD` |
+| publishedAt | 是（首頁最新資訊） | 網站首次刊登時間，`YYYY-MM-DDTHH:MM+08:00`。新活動由後台發布器依不可變的發布請求時間寫入一次，之後改期、取消或修改都保留；不可用活動開始時間或 `updatedAt` 代替。既有兩筆依其首次併入 main 的 commit 補填（`bbfeff26`、`a324352a`）。 |
 
 ## 議會議程自動納入規則
 
@@ -29,6 +30,10 @@ Canonical source：`data/events.json`；模板：`templates/events-page.html`。
 - 每筆議會活動應保留 `sourceUrl` 與 `verifiedAt`，公開文字並註明「議程如有調整，以高雄市議會官方最新公告為準」。
 
 本規則是官網 canonical source 的強制納入規則；網站前端不直接抓取或改寫高雄市議會資料。任何自動同步器／排程若日後建立，也必須先核驗官方來源後寫入 `data/events.json`，再經 build、test、PR／CI 流程發布。
+
+## 首頁最新資訊
+
+首頁「最新資訊」由 `scripts/latest_info.py` 從 `news.html`、`press.html`、新增專頁（新聞／新聞發布／日常）與本檔活動彙整，產生 `data/latest-info.json` 與首頁列表。活動依 `publishedAt` 排序，列表另外顯示活動時間；「即將舉行／日期已過」由訪客瀏覽器依當下時間判斷，建置結果不依賴建置時間。日期已過不代表活動確實舉行；改期或取消只依 `status` 與異動說明顯示。公開卡片只顯示活動時間，`publishedAt` 只用於排序。
 
 執行：`python3 scripts/build_events.py`。
 驗證：`python3 -m unittest discover -s tests/events`、`python3 scripts/validate_site.py`。

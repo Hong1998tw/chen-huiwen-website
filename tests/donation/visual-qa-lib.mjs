@@ -3,6 +3,7 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
+import { firstPartySettlementFailures, initialUiReadinessFailures } from './visual-qa-readiness.mjs';
 
 export const VISUAL_QA_SCHEMA_VERSION = 3;
 export const MAX_TRANSFER_BYTES = 300000;
@@ -288,6 +289,8 @@ export function evaluateCaptureQuality(capture, { expectedHttpStatus = 200, scre
   if (capture.screenshotError) failures.push('SCREENSHOT_ERROR');
   if (screenshotRequired && !capture.screenshotSha256) failures.push('SCREENSHOT_MISSING');
   if (capture.conditions?.fontsReady !== true) failures.push('FONTS_NOT_READY');
+  failures.push(...initialUiReadinessFailures(capture));
+  failures.push(...firstPartySettlementFailures(capture));
   const pageErrors = capture.pageErrors ?? [];
   if (pageErrors.some(error => typeof error === 'string' || error.originClass === 'same-origin')) failures.push('FIRST_PARTY_PAGE_ERROR');
   if (pageErrors.some(error => typeof error === 'object' && error.originClass === 'unknown')) failures.push('PAGE_ERROR_SOURCE_UNCLASSIFIED');

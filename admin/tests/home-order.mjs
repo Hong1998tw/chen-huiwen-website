@@ -12,6 +12,7 @@ const [html, script, consoleScript, style, dateTimeScript, editorRuntime, editor
   readFile(new URL("../../scripts/cms_editor_loader.js", import.meta.url), "utf8"),
   readFile(new URL("../../index.html", import.meta.url), "utf8"),
 ]);
+const latestFeed = JSON.parse(await readFile(new URL("../../data/latest-info.json", import.meta.url), "utf8"));
 const home = { featured: "a", reading: ["b", "c", "d"], summaries: { a: "摘要 A", b: "摘要 B", c: "摘要 C", d: "摘要 D" } };
 const cases = ["a", "b", "c", "d", "e"].map(id => ({ id, title: `專題 ${id.toUpperCase()}`, summary: `摘要 ${id}`, status: "持續追蹤", categories: ["地方專題"], villages: ["測試里"], history: [{ date: "2026-09-27" }], updated: "2026-09-27", images: [] }));
 const pages = [{ path: "index.html", title: "首頁", source_path: "data/civic-home.json", source_kind: "generated", editor_scope: "partial", commit_sha: "a".repeat(40), publication_status: "published", draft_version: 0 }];
@@ -40,7 +41,7 @@ const server = createServer(async (req, res) => {
   if (path === "/api/pages") return send(res, JSON.stringify({ pages }));
   if (path === "/api/page-blocks") return send(res, JSON.stringify({ blocks: [] }));
   if (path === "/api/publications") return send(res, JSON.stringify({ publications: [] }));
-  if (path === "/api/home") return send(res, JSON.stringify({ home, cases }));
+  if (path === "/api/home") return send(res, JSON.stringify({ home: { ...home, latestPinned: [] }, cases, latest: { revision: "a".repeat(40), items: latestFeed.items } }));
   if (path === "/api/page-draft/history") return send(res, JSON.stringify({ versions: [] }));
   if (path === "/api/page-draft" && req.method === "GET") return send(res, JSON.stringify({ draft }));
   if (path === "/api/page-draft" && req.method === "PUT") {
@@ -70,20 +71,66 @@ try {
   await page.locator('#open-page-drawer').click();
   await page.locator("#page-tree .tree-page").click();
   const preview = page.frameLocator("#page-frame");
-  await preview.locator('.home-recent-local[data-home-local-record="a"] h3').getByText("專題 A").waitFor();
-  assert.equal(await preview.locator(".home-recent-local").count(), 1);
+  await preview.locator('[data-home-featured-project="a"] h3').getByText("專題 A").waitFor();
+  assert.equal(await preview.locator("[data-home-featured-project]").count(), 1);
   assert.equal(await preview.locator(".civic-story-grid").count(), 0);
   await page.locator('[data-home-index="0"] select').selectOption("2");
-  assert.deepEqual(await page.locator("#home-editor-fields .case-editor-row p").allTextContents(),
+  assert.deepEqual(await page.locator("#home-editor-fields > .case-editor-row > p").allTextContents(),
     ["專題 B", "專題 C", "專題 A", "專題 D"]);
   await page.locator('[data-home-index="3"] [data-home-action="up"]').click();
   await page.locator("#home-add-select").selectOption("e");
   await page.locator("#home-add").click();
   await page.locator('[data-home-index="1"] [data-home-action="remove"]').click();
   await page.locator('[data-home-summary="b"]').fill("自訂首頁摘要");
-  await preview.locator('.home-recent-local[data-home-local-record="b"] h3').getByText("專題 B").waitFor();
-  await preview.locator('.home-recent-local .home-recent-copy').getByText("自訂首頁摘要", { exact: true }).waitFor();
-  assert.equal(await preview.locator(".home-recent-local .home-recent-meta").textContent(), "持續追蹤 · 最新收錄 2026-09-27");
+  await preview.locator('[data-home-featured-project="b"] h3').getByText("專題 B").waitFor();
+  await preview.locator('[data-home-featured-project] .home-featured-summary').getByText("自訂首頁摘要", { exact: true }).waitFor();
+  assert.equal((await preview.locator("[data-home-featured-project] .home-featured-status").textContent()).trim(), "持續追蹤");
+
+  // Latest pins: default order, 20 rows first, search reaches older items, max three pins.
+  const panel = page.locator("#latest-pin-editor");
+  await panel.waitFor();
+  assert.equal(await panel.locator(".latest-pin-row").count(), 20);
+  assert.equal(await page.locator("#latest-pin-status").textContent(), "已置頂 0 / 3 則");
+  const rendered = await preview.locator(".latest-item").evaluateAll(nodes => nodes.map(node => node.dataset.latestId));
+  const target = rendered[5];
+  await panel.locator(`[data-latest-pin="${target}"]`).click();
+  await preview.locator(".latest-item").first().and(preview.locator(`[data-latest-id="${target}"]`)).waitFor();
+  assert.equal(await panel.locator(`[data-latest-pin="${target}"]`).getAttribute("aria-pressed"), "true");
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.latestPin), target);
+  // An older item that the homepage did not render (only its inert reserve copy exists).
+  const oldest = latestFeed.items.at(-1);
+  assert.equal(rendered.includes(oldest.id), false, "the oldest item is outside the rendered list");
+  await page.locator("#latest-pin-search").fill(oldest.title.slice(0, 12));
+  await panel.locator(`[data-latest-pin="${oldest.id}"]`).click();
+  await page.locator("#latest-pin-search").fill("");
+  const visiblePreview = () => preview.locator(".latest-item:not([hidden])").evaluateAll(nodes => nodes.map(node => node.dataset.latestId));
+  const natural = latestFeed.items.map(item => item.id);
+  await preview.locator(`.latest-item[data-latest-id="${oldest.id}"]:not([hidden])`).waitFor();
+  assert.deepEqual(await visiblePreview(), [target, oldest.id, natural.find(id => ![target, oldest.id].includes(id))]);
+  assert.deepEqual((await page.locator("#latest-pin-preview li").allTextContents()).slice(0, 2).map(text => text.replace("【置頂】", "")),
+    [latestFeed.items.find(item => item.id === target).title, oldest.title], "admin order preview matches the iframe preview");
+  const third = latestFeed.items.find(item => ![target, oldest.id].includes(item.id));
+  await panel.locator(`[data-latest-pin="${third.id}"]`).click();
+  assert.equal(await page.locator("#latest-pin-status").textContent(), "已置頂 3 / 3 則");
+  const fourth = latestFeed.items.find(item => ![target, oldest.id, third.id].includes(item.id));
+  assert.equal(await panel.locator(`[data-latest-pin="${fourth.id}"]`).isDisabled(), true);
+  await panel.locator(`[data-latest-pin="${third.id}"]`).click();
+  assert.equal(await page.locator("#latest-pin-status").textContent(), "已置頂 2 / 3 則");
+  // Unpinning returns the preview to the natural order and drops the borrowed copy.
+  await page.locator("#latest-pin-search").fill(oldest.title.slice(0, 12));
+  await panel.locator(`[data-latest-pin="${oldest.id}"]`).click();
+  await page.locator("#latest-pin-search").fill("");
+  await panel.locator(`[data-latest-pin="${target}"]`).click();
+  assert.equal(await page.locator("#latest-pin-status").textContent(), "已置頂 0 / 3 則");
+  await preview.locator(".latest-item").first().and(preview.locator(`[data-latest-id="${natural[0]}"]`)).waitFor();
+  assert.deepEqual(await visiblePreview(), natural.slice(0, 3));
+  assert.equal(await preview.locator(`[data-latest-items] .latest-item[data-latest-id="${oldest.id}"]`).count(), 0);
+  await panel.locator(`[data-latest-pin="${target}"]`).click();
+  await page.locator("#latest-pin-search").fill(oldest.title.slice(0, 12));
+  await panel.locator(`[data-latest-pin="${oldest.id}"]`).click();
+  await page.locator("#latest-pin-search").fill("");
+  assert.match(await page.locator("#latest-pin-preview li").first().textContent(), /^【置頂】/);
+
   await page.locator("#page-save").click();
   await page.getByText("草稿 v1 已儲存；正式頁面尚未變更。", { exact: true }).waitFor();
   assert.equal(saved.home.featured, "b");
@@ -91,16 +138,17 @@ try {
   assert.equal(saved.home.summaries.b, "自訂首頁摘要");
   assert.equal(saved.home.summaries.e, "摘要 e");
   assert.equal(saved.home.summaries.c, undefined);
-  assert.deepEqual(saved.homeBase, home);
-  assert.equal(await preview.locator(".home-recent-local").getAttribute("data-home-local-record"), saved.home.featured);
-  assert.equal(await preview.locator(".home-recent-local .home-recent-copy").textContent(), saved.home.summaries[saved.home.featured]);
+  assert.deepEqual(saved.home.latestPinned, [target, oldest.id]);
+  assert.deepEqual(saved.homeBase, { ...home, latestPinned: [] });
+  assert.equal(await preview.locator("[data-home-featured-project]").getAttribute("data-home-featured-project"), saved.home.featured);
+  assert.equal(await preview.locator("[data-home-featured-project] .home-featured-summary").textContent(), saved.home.summaries[saved.home.featured]);
   await page.locator('#page-publish').click();
   await page.locator('#page-review-dialog').waitFor({state:'visible'});
   assert.match(await page.locator('#page-review-content').textContent(),/首頁專題.*主打專題/s);
   assert.match(await page.locator('#page-review-content').textContent(),/NOT CHECKED/);
   await page.locator('#close-page-review').click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  console.log("PASS: homepage story selection, summary editing, removal and ordering in CMS");
+  console.log("PASS: homepage story selection, summary editing, ordering and latest pins in CMS");
 } finally {
   await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
 }

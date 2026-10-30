@@ -19,7 +19,7 @@ const report={base,checks:[],failures:[],pageErrors:[]};
 const browser=await chromium.launch();
 async function check(name,fn){try{await fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:String(e)});}}
 try{
- for(let n=0;n<50;n++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ for(let n=0;n<50;n++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  for(const width of [320,360,390,430,768,1180,1440]){
   const context=await browser.newContext({viewport:{width,height:960},reducedMotion:'reduce'});
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());

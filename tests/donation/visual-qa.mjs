@@ -35,6 +35,13 @@ import {
 } from './visual-qa-publication.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
 import {
+  FirstPartySettlementError,
+  probeLazyImages,
+  summarizeRequests,
+  waitForFirstPartySettled,
+  waitForInitialUi
+} from './visual-qa-readiness.mjs';
+import {
   combineCaptureAndIntegrityErrors,
   createMetadataPathRegistry,
   invalidateSourceMetadata,
@@ -78,6 +85,10 @@ function publicUrl(raw) {
 function safeRequestRecord(record) {
   return {
     url: publicUrl(record.url),
+    // ResourceTiming names a redirected resource by its initial URL; the network row keeps both.
+    initialUrl: publicUrl(record.initialUrl ?? record.url),
+    redirected: Boolean(record.redirected),
+    frameId: record.frameId ?? null, // diagnostic only; coverage never depends on the frame
     originClass: record.originClass ?? 'unknown',
     resourceType: record.resourceType ?? 'Other',
     status: record.status ?? null,
@@ -175,16 +186,14 @@ async function captureOne({
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   const networkById = new Map();
   let documentResponse = null;
-  // Settle bookkeeping: requests still loading and the last time the network changed.
-  const inFlight = new Set();
-  let lastNetworkActivity = Date.now();
   cdp.on('Network.requestWillBeSent', event => {
-    inFlight.add(event.requestId);
-    lastNetworkActivity = Date.now();
     const existing = networkById.get(event.requestId) ?? {};
     networkById.set(event.requestId, {
       ...existing,
       url: event.request.url,
+      initialUrl: existing.initialUrl ?? event.request.url,
+      redirected: Boolean(existing.redirected || event.redirectResponse),
+      frameId: event.frameId ?? existing.frameId ?? null,
       resourceType: event.type,
       requestTimestamp: event.timestamp
     });
@@ -209,14 +218,10 @@ async function captureOne({
     }
   });
   cdp.on('Network.loadingFinished', event => {
-    inFlight.delete(event.requestId);
-    lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, encodedDataLength: event.encodedDataLength });
   });
   cdp.on('Network.loadingFailed', event => {
-    inFlight.delete(event.requestId);
-    lastNetworkActivity = Date.now();
     const previous = networkById.get(event.requestId);
     if (previous) networkById.set(event.requestId, { ...previous, failed: event.errorText });
   });
@@ -246,51 +251,20 @@ async function captureOne({
   let screenshotSha256 = null;
   let screenshotError = null;
   let animationCount = 0;
-  // Run-specific settle results stay out of `conditions`, which must match exactly across sources.
-  let settleObservation = { settled: false, elapsedMs: null, lazyImagesResolved: null };
+  let initialUiReadiness = null;
+  let firstPartySettlement = null;
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
+    // Owned UI finishing after load (small Q's idle-loaded stylesheet) is part of the initial state.
+    initialUiReadiness = await waitForInitialUi(page, {
+      requestFailed: href => [...networkById.values()].some(item => item.url === href &&
+        (item.failed || (Number.isFinite(item.status) && item.status >= 400)))
+    });
     const fontWaitStarted = Date.now();
     await page.evaluate(() => document.fonts.ready.then(() => true));
     fontsReady = true;
     const fontReadyElapsedMs = Date.now() - fontWaitStarted;
-    // Idle-deferred work (e.g. small-q styles) and near-viewport lazy images otherwise race the measurement.
-    const { quietMs, maxMs, lazyImageDistancePx } = policy.capture.settle;
-    const settleStarted = Date.now();
-    const waitForQuiet = async () => {
-      const started = Date.now();
-      let lastDomCount = -1;
-      let lastDomChange = Date.now();
-      while (Date.now() - started < maxMs) {
-        const domCount = await page.evaluate(timeout => new Promise(resolve => {
-          const done = () => requestAnimationFrame(() => resolve(document.querySelectorAll('*').length));
-          if ('requestIdleCallback' in window) requestIdleCallback(done, { timeout });
-          else setTimeout(done, 0);
-        }), maxMs);
-        if (domCount !== lastDomCount) { lastDomCount = domCount; lastDomChange = Date.now(); }
-        const now = Date.now();
-        if (inFlight.size === 0 && now - lastNetworkActivity >= quietMs && now - lastDomChange >= quietMs) return true;
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      return false;
-    };
-    const firstQuiet = await waitForQuiet();
-    // Whether Chrome starts a near-viewport lazy image depends on which layout it evaluated while page
-    // scripts reshaped the DOM; load every lazy image within Chrome's largest lazy distance explicitly.
-    const lazyImagesResolved = await page.evaluate(distance => {
-      let count = 0;
-      for (const image of document.querySelectorAll('img[loading="lazy"]')) {
-        const rect = image.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0 && rect.top < innerHeight + distance && rect.bottom > -distance) {
-          image.loading = 'eager';
-          count += 1;
-        }
-      }
-      return count;
-    }, lazyImageDistancePx);
-    const secondQuiet = await waitForQuiet();
-    settleObservation = { settled: firstQuiet && secondQuiet, elapsedMs: Date.now() - settleStarted, lazyImagesResolved };
     imageState = await page.evaluate(async () => {
       const visible = [...document.images].filter(image => {
         const rect = image.getBoundingClientRect();
@@ -325,6 +299,10 @@ async function captureOne({
       document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important');
       return animations.length;
     });
+    // Every first-party request the browser issued (including lazy images) completes before sampling.
+    firstPartySettlement = await waitForFirstPartySettled(page, {
+      requests: () => summarizeRequests(networkById.values(), targetOrigin)
+    });
     domElementCount = await page.evaluate(() => document.querySelectorAll('*').length);
     performanceData = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0];
@@ -354,9 +332,17 @@ async function captureOne({
           encodedBodySize: entry.encodedBodySize,
           decodedBodySize: entry.decodedBodySize
         })),
-        fontStatus: document.fonts.status
+        fontStatus: document.fonts.status,
+        domInteractiveMs: navigation ? Math.round(navigation.domInteractive) : null
       };
     });
+    firstPartySettlement = {
+      ...firstPartySettlement,
+      domInteractiveMs: performanceData.domInteractiveMs,
+      sampledSameOriginUrls: performanceData.sameOriginResources.map(entry => publicUrl(entry.name)),
+      lazyImages: await page.evaluate(probeLazyImages)
+    };
+    delete performanceData.domInteractiveMs;
     if (screenshotEnabled) {
       await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: 'disabled' });
       screenshotSha256 = sha256(await readFile(absoluteScreenshotPath));
@@ -364,6 +350,8 @@ async function captureOne({
     performanceData.fontReadyElapsedMs = fontReadyElapsedMs;
   } catch (error) {
     navigationError = String(error);
+    if (error instanceof FirstPartySettlementError) firstPartySettlement = { ...error.evidence, sampledSameOriginUrls: [] };
+    else if (error?.evidence) initialUiReadiness = error.evidence;
     try {
       if (screenshotEnabled && page.url() !== 'about:blank') {
         await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: 'disabled', timeout: 10000 });
@@ -441,7 +429,6 @@ async function captureOne({
       serviceWorkers: 'blocked',
       browserCache: 'disabled per context',
       fontsReady,
-      settle: { quietMs: policy.capture.settle.quietMs, maxMs: policy.capture.settle.maxMs, lazyImageDistancePx: policy.capture.settle.lazyImageDistancePx },
       animationsFinished: true,
       activeAnimationsStabilized: animationCount,
       dynamicMasks: policy.capture.dynamicMasks
@@ -461,7 +448,15 @@ async function captureOne({
       deploymentWindowStatus: environment === 'cloudflare-production' ? (deploymentAtStart?.valid ? 'PENDING_FINAL_READ' : 'NOT_VERIFIED') : null
     },
     imageState,
-    settleObservation,
+    initialUiReadiness,
+    firstPartySettlement: firstPartySettlement && {
+      ...firstPartySettlement,
+      lazyImages: (firstPartySettlement.lazyImages ?? []).map(image => ({ ...image, requested: requestRecords.some(item => item.url === image.url) })),
+      // Lazy images requested although unrendered or outside the settled viewport: the browser chose
+      // them from an earlier layout (for example a parser-yield frame before page scripts reflow it).
+      earlyLazyRequests: (firstPartySettlement.lazyImages ?? []).filter(image => (image.rendered === false || image.settledDistancePx > 0) &&
+        requestRecords.some(item => item.url === image.url)).map(image => image.url)
+    },
     metrics: {
       domElementCount,
       sameOriginTransferSizeBytes: transferBudgetBytes,

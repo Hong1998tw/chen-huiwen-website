@@ -71,7 +71,9 @@ try {
           image: image ? {src:image.currentSrc,width:box.width,height:box.height,naturalWidth:image.naturalWidth,sizes:image.closest('picture')?.querySelector('source')?.sizes}:null,
           overflow:[...document.querySelectorAll('main *')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.right>innerWidth+1||r.left< -1);}).slice(0,8).map(el=>({tag:el.tagName,class:el.className})),
           smallContactText:[...document.querySelectorAll('.home-office-hours dl,.home-contact-info a,.home-account p')].map(el=>({class:el.className,font:getComputedStyle(el).fontSize})),
-          invalidImages:[...document.images].filter(im=>im.getBoundingClientRect().top<innerHeight&&im.getBoundingClientRect().bottom>0&&im.currentSrc&&im.complete&&!im.naturalWidth).map(im=>im.currentSrc),
+          // A failed external latest-information thumbnail is replaced by its visible text fallback.
+          invalidImages:[...document.images].filter(im=>im.getBoundingClientRect().top<innerHeight&&im.getBoundingClientRect().bottom>0&&im.currentSrc&&im.complete&&!im.naturalWidth&&!im.closest('[data-latest-media].is-failed')).map(im=>im.currentSrc),
+          thumbnailFallbacks:[...document.querySelectorAll('[data-latest-media].is-failed')].map(figure=>({visible:!figure.querySelector('[data-latest-media-fallback]').hidden,link:figure.querySelector('[data-latest-media-fallback] a')?.href||null})),
           resources:performance.getEntriesByType('resource').map(r=>({name:r.name,bytes:r.encodedBodySize,duration:r.duration}))};
       });
       if ([390,1440].includes(width) || file==='index.html') {
@@ -91,8 +93,11 @@ try {
       const embedOrigins = await page.locator('[data-embed-provider] iframe').evaluateAll(frames =>
         [...new Set(frames.map(frame => { try { return new URL(frame.src).origin; } catch { return null; } }).filter(Boolean))]
       );
+      // External latest-information thumbnails are also best-effort third-party bytes.
+      const thumbnailUrls = await page.locator('[data-latest-media] img').evaluateAll(images =>
+        images.map(image => image.getAttribute('src')).filter(src => /^https:\/\//.test(src || '')));
       const isEmbedUrl = value => {
-        try { return embedOrigins.includes(new URL(value).origin); } catch { return false; }
+        try { return embedOrigins.includes(new URL(value).origin) || thumbnailUrls.includes(value); } catch { return false; }
       };
       const externalFailedRequests = row.failedRequests.filter(item => isEmbedUrl(item.url));
       const externalHttpErrors = row.httpErrors.filter(item => isEmbedUrl(item.url));
@@ -110,6 +115,7 @@ try {
       if (externalFailedRequests.length || externalHttpErrors.length || externalConsoleErrors.length || externalViolations.length) {
         row.externalEmbedDiagnostics = {
           origins: embedOrigins,
+          thumbnails: thumbnailUrls,
           consoleErrors: externalConsoleErrors,
           failedRequests: externalFailedRequests,
           httpErrors: externalHttpErrors,
@@ -126,7 +132,7 @@ try {
         row.searchResults=await page.locator('.global-search-result').count();await page.keyboard.press('Escape');
       }
     } catch(error) {row.errors.push(String(error));}
-    row.passed=row.status===200 && row.layout?.scrollWidth<=width && row.layout?.mainCount===1 && row.layout?.cls < 0.1 && !row.layout?.invalidImages.length && !row.errors.length && !row.consoleErrors.length && !row.failedRequests.length && !row.httpErrors.length && !row.violations?.length && row.menuOpen!==false && row.focusReturned!==false && row.searchOpen!==false && (row.searchResults===undefined || row.searchResults>0);
+    row.passed=row.status===200 && (row.layout?.thumbnailFallbacks||[]).every(item=>item.visible&&item.link) && row.layout?.scrollWidth<=width && row.layout?.mainCount===1 && row.layout?.cls < 0.1 && !row.layout?.invalidImages.length && !row.errors.length && !row.consoleErrors.length && !row.failedRequests.length && !row.httpErrors.length && !row.violations?.length && row.menuOpen!==false && row.focusReturned!==false && row.searchOpen!==false && (row.searchResults===undefined || row.searchResults>0);
     report.rows.push(row); console.log(`${label} ${engine} ${width} ${file}: ${row.passed?'PASS':'FAIL'} ${JSON.stringify({errors:row.errors,axe:row.violations?.map(v=>v.id),overflow:row.layout?.scrollWidth,cls:row.layout?.cls})}`);
     await writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2));
     await context.close();

@@ -12,6 +12,11 @@
  *    a valid `serverIdentitySha256`, a served path that is not in the manifest, served bytes that differ
  *    from the manifest, or no verified row for the measured page itself. Missing evidence is never read
  *    as "nothing wrong": it makes the comparison insufficient;
+ *  - a third-party request cannot be classified: a run may list requests to other origins only when its own
+ *    verified page row, the raw report's requestedUrl and a loopback site origin agree; rows without a
+ *    parseable absolute `url`, or whose `origin`/`path` disagree with that url, stay first-party and need proof;
+ *  - the third-party URL set of a page differs between any two runs (A or B). Third-party bytes are outside the
+ *    measured tree: they are listed, never treated as verified, and their cost stays in the Lighthouse scores;
  *  - the two content digests differ (the differing paths are listed), or a path both runs served
  *    has different bytes in the two runs;
  *  - browser, Lighthouse or thresholds differ, or both runs used the same compression mode.
@@ -34,7 +39,9 @@ export async function loadRun(dir) {
  const raw = [];
  for (const name of (await readdir(dir)).filter(name => /^.+\.html-\d+\.json$/.test(name)).sort()) {
   const bytes = await readFile(resolve(dir, name));
-  raw.push({ file: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+  let requestedUrl = null;
+  try { const report = JSON.parse(bytes.toString('utf8')); if (typeof report?.requestedUrl === 'string') requestedUrl = report.requestedUrl; } catch { requestedUrl = null; }
+  raw.push({ file: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), requestedUrl });
  }
  return { dir, label: summary.label, summary, manifest, raw };
 }
@@ -82,19 +89,62 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const manifestPath = path => (path === '/' ? 'index.html' : path.replace(/^\//, '').replace(/\/$/, '/index.html'));
 const MAX_LISTED = 10;
 
-/** Server-side proof per measured run: every request row must be backed by the SHA-256 of the bytes the server
- * actually sent, and that file must exist in the manifest with the same bytes. Returns problems (empty = proven). */
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const parseAbsolute = value => { try { return typeof value === 'string' ? new URL(value) : null; } catch { return null; } };
+
+/** The measured site's origin for one run, or null when it cannot be proven. It must agree three ways: the
+ * measured page's own request row (path, url and server SHA-256 matching the manifest), the raw Lighthouse
+ * report's requestedUrl for the same page and run, and a loopback http origin (the local static server). */
+function siteOriginOf(result, rawByFile, index) {
+ const own = (result.pageRequests || []).filter(row => typeof row?.path === 'string' && row.path.split('?')[0] === '/' + result.page);
+ if (own.length !== 1) return null;
+ const url = parseAbsolute(own[0].url);
+ if (!url || url.protocol !== 'http:' || !LOOPBACK.has(url.host.replace(/:\d+$/, ''))) return null;
+ if (url.pathname + url.search !== own[0].path) return null;
+ const expected = index.get(manifestPath(url.pathname));
+ if (!SHA256.test(own[0].serverIdentitySha256 ?? '') || expected !== own[0].serverIdentitySha256) return null;
+ const requested = parseAbsolute(rawByFile.get(`${result.page}-${result.run}.json`)?.requestedUrl);
+ if (!requested || requested.origin !== url.origin || requested.pathname !== url.pathname) return null;
+ return url.origin;
+}
+
+/** Splits one run's rows into first-party rows (need server proof) and third-party URLs (listed only).
+ * Only a parseable absolute url on another origin, consistent with any declared origin, is third-party, and
+ * only when the run's site origin is proven. Everything else is first-party and must carry proof. */
+export function classifyRequests(result, rawByFile, index) {
+ const siteOrigin = siteOriginOf(result, rawByFile, index);
+ const firstParty = [], thirdParty = [], problems = [];
+ for (const row of result.pageRequests || []) {
+  const url = row && 'url' in row ? parseAbsolute(row.url) : null;
+  if (row && 'url' in row && !url) { problems.push(`a request row has a malformed or relative url (${JSON.stringify(row.url)})`); firstParty.push(row); continue; }
+  if (url && typeof row.origin === 'string' && row.origin !== url.origin) { problems.push(`${url.href}: declared origin ${row.origin} does not match its url`); firstParty.push(row); continue; }
+  if (url && siteOrigin && url.origin !== siteOrigin) {
+   if (url.protocol !== 'https:' && url.protocol !== 'http:') { problems.push(`${url.href}: unsupported third-party scheme`); continue; }
+   thirdParty.push(url.href);
+   continue;
+  }
+  if (url && typeof row.path === 'string' && url.pathname + url.search !== row.path) problems.push(`${url.href}: path ${row.path} does not match its url`);
+  firstParty.push(row);
+ }
+ return { siteOrigin, firstParty, thirdParty: [...new Set(thirdParty)].sort(), problems };
+}
+
+/** Server-side proof per measured run: every first-party request row must be backed by the SHA-256 of the bytes
+ * the server actually sent, and that file must exist in the manifest with the same bytes. Returns problems (empty = proven). */
 export function servedEvidenceProblems(side, name) {
  const results = side.summary.results;
  if (!Array.isArray(results) || !results.length) return [`${name}: summary.json has no results`];
  const index = new Map((side.manifest?.files || []).map(file => [file.path, file.sha256]));
+ const rawByFile = new Map((side.raw || []).map(item => [item.file, item]));
  const found = new Set();
  for (const result of results) {
   const label = `${result.page} run ${result.run}`;
   if (!Array.isArray(result.pageRequests)) { found.add(`${label}: pageRequests is missing`); continue; }
   if (!result.pageRequests.length) { found.add(`${label}: pageRequests is empty`); continue; }
+  const { firstParty, problems } = classifyRequests(result, rawByFile, index);
+  for (const problem of problems) found.add(`${label}: ${problem}`);
   let ownDocument = false;
-  for (const row of result.pageRequests) {
+  for (const row of firstParty) {
    const path = typeof row?.path === 'string' ? row.path.split('?')[0] : null;
    if (!path) { found.add(`${label}: a request row has no path`); continue; }
    if (!SHA256.test(row.serverIdentitySha256 ?? '')) { found.add(`${label}: ${path} has no server-side SHA-256 (serverIdentitySha256 missing or malformed)`); continue; }
@@ -109,10 +159,36 @@ export function servedEvidenceProblems(side, name) {
  return [...list.slice(0, MAX_LISTED), ...(list.length > MAX_LISTED ? [`… and ${list.length - MAX_LISTED} more request-evidence problem(s)`] : [])].map(item => `${name}: ${item}`);
 }
 
+/** Third-party URL sets per page and run on both sides. Every run of a page, in A and in B, must request the same
+ * set: a URL set match is all this proves (the bytes are not verified locally). */
+export function thirdPartyComparison(A, B) {
+ const perPage = new Map();
+ for (const [name, side] of [['A', A], ['B', B]]) {
+  const index = new Map((side.manifest?.files || []).map(file => [file.path, file.sha256]));
+  const rawByFile = new Map((side.raw || []).map(item => [item.file, item]));
+  for (const result of Array.isArray(side.summary.results) ? side.summary.results : []) {
+   if (!Array.isArray(result.pageRequests)) continue;
+   const { thirdParty } = classifyRequests(result, rawByFile, index);
+   if (!perPage.has(result.page)) perPage.set(result.page, []);
+   perPage.get(result.page).push({ run: `${name} run ${result.run}`, urls: thirdParty });
+  }
+ }
+ const problems = [], pages = {};
+ for (const [page, runs] of perPage) {
+  const keys = new Set(runs.map(run => JSON.stringify(run.urls)));
+  if (keys.size > 1) problems.push(`${page}: third-party URL sets differ between runs (${runs.map(run => `${run.run}: [${run.urls.join(', ')}]`).join('; ')})`);
+  const urls = [...new Set(runs.flatMap(run => run.urls))].sort();
+  if (urls.length) pages[page] = urls;
+ }
+ return { problems, pages };
+}
+
 const servedHashes = side => {
  const served = new Map();
  for (const result of Array.isArray(side.summary.results) ? side.summary.results : []) for (const row of Array.isArray(result.pageRequests) ? result.pageRequests : []) {
   if (typeof row?.path !== 'string' || !SHA256.test(row.serverIdentitySha256 ?? '')) continue;
+  const url = row && 'url' in row ? parseAbsolute(row.url) : null;
+  if (url && !LOOPBACK.has(url.host.replace(/:\d+$/, ''))) continue; // only first-party bytes are compared
   const path = row.path.split('?')[0];
   if (!served.has(path)) served.set(path, new Set());
   served.get(path).add(row.serverIdentitySha256);
@@ -127,6 +203,8 @@ export function compareRuns(A, B, { expectPages = [] } = {}) {
  same('lighthouseVersion', A.summary.results?.[0]?.lighthouseVersion, B.summary.results?.[0]?.lighthouseVersion);
  same('thresholds', A.summary.conditions?.thresholds, B.summary.conditions?.thresholds);
  problems.push(...contentEvidenceProblems(A, 'A'), ...contentEvidenceProblems(B, 'B'), ...servedEvidenceProblems(A, 'A'), ...servedEvidenceProblems(B, 'B'), ...completenessProblems(A, 'A', expectPages), ...completenessProblems(B, 'B', expectPages));
+ const thirdParty = thirdPartyComparison(A, B);
+ problems.push(...thirdParty.problems);
  let contentDiff = null;
  if (A.manifest && B.manifest) {
   if (A.manifest.digest !== B.manifest.digest) {
@@ -173,7 +251,8 @@ export function compareRuns(A, B, { expectPages = [] } = {}) {
  const conditions = side => ({ label: side.label, compression: side.summary.conditions?.compression, brotliQuality: side.summary.conditions?.brotliQuality, gzipLevel: side.summary.conditions?.gzipLevel,
   vary: side.summary.conditions?.vary, browserVersion: side.summary.conditions?.browserVersion, lighthouseVersion: side.summary.results?.[0]?.lighthouseVersion, node: side.summary.node, ci: side.summary.conditions?.ci, runsPerPage: side.summary.conditions?.runs,
   root: side.summary.content?.root ?? side.summary.root, contentDigest: side.summary.content?.digest ?? null, contentFiles: side.summary.content?.fileCount ?? null });
- return { comparable: problems.length === 0, problems, A: conditions(A), B: conditions(B), content: { sameDigest: Boolean(A.manifest && B.manifest && A.manifest.digest === B.manifest.digest), differing: contentDiff }, pages: rows, rawReports: { A: A.raw, B: B.raw } };
+ return { comparable: problems.length === 0, problems, A: conditions(A), B: conditions(B),
+  thirdParty: { verified: false, note: 'Third-party URLs are outside the measured tree; only the per-run URL sets were checked for equality.', pages: thirdParty.pages }, content: { sameDigest: Boolean(A.manifest && B.manifest && A.manifest.digest === B.manifest.digest), differing: contentDiff }, pages: rows, rawReports: { A: A.raw, B: B.raw } };
 }
 
 export function renderMarkdown(comparison, A, B) {
@@ -185,6 +264,8 @@ export function renderMarkdown(comparison, A, B) {
   ...['compression', 'brotliQuality', 'gzipLevel', 'vary', 'browserVersion', 'lighthouseVersion', 'runsPerPage', 'ci', 'contentDigest', 'contentFiles', 'root'].map(key => `| ${key} | ${comparison.A[key] ?? '–'} | ${comparison.B[key] ?? '–'} |`), '',
   '| 頁面 | Perf A（逐次） | Perf B（逐次） | 中位數 A→B | FCP A→B (ms) | LCP A→B (ms) | 傳輸 A→B | 文字資源編碼 A / B |', '|---|---|---|---|---|---|---|---|',
   ...comparison.pages.map(row => `| ${row.page} | ${row.A.performance.join(', ')} | ${row.B.performance.join(', ')} | ${f(row.A.performanceMedian)}→${f(row.B.performanceMedian)} | ${f(row.A.fcpMs)}→${f(row.B.fcpMs)} | ${f(row.A.lcpMs)}→${f(row.B.lcpMs)} | ${kb(row.A.transferBytes)}→${kb(row.B.transferBytes)} | ${row.A.textEncodings.join('+') || '–'} / ${row.B.textEncodings.join('+') || '–'} |`), '',
+  ...(Object.keys(comparison.thirdParty?.pages || {}).length ? ['**第三方資源（來源不受控，未經本機位元組驗證）：** 下列外站 URL 只確認 A、B 每次量測請求的 URL 集合一致；其實際內容與傳輸時間不在受測檔案範圍內，成本仍計入各次 Lighthouse 分數，不代表 A→B 的差異全部來自壓縮。', '',
+   ...Object.entries(comparison.thirdParty.pages).flatMap(([page, urls]) => urls.map(url => `- ${page}: ${url}`)), ''] : []),
   '內容 digest 是受測站台檔案（路徑、大小、SHA-256）的雜湊，逐檔清單在各資料夾的 content-manifest.json；原始報告檔 SHA-256 見 comparison.json；傳輸量為 Chrome 觀察到的 transferSize（含回應標頭），伺服器端本文位元組另見各 summary.json 的 network.serverBodyBytes。', ''].join('\n');
 }
 

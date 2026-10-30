@@ -20,10 +20,12 @@ SECTIONS = {
     'service': ('service.html', '民眾服務'),
     'council': ('council-records.html', '議會問政'),
     'achievement': ('achievements.html', '建設與政績'),
+    # Daily posts are listed by the homepage latest feed; there is no separate index page.
+    'daily': ('index.html#latest', '日常'),
 }
 BLOCK_TYPES = {'heading', 'paragraph', 'timeline', 'source', 'photo', 'video', 'map'}
 CONTROL = re.compile(r'[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]')
-PATH = re.compile(r'^page-(news|press|service|council|achievement)-([a-z0-9]+(?:-[a-z0-9]+)*)\.html$')
+PATH = re.compile(r'^page-(news|press|service|council|achievement|daily)-([a-z0-9]+(?:-[a-z0-9]+)*)\.html$')
 
 
 def clean(value, label, limit=4000, required=False):
@@ -159,7 +161,7 @@ def render_page(path, page, root):
             f'<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{e(title)}"><meta name="twitter:description" content="{e(description)}"><meta name="twitter:image" content="{e(image)}"><meta name="twitter:image:alt" content="{e(image_alt)}">'
             '<script type="application/ld+json">' + json.dumps(schema,ensure_ascii=False).replace('<','\\u003c') + '</script>')
     return ('<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            '<meta name="theme-color" content="#075548">' + head + '<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">'
+            '<meta name="theme-color" content="#6356a3">' + head + '<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">'
             '<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="mobile.css"><link rel="stylesheet" href="layout.css">'
             '<link rel="stylesheet" href="civic.css"><script src="site.js" defer></script><script src="civic.js" defer></script>'
             + cms_editor_loader()
@@ -176,6 +178,8 @@ def build(root: Path):
         if not target.exists() or target.read_text(encoding='utf-8') != output:
             target.write_text(output, encoding='utf-8')
     for section, (index_path, label) in SECTIONS.items():
+        if '#' in index_path:
+            continue  # listed by its owning feed instead of an injected index section
         source = (root / index_path).read_text(encoding='utf-8')
         source = re.sub(r'<!-- editorial-list:start -->.*?<!-- editorial-list:end -->', '', source, flags=re.S)
         rows = [(path, page) for path, page in data['pages'].items()

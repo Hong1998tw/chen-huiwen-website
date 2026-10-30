@@ -15,7 +15,7 @@ const browser=await ({chromium,webkit}[engine]).launch();
 const report={engine,scope:'Local browser regression; external resources blocked, not a native edge or human study',checks:[],failures:[]};
 async function check(name,fn){try{report.checks.push({name,status:'PASS',detail:await fn()});}catch(error){report.failures.push({name,reason:String(error.message).split(/\r?\nCall log:/,1)[0]});}}
 try{
- for(let i=0;i<40;i++){try{if((await fetch(base)).ok)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}
+ for(let i=0;i<40;i++){try{if((await fetch(base,{method:"HEAD"})).ok)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}
  for(const width of [390,1440]){
   const context=await browser.newContext({viewport:{width,height:844},reducedMotion:'reduce'});
   await context.route('**/*',r=>new URL(r.request().url()).origin===new URL(base).origin?r.continue():r.abort());
@@ -31,7 +31,7 @@ try{
     const text=await page.locator('main').innerText();assert.equal((text.match(/週一至週五/g)||[]).length,1);
     assert.equal(await page.locator('.home-contact').count(),0);assert.equal(await page.locator('.civic-latest-updates,.home-update-entries').count(),0);
     assert(await page.locator('a[href="updates.html"]').count()>=1);
-    assert(await page.locator('.hero-portrait').isVisible());
+    assert(await page.locator('#latest .latest-item.is-lead').isVisible());
    });
    if(path==='service-guides.html'){
     await check(`${width} legal guide anchor clears sticky navigation`,async()=>{

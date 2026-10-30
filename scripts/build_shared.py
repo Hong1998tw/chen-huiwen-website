@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_BASE = 'https://www.huiwen.tw/'
+THEME_COLOR = '#6356a3'  # brand deep purple
 
 
 def link_arrow(href):
@@ -72,7 +73,10 @@ def canonical_service_phone(root):
 def build(root=ROOT):
     sync_digital_assets(root)
     phone_url, phone_number = canonical_service_phone(root)
-    groups = json.loads((root / 'data/navigation.json').read_text())
+    navigation = json.loads((root / 'data/navigation.json').read_text())
+    if not isinstance(navigation, dict) or set(navigation) != {'primary', 'groups'}:
+        raise ValueError('navigation.json must define primary links and secondary groups')
+    primary, groups = navigation['primary'], navigation['groups']
     header = (root / 'templates/site-header.html').read_text()
     footer = (root / 'templates/site-footer.html').read_text()
     versions = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12]
@@ -83,12 +87,20 @@ def build(root=ROOT):
             continue  # Standalone offline and redirect documents have no site chrome.
         prefix = '/' if path.name == '404.html' else ''
         nav = '<nav id="navigation" aria-label="主要導覽">'
+        # Three direct tasks first; every existing destination stays in the secondary groups.
+        for url, title in primary:
+            current = ' aria-current="page"' if path.name == url else ''
+            href = (prefix + url[2:]) if prefix and url.startswith('./') else prefix + url
+            nav += f'<a class="nav-primary" href="{html.escape(href, quote=True)}"{current}>{html.escape(title)}</a>'
+        # Secondary destinations share one native disclosure; each original group keeps its heading.
+        nav += '<details class="nav-group nav-more"><summary>更多</summary><div class="nav-group-links nav-more-links">'
         for label, links in groups:
-            nav += f'<details class="nav-group"><summary>{html.escape(label)}</summary><div class="nav-group-links">'
+            nav += f'<div class="nav-more-section"><p class="nav-more-heading">{html.escape(label)}</p>'
             for url, title in links:
                 current = ' aria-current="page"' if path.name == url else ''
                 nav += f'<a href="{prefix}{html.escape(url, quote=True)}"{current}>{html.escape(title)}</a>'
-            nav += '</div></details>'
+            nav += '</div>'
+        nav += '</div></details>'
         nav += '</nav>'
         rendered_header = (header.replace('{{NAVIGATION}}', nav)
                            .replace('{{PHONE_URL}}', html.escape(phone_url, quote=True))
@@ -98,6 +110,8 @@ def build(root=ROOT):
                 body = re.sub(r'href="(?![a-z]+:|/|#)([^"]+)"',
                               lambda m: 'href="/' + ('' if m[1] == './' else m[1]) + '"', body)
             text = region(text, name, body)
+        # One brand colour for the browser chrome on every page with site chrome.
+        text = re.sub(r'<meta name="theme-color" content="#[0-9a-fA-F]{6}">', f'<meta name="theme-color" content="{THEME_COLOR}">', text)
         # Asset versioning is centralized and runs after all source builders.
         for asset in ('civic.css', 'civic.js'):
             if not re.search(r'(?:href|src)="/?' + re.escape(asset), text):
