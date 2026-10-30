@@ -129,31 +129,30 @@ class HomeProjectionTests(unittest.TestCase):
         self.assertIn("huiwen:latest-order",(ROOT/'home.js').read_text())
         self.assertNotIn('civic-story-grid',editor)
 
-    def test_home_stats_separate_full_and_short_records_and_follow_catalog(self):
+    def test_home_progress_omits_statistics_and_follows_catalog(self):
         records=json.loads((ROOT/'data/achievements-public.json').read_text())
         catalog=json.loads((ROOT/'data/public-record-catalog.json').read_text())
         soup=BeautifulSoup(render_home_progress(ROOT),'html.parser')
-        total=soup.select_one('[data-home-stat="total"]')
-        self.assertEqual(int(total.select_one('strong').get_text().replace(',','')),len(catalog))
+        # The homepage no longer shows record totals, stage counts or village coverage.
+        self.assertFalse(soup.select('[data-home-stat], [data-home-status], .home-total-stat, .home-status-group, .home-village-coverage'))
+        for phrase in ('筆公開紀錄','篇完整專題','收錄不等於完成','完整專題的辦理階段','個里有公開紀錄','非鳳山行政里總數'):
+            self.assertNotIn(phrase,soup.get_text())
         self.assertEqual(len(catalog),2657)
-        self.assertIn('435 篇完整專題、2,222 筆短紀錄',total.get_text())
-        self.assertIn('收錄不等於完成',total.get_text())
+        self.assertEqual(sum(row.get('recordFormat')=='full' for row in catalog),435)
+        self.assertEqual(sum(row.get('recordFormat')=='short' for row in catalog),2222)
         status_counts={}
         for record in records:
             status_counts[record.get('status')]=status_counts.get(record.get('status'),0)+1
-        linked={row['data-home-status']:int(row.select_one('strong').get_text()) for row in soup.select('[data-home-status]')}
-        self.assertEqual(linked,status_counts)
-        self.assertEqual(sum(linked.values()),435)
+        self.assertEqual(sum(status_counts.values()),435)
         # The filtered page counts the catalog; short records carry no stage, so counts agree.
-        for status,count in linked.items():
+        for status,count in status_counts.items():
             self.assertEqual(sum(row.get('status')==status for row in catalog),count)
-        for anchor in soup.select('[data-home-status]'):
-            self.assertIn('status=',anchor['href'])
+        self.assertEqual(soup.select_one('.home-map-text-link')['href'],'achievements.html#case-results')
+        self.assertTrue(soup.select_one('.home-map-preview img'))
         fengshan={row['name'] for row in json.loads((ROOT/'data/villages.json').read_text()) if row['district']=='鳳山區'}
         village_set={v for r in catalog for v in r.get('villages',[]) if v in fengshan}
         self.assertGreater(len(village_set),60)
         self.assertIn('文德里',village_set)
-        self.assertEqual(int(soup.select_one('[data-home-stat="villages"] strong').get_text()),len(village_set))
         options=soup.select('#home-village option')
         self.assertEqual([o.get_text() for o in options[1:]],sorted(village_set))
         achievement_options=set(re.findall(r'<option value="(v:[^"]+)"',re.search(r'<select id="village-filter">.*?</select>',(ROOT/'achievements.html').read_text(),re.S).group(0)))

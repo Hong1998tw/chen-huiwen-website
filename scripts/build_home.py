@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Build the homepage from reviewed public service, latest-information and record data."""
-from collections import Counter
 from datetime import datetime
 from html import escape
 from hashlib import sha256
@@ -8,7 +7,6 @@ import json
 import math
 from pathlib import Path
 import re
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from build_guides import load_office
@@ -20,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MAP_ASSET = "assets/fengshan-home-map.svg"
 MAP_LINK = "achievements.html?case=wende-school-center#achievement-map"
 NON_LOCAL_SCOPES = {"全市政策", "跨區服務"}
-STATUS_ORDER = ("已完成", "持續追蹤", "爭取規劃", "政策實施")
 LINE_URL = "https://line.me/R/ti/p/@yve2766q"
 FACEBOOK_URL = "https://www.facebook.com/hwcfs/"
 EVENT_VARIANT_MANIFEST = Path("scripts/home-image-variants.json")
@@ -530,15 +527,7 @@ def render_home_progress(root=ROOT):
     if len(full) != len(records) or len(full) + len(short) != len(catalog):
         raise ValueError("Public record catalog must separate full records and short records")
     geojson = json.loads((root / "assets/fengshan-villages.geojson").read_text())
-    counts = Counter(record.get("status", "") for record in records if record.get("status"))
-    ordered_statuses = [status for status in STATUS_ORDER if status in counts]
-    ordered_statuses.extend(sorted(set(counts) - set(ordered_statuses)))
     villages = local_village_options(catalog, root)
-    stat_links = "".join(
-        f'<li><a href="achievements.html?status={quote(status, safe="")}#case-results" data-home-status="{e(status)}">'
-        f'<span>{e(status)}</span><strong>{counts[status]}</strong></a></li>'
-        for status in ordered_statuses
-    )
     village_options = "".join(f'<option value="v:{e(village)}">{e(village)}</option>' for village in villages)
     return (
         '<section class="wrap home-progress" id="progress" aria-labelledby="home-progress-heading">'
@@ -556,14 +545,6 @@ def render_home_progress(root=ROOT):
         '</form></div>'
         + render_featured_project(root)
         + '<div class="home-progress-facts">'
-        '<a class="home-total-stat" href="achievements.html#case-results" data-home-stat="total">'
-        f'<strong>{len(catalog):,}</strong><span>筆公開紀錄</span>'
-        f'<small>{len(full):,} 篇完整專題、{len(short):,} 筆短紀錄；收錄不等於完成。</small></a>'
-        '<div class="home-status-group"><p class="home-status-caption">完整專題的辦理階段</p>'
-        f'<ul class="home-status-stats" aria-label="完整專題的辦理階段">{stat_links}</ul></div>'
-        '<a class="home-village-coverage" href="achievements.html#case-results" data-home-stat="villages">'
-        f'<strong>{len(villages)}</strong><span>個里有公開紀錄</span>'
-        '<small>這是資料涵蓋里數，非鳳山行政里總數。</small></a>'
         '<figure class="home-map-preview">'
         f'<a href="{e(MAP_LINK)}" aria-label="在互動地圖查看公開紀錄；也可使用上方里別選單或文字紀錄">'
         f'<img src="{MAP_ASSET}" width="600" height="460" loading="lazy" decoding="async" '
