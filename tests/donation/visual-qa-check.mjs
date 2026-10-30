@@ -36,10 +36,17 @@ import {
 } from './visual-qa-publication.mjs';
 import {
   INITIAL_UI_COMPONENTS,
+  EVALUATION_TIMED_OUT,
+  FirstPartySettlementError,
   InitialUiReadinessError,
+  boundedEvaluate,
+  firstPartySettlementFailures,
   initialUiReady,
   initialUiReadinessFailures,
   probeInitialUi,
+  probeLazyImages,
+  summarizeRequests,
+  waitForFirstPartySettled,
   waitForInitialUi
 } from './visual-qa-readiness.mjs';
 
@@ -1293,8 +1300,9 @@ test('403, first-party JavaScript errors and missing visible first-party images 
     conditions: { fontsReady: true },
     pageErrors: [],
     imageState: { firstPartyFailedImageCount: 0 },
-    network: [{ originClass: 'same-origin', status: 200, failed: null }],
+    network: [{ originClass: 'same-origin', resourceType: 'Document', status: 200, failed: null }],
     initialUiReadiness: { status: 'READY', components: [], stylesheets: [] },
+    firstPartySettlement: { status: 'SETTLED', firstPartyInFlight: [], sampledSameOriginUrls: [] },
     screenshotSha256: 'a'.repeat(64)
   };
   assert.equal(evaluateCaptureQuality(good).status, 'COMPLETE');
@@ -1586,10 +1594,11 @@ test('initial UI readiness fails closed on timeout and stylesheet errors and pas
 });
 
 test('forged or incomplete readiness evidence never yields a complete capture', () => {
-  const lateRow = { url: `${ORIGIN}/assets/late-4567.css`, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null };
+  const lateRow = { url: `${ORIGIN}/assets/late-4567.css`, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null, encodedDataLength: 3216 };
   const base = {
     httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, screenshotSha256: 'a'.repeat(64),
-    network: [{ url: SITE_CSS, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null }, lateRow],
+    network: [{ url: SITE_CSS, originClass: 'same-origin', resourceType: 'Stylesheet', status: 200, failed: null, encodedDataLength: 70606 }, lateRow],
+    firstPartySettlement: { status: 'SETTLED', firstPartyInFlight: [], sampledSameOriginUrls: [SITE_CSS, lateRow.url] },
     initialUiReadiness: {
       status: 'READY',
       components: [{ id: 'small-q', present: true, mounted: true, visible: true }],
@@ -1621,5 +1630,169 @@ test('captures wait for initial UI before DOM, performance and the screenshot in
   assert(goto < ready && ready < at("document.fonts.ready") && ready < at("document.querySelectorAll('*').length") &&
     ready < at("performance.getEntriesByType('navigation')") && ready < at('await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: \'disabled\' })'));
   assert.equal(body.indexOf('if (screenshotEnabled)') > ready, true, 'measurement-only captures take the same readiness path');
-  assert.match(body, /initialUiReadiness,\n\s+metrics:/);
+  const settle = at('\n    firstPartySettlement = await waitForFirstPartySettled(page, {');
+  assert(ready < settle && at('animationCount = await page.evaluate') < settle && settle < at("document.querySelectorAll('*').length") &&
+    settle < at("performance.getEntriesByType('navigation')") && settle < body.indexOf('if (screenshotEnabled)'),
+    'first-party settlement precedes every sample in both capture modes');
+  assert.match(body, /initialUiReadiness,\n\s+firstPartySettlement: firstPartySettlement && \{/);
+});
+
+// Simulated network timeline for first-party settlement: each settle poll renders two frames (~33ms).
+const JPEG = `${ORIGIN}/assets/news-photo.jpg`;
+function simulatedNetwork(events = [], frameEvents = []) {
+  let clock = 0;
+  let frames = 0;
+  const pending = [...events].sort((a, b) => a[0] - b[0]);
+  const scheduled = [...frameEvents].sort((a, b) => a[0] - b[0]);
+  const records = new Map([
+    ['doc', { url: `${ORIGIN}/news.html`, encodedDataLength: 78215 }],
+    ['css', { url: SITE_CSS, encodedDataLength: 70606 }]
+  ]);
+  const apply = () => { while (pending.length && pending[0][0] <= clock) pending.shift()[1](records); };
+  return {
+    // Lazy work is scheduled only by rendered frames, as Chromium does after layout.
+    page: { evaluate: async () => { clock += 33; frames += 2; while (scheduled.length && scheduled[0][0] <= frames) scheduled.shift()[1](records, clock); apply(); return true; } },
+    requests: () => { apply(); return summarizeRequests(records.values(), ORIGIN); },
+    now: () => clock,
+    sleep: async ms => { clock += ms; },
+    records
+  };
+}
+
+test('first-party settlement waits for a lazy image issued a frame later and completed slowly', async () => {
+  // The image is requested by the second rendered frame pair and its bytes finish 1.5s later.
+  const net = simulatedNetwork([], [[4, (records, at) => {
+    records.set('jpeg', { url: JPEG });
+    net.later = at + 1500;
+  }]]);
+  const finish = net.requests;
+  net.requests = () => { if (net.later != null && net.now() >= net.later) net.records.get('jpeg').encodedDataLength = 206686; return finish(); };
+  const evidence = await waitForFirstPartySettled(net.page, { requests: net.requests, now: net.now, sleep: net.sleep });
+  const sampledAt = net.now();
+  assert.equal(evidence.status, 'SETTLED');
+  assert(sampledAt >= net.later + 300, `sampled at ${sampledAt}`);
+  assert.equal(evidence.firstPartyStarted, 3);
+  assert.deepEqual(evidence.firstPartyInFlight, []);
+  // An in-flight count of zero at the first poll is not enough: the lazy request started a frame later.
+  const early = simulatedNetwork([], [[4, records => records.set('jpeg', { url: JPEG })]]);
+  assert.deepEqual(early.requests().firstPartyInFlight, []);
+  await early.page.evaluate();
+  assert.deepEqual(early.requests().firstPartyInFlight, []);
+  await early.page.evaluate();
+  assert.deepEqual(early.requests().firstPartyInFlight, ['/assets/news-photo.jpg']);
+});
+
+test('a first-party request that starts and finishes between polls restarts the quiet window for its follow-up', async () => {
+  // A fast stylesheet appears already finished at frame 8; it schedules a slow font at frame 14.
+  const net = simulatedNetwork([], [
+    [8, records => records.set('fast', { url: `${ORIGIN}/assets/fast.css`, encodedDataLength: 900 })],
+    [14, (records, at) => { records.set('font', { url: `${ORIGIN}/assets/font.woff2` }); net.fontDone = at + 800; }]
+  ]);
+  const finish = net.requests;
+  net.requests = () => { if (net.fontDone != null && net.now() >= net.fontDone) net.records.get('font').encodedDataLength = 149748; return finish(); };
+  const evidence = await waitForFirstPartySettled(net.page, { requests: net.requests, now: net.now, sleep: net.sleep });
+  assert.equal(evidence.firstPartyStarted, 4);
+  assert(net.now() >= net.fontDone + 300, `sampled at ${net.now()} before the follow-up finished at ${net.fontDone}`);
+});
+
+test('first-party settlement ignores unfinished third-party requests and fails closed on first-party timeout', async () => {
+  const thirdParty = simulatedNetwork([[0, records => records.set('vendor', { url: 'https://vendor.example/stream' })]]);
+  const settled = await waitForFirstPartySettled(thirdParty.page, { requests: thirdParty.requests, now: thirdParty.now, sleep: thirdParty.sleep });
+  assert.equal(settled.status, 'SETTLED');
+  assert.equal(settled.thirdPartyInFlight, 1);
+  assert(settled.waitedMs >= 300 && settled.waitedMs < 1000, `${settled.waitedMs}`);
+
+  const stuck = simulatedNetwork([[0, records => records.set('jpeg', { url: JPEG })]]);
+  await assert.rejects(waitForFirstPartySettled(stuck.page, { requests: stuck.requests, now: stuck.now, sleep: stuck.sleep, timeoutMs: 2000 }),
+    error => error instanceof FirstPartySettlementError && error.reason === 'FIRST_PARTY_SETTLEMENT_TIMEOUT' &&
+      error.evidence.status === 'TIMEOUT' && error.evidence.waitedMs >= 2000 && error.evidence.firstPartyInFlight[0] === '/assets/news-photo.jpg');
+
+  // A failed first-party request is finished for settlement and still invalidates the capture elsewhere.
+  const failed = simulatedNetwork([[40, records => records.set('jpeg', { url: JPEG, failed: 'net::ERR_FAILED' })]]);
+  assert.equal((await waitForFirstPartySettled(failed.page, { requests: failed.requests, now: failed.now, sleep: failed.sleep })).status, 'SETTLED');
+  const quality = evaluateCaptureQuality({
+    httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, screenshotSha256: 'a'.repeat(64),
+    initialUiReadiness: { status: 'READY', components: [], stylesheets: [] },
+    firstPartySettlement: { status: 'SETTLED', firstPartyInFlight: [], sampledSameOriginUrls: [] },
+    network: [{ url: JPEG, originClass: 'same-origin', resourceType: 'Image', status: null, failed: 'net::ERR_FAILED', encodedDataLength: null }]
+  });
+  assert.deepEqual(quality.failureReasons, ['FIRST_PARTY_REQUEST_FAILED']);
+
+  const quiet = simulatedNetwork();
+  const plain = await waitForFirstPartySettled(quiet.page, { requests: quiet.requests, now: quiet.now, sleep: quiet.sleep });
+  assert.equal(plain.status, 'SETTLED');
+  assert(plain.polls >= 3 && plain.waitedMs < 600, `${plain.polls} ${plain.waitedMs}`);
+});
+
+test('forged or incomplete first-party settlement evidence never yields a complete capture', () => {
+  const jpegRow = { url: JPEG, originClass: 'same-origin', resourceType: 'Image', status: 200, failed: null, encodedDataLength: 206686 };
+  const base = {
+    httpStatus: 200, conditions: { fontsReady: true }, pageErrors: [], imageState: {}, screenshotSha256: 'a'.repeat(64),
+    initialUiReadiness: { status: 'READY', components: [], stylesheets: [] },
+    network: [{ url: `${ORIGIN}/news.html`, originClass: 'same-origin', resourceType: 'Document', status: 200, failed: null, encodedDataLength: 78215 }, jpegRow],
+    firstPartySettlement: { status: 'SETTLED', firstPartyInFlight: [], sampledSameOriginUrls: [JPEG] }
+  };
+  assert.equal(evaluateCaptureQuality(base).status, 'COMPLETE');
+  const reasons = capture => firstPartySettlementFailures(capture);
+  // The image finished after the performance sample: its bytes are missing from the metric.
+  assert.deepEqual(reasons({ ...base, firstPartySettlement: { ...base.firstPartySettlement, sampledSameOriginUrls: [] } }), ['MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED']);
+  assert.deepEqual(reasons({ ...base, network: [base.network[0], { ...jpegRow, encodedDataLength: null }] }), ['FIRST_PARTY_REQUEST_UNFINISHED']);
+  assert.deepEqual(reasons({ ...base, firstPartySettlement: { ...base.firstPartySettlement, status: 'TIMEOUT' } }), ['FIRST_PARTY_NOT_SETTLED']);
+  assert.deepEqual(reasons({ ...base, firstPartySettlement: { ...base.firstPartySettlement, firstPartyInFlight: ['/assets/news-photo.jpg'] } }), ['FIRST_PARTY_NOT_SETTLED']);
+  const { firstPartySettlement, ...missing } = base;
+  assert.deepEqual(reasons(missing), ['FIRST_PARTY_SETTLEMENT_MISSING']);
+  assert.deepEqual(evaluateCaptureQuality(missing).failureReasons, ['FIRST_PARTY_SETTLEMENT_MISSING']);
+  assert(evaluateCaptureQuality({ ...base, firstPartySettlement: { ...base.firstPartySettlement, sampledSameOriginUrls: [] } }).failureReasons
+    .includes('MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED'));
+  // Third-party rows never require a first-party sample entry.
+  assert.deepEqual(reasons({ ...base, network: [...base.network, { url: 'https://vendor.example/x.jpg', originClass: 'third-party', resourceType: 'Image', status: 200, failed: null, encodedDataLength: 10 }] }), []);
+});
+
+test('page waits are bounded by a Node-side deadline even when the renderer never delivers a frame', async () => {
+  const never = { evaluate: () => new Promise(() => {}) };
+  const quiet = () => ({ firstPartyStarted: 0, firstPartyInFlight: [], thirdPartyInFlight: 0 });
+  const started = Date.now();
+  await assert.rejects(waitForFirstPartySettled(never, { requests: quiet, timeoutMs: 150 }), error =>
+    error instanceof FirstPartySettlementError && error.reason === 'FIRST_PARTY_SETTLEMENT_TIMEOUT' &&
+    error.evidence.status === 'TIMEOUT' && error.evidence.frameTimedOut === true && error.evidence.polls === 0);
+  await assert.rejects(waitForInitialUi(never, { timeoutMs: 150 }), error =>
+    error instanceof InitialUiReadinessError && error.reason === 'INITIAL_UI_READINESS_TIMEOUT' &&
+    error.evidence.status === 'TIMEOUT' && error.evidence.probeTimedOut === true);
+  assert(Date.now() - started < 2000, `${Date.now() - started}ms`);
+  assert.equal(await boundedEvaluate(Promise.resolve('frame'), 1000), 'frame');
+  // A rejection arriving after the deadline (for example from a closed context) stays handled.
+  const unhandled = [];
+  const listener = reason => unhandled.push(reason);
+  process.on('unhandledRejection', listener);
+  try {
+    const late = new Promise((_, reject) => setTimeout(() => reject(new Error('Target closed')), 120));
+    assert.equal(await boundedEvaluate(late, 30), EVALUATION_TIMED_OUT);
+    await new Promise(done => setTimeout(done, 200));
+  } finally {
+    process.off('unhandledRejection', listener);
+  }
+  assert.deepEqual(unhandled, []);
+});
+
+test('lazy image evidence marks unrendered images instead of a false in-viewport distance', async () => {
+  const image = (src, rect) => ({ loading: 'lazy', currentSrc: '', src, getClientRects: () => (rect ? [rect] : []), getBoundingClientRect: () => rect ?? { top: 0 } });
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'innerHeight');
+  Object.assign(globalThis, {
+    document: { images: [image(JPEG, null), image(`${ORIGIN}/assets/below.jpg`, { top: 2847 }), { loading: 'eager', src: SITE_CSS }] },
+    location: { href: `${ORIGIN}/news.html`, origin: ORIGIN }
+  });
+  Object.defineProperty(globalThis, 'innerHeight', { value: 844, configurable: true, writable: true });
+  try {
+    assert.deepEqual(probeLazyImages(), [
+      { url: JPEG, sameOrigin: true, rendered: false, settledDistancePx: null },
+      { url: `${ORIGIN}/assets/below.jpg`, sameOrigin: true, rendered: true, settledDistancePx: 2003 }
+    ]);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.location;
+    if (saved) Object.defineProperty(globalThis, 'innerHeight', saved); else delete globalThis.innerHeight;
+  }
+  const source = await readFile(new URL('./visual-qa.mjs', import.meta.url), 'utf8');
+  assert.match(source, /earlyLazyRequests: \(firstPartySettlement\.lazyImages \?\? \[\]\)\.filter\(image => \(image\.rendered === false \|\| image\.settledDistancePx > 0\)/,
+    'requested unrendered lazy images count as early requests');
 });

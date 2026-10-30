@@ -78,7 +78,13 @@
     details.append(summary);
     children.filter(node => ![date, heading, lead].includes(node)).forEach(node => details.append(node));
     const figure = card.querySelector(':scope > .news-report-media');
-    if (figure) details.append(figure);
+    if (figure) {
+      // The source photo waits in a closed native disclosure so the pre-script layout never
+      // lazy-fetches it; this reading layer's closed details takes over that role.
+      const gate = figure.querySelector(':scope > .news-report-media-gate');
+      if (gate) gate.replaceWith(...[...gate.childNodes].filter(node => node.nodeName !== 'SUMMARY'));
+      details.append(figure);
+    }
     sourceLinks.forEach(link => {
       // Remove the duplicate display prefix only; keep the full headline and URL.
       const text = [...link.childNodes].find(node => node.nodeType === Node.TEXT_NODE);

@@ -1051,6 +1051,84 @@ try {
 
   await context.close();
 
+  // The source news photo starts inside a closed native disclosure: no layout ever lazy-fetches it,
+  // and opening the existing reading disclosure (or the no-script entry) always loads the original.
+  const newsPhoto = 'assets/news-20260907-mazu-port-bridge.jpg';
+  const newsPhotoPage = async ({ width, javaScriptEnabled = true, blockNewsScript = false }) => {
+    const photoContext = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, deviceScaleFactor: 1, javaScriptEnabled });
+    await photoContext.route('**/*', route => {
+      const url = new URL(route.request().url());
+      if (url.hostname !== '127.0.0.1' || (blockNewsScript && url.pathname === '/news.js')) return route.abort();
+      return route.continue();
+    });
+    const photoPage = await photoContext.newPage();
+    const requests = [];
+    photoPage.on('request', request => { if (request.url().includes(newsPhoto)) requests.push(request.url()); });
+    await photoPage.goto(base + 'news.html');
+    await photoPage.waitForLoadState('networkidle');
+    const image = photoPage.locator(`img[src="${newsPhoto}"]`);
+    const card = photoPage.locator('article.news-report-card').filter({ has: image });
+    const facts = async () => ({
+      image: await image.evaluate(img => [img.getAttribute('src'), img.alt, img.getAttribute('width'), img.getAttribute('height'), img.loading]),
+      caption: await card.locator('figcaption').evaluate(caption => caption.textContent),
+      links: await card.locator('a[href]').evaluateAll(links => links.map(link => link.getAttribute('href')))
+    });
+    const loaded = () => photoPage.waitForFunction(src => { const img = document.querySelector(`img[src="${src}"]`); return img.complete && img.naturalWidth > 0; }, newsPhoto, { timeout: 10000 });
+    return { photoContext, photoPage, requests, image, card, facts, loaded };
+  };
+  const reference = await newsPhotoPage({ width: 390, javaScriptEnabled: false });
+  const sourceFacts = await reference.facts();
+  await reference.photoContext.close();
+  assert.deepEqual(sourceFacts.image, [newsPhoto, '陳慧文與黃敬雅於媽祖港橋路口向通勤市民拜票', '1200', '676', 'lazy']);
+  for (const width of [390, 1440]) {
+    await check(`news source photo is not prefetched and loads on expand ${width}px`, async () => {
+      const { photoContext, photoPage, requests, image, card, facts, loaded } = await newsPhotoPage({ width });
+      try {
+        assert.deepEqual(requests, [], 'collapsed news photo must not be fetched during start-up');
+        assert.equal(await photoPage.locator('.news-report-media-gate').count(), 0, 'the reading layer removes the start-up disclosure');
+        assert.equal(await card.locator('.news-card-details > .news-report-media > img').count(), 1);
+        assert.deepEqual(await facts(), sourceFacts);
+        const summary = card.locator('.news-card-details > summary');
+        await summary.focus();
+        await photoPage.keyboard.press('Enter');
+        await loaded();
+        assert.equal(requests.length, 1);
+        assert(await image.isVisible());
+      } finally {
+        await photoContext.close();
+      }
+    });
+  }
+  await check('news source photo keeps a native entry when news.js fails', async () => {
+    const { photoContext, photoPage, requests, card, loaded } = await newsPhotoPage({ width: 390, blockNewsScript: true });
+    try {
+      assert.deepEqual(requests, []);
+      const entry = card.locator('.news-report-media-gate > summary');
+      assert.equal(await entry.innerText(), '查看圖片');
+      await entry.focus();
+      await photoPage.keyboard.press('Enter');
+      await loaded();
+      assert.equal(requests.length, 1);
+    } finally {
+      await photoContext.close();
+    }
+  });
+  await check('no JavaScript: news photo entry expands by keyboard with full text and sources', async () => {
+    const { photoContext, photoPage, image, card, facts } = await newsPhotoPage({ width: 390, javaScriptEnabled: false });
+    try {
+      assert.deepEqual(await facts(), sourceFacts);
+      assert(await card.locator('.news-source-links').isVisible());
+      assert.match(await card.innerText(), /媽祖港橋連結鳳山與前鎮/);
+      const entry = card.locator('.news-report-media-gate > summary');
+      await entry.focus();
+      await photoPage.keyboard.press('Enter');
+      assert.equal(await card.locator('.news-report-media-gate').getAttribute('open'), '');
+      assert(await image.isVisible());
+    } finally {
+      await photoContext.close();
+    }
+  });
+
   const nojs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const nojsPage = await nojs.newPage();
   diagnosticPage = nojsPage;

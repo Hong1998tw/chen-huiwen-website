@@ -2,6 +2,10 @@
 
 ## CI 選擇契約
 
+既有瀏覽器 QA 另支援 `workflow_dispatch` 手動分支取樣，權限仍為 `contents: read`，所有檢查步驟維持不變。非 PR 執行不具有獨立 base 參照，報告會明確標示；這種執行只提供取樣與檢查證據，不會自動採用基準、合併或部署。正式發布仍須在最終 PR head 完成全部必要 CI 與獨立審查。
+
+手動分支操作依 [GitHub 官方工作流程觸發規則](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)；取樣來源須為該分支的真實 commit，完成逐圖及來源審核後才能依下列流程採用。
+
 A-05 compare job 只讀固定的 Git 路徑：`tests/baselines/visual-qa/selection.json`。
 
 - selection 不存在：輸出 `PENDING` 並成功結束；這代表沒有執行基準比較，不能解讀為視覺通過。
@@ -162,6 +166,20 @@ git commit -m "test: approve A-05 visual QA baseline"
 `tests/donation/visual-qa-readiness.mjs` 在 `page.goto(load)` 之後、字型、圖片、動畫、DOM、performance 與截圖之前，以元件既有的 ready 訊號等待初始 owned UI：小 Q 的 `data-mounted="true"` 與 `hidden=false`（只在其 stylesheet `onload` 後成立）、所有 `link[rel~=stylesheet]` 已載入，同源 stylesheet 也都已有 PerformanceResourceTiming entry。等待以 50ms 輪詢，上限 10 秒；逾時或 stylesheet 載入失敗即 fail closed，頁面沒有該元件時立即通過。screenshot 與 measurement-only 兩種模式走同一路徑。產品 UI、public bytes、預算與比較條件都沒有改變，真實資源成本照常計入。
 
 每筆 metadata 新增 `initialUiReadiness`（status、waitedMs、polls、元件與 stylesheet 狀態）。capture quality 另外拒絕以下情況：缺少此證據、未 READY、stylesheet 未載入或缺 performance entry（`INITIAL_UI_NOT_READY`／`INITIAL_UI_STYLESHEET_NOT_MEASURED`），以及 network 看到的同源 stylesheet 不在取樣證據內（`MEASUREMENT_SAMPLED_BEFORE_STYLESHEET`）。`measurementScope`、`environmentLabel` 與 transfer 量測來源不變，所以這是既有 load／可見 UI 取樣時機的 bugfix，不是新的量測條件。早於此修正的 baseline metadata 沒有 `initialUiReadiness`，採用前必須另行證明其數值等於修正後工具的完整初始狀態。
+
+## 第一方請求 settlement 與 news lazy 圖的非決定性
+
+小 Q readiness 之後、DOM／performance／截圖之前，capture 會等待第一方請求 settlement：每次輪詢先等兩個真實 layout frame（讓最新 layout 排程的 lazy 工作有機會發出），再要求第一方請求維持 300ms「沒有進行中、也沒有新開始」。上限 10 秒，逾時即 fail closed，證據列出仍在進行的第一方路徑。frame 等待與 readiness probe 都以 Node 端 deadline 計時，renderer 一直不送 animation frame 時同樣會在上限內失敗（證據標記 `frameTimedOut`／`probeTimedOut`），不會無限等待。第三方請求只計數、不等待，失敗的第一方請求視為已結束，但仍由既有的 `FIRST_PARTY_REQUEST_FAILED` 判為不完整。這段等待不會強制載入、阻擋或忽略任何資源，也不會 decode 畫面外的圖片。
+
+每筆 metadata 新增 `firstPartySettlement`，內容包括 status、waitedMs、polls、quiet window、仍在進行的第一方請求、第三方未完成數、`domInteractiveMs`、performance 取樣涵蓋的同源 URL、每張 lazy 圖是否有 layout box、在 settled layout 下距 viewport 底部的距離、是否被請求，以及 `earlyLazyRequests`（沒有 layout box 或位在 settled viewport 外、卻已被請求的 lazy 圖）。capture quality 另外拒絕以下情況：缺少此證據（`FIRST_PARTY_SETTLEMENT_MISSING`）、未 settled（`FIRST_PARTY_NOT_SETTLED`）、第一方請求未完成（`FIRST_PARTY_REQUEST_UNFINISHED`），以及 network 已完成、卻不在 performance 取樣內的第一方請求（`MEASUREMENT_SAMPLED_BEFORE_REQUEST_COMPLETED`）。以 1.5 秒延遲 JPEG 回應做實驗時，舊取樣點在請求已發出的情況下仍少計整張圖，新取樣點則完整計入。
+
+`measurementScope`、環境標籤與 transfer 量測來源都不變。這段 settlement 只保證「瀏覽器實際發出的第一方請求已完成並計入」，不改變量測對象。在與 755 相同的公開 bytes 上，以新工具做 5 次完整 capture，其中 28 張的 DOM 與 transfer 都和 755 相同。
+
+原因：`news.html` 第一則報導的 lazy 圖（約 206 KB）是否被請求並非取樣時機問題，而是瀏覽器在 `load` 之前就做出的決定。Chromium 的 HTML parser 若在解析中途讓出、並在 `news.js` 重排之前跑了一次渲染更新，就會依當時的靜態 layout 判定這張圖在 lazy 門檻內而請求它；若沒有讓出，最終 layout 的距離（390：2003px、1440：1559px）超過門檻，之後也不會再請求。因此舊版 news-390／news-1440 會落在 388,678 或 595,460 bytes 兩個完整值之一，CI run `41008749618` 的 news FAIL 就是這個情況。
+
+處理：產品端在 `news.html` 把這張來源照片的 `<img>` 放進 figure 內的原生收合 `<details class="news-report-media-gate">`（入口文字「查看圖片」），所以任何靜態 layout 都不會 lazy 預取它。`news.js` 建立閱讀層時移除這層包裝，把原 figure 放進既有的收合「內容與完整報導」，JS 模式的最終 DOM 與版面不變。沒有 JS、`news.js` 載入失敗或 CMS 預覽（`news.js` 提早返回）時，原生入口可用鍵盤展開。figure 仍是卡片的直接子元素、figcaption 位置不變，所以 CMS 編輯 manifest（欄位 id、source hash）與 latest-info 投影都不變。圖片原檔、src、alt、尺寸、圖說與來源連結都沒有更動，也沒有改為 eager、阻擋或忽略這支 JPEG。
+
+本機驗證（尚非 Linux CI）：以快速解析、`news.js` 延遲 800ms、分塊串流 HTML 造成解析途中 paint、CPU 降速 4 倍四種條件，各在 390／1440 跑 5 次。新版 40/40 都沒有初始預取，展開後 40/40 都載入原圖；同條件下舊版 28/40 會預取。在重建的新公開產物上做 5 次完整 capture，30 張的 DOM 與 transfer 每張都只有一個值，news-390／1440 為 790／389,410，`earlyLazyRequests` 為空。公開 bytes 改變的頁面（news、news-special-education-nurse、explore）需要以新 commit 的 Linux CI capture 重新審閱並採用；採用時沿用既有 34 筆例外的鍵、限值、追蹤任務與 2026-11-17 到期日，觀測值取新 capture 實測。
 
 ## 2026-10-19 初始歷史基準（9c / 83d0）與預算債務紀錄
 

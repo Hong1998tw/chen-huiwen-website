@@ -34,7 +34,13 @@ import {
   validateSiteSourceKindRecord,
 } from './visual-qa-publication.mjs';
 import { createCrossSourceReview } from './visual-qa-cross-compare.mjs';
-import { waitForInitialUi } from './visual-qa-readiness.mjs';
+import {
+  FirstPartySettlementError,
+  probeLazyImages,
+  summarizeRequests,
+  waitForFirstPartySettled,
+  waitForInitialUi
+} from './visual-qa-readiness.mjs';
 import {
   combineCaptureAndIntegrityErrors,
   createMetadataPathRegistry,
@@ -239,6 +245,7 @@ async function captureOne({
   let screenshotError = null;
   let animationCount = 0;
   let initialUiReadiness = null;
+  let firstPartySettlement = null;
   try {
     const response = await page.goto(targetUrl, { waitUntil: policy.capture.waitUntil, timeout: 60000 });
     httpStatus = response?.status() ?? null;
@@ -285,6 +292,10 @@ async function captureOne({
       document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important');
       return animations.length;
     });
+    // Every first-party request the browser issued (including lazy images) completes before sampling.
+    firstPartySettlement = await waitForFirstPartySettled(page, {
+      requests: () => summarizeRequests(networkById.values(), targetOrigin)
+    });
     domElementCount = await page.evaluate(() => document.querySelectorAll('*').length);
     performanceData = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0];
@@ -314,9 +325,17 @@ async function captureOne({
           encodedBodySize: entry.encodedBodySize,
           decodedBodySize: entry.decodedBodySize
         })),
-        fontStatus: document.fonts.status
+        fontStatus: document.fonts.status,
+        domInteractiveMs: navigation ? Math.round(navigation.domInteractive) : null
       };
     });
+    firstPartySettlement = {
+      ...firstPartySettlement,
+      domInteractiveMs: performanceData.domInteractiveMs,
+      sampledSameOriginUrls: performanceData.sameOriginResources.map(entry => publicUrl(entry.name)),
+      lazyImages: await page.evaluate(probeLazyImages)
+    };
+    delete performanceData.domInteractiveMs;
     if (screenshotEnabled) {
       await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: 'disabled' });
       screenshotSha256 = sha256(await readFile(absoluteScreenshotPath));
@@ -324,7 +343,8 @@ async function captureOne({
     performanceData.fontReadyElapsedMs = fontReadyElapsedMs;
   } catch (error) {
     navigationError = String(error);
-    if (error?.evidence) initialUiReadiness = error.evidence;
+    if (error instanceof FirstPartySettlementError) firstPartySettlement = { ...error.evidence, sampledSameOriginUrls: [] };
+    else if (error?.evidence) initialUiReadiness = error.evidence;
     try {
       if (screenshotEnabled && page.url() !== 'about:blank') {
         await page.screenshot({ path: absoluteScreenshotPath, fullPage: false, animations: 'disabled', timeout: 10000 });
@@ -422,6 +442,14 @@ async function captureOne({
     },
     imageState,
     initialUiReadiness,
+    firstPartySettlement: firstPartySettlement && {
+      ...firstPartySettlement,
+      lazyImages: (firstPartySettlement.lazyImages ?? []).map(image => ({ ...image, requested: requestRecords.some(item => item.url === image.url) })),
+      // Lazy images requested although unrendered or outside the settled viewport: the browser chose
+      // them from an earlier layout (for example a parser-yield frame before page scripts reflow it).
+      earlyLazyRequests: (firstPartySettlement.lazyImages ?? []).filter(image => (image.rendered === false || image.settledDistancePx > 0) &&
+        requestRecords.some(item => item.url === image.url)).map(image => image.url)
+    },
     metrics: {
       domElementCount,
       sameOriginTransferSizeBytes: transferBudgetBytes,
